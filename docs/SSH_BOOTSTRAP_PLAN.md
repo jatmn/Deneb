@@ -37,3 +37,12 @@ The first implementation target is a minimal SSH-only update package. It exists 
 - Confirm `ultimaker` login only if that account exists on the live device.
 - Change the password after first login.
 
+## Build
+
+Build the tar-backed `.img` package from the repo root:
+
+```powershell
+.\tools\build-ssh-bootstrap.ps1
+```
+
+The generated `.img` and `.sha256` files are written to `dist/`, which is intentionally ignored by git.

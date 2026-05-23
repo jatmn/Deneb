@@ -1,0 +1,8 @@
+name=Deneb SSH Bootstrap
+version=0.1.0
+package=ssh-bootstrap
+target=Ultimaker 2+ Connect OpenWrt firmware
+effect=enable Dropbear SSH at boot and set temporary bootstrap password
+default_password=deneb
+contains_vendor_files=false
+
