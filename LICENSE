@@ -1,0 +1,14 @@
+Mozilla Public License Version 2.0
+
+Original Deneb project files are licensed under the Mozilla Public License
+Version 2.0, SPDX identifier `MPL-2.0`, unless a file or component declares
+different terms.
+
+This license applies only to original Deneb files in this repository. It does
+not grant rights to UltiMaker firmware, extracted firmware images, extracted
+root filesystems, vendor application code, user-supplied device files, or
+third-party components with separate licenses.
+
+Official license text:
+https://www.mozilla.org/MPL/2.0/
+

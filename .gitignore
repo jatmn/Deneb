@@ -1,0 +1,49 @@
+# Vendor firmware artifacts supplied by the user or extracted from a device/image.
+/rootfs/
+/rootfs.squashfs
+/omega2.bin
+/kernel.uimage.payload
+*.bin
+*.img
+*.squashfs
+*.uimage
+
+# Generated Deneb build/release artifacts.
+/build/
+/dist/
+/out/
+/release/
+/artifacts/
+*.tar
+*.tar.gz
+*.zip
+*.sig
+*.sha256
+*.manifest
+
+# Secrets, keys, and device-specific data.
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+known_hosts
+secrets.*
+*.secret
+device-info/
+device-dumps/
+logs/
+*.log
+
+# Local tooling/cache.
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.cache/
+__pycache__/
+*.pyc
+node_modules/
+
