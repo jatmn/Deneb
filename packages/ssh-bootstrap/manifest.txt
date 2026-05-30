@@ -1,5 +1,5 @@
 name=Deneb Get Started
-version=0.2.4
+version=0.2.8
 package=get-started
 target=Ultimaker 2+ Connect OpenWrt firmware
 effect=enable Dropbear SSH at boot, install Deneb .deneb update lane, allow Deneb_get_started.img reinstalls, disable stock internet update prompts, and install Deneb splash branding

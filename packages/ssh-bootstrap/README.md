@@ -13,6 +13,7 @@ It is intentionally narrow:
 - Skip UltiMaker firmware signature verification only for `.deneb` package files and the exact `Deneb_get_started.img` reinstall package.
 - Disable stock internet firmware update checks and prompts for now.
 - Replace the stock welcome/captive-portal splash branding with Deneb assets.
+- Replace the stock `Welcome to your new Ultimaker 2+ Connect` boot text with the Deneb splash as the first UI screen on every boot, then automatically advance to the main UI after about 1 second.
 - Schedule a reboot watchdog so the stock updating screen cannot remain indefinitely after the package exits.
 - Preserve the stock `.img` firmware update path for official firmware images.
 

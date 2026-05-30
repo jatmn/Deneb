@@ -124,7 +124,9 @@ files = {
     "browse": Path("/home/cygnus/menu/screens/update_firmware_browse_page.py"),
     "version_page": Path("/home/cygnus/menu/screens/update_firmware_version_page.py"),
     "main_menu": Path("/home/cygnus/menu/screens/main_menu_page.py"),
+    "root_navigator": Path("/home/cygnus/menu/navigator/root_navigator.py"),
     "welcome": Path("/home/cygnus/menu/screens/show_welcome_hello.py"),
+    "welcome_link": Path("/home/cygnus/menu/screens/show_welcome_link.py"),
     "images": Path("/home/cygnus/menu/img/images.py"),
     "handler": Path("/home/cygnus/coordinator/handlers/firmwareupdatehandling.py"),
 }
@@ -337,6 +339,24 @@ if "Deneb disables stock internet firmware update checks" not in text:
     raise RuntimeError("Could not disable stock internet update checks in {}".format(main_menu))
 write_if_changed(main_menu, text)
 
+root_navigator = files["root_navigator"]
+text = root_navigator.read_text()
+old = '''        if configuration.get_version("welcome", "true") == "true":
+            # If we installed the firmware for the first time show welcome screen once
+            self.goto(ShowWelcomeHello)
+        else:
+            # Otherwise just to goto main menu directly
+            self.goto(MenuNavigator)
+'''
+new = '''        # Deneb uses the first welcome page as an always-on boot splash.
+        self.goto(ShowWelcomeHello)
+'''
+if old in text:
+    text = text.replace(old, new)
+if "Deneb uses the first welcome page as an always-on boot splash." not in text:
+    raise RuntimeError("Could not patch Deneb boot splash navigation in {}".format(root_navigator))
+write_if_changed(root_navigator, text)
+
 images = files["images"]
 text = images.read_text()
 if "\tdeneb_boot = auto()\n" not in text:
@@ -349,10 +369,10 @@ welcome = files["welcome"]
 text = '''from cygnus.marshal.types.gui_status import GUIStatusState
 from cygnus.menu import style
 from cygnus.menu.img.images import ImageSource
-from cygnus.menu.pylvgl import LV_ALIGN_IN_BOTTOM_LEFT, LV_ALIGN_IN_TOP_LEFT, LV_BTN_STATE_REL
+from cygnus.menu.pylvgl import LV_ALIGN_IN_TOP_LEFT
 from cygnus.menu.screen import Screen
-from cygnus.menu.ui_elements.button import Button
 from cygnus.menu.ui_elements.image import Image
+from gershwin.duration import Duration
 
 
 class ShowWelcomeHello(Screen):
@@ -366,23 +386,32 @@ class ShowWelcomeHello(Screen):
                             size=(style.DISPLAY_WIDTH, style.DISPLAY_HEIGHT),
                             align=(self.background, LV_ALIGN_IN_TOP_LEFT, 0, 0))
 
-        self.next_button = Button(self.background,
-                                  size=(style.CONTENT_WIDTH, style.CELL_HEIGHT),
-                                  align=(self.background, LV_ALIGN_IN_BOTTOM_LEFT,
-                                         style.HORIZONTAL_PADDING, -style.VERTICAL_PADDING),
-                                  text="Next",
-                                  button_styling=(LV_BTN_STATE_REL, style.active_button_style))
-        self.add_action_handler(self.next_button, self.on_continue)
+    def on_activate(self) -> None:
+        self.async_task(self._async_continue)
 
-    def on_continue(self, _: int) -> None:
-        self.get_controller().on_go_to_welcome_link()
+    def _async_continue(self):
+        yield Duration(1000)
+        self.get_controller().on_start_at_main_menu()
 '''
 write_if_changed(welcome, text)
+
+welcome_link = files["welcome_link"]
+text = welcome_link.read_text()
+text = text.replace('''        welcome_message = "Register your printer at:\\n" \\
+                          "ultimaker.com/register-your-printer\\n" \\
+                          "and follow the free Ultimaker 2+ Connect product course to get started"
+''', '''        welcome_message = "Deneb get-started is installed.\\n" \\
+                          "SSH is enabled and future Deneb packages can be installed from USB."
+''')
+if "Deneb get-started is installed." not in text:
+    raise RuntimeError("Could not patch Deneb welcome link in {}".format(welcome_link))
+write_if_changed(welcome_link, text)
 PY
 
     uci -q delete ultimaker.version.latest || true
     uci -q delete ultimaker.version.update_popup_shown || true
     uci -q delete ultimaker.version.last_update_check || true
+    uci set ultimaker.version.new='false'
     uci commit ultimaker
 }
 
