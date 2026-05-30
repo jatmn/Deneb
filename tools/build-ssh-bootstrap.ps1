@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.2.4",
     [string]$OutputDirectory = "dist"
 )
 
@@ -10,10 +10,11 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageDir = Join-Path $repoRoot "packages/ssh-bootstrap"
+$brandingDir = Join-Path $repoRoot "assets/branding"
 $distDir = Join-Path $repoRoot $OutputDirectory
 $stagingRoot = Join-Path $repoRoot "build/ssh-bootstrap"
-$stagingDir = Join-Path $stagingRoot "Deneb_SSH_Bootstrap_$Version"
-$artifact = Join-Path $distDir "Deneb_SSH_Bootstrap_$Version.img"
+$stagingDir = Join-Path $stagingRoot "Deneb_get_started_$Version"
+$artifact = Join-Path $distDir "Deneb_get_started.img"
 $checksum = "$artifact.sha256"
 
 function Write-LfFile {
@@ -36,13 +37,19 @@ if (!(Test-Path -LiteralPath $packageDir)) {
     throw "Package directory not found: $packageDir"
 }
 
+if (!(Test-Path -LiteralPath $brandingDir)) {
+    throw "Branding directory not found: $brandingDir"
+}
+
 Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $stagingDir | Out-Null
+New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $packageDir "update.sh") -Destination (Join-Path $stagingDir "update.sh")
 Copy-Item -LiteralPath (Join-Path $packageDir "README.md") -Destination (Join-Path $stagingDir "README.md")
 Copy-Item -LiteralPath (Join-Path $packageDir "manifest.txt") -Destination (Join-Path $stagingDir "manifest.txt")
+Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-boot-320x240.png") -Destination (Join-Path $stagingDir "deneb-boot-320x240.png")
+Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-splash-128x102.jpg") -Destination (Join-Path $stagingDir "deneb-splash-128x102.jpg")
 
 $manifestPath = Join-Path $stagingDir "manifest.txt"
 $manifestContent = ([System.IO.File]::ReadAllText($manifestPath) -replace '(?m)^version=.*$', "version=$Version")
@@ -56,7 +63,7 @@ Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
 
 Push-Location $stagingDir
 try {
-    & tar -cf $artifact update.sh README.md manifest.txt
+    & tar -cf $artifact update.sh README.md manifest.txt deneb-boot-320x240.png deneb-splash-128x102.jpg
     if ($LASTEXITCODE -ne 0) {
         throw "tar failed with exit code $LASTEXITCODE"
     }

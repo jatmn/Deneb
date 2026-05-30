@@ -7,9 +7,9 @@ This repository is private while the project is being organized.
 ## Current Priority
 
 1. Keep the public/project repo legally clean.
-2. Build a minimal SSH-only bootstrap update so live-device inspection is possible.
+2. Build `Deneb_get_started.img` so users can enable SSH and install the `.deneb` package lane from the stock USB firmware-update UI.
 3. Measure real RAM, CPU, boot, storage, service, and hardware behavior from the live printer.
-4. Prioritize replacing the slow touchscreen UI with a lighter original implementation.
+4. Prioritize boot-time and touchscreen responsiveness work based on live-device evidence.
 5. Add web UI, LAN printing, slicer compatibility, OS/service modernization, and Marlin work only after the baseline and UI path are understood.
 
 ## Project Boundary
@@ -31,4 +31,3 @@ See [LICENSE](LICENSE), [COMPLIANCE.md](COMPLIANCE.md), and [THIRD_PARTY_NOTICES
 ## Safety
 
 This project can affect printer networking, motion, heating, updates, and diagnostics. Treat every change as hardware-affecting until proven otherwise. Do not expose unauthenticated heat, motion, print, or raw G-code controls on untrusted networks.
-
