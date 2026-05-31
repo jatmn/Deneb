@@ -25,6 +25,7 @@ It also disables the stock internet firmware update prompt/path for now. Deneb w
 - Disable stock internet firmware update checks and clear stale upstream update state.
 - Replace the stock welcome/captive-portal splash branding with Deneb assets.
 - Replace the stock `Welcome to your new Ultimaker 2+ Connect` boot text with the Deneb splash as the first UI screen on every boot, then automatically advance to the main UI after about 1 second.
+- Write the Deneb splash directly to the ILI9341 framebuffer (/dev/fb0) at S11 priority (~2s) via raw RGB565 data, covering the ~100s gap before Cygnus starts at S96. Unbind fbcon to prevent kernel console from overwriting the splash. Skip the Cygnus welcome screen entirely so the raw splash stays visible until the main menu loads.
 - Schedule a reboot watchdog so the stock updating screen cannot remain indefinitely after the package exits.
 - Preserve the official `.img` firmware-update lane.
 - Do not include UI changes beyond the USB update lane and Deneb splash branding.
@@ -54,6 +55,7 @@ It also disables the stock internet firmware update prompt/path for now. Deneb w
 - Confirm Settings -> Update firmware still offers the USB update path when the printer is online.
 - Confirm the Deneb welcome/captive-portal splash assets are installed.
 - Confirm the Deneb splash replaces the stock welcome text on every boot and automatically advances to the main UI.
+- Confirm the Deneb splash appears on the ILI9341 display within ~2s of power-on (S11 init script), before Cygnus starts.
 - Change the password after first login.
 
 ## Build

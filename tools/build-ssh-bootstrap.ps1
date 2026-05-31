@@ -51,6 +51,24 @@ Copy-Item -LiteralPath (Join-Path $packageDir "manifest.txt") -Destination (Join
 Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-boot-320x240.png") -Destination (Join-Path $stagingDir "deneb-boot-320x240.png")
 Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-splash-128x102.jpg") -Destination (Join-Path $stagingDir "deneb-splash-128x102.jpg")
 
+# Convert the 320x240 PNG splash to raw RGB565 for direct /dev/fb0 writes during early boot.
+# The ILI9341 framebuffer is 320x240 RGB565 LE = 153,600 bytes.
+$rgb565Script = Join-Path (Join-Path $repoRoot "tools") "png-to-rgb565.py"
+$rgb565Output = Join-Path $stagingDir "deneb-splash.rgb565"
+$pngSource = Join-Path $stagingDir "deneb-boot-320x240.png"
+$pyExe = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $pyExe) { $pyExe = "python" }
+# Prefer Python 3.14 (has Pillow) over the default venv python (may not).
+$py314 = Join-Path $env:LOCALAPPDATA "Programs\Python\Python314\python.exe"
+if (Test-Path $py314) { $pyExe = $py314 }
+& $pyExe $rgb565Script $pngSource $rgb565Output
+if ($LASTEXITCODE -ne 0) {
+    throw "png-to-rgb565 conversion failed with exit code $LASTEXITCODE"
+}
+if ((Get-Item $rgb565Output).Length -ne 153600) {
+    throw "RGB565 output size mismatch: expected 153600 bytes, got $((Get-Item $rgb565Output).Length)"
+}
+
 $manifestPath = Join-Path $stagingDir "manifest.txt"
 $manifestContent = ([System.IO.File]::ReadAllText($manifestPath) -replace '(?m)^version=.*$', "version=$Version")
 Write-LfFile -Path $manifestPath -Content $manifestContent
@@ -63,7 +81,7 @@ Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
 
 Push-Location $stagingDir
 try {
-    & tar -cf $artifact update.sh README.md manifest.txt deneb-boot-320x240.png deneb-splash-128x102.jpg
+    & tar -cf $artifact update.sh README.md manifest.txt deneb-boot-320x240.png deneb-splash-128x102.jpg deneb-splash.rgb565
     if ($LASTEXITCODE -ne 0) {
         throw "tar failed with exit code $LASTEXITCODE"
     }
@@ -72,8 +90,8 @@ finally {
     Pop-Location
 }
 
-$hash = Get-FileHash -Algorithm SHA256 -LiteralPath $artifact
-Write-LfFile -Path $checksum -Content "$($hash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $artifact)`n"
+$hash = (& certutil -hashfile $artifact SHA256)[1]
+Write-LfFile -Path $checksum -Content "$($hash.ToLowerInvariant())  $(Split-Path -Leaf $artifact)`n"
 
 Write-Output "Built $artifact"
-Write-Output "SHA256 $($hash.Hash.ToLowerInvariant())"
+Write-Output "SHA256 $($hash.ToLowerInvariant())"

@@ -104,13 +104,78 @@ install_deneb_update_lane() {
         exit 1
     fi
 
+    if [ ! -f /tmp/update/deneb-splash.rgb565 ]; then
+        log "missing Deneb early-boot framebuffer asset; aborting"
+        exit 1
+    fi
+
     if [ ! -f "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig" ] && [ -f /etc/nodogsplash/htdocs/images/splash.jpg ]; then
         cp /etc/nodogsplash/htdocs/images/splash.jpg "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig"
     fi
 
     cp /tmp/update/deneb-boot-320x240.png /home/cygnus/menu/img/deneb_boot.png
     cp /tmp/update/deneb-splash-128x102.jpg /etc/nodogsplash/htdocs/images/splash.jpg
-    chmod 0644 /home/cygnus/menu/img/deneb_boot.png /etc/nodogsplash/htdocs/images/splash.jpg
+    cp /tmp/update/deneb-splash.rgb565 /home/deneb/deneb-splash.rgb565
+    chmod 0644 /home/cygnus/menu/img/deneb_boot.png /etc/nodogsplash/htdocs/images/splash.jpg /home/deneb/deneb-splash.rgb565
+
+    # Install the early-boot framebuffer splash init script.
+    # This writes the Deneb splash directly to /dev/fb0 at S11 priority,
+    # ~100 seconds before Cygnus starts at S96.  The raw RGB565 data stays
+    # on the ILI9341 display until LVGL's fbdev_init() takes over /dev/fb0.
+    cat > /etc/init.d/deneb-splash <<'INITEOF'
+#!/bin/sh /etc/rc.common
+# Deneb early-boot framebuffer splash
+# Writes a pre-rendered RGB565 framebuffer dump to the ILI9341 display
+# as soon as /dev/fb0 is available, covering the ~100s gap before Cygnus.
+
+START=11
+STOP=99
+
+DENEB_SPLASH="/home/deneb/deneb-splash.rgb565"
+DENEB_FB="/dev/fb0"
+DENEB_EXPECTED_SIZE=153600
+
+start() {
+    [ -f "$DENEB_SPLASH" ] || return 0
+
+    # Wait up to 5s for the framebuffer device to appear
+    local retries=0
+    while [ ! -c "$DENEB_FB" ] && [ $retries -lt 5 ]; do
+        sleep 1
+        retries=$((retries + 1))
+    done
+
+    [ -c "$DENEB_FB" ] || return 0
+
+    # Unbind fbcon from the framebuffer FIRST to prevent kernel console
+    # boot messages from overwriting our splash image after we write it.
+    for vtcon in /sys/class/vtconsole/vtcon*; do
+        [ -f "$vtcon/name" ] || continue
+        if grep -q "frame buffer" "$vtcon/name" 2>/dev/null; then
+            echo 0 > "$vtcon/bind" 2>/dev/null
+            logger -t deneb-splash "unbound $vtcon"
+        fi
+    done
+
+    # Validate the splash file size before writing to the framebuffer.
+    # A truncated file would produce a garbled image.
+    local fsize
+    fsize=$(wc -c < "$DENEB_SPLASH")
+    if [ "$fsize" -ne "$DENEB_EXPECTED_SIZE" ]; then
+        logger -t deneb-splash "size mismatch: $fsize != $DENEB_EXPECTED_SIZE"
+        return 0
+    fi
+
+    # Write the raw 320x240 RGB565 image directly to the framebuffer.
+    # This is 153,600 bytes at ~1 MB/s SPI, takes ~0.15s.
+    cat "$DENEB_SPLASH" > "$DENEB_FB"
+    logger -t deneb-splash "wrote $DENEB_SPLASH to $DENEB_FB"
+}
+
+stop() { :; }
+INITEOF
+    chmod 0755 /etc/init.d/deneb-splash
+    /etc/init.d/deneb-splash enable
 
     python3 - <<'PY'
 from pathlib import Path
@@ -341,19 +406,29 @@ write_if_changed(main_menu, text)
 
 root_navigator = files["root_navigator"]
 text = root_navigator.read_text()
-old = '''        if configuration.get_version("welcome", "true") == "true":
+old_blocks = [
+'''        if configuration.get_version("welcome", "true") == "true":
             # If we installed the firmware for the first time show welcome screen once
             self.goto(ShowWelcomeHello)
         else:
             # Otherwise just to goto main menu directly
             self.goto(MenuNavigator)
-'''
-new = '''        # Deneb uses the first welcome page as an always-on boot splash.
+''',
+'''        # Deneb uses the first welcome page as an always-on boot splash.
         self.goto(ShowWelcomeHello)
+''',
+]
+new = '''        # Deneb: the early-boot init script (S11deneb-splash) already shows
+        # the Deneb splash on the framebuffer from ~2s into boot.  Skip the
+        # LVGL welcome screen entirely so the raw splash stays visible until
+        # the main menu is ready -- no stock "Ultimaker 2+ Connect" text.
+        self.goto(MenuNavigator)
 '''
-if old in text:
-    text = text.replace(old, new)
-if "Deneb uses the first welcome page as an always-on boot splash." not in text:
+for old in old_blocks:
+    if old in text:
+        text = text.replace(old, new)
+        break
+if new not in text:
     raise RuntimeError("Could not patch Deneb boot splash navigation in {}".format(root_navigator))
 write_if_changed(root_navigator, text)
 

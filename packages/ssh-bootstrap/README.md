@@ -14,6 +14,7 @@ It is intentionally narrow:
 - Disable stock internet firmware update checks and prompts for now.
 - Replace the stock welcome/captive-portal splash branding with Deneb assets.
 - Replace the stock `Welcome to your new Ultimaker 2+ Connect` boot text with the Deneb splash as the first UI screen on every boot, then automatically advance to the main UI after about 1 second.
+- Write the Deneb splash directly to the ILI9341 framebuffer at S11 priority via raw RGB565, covering the ~100s gap before Cygnus starts. Unbind fbcon to prevent kernel console overwrites. Skip the Cygnus welcome screen entirely so the raw splash stays visible until the main menu loads.
 - Schedule a reboot watchdog so the stock updating screen cannot remain indefinitely after the package exits.
 - Preserve the stock `.img` firmware update path for official firmware images.
 
