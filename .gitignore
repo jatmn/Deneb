@@ -4,6 +4,7 @@
 /omega2.bin
 /kernel.uimage.payload
 *.bin
+*.dtb
 *.img
 *.squashfs
 *.uimage
@@ -46,4 +47,3 @@ logs/
 __pycache__/
 *.pyc
 node_modules/
-

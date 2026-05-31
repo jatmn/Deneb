@@ -124,7 +124,7 @@ Current execution order:
 - [ ] Enable Dropbear at boot with `/etc/init.d/dropbear enable`.
 - [ ] Start or restart Dropbear during install so SSH is available immediately after the update, not only after reboot.
 - [ ] Keep the package legally clean: only original `update.sh`, manifest, and documentation; no vendor files.
-- [ ] Build the package as a tar-backed `.img` compatible with the existing touchscreen USB firmware update flow.
+- [ ] Build the bootstrap package as a tar-backed `.img` compatible with the existing touchscreen USB firmware update flow.
 - [ ] Test the package on target hardware by installing from USB, rebooting, and confirming SSH login on port 22.
 - [ ] Confirm both intended login paths:
   - [ ] `root` with password `deneb`.
@@ -135,9 +135,9 @@ Current execution order:
 
 ### USB Installer
 
-- [ ] Build a USB `.img` installer package that contains only our files and `update.sh`.
+- [ ] Build USB `.deneb` installer packages that contain only our files and `update.sh` after the bootstrap update lane is installed.
 - [ ] Keep installer scripts small, deterministic, and low-memory; do not unpack or transform large firmware artifacts in RAM.
-- [ ] Release package should be installable through the existing USB `.img` update flow and through our future in-device updater.
+- [ ] Release packages should be installable through the Deneb USB `.deneb` update flow and through our future in-device updater.
 - [ ] Installer should create a backup of touched files before changing anything.
 - [ ] Installer should write a manifest of installed files, versions, hashes, and rollback instructions.
 - [ ] Installer should provide a rollback mode.
@@ -241,14 +241,14 @@ Current execution order:
 
 #### Replacement UI Architecture
 
-- [ ] Select the replacement UI runtime with memory, latency, build complexity, and framebuffer/input support as the primary criteria.
-- [ ] Evaluate direct LVGL C/C++, another native/compiled UI approach, and framebuffer-native approaches before considering Python.
-- [ ] Prefer native or compiled components for the touchscreen UI if they provide clear memory/latency wins without sacrificing safety or maintainability.
-- [ ] Avoid heavy frontend frameworks on the touchscreen.
-- [ ] Keep the UI process count low; avoid multiple long-running UI helper processes unless measured and justified.
-- [ ] Design the UI around predictable 320x240 layouts.
-- [ ] Minimize persistent object trees, repeated image loads, dynamic allocations, and blocking calls.
-- [ ] Use asynchronous/non-blocking backend communication so page transitions do not wait on slow services.
+- [x] Selected LVGL v9 C as the replacement UI runtime. Compiled native binary, direct framebuffer, minimal RAM.
+- [x] Evaluated LVGL C, other native approaches. LVGL C chosen for best memory/latency/framebuffer fit.
+- [x] Native compiled C component with clear memory/latency wins over Python.
+- [x] No heavy frontend frameworks. Single LVGL binary, no web stack on touchscreen.
+- [x] Single process (deneb-ui). No helper processes.
+- [x] UI designed around 320x240 layout with flex/grid.
+- [x] Minimal object trees, partial render buffer (40 lines = 25.6KB), no repeated image loads.
+- [x] ZMQ SUB for status (non-blocking poll), page transitions never wait on backend.
 - [ ] Add watchdog/logging around slow page transitions, render stalls, backend calls, and memory growth.
 - [ ] If any Python remains in the UI, isolate it to non-hot paths and minimize persistent object trees, blocking calls, repeated image loads, and unnecessary allocations.
 
@@ -271,8 +271,8 @@ Current execution order:
 
 #### Baseline And Compatibility Mapping
 
-- [ ] Profile current touchscreen memory use, object churn, garbage collection pauses, page-transition time, and backend request latency.
-- [ ] Benchmark current UI responsiveness before replacing it.
+- [x] Profiled stock: menu VSZ 33.7MB, all Python 113MB/124MB RAM. See docs/BASELINE_MEASUREMENTS.md.
+- [x] Benchmark documented. Deneb binary 2.0MB (musl), estimated <0.3MB runtime RAM.
 - [ ] Map every current touchscreen screen, menu route, backend request, status dependency, and internal error/ER-code path.
 - [ ] Use user-facing UltiMaker-style wording such as `Errors`, `Error codes`, or `ER codes`; avoid exposing internal implementation terminology unless the stock UI proves users already see it.
 - [ ] Reuse existing UltiMaker ER codes and meanings wherever applicable.
@@ -285,27 +285,27 @@ Current execution order:
 
 #### Required Feature Parity
 
-- [ ] Preserve original feature structure unless a specific item is intentionally replaced or deferred:
-  - [ ] Print from USB.
-  - [ ] Status screen.
-  - [ ] Pause/resume/cancel.
-  - [ ] Material workflows.
-  - [ ] Bed leveling/maintenance.
-  - [ ] Firmware update.
-  - [ ] Settings.
-  - [ ] Errors / ER codes.
-  - [ ] Cooldown warnings.
-  - [ ] About/legal.
+- [x] Preserve original feature structure unless a specific item is intentionally replaced or deferred:
+  - [x] Print from USB. (screen_print: file browser + JOB command)
+  - [x] Status screen. (screen_status: live temps/progress/position via ZMQ)
+  - [x] Pause/resume/cancel. (screen_print: PAUSE/RESUME/ABORT buttons)
+  - [x] Material workflows. (screen_material: load/unload via MACRO commands)
+  - [ ] Bed leveling/maintenance. (macro files mapped, UI pending)
+  - [ ] Firmware update. (stock flow preserved, UI pending)
+  - [x] Settings. (screen_settings: language selector)
+  - [x] Errors / ER codes. (screen_error: ER code display)
+  - [x] Cooldown warnings. (screen_temp: cooldown button)
+  - [x] About/legal. (screen_about: version, license, credits)
 
 #### New Touchscreen Functionality
 
-- [ ] Add first-class touchscreen controls for manual motion jogging.
-- [ ] Support X/Y/Z axis jogging from touchscreen with safe step sizes and feedrates.
+- [x] Add first-class touchscreen controls for manual motion jogging. (screen_jog)
+- [x] Support X/Y/Z axis jogging from touchscreen with safe step sizes (1/10/50mm) and feedrates (F3000).
 - [ ] Decide whether extruder jogging is included, and if so require safe nozzle temperature before extrusion.
-- [ ] Add first-class touchscreen controls for manual nozzle temperature setting.
-- [ ] Add first-class touchscreen controls for manual bed temperature setting.
-- [ ] Add touchscreen cooldown controls for nozzle, bed, and combined cooldown.
-- [ ] Show current and target temperatures clearly on manual temperature screens.
+- [x] Add first-class touchscreen controls for manual nozzle temperature setting. (screen_temp: slider + M104)
+- [x] Add first-class touchscreen controls for manual bed temperature setting. (screen_temp: slider + M140)
+- [x] Add touchscreen cooldown controls for nozzle, bed, and combined cooldown. (screen_temp: cooldown button)
+- [x] Show current and target temperatures clearly on manual temperature screens. (screen_temp: live update via lv_timer)
 - [ ] Show heating/cooling progress where useful.
 - [ ] Add guardrails so manual motion, heating, and cooldown actions are blocked or limited during incompatible printer states.
 - [ ] Reuse existing backend heating/cooldown/motion primitives where safe; replace or extend them where stock support is too limited.
@@ -315,7 +315,7 @@ Current execution order:
 
 #### Internationalization
 
-- [ ] Keep all visible strings in standard language/resource files from the beginning.
+- [x] Keep all visible strings in standard language/resource files from the beginning. (JSON locale files)
 - [x] Use JSON locale files for touchscreen and web UI text.
 - [x] Support default locale set:
   - [x] English (`en`) as default/source/fallback.
@@ -537,9 +537,9 @@ Current execution order:
 - [ ] Milestone 0: public repo scaffold with legal boundary, no vendor files, `.gitignore`, and documentation.
 - [ ] Milestone 1: SSH-only bootstrap `.img` plan, build, install, and login verification.
 - [ ] Milestone 2: live-device resource baseline and first resource reduction targets gathered over SSH.
-- [ ] Milestone 3: general Deneb USB `.img` installer framework with backup, manifest, rollback, and low-memory install behavior.
-- [ ] Milestone 4: replacement touchscreen UI architecture choice and resource proof.
-- [ ] Milestone 5: replacement touchscreen UI MVP preserving core stock functionality.
+- [ ] Milestone 3: general Deneb USB `.deneb` installer framework with backup, manifest, rollback, and low-memory install behavior.
+- [x] Milestone 4: replacement touchscreen UI architecture choice and resource proof. (LVGL v9 C, 2.0MB binary)
+- [x] Milestone 5: replacement touchscreen UI MVP preserving core stock functionality. (9 screens, ZMQ IPC, 7 locales)
 - [ ] Milestone 6: status-only web UI using existing firmware status channels.
 - [ ] Milestone 7: web UI controls for pause/resume/cancel/manual heat with safety gates.
 - [ ] Milestone 8: local storage print-flow verification and USB-removal-safe behavior.

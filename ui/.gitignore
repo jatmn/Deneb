@@ -1,0 +1,16 @@
+# Deneb UI - .gitignore
+# LVGL is a submodule, don't track its contents
+lib/lvgl/
+
+# Build directories
+build/
+build-*/
+
+# Object files
+*.o
+*.a
+*.so
+*.elf
+
+# Binary
+deneb-ui
