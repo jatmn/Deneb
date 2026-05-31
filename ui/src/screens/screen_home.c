@@ -12,6 +12,7 @@
 extern const screen_ops_t screen_status;
 extern const screen_ops_t screen_print;
 extern const screen_ops_t screen_material;
+extern const screen_ops_t screen_maintenance;
 extern const screen_ops_t screen_jog;
 extern const screen_ops_t screen_temp;
 extern const screen_ops_t screen_settings;
@@ -40,13 +41,13 @@ static void create_menu_item(lv_obj_t *parent, const char *icon,
     lv_obj_t *icon_lbl = lv_label_create(btn);
     lv_label_set_text(icon_lbl, icon);
     lv_obj_set_style_text_color(icon_lbl, lv_color_hex(0x53a8b6), 0);
-    lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(icon_lbl, &deneb_font_14, 0);
     lv_obj_align(icon_lbl, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *text_lbl = lv_label_create(btn);
     lv_label_set_text(text_lbl, text);
     lv_obj_set_style_text_color(text_lbl, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(text_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(text_lbl, &deneb_font_14, 0);
     lv_obj_align(text_lbl, LV_ALIGN_LEFT_MID, 28, 0);
 }
 
@@ -75,6 +76,8 @@ static lv_obj_t *home_create(void)
                      locale_get("menu.print"), &screen_print);
     create_menu_item(home_screen, LV_SYMBOL_LOOP,
                      locale_get("menu.material"), &screen_material);
+    create_menu_item(home_screen, LV_SYMBOL_SETTINGS,
+                     locale_get("menu.maintenance"), &screen_maintenance);
     create_menu_item(home_screen, LV_SYMBOL_DRIVE,
                      locale_get("menu.jog"), &screen_jog);
     create_menu_item(home_screen, LV_SYMBOL_WARNING,
@@ -91,7 +94,7 @@ static void home_destroy(void)
 }
 
 const screen_ops_t screen_home = {
-    .name = "Deneb",
+    .name = "app.name",
     .create = home_create,
     .destroy = home_destroy,
     .show_back = false,

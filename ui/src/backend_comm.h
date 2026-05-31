@@ -25,6 +25,8 @@ typedef struct {
     float nozzle_temp_set;
     float bed_temp_cur;
     float bed_temp_set;
+    float topcap_temp_cur;
+    bool topcap_present;
 
     /* Position */
     float pos_x;

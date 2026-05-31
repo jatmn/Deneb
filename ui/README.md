@@ -14,10 +14,16 @@ Replaces the stock Python/Cygnus menu with a lightweight native LVGL C implement
 
 | Metric | Stock (Python) | Deneb (LVGL C) | Reduction |
 |--------|---------------|-----------------|-----------|
-| Binary size | N/A (Python) | 2.0 MB | N/A |
-| Menu RAM (VSZ) | 33.7 MB | ~0.3 MB (est.) | 99% |
-| All Python RAM | 113.2 MB | ~80 MB (est.) | 29% |
+| Runtime package | N/A (Python app tree) | ~8.6 MiB `.deneb` | N/A |
+| Menu RAM (VSZ) | 33.7 MB | 2.7 MB measured | ~92% |
+| Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
+| All Python service VSZ | 113.2 MB | ~79.5 MB after stock menu disable | ~30% |
+| Settled idle CPU | Stock baseline still being normalized | ~90% idle system sample | In progress |
 | IPC backend | ZMQ + Python | ZMQ + C | Same protocol |
+
+The Deneb measurements are from a live idle printer sample after the stock menu
+was disabled and `deneb-ui --lang en` was running. CPU numbers are a snapshot,
+not yet a full benchmark across printing, update, and diagnostic workflows.
 
 ## Architecture
 
@@ -41,6 +47,7 @@ ui/
     lvgl/                               LVGL v9.6.0-dev (git submodule)
   src/
     main.c                              Entry point, main loop
+    app_fonts.c / app_fonts.h           Montserrat + generated i18n fallbacks
     locale.c / locale.h                 JSON i18n loader
     screen_mgr.c / screen_mgr.h         Navigation stack
     backend_comm.c / backend_comm.h     ZMQ IPC client
@@ -50,15 +57,28 @@ ui/
       fb_driver_stub.c                  Host build stub
       touch_driver_stub.c               Host build stub
     screens/
-      screen_home.c                     Main menu (6 items)
+      screen_home.c                     Main menu
       screen_status.c                   Live status from coordinator
       screen_print.c                    USB file browser + print control
-      screen_material.c                 Material load/unload
+      screen_material.c                 Material workflows
+      screen_maintenance.c              Maintenance menu
       screen_jog.c                      X/Y/Z jogging + bed control
       screen_temp.c                     Temperature control + cooldown
       screen_error.c                    ER code display
-      screen_settings.c                 Language selector
+      screen_settings.c                 Settings menu
+      screen_language.c                 Language selector
+      screen_update.c                   Deneb package updater
+      screen_network.c                  Network status/setup actions
+      screen_digital_factory.c          Digital Factory controls
+      screen_level.c                    Build plate leveling macros
+      screen_diagnostics.c              Diagnostics/log export
+      screen_frame_lighting.c           Frame lighting controls
+      screen_nozzle_size.c              Nozzle size setting
+      screen_factory_reset.c            Factory reset confirmation
+      screen_set_material.c             Material selection/import
       screen_about.c                    Version, license, credits
+    fonts/
+      deneb_font_i18n_*.c               Generated exact-subset locale fonts
   build-package.sh                      Build .deneb update package
   README.md                             This file
 ```
@@ -111,16 +131,17 @@ ninja
 
 ## Installation
 
-1. Copy `dist/Deneb_UI_ae7588b.deneb` to a USB drive
+1. Copy the latest `dist/Deneb_UI_<commit>.deneb` package to a USB drive
 2. Insert USB into the UltiMaker 2+ Connect
-3. On the touchscreen: Settings > Update firmware > Install from USB
+3. On Deneb: Maintenance > Update Firmware
 4. Select the Deneb UI .deneb file
 5. Wait for installation and reboot
 
 The installer will:
 - Back up the stock menu init script
 - Disable the stock Cygnus menu (S96)
-- Install the Deneb UI binary + init script + locales
+- Install the Deneb UI binary, init script, locales, and Digital Factory bridge
+- Patch the stock coordinator ZMQ poll-state issue that can pin CPU after updates
 - Reboot into the new UI
 
 ## Backend IPC
@@ -142,20 +163,40 @@ See docs/BACKEND_IPC_PROTOCOL.md for full details.
 ```
 Home (Deneb)
   +-- Status        (live temps, progress, position)
-  +-- Print from USB (file browser, start/pause/resume/cancel)
-  +-- Material      (load/unload via macros)
+  +-- Print from USB (file browser, select/review/start, pause/resume/cancel)
+  +-- Material      (change/load/unload/set/move/import entry points)
+  +-- Maintenance
+        +-- Temperature
+        +-- Update Firmware (Deneb .deneb packages only)
+        +-- Move Build Plate
+        +-- Level Build Plate
+        +-- Diagnostics
   +-- Manual Control (X/Y/Z jog, bed up/down, home)
   +-- Temperature   (nozzle/bed set, cooldown)
   +-- Settings
         +-- Language (EN/NL/DE/FR/ZH-Hans/Pirate/1337)
+        +-- Set Nozzle Size
+        +-- Network
+        +-- Digital Factory
+        +-- Frame Lighting
+        +-- Factory Reset
         +-- About Deneb
 ```
+
+The current UI now covers the major stock menu areas while keeping the update
+lane Deneb-only. See `docs/STOCK_UI_COVERAGE.md` for the current stock-vs-Deneb
+coverage matrix, including the stock base version shown on the About screen and
+the remaining native LVGL replacement work.
 
 ## Locale Support
 
 JSON locale files in /etc/deneb/locales/ on the device.
 Supported: en, nl, de, fr, zh-Hans, en-pirate, en-1337.
 Set via Settings > Language or: `uci set deneb.system.language=de && uci commit deneb`
+
+Translated UI text uses generated LVGL font subsets for non-ASCII glyphs used
+by the bundled locale files. Regenerate those fonts whenever locale text adds
+new non-ASCII characters.
 
 ## License
 

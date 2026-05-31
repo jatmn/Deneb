@@ -54,6 +54,7 @@ int main(int argc, char *argv[])
     signal(SIGTERM, signal_handler);
 
     lv_init();
+    deneb_fonts_init();
     locale_init(lang);
 
     if (fb_driver_init() < 0) {

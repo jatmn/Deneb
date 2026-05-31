@@ -38,8 +38,9 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 cp "$BINARY" "${STAGING_DIR}/deneb-ui"
 chmod 0755 "${STAGING_DIR}/deneb-ui"
 
-# Copy init script
-cp "${SCRIPT_DIR}/installer/update.sh" "${STAGING_DIR}/update.sh"
+# Copy scripts with Unix line endings. Windows worktrees can CRLF shell files,
+# and OpenWrt shebangs fail hard on /etc/rc.common\r.
+tr -d '\r' < "${SCRIPT_DIR}/installer/update.sh" > "${STAGING_DIR}/update.sh"
 chmod 0755 "${STAGING_DIR}/update.sh"
 
 # Copy locale files
@@ -48,7 +49,12 @@ for f in "${SCRIPT_DIR}"/locales/*.json; do
 done
 
 # Copy init script
-cp "${SCRIPT_DIR}/init/deneb-ui.init" "${STAGING_DIR}/deneb-ui.init"
+tr -d '\r' < "${SCRIPT_DIR}/init/deneb-ui.init" > "${STAGING_DIR}/deneb-ui.init"
+chmod 0755 "${STAGING_DIR}/deneb-ui.init"
+
+# Copy helper scripts
+tr -d '\r' < "${SCRIPT_DIR}/scripts/deneb-df-bridge.py" > "${STAGING_DIR}/deneb-df-bridge.py"
+chmod 0755 "${STAGING_DIR}/deneb-df-bridge.py"
 
 # Create manifest
 cat > "${STAGING_DIR}/manifest.txt" <<EOF
@@ -58,18 +64,16 @@ date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 contents:
   deneb-ui          - LVGL touchscreen UI binary (MIPS)
   deneb-ui.init     - OpenWrt procd init script
+  deneb-df-bridge.py - Digital Factory Gershwin IPC bridge
   update.sh         - Installer script
-  en.json           - English locale
-  nl.json           - Dutch locale
-  de.json           - German locale
-  fr.json           - French locale
+  *.json            - Bundled Deneb locale files
   manifest.txt      - This file
 EOF
 
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
-tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json manifest.txt
+tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init deneb-df-bridge.py update.sh ./*.json manifest.txt
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"
-echo "Install: Copy to USB, use touchscreen firmware update"
+echo "Install: Copy to USB, use Deneb Maintenance > Update Firmware"

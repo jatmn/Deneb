@@ -15,55 +15,39 @@ static lv_obj_t *settings_screen = NULL;
 
 extern const screen_ops_t screen_settings;
 extern const screen_ops_t screen_about;
-
-static int valid_lang_code(const char *lang)
-{
-    static const char *const supported[] = {
-        "en", "nl", "de", "fr", "en-pirate", "en-1337", NULL
-    };
-
-    if (!lang)
-        return 0;
-
-    for (int i = 0; supported[i]; i++) {
-        if (strcmp(lang, supported[i]) == 0)
-            return 1;
-    }
-
-    return 0;
-}
-
-static void persist_lang_code(const char *lang)
-{
-    char cmd[128];
-
-    if (!valid_lang_code(lang))
-        return;
-
-    snprintf(cmd, sizeof(cmd),
-             "uci -q set deneb.system=system; "
-             "uci -q set deneb.system.language='%s'; "
-             "uci -q commit deneb",
-             lang);
-    system(cmd);
-}
-
-static void lang_btn_cb(lv_event_t *e)
-{
-    const char *lang = (const char *)lv_event_get_user_data(e);
-
-    if (!valid_lang_code(lang))
-        return;
-
-    persist_lang_code(lang);
-    locale_set(lang);
-    screen_mgr_replace(&screen_settings);
-}
+extern const screen_ops_t screen_network;
+extern const screen_ops_t screen_frame_lighting;
+extern const screen_ops_t screen_nozzle_size;
+extern const screen_ops_t screen_factory_reset;
+extern const screen_ops_t screen_digital_factory;
+extern const screen_ops_t screen_language;
 
 static void about_btn_cb(lv_event_t *e)
 {
     (void)e;
     screen_mgr_push(&screen_about);
+}
+
+static void nav_btn_cb(lv_event_t *e)
+{
+    const screen_ops_t *target = (const screen_ops_t *)lv_event_get_user_data(e);
+    if (target)
+        screen_mgr_push(target);
+}
+
+static void create_nav_btn(lv_obj_t *parent, const char *label,
+                           const screen_ops_t *target)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, 300, 32);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x16213e), 0);
+    lv_obj_set_style_radius(btn, 4, 0);
+    lv_obj_add_event_cb(btn, nav_btn_cb, LV_EVENT_CLICKED, (void *)target);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, label);
+    lv_obj_set_style_text_font(lbl, &deneb_font_12, 0);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
 }
 
 static lv_obj_t *settings_create(void)
@@ -77,43 +61,23 @@ static lv_obj_t *settings_create(void)
     lv_obj_set_style_pad_all(settings_screen, 10, 0);
     lv_obj_set_flex_flow(settings_screen, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_gap(settings_screen, 6, 0);
+    lv_obj_set_scroll_dir(settings_screen, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(settings_screen, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_remove_flag(settings_screen, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_remove_flag(settings_screen, LV_OBJ_FLAG_SCROLL_MOMENTUM);
 
-    lv_obj_t *lang_title = lv_label_create(settings_screen);
-    lv_label_set_text(lang_title, locale_get("settings.language"));
-    lv_obj_set_style_text_color(lang_title, lv_color_hex(0x53a8b6), 0);
-    lv_obj_set_style_text_font(lang_title, &lv_font_montserrat_14, 0);
-
-    lv_obj_t *lang_row = lv_obj_create(settings_screen);
-    lv_obj_set_size(lang_row, 300, 32);
-    lv_obj_set_style_bg_opa(lang_row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(lang_row, 0, 0);
-    lv_obj_set_style_pad_all(lang_row, 0, 0);
-    lv_obj_set_flex_flow(lang_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_gap(lang_row, 4, 0);
-    lv_obj_remove_flag(lang_row, LV_OBJ_FLAG_SCROLLABLE);
-
-    static const struct { const char *code; const char *label; } langs[] = {
-        {"en", "EN"}, {"nl", "NL"}, {"de", "DE"}, {"fr", "FR"},
-        {"en-pirate", "PR"}, {"en-1337", "L33T"},
-    };
-
-    for (int i = 0; i < (int)(sizeof(langs) / sizeof(langs[0])); i++) {
-        lv_obj_t *btn = lv_button_create(lang_row);
-        lv_obj_set_size(btn, 46, 28);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x16213e), 0);
-        lv_obj_set_style_radius(btn, 4, 0);
-        lv_obj_add_event_cb(btn, lang_btn_cb, LV_EVENT_CLICKED,
-                            (void *)langs[i].code);
-        lv_obj_t *lbl = lv_label_create(btn);
-        lv_label_set_text(lbl, langs[i].label);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-        lv_obj_center(lbl);
-    }
-
-    lv_obj_t *sep = lv_obj_create(settings_screen);
-    lv_obj_set_size(sep, 300, 1);
-    lv_obj_set_style_bg_color(sep, lv_color_hex(0x16213e), 0);
-    lv_obj_set_style_border_width(sep, 0, 0);
+    create_nav_btn(settings_screen, locale_get("settings.language"),
+                   &screen_language);
+    create_nav_btn(settings_screen, locale_get("settings.nozzle_size"),
+                   &screen_nozzle_size);
+    create_nav_btn(settings_screen, locale_get("settings.network"),
+                   &screen_network);
+    create_nav_btn(settings_screen, locale_get("settings.digital_factory"),
+                   &screen_digital_factory);
+    create_nav_btn(settings_screen, locale_get("settings.frame_lighting"),
+                   &screen_frame_lighting);
+    create_nav_btn(settings_screen, locale_get("settings.factory_reset"),
+                   &screen_factory_reset);
 
     lv_obj_t *about_btn = lv_button_create(settings_screen);
     lv_obj_set_size(about_btn, 300, 36);
@@ -131,7 +95,7 @@ static lv_obj_t *settings_create(void)
 static void settings_destroy(void) { settings_screen = NULL; }
 
 const screen_ops_t screen_settings = {
-    .name = "Settings",
+    .name = "menu.settings",
     .create = settings_create,
     .destroy = settings_destroy,
     .show_back = true,

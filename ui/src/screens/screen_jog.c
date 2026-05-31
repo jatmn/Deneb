@@ -132,7 +132,7 @@ static lv_obj_t *create_jog_btn(lv_obj_t *parent, const char *symbol,
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, (void *)user_data);
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, symbol);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(lbl, &deneb_font_14, 0);
     lv_obj_center(lbl);
     return btn;
 }
@@ -186,7 +186,7 @@ static lv_obj_t *jog_create(void)
     lv_obj_t *z_title = lv_label_create(jog_screen);
     lv_label_set_text(z_title, "Z");
     lv_obj_set_style_text_color(z_title, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(z_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(z_title, &deneb_font_14, 0);
     lv_obj_align(z_title, LV_ALIGN_TOP_LEFT, 190, 8);
 
     create_jog_btn(jog_screen, LV_SYMBOL_UP, "Z+", jog_btn_cb);
@@ -202,16 +202,16 @@ static lv_obj_t *jog_create(void)
     lv_obj_set_style_radius(home_z_btn, 4, 0);
     lv_obj_add_event_cb(home_z_btn, home_z_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *hz_lbl = lv_label_create(home_z_btn);
-    lv_label_set_text(hz_lbl, "Z Home");
-    lv_obj_set_style_text_font(hz_lbl, &lv_font_montserrat_12, 0);
+    lv_label_set_text(hz_lbl, locale_get("jog.z_home"));
+    lv_obj_set_style_text_font(hz_lbl, &deneb_font_12, 0);
     lv_obj_center(hz_lbl);
     lv_obj_align(home_z_btn, LV_ALIGN_TOP_LEFT, 250, 28);
 
     /* Bed up/down */
     lv_obj_t *bed_title = lv_label_create(jog_screen);
-    lv_label_set_text(bed_title, "Bed");
+    lv_label_set_text(bed_title, locale_get("status.bed"));
     lv_obj_set_style_text_color(bed_title, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(bed_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(bed_title, &deneb_font_14, 0);
     lv_obj_align(bed_title, LV_ALIGN_TOP_LEFT, 250, 58);
 
     lv_obj_t *bed_up_btn = lv_button_create(jog_screen);
@@ -245,19 +245,19 @@ static lv_obj_t *jog_create(void)
     x_pos_label = lv_label_create(pos_row);
     lv_label_set_text(x_pos_label, "X:---");
     lv_obj_set_style_text_color(x_pos_label, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(x_pos_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(x_pos_label, &deneb_font_12, 0);
     lv_obj_align(x_pos_label, LV_ALIGN_LEFT_MID, 0, 0);
 
     y_pos_label = lv_label_create(pos_row);
     lv_label_set_text(y_pos_label, "Y:---");
     lv_obj_set_style_text_color(y_pos_label, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(y_pos_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(y_pos_label, &deneb_font_12, 0);
     lv_obj_align(y_pos_label, LV_ALIGN_CENTER, 0, 0);
 
     z_pos_label = lv_label_create(pos_row);
     lv_label_set_text(z_pos_label, "Z:---");
     lv_obj_set_style_text_color(z_pos_label, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(z_pos_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(z_pos_label, &deneb_font_12, 0);
     lv_obj_align(z_pos_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
     pos_timer = lv_timer_create(pos_timer_cb, 250, NULL);
@@ -279,7 +279,7 @@ static void jog_destroy(void)
 }
 
 const screen_ops_t screen_jog = {
-    .name = "Manual Control",
+    .name = "menu.jog",
     .create = jog_create,
     .destroy = jog_destroy,
     .show_back = true,

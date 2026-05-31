@@ -177,6 +177,13 @@ static void parse_status(const char *json)
     state.nozzle_temp_cur = json_get_float(json, "headTcur");
     state.bed_temp_set = json_get_float(json, "bedTset");
     state.bed_temp_cur = json_get_float(json, "bedTcur");
+    state.topcap_temp_cur = json_get_float(json, "topcapTemperature");
+    const char *topcap = json_get_str(json, "topcapIsPresent");
+    state.topcap_present = topcap &&
+                            str_is_one_of(topcap,
+                                          (const char *const[]){"yes", "true",
+                                                               "t", "1",
+                                                               NULL});
     state.pos_x = json_get_float(json, "X");
     state.pos_y = json_get_float(json, "Y");
     state.pos_z = json_get_float(json, "Z");

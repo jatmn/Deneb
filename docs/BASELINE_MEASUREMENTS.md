@@ -1,8 +1,8 @@
 # Deneb Baseline Measurements
 
-Date: 2026-05-30
+Date: 2026-05-30 baseline, updated 2026-05-31 with Deneb UI measurements
 Source: Live UltiMaker 2+ Connect (10.10.10.244)
-Firmware: Stock Cygnus
+Firmware: Stock Cygnus baseline plus Deneb UI test builds
 
 ## Hardware
 
@@ -37,17 +37,36 @@ Swap:            0          0          0
 
 | Build | Toolchain | Stripped | Notes |
 |-------|-----------|----------|-------|
-| musl (production) | mipsel-linux-musl-gcc 11.2.1 | 2.0 MB | Static, musl libc |
+| musl (production) | mipsel-linux-musl-gcc 11.2.1 | ~8.5 MiB | Static, musl libc, LVGL, ZMQ, generated i18n fonts |
 | glibc | mipsel-linux-gnu-gcc 14.2.0 | 2.5 MB | Static, glibc |
 | host (testing) | gcc 13.2.0 (Windows) | 1.5 MB | Stub drivers, no ZMQ |
+
+The earlier 2.0 MB musl number predated stock-menu parity work, static ZMQ,
+and generated locale font subsets. The current packaged release artifact is
+about 8.6 MiB (`Deneb_UI_<commit>.deneb`).
+
+## Deneb UI Live Idle Snapshot
+
+Measured after installing a current Deneb UI build, disabling the stock Cygnus
+menu service, and letting the printer settle at the main UI.
+
+| Process | VSZ (KB) | VSZ (MB) | RSS (MB, approx.) | Notes |
+|---------|----------|----------|-------------------|-------|
+| deneb-ui --lang en | 2,728 | 2.7 | ~2 | Native LVGL UI, framebuffer/touch drivers, ZMQ client |
+
+Settled system CPU sample: about 90% idle. This is a useful sanity check, but
+not a full benchmark. Printing, Deneb package updates, diagnostics export,
+Digital Factory pairing, and language switching still need separate CPU/RAM
+samples before release gates should rely on the numbers.
 
 ## Comparison
 
 | Metric | Stock (measured) | Deneb | Reduction |
 |--------|-----------------|-------|-----------|
-| Menu binary | N/A (Python) | 2.0 MB | N/A |
-| Menu RAM (VSZ) | 33.7 MB | ~0.3 MB (est.) | 99% |
-| All Python RAM | 113.2 MB | ~80 MB (est.) | 29% |
+| Menu binary/package | N/A (Python app tree) | ~8.6 MiB package | N/A |
+| Menu RAM (VSZ) | 33.7 MB | 2.7 MB measured | ~92% |
+| Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
+| All Python service VSZ | 113.2 MB | ~79.5 MB after stock menu disable | ~30% |
 | ZMQ ports | Same | Same | Compatible |
 
 ## IPC (from live device)

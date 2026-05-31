@@ -10,6 +10,7 @@
 #define SCREEN_MGR_H
 
 #include "lvgl.h"
+#include "app_fonts.h"
 
 #define SCREEN_STACK_MAX 8
 
@@ -44,6 +45,12 @@ void screen_mgr_pop(void);
  * @param ops  New screen operations
  */
 void screen_mgr_replace(const screen_ops_t *ops);
+
+/**
+ * Recreate every screen currently in the navigation stack.
+ * Use after runtime locale/theme changes so preserved screens refresh labels.
+ */
+void screen_mgr_rebuild_stack(void);
 
 /**
  * Get the current screen's name (for debugging).

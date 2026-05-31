@@ -128,18 +128,33 @@ endif()
 # Deneb UI sources
 set(DENEB_SOURCES
     src/main.c
+    src/app_fonts.c
     src/locale.c
     src/screen_mgr.c
     src/backend_comm.c
     src/screens/screen_home.c
     src/screens/screen_status.c
     src/screens/screen_print.c
+    src/screens/screen_maintenance.c
     src/screens/screen_material.c
+    src/screens/screen_set_material.c
     src/screens/screen_settings.c
+    src/screens/screen_language.c
+    src/screens/screen_update.c
+    src/screens/screen_network.c
+    src/screens/screen_diagnostics.c
+    src/screens/screen_level.c
+    src/screens/screen_frame_lighting.c
+    src/screens/screen_nozzle_size.c
+    src/screens/screen_factory_reset.c
+    src/screens/screen_digital_factory.c
     src/screens/screen_about.c
     src/screens/screen_jog.c
     src/screens/screen_temp.c
     src/screens/screen_error.c
+    src/fonts/deneb_font_i18n_12.c
+    src/fonts/deneb_font_i18n_14.c
+    src/fonts/deneb_font_i18n_16.c
     ${DRIVER_SOURCES}
 )
 

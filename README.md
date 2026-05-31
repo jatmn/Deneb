@@ -14,10 +14,11 @@ This repository is private while the project is being organized.
 - [x] Backend IPC integration (ZeroMQ client for coordinator)
 - [x] Live device inspection (process list, memory, IPC ports, macros)
 - [x] Baseline measurements documented
+- [x] Initial on-device Deneb UI resource measurements
 
 ### In Progress
-- [ ] On-device testing of new UI (via firmware update)
-- [ ] RAM/CPU benchmark comparisons
+- [ ] Broader release testing of the new UI on hardware
+- [ ] RAM/CPU benchmark comparisons while printing and updating
 
 ### Planned
 - [ ] Web UI (lightweight local web interface)
@@ -30,12 +31,12 @@ This repository is private while the project is being organized.
 
 1. Keep the public/project repo legally clean.
 2. Build and test the touchscreen UI replacement.
-3. Measure real resource reductions vs stock firmware.
-4. Expand features only after the baseline UI path is proven.
+3. Keep resource reductions measurable as stock-menu parity expands.
+4. Expand features only when the hardware behavior can be tested safely.
 
 ## Touchscreen UI
 
-The stock Python/LVGL menu (33.7 MB RAM) has been replaced with a native LVGL v9 C implementation (~0.3 MB estimated RAM, 2.0 MB binary). See [ui/README.md](ui/README.md) for build instructions and architecture details.
+The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 2 MB RSS at idle, with a roughly 8.6 MiB `.deneb` package after adding stock-menu coverage and generated i18n fonts. See [ui/README.md](ui/README.md) for build instructions and architecture details.
 
 ## Project Boundary
 

@@ -5,6 +5,7 @@
  */
 
 #include "screen_mgr.h"
+#include "locale.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +34,7 @@ void screen_mgr_init(void)
     lv_obj_set_style_radius(header_bar, 0, 0);
     lv_obj_set_style_border_width(header_bar, 0, 0);
     lv_obj_set_style_pad_all(header_bar, 4, 0);
+    lv_obj_set_style_text_font(header_bar, &deneb_font_14, 0);
     lv_obj_remove_flag(header_bar, LV_OBJ_FLAG_SCROLLABLE);
 
     back_btn = lv_button_create(header_bar);
@@ -47,7 +49,7 @@ void screen_mgr_init(void)
 
     header_title = lv_label_create(header_bar);
     lv_obj_set_style_text_color(header_title, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(header_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(header_title, &deneb_font_14, 0);
     lv_obj_align(header_title, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_add_flag(header_bar, LV_OBJ_FLAG_HIDDEN);
@@ -67,6 +69,7 @@ void screen_mgr_push(const screen_ops_t *ops)
     stack_top++;
     stack[stack_top] = ops;
     screen_objs[stack_top] = ops->create();
+    lv_obj_set_style_text_font(screen_objs[stack_top], &deneb_font_14, 0);
 
     update_header();
     invalidate_screen();
@@ -111,6 +114,36 @@ void screen_mgr_replace(const screen_ops_t *ops)
 
     stack[stack_top] = ops;
     screen_objs[stack_top] = ops->create();
+    lv_obj_set_style_text_font(screen_objs[stack_top], &deneb_font_14, 0);
+
+    update_header();
+    invalidate_screen();
+}
+
+void screen_mgr_rebuild_stack(void)
+{
+    if (stack_top < 0)
+        return;
+
+    for (int i = 0; i <= stack_top; i++) {
+        if (stack[i] && stack[i]->destroy)
+            stack[i]->destroy();
+        if (screen_objs[i]) {
+            lv_obj_delete(screen_objs[i]);
+            screen_objs[i] = NULL;
+        }
+    }
+
+    for (int i = 0; i <= stack_top; i++) {
+        if (!stack[i] || !stack[i]->create)
+            continue;
+
+        screen_objs[i] = stack[i]->create();
+        lv_obj_set_style_text_font(screen_objs[i], &deneb_font_14, 0);
+
+        if (i < stack_top)
+            lv_obj_add_flag(screen_objs[i], LV_OBJ_FLAG_HIDDEN);
+    }
 
     update_header();
     invalidate_screen();
@@ -136,7 +169,7 @@ static void update_header(void)
     }
 
     lv_obj_remove_flag(header_bar, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(header_title, stack[stack_top]->name);
+    lv_label_set_text(header_title, locale_get(stack[stack_top]->name));
 
     if (stack_top > 0 && stack[stack_top]->show_back) {
         lv_obj_remove_flag(back_btn, LV_OBJ_FLAG_HIDDEN);

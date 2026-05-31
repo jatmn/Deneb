@@ -95,13 +95,13 @@ static lv_obj_t *create_temp_row(lv_obj_t *parent, const char *icon,
     lv_obj_t *name_lbl = lv_label_create(row);
     lv_label_set_text(name_lbl, label_text);
     lv_obj_set_style_text_color(name_lbl, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(name_lbl, &deneb_font_12, 0);
     lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, 24, 0);
 
     lv_obj_t *temp_lbl = lv_label_create(row);
     lv_label_set_text(temp_lbl, "--- / --- \u00b0C");
     lv_obj_set_style_text_color(temp_lbl, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(temp_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(temp_lbl, &deneb_font_14, 0);
     lv_obj_align(temp_lbl, LV_ALIGN_RIGHT_MID, 0, 0);
 
     return temp_lbl;
@@ -123,7 +123,7 @@ static lv_obj_t *status_create(void)
     state_label = lv_label_create(status_screen);
     lv_label_set_text(state_label, locale_get("status.idle"));
     lv_obj_set_style_text_color(state_label, lv_color_hex(0x53a8b6), 0);
-    lv_obj_set_style_text_font(state_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(state_label, &deneb_font_16, 0);
 
     /* Temperatures */
     nozzle_temp_label = create_temp_row(status_screen, LV_SYMBOL_WARNING,
@@ -151,14 +151,14 @@ static lv_obj_t *status_create(void)
     progress_label = lv_label_create(prog_row);
     lv_label_set_text(progress_label, "0%");
     lv_obj_set_style_text_color(progress_label, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(progress_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(progress_label, &deneb_font_12, 0);
     lv_obj_align(progress_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
     /* File name */
     file_label = lv_label_create(status_screen);
     lv_label_set_text(file_label, locale_get("status.no_file"));
     lv_obj_set_style_text_color(file_label, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(file_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(file_label, &deneb_font_12, 0);
     lv_label_set_long_mode(file_label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_width(file_label, 300);
 
@@ -166,7 +166,7 @@ static lv_obj_t *status_create(void)
     pos_label = lv_label_create(status_screen);
     lv_label_set_text(pos_label, "X:--- Y:--- Z:---");
     lv_obj_set_style_text_color(pos_label, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(pos_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(pos_label, &deneb_font_12, 0);
 
     /* Start live update timer (every 250ms) */
     update_timer = lv_timer_create(update_timer_cb, 250, NULL);
@@ -191,7 +191,7 @@ static void status_destroy(void)
 }
 
 const screen_ops_t screen_status = {
-    .name = "Status",
+    .name = "menu.status",
     .create = status_create,
     .destroy = status_destroy,
     .show_back = true,

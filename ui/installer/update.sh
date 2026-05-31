@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Deneb Touchscreen UI installer.
-# Deploys via the stock USB firmware update mechanism.
+# Deploys via the Deneb USB package updater after bootstrap.
 # Replaces the stock Python/Cygnus menu with the native LVGL UI.
 
 set -eu
@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init en.json; do
+    for f in deneb-ui deneb-ui.init deneb-df-bridge.py en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -70,6 +70,63 @@ install_binary() {
     cp /tmp/update/deneb-ui /usr/bin/deneb-ui
     chmod 0755 /usr/bin/deneb-ui
     log "installed deneb-ui to /usr/bin/deneb-ui"
+
+    cp /tmp/update/deneb-df-bridge.py /usr/bin/deneb-df-bridge
+    chmod 0755 /usr/bin/deneb-df-bridge
+    log "installed deneb-df-bridge to /usr/bin/deneb-df-bridge"
+}
+
+patch_stock_coordinator() {
+    local command_file="/home/cygnus/coordinator/companion/printer_service_command.py"
+    local backup_file="${DENEB_BACKUP_DIR}/printer_service_command.py.orig"
+
+    # The stock CommandWriter registers a ZMQ POLLOUT watch before it has
+    # queued work. Writable sockets wake immediately, which can pin
+    # coordinator.py after Deneb updates/restarts.
+    if [ ! -f "${command_file}" ]; then
+        log "stock coordinator command writer not found; skipping coordinator patch"
+        return
+    fi
+
+    if [ ! -f "${backup_file}" ]; then
+        cp "${command_file}" "${backup_file}"
+        log "backed up stock coordinator command writer"
+    fi
+
+    python3 - <<'PY'
+from pathlib import Path
+
+path = Path("/home/cygnus/coordinator/companion/printer_service_command.py")
+src = path.read_text()
+changed = False
+
+add_watch = "        self.getManager().getSpinner().addWatch(self._socket, self._onPollIn, self._onPollOut, None)\n"
+add_watch_patched = (
+    add_watch
+    + "        self.getManager().getSpinner().setPollState(self._socket, zmq.POLLOUT, False)\n"
+)
+if add_watch_patched not in src:
+    if add_watch not in src:
+        raise SystemExit("missing coordinator addWatch pattern")
+    src = src.replace(add_watch, add_watch_patched, 1)
+    changed = True
+
+empty_queue = "        if len(self._send_queue) == 0:\n            return\n"
+empty_queue_patched = (
+    "        if len(self._send_queue) == 0:\n"
+    "            self.getManager().getSpinner().setPollState(self._socket, zmq.POLLOUT, False)\n"
+    "            return\n"
+)
+if empty_queue_patched not in src:
+    if empty_queue not in src:
+        raise SystemExit("missing coordinator empty-queue pattern")
+    src = src.replace(empty_queue, empty_queue_patched, 1)
+    changed = True
+
+if changed:
+    path.write_text(src)
+PY
+    log "patched stock coordinator command poll state"
 }
 
 rollback_to_stock_menu() {
@@ -143,6 +200,7 @@ trap schedule_reboot EXIT
 validate_package
 backup_stock
 install_binary
+patch_stock_coordinator
 smoke_test_binary
 install_config
 

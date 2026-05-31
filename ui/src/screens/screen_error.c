@@ -55,19 +55,19 @@ static lv_obj_t *error_create(void)
     lv_obj_t *icon = lv_label_create(error_screen);
     lv_label_set_text(icon, LV_SYMBOL_WARNING);
     lv_obj_set_style_text_color(icon, lv_color_hex(0xe94560), 0);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(icon, &deneb_font_16, 0);
 
     /* ER code */
     er_code_label = lv_label_create(error_screen);
     lv_label_set_text(er_code_label, "ER???");
     lv_obj_set_style_text_color(er_code_label, lv_color_hex(0xe94560), 0);
-    lv_obj_set_style_text_font(er_code_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(er_code_label, &deneb_font_16, 0);
 
     /* Description */
     er_desc_label = lv_label_create(error_screen);
     lv_label_set_text(er_desc_label, "");
     lv_obj_set_style_text_color(er_desc_label, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(er_desc_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(er_desc_label, &deneb_font_12, 0);
     lv_obj_set_width(er_desc_label, 280);
     lv_label_set_long_mode(er_desc_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(er_desc_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -76,7 +76,7 @@ static lv_obj_t *error_create(void)
     er_action_label = lv_label_create(error_screen);
     lv_label_set_text(er_action_label, "");
     lv_obj_set_style_text_color(er_action_label, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(er_action_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(er_action_label, &deneb_font_12, 0);
     lv_obj_set_width(er_action_label, 280);
     lv_label_set_long_mode(er_action_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(er_action_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -103,7 +103,7 @@ static void error_destroy(void)
 }
 
 const screen_ops_t screen_error = {
-    .name = "Error",
+    .name = "error.title",
     .create = error_create,
     .destroy = error_destroy,
     .show_back = false, /* Must dismiss via OK, not back */

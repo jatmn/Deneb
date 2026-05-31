@@ -31,6 +31,12 @@ fallback_to_stock_menu() {
 }
 
 start_service() {
+    # Deneb replaces the stock menu and uses the same Gershwin GUI pub slot.
+    # Stop any stale stock menu process before starting the native UI.
+    if [ -x /etc/init.d/menu ]; then
+        /etc/init.d/menu stop 2>/dev/null || true
+    fi
+
     if ! "$PROG" --smoke-test >/tmp/deneb-ui-smoke.log 2>&1; then
         cat /tmp/deneb-ui-smoke.log 2>/dev/null || true
         fallback_to_stock_menu

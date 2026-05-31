@@ -16,10 +16,16 @@
 static lv_obj_t *print_screen = NULL;
 static lv_obj_t *file_list = NULL;
 static lv_obj_t *status_msg = NULL;
+static lv_obj_t *preview_label = NULL;
 
 #define MAX_FILES 32
 #define MAX_FILENAME 64
 #define MAX_FILE_PATH 128
+
+static char selected_path[MAX_FILE_PATH];
+static char selected_name[MAX_FILENAME];
+
+extern const screen_ops_t screen_material;
 
 static char file_names[MAX_FILES][MAX_FILENAME];
 static char file_paths[MAX_FILES][MAX_FILE_PATH];
@@ -86,37 +92,63 @@ static void file_click_cb(lv_event_t *e)
     const char *filename = strrchr(filepath, '/');
     filename = filename ? filename + 1 : filepath;
 
+    strncpy(selected_path, filepath, sizeof(selected_path) - 1);
+    selected_path[sizeof(selected_path) - 1] = '\0';
+    strncpy(selected_name, filename, sizeof(selected_name) - 1);
+    selected_name[sizeof(selected_name) - 1] = '\0';
+
+    lv_label_set_text_fmt(preview_label,
+                          locale_get("print.selected_fmt"),
+                          selected_name);
+    lv_label_set_text(status_msg, locale_get("print.ready"));
+}
+
+static void start_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    if (!selected_path[0]) {
+        lv_label_set_text(status_msg, locale_get("print.select_first"));
+        return;
+    }
+
     /* Send JOB command to coordinator with full path */
     char escaped_path[MAX_FILE_PATH * 2 + 1];
     char args[384];
-    json_escape_string(filepath, escaped_path, sizeof(escaped_path));
+    json_escape_string(selected_path, escaped_path, sizeof(escaped_path));
     snprintf(args, sizeof(args), "{\"file\":\"%s\",\"source\":\"USB\",\"uuid\":\"0\"}", escaped_path);
     if (backend_send_command("JOB", args) == 0) {
-        lv_label_set_text_fmt(status_msg, "Starting: %s", filename);
+        lv_label_set_text_fmt(status_msg, locale_get("print.starting_fmt"),
+                              selected_name);
     } else {
-        lv_label_set_text(status_msg, "Error: send failed");
+        lv_label_set_text(status_msg, locale_get("print.send_failed"));
     }
+}
+
+static void change_material_cb(lv_event_t *e)
+{
+    (void)e;
+    screen_mgr_push(&screen_material);
 }
 
 static void pause_btn_cb(lv_event_t *e)
 {
     (void)e;
     if (backend_pause_print() == 0)
-        lv_label_set_text(status_msg, "Paused");
+        lv_label_set_text(status_msg, locale_get("status.paused"));
 }
 
 static void resume_btn_cb(lv_event_t *e)
 {
     (void)e;
     if (backend_resume_print() == 0)
-        lv_label_set_text(status_msg, "Resumed");
+        lv_label_set_text(status_msg, locale_get("print.resumed"));
 }
 
 static void cancel_btn_cb(lv_event_t *e)
 {
     (void)e;
     if (backend_abort_print() == 0)
-        lv_label_set_text(status_msg, "Cancelled");
+        lv_label_set_text(status_msg, locale_get("print.cancelled"));
 }
 
 static void refresh_btn_cb(lv_event_t *e)
@@ -131,9 +163,13 @@ static void refresh_btn_cb(lv_event_t *e)
     if (file_count == 0)
         scan_print_files("/home/3D");
 
+    selected_path[0] = '\0';
+    selected_name[0] = '\0';
+    lv_label_set_text(preview_label, locale_get("print.select_usb_file"));
+
     file_list = lv_obj_create(print_screen);
-    lv_obj_set_size(file_list, 300, 112);
-    lv_obj_align(file_list, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_set_size(file_list, 300, 56);
+    lv_obj_align(file_list, LV_ALIGN_TOP_MID, 0, 52);
     lv_obj_set_style_bg_color(file_list, lv_color_hex(0x0f0f23), 0);
     lv_obj_set_style_radius(file_list, 4, 0);
     lv_obj_set_style_border_color(file_list, lv_color_hex(0x16213e), 0);
@@ -161,7 +197,7 @@ static void refresh_btn_cb(lv_event_t *e)
 
         lv_obj_t *lbl = lv_label_create(btn);
         lv_label_set_text(lbl, file_names[i]);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(lbl, &deneb_font_12, 0);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 4, 0);
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_MODE_DOTS);
         lv_obj_set_width(lbl, 270);
@@ -190,55 +226,85 @@ static lv_obj_t *print_create(void)
     lv_label_set_text(ref_lbl, LV_SYMBOL_REFRESH);
     lv_obj_center(ref_lbl);
 
+    preview_label = lv_label_create(print_screen);
+    lv_label_set_text(preview_label, locale_get("print.select_usb_file"));
+    lv_obj_set_width(preview_label, 202);
+    lv_label_set_long_mode(preview_label, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_color(preview_label, lv_color_hex(0xe0e0e0), 0);
+    lv_obj_set_style_text_font(preview_label, &deneb_font_12, 0);
+    lv_obj_align(preview_label, LV_ALIGN_TOP_LEFT, 0, 0);
+
     /* Control buttons row */
     lv_obj_t *ctrl_row = lv_obj_create(print_screen);
-    lv_obj_set_size(ctrl_row, 300, 36);
+    lv_obj_set_size(ctrl_row, 300, 64);
     lv_obj_align(ctrl_row, LV_ALIGN_BOTTOM_LEFT, 0, -24);
     lv_obj_set_style_bg_opa(ctrl_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ctrl_row, 0, 0);
     lv_obj_set_style_pad_all(ctrl_row, 0, 0);
-    lv_obj_set_flex_flow(ctrl_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_flow(ctrl_row, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(ctrl_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_gap(ctrl_row, 4, 0);
     lv_obj_remove_flag(ctrl_row, LV_OBJ_FLAG_SCROLLABLE);
 
+    lv_obj_t *start_btn = lv_button_create(ctrl_row);
+    lv_obj_set_size(start_btn, 92, 30);
+    lv_obj_set_style_bg_color(start_btn, lv_color_hex(0x0f3460), 0);
+    lv_obj_set_style_radius(start_btn, 4, 0);
+    lv_obj_add_event_cb(start_btn, start_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *s_lbl = lv_label_create(start_btn);
+    lv_label_set_text(s_lbl, locale_get("print.start"));
+    lv_obj_set_style_text_font(s_lbl, &deneb_font_12, 0);
+    lv_obj_center(s_lbl);
+
+    lv_obj_t *mat_btn = lv_button_create(ctrl_row);
+    lv_obj_set_size(mat_btn, 92, 30);
+    lv_obj_set_style_bg_color(mat_btn, lv_color_hex(0x16213e), 0);
+    lv_obj_set_style_radius(mat_btn, 4, 0);
+    lv_obj_add_event_cb(mat_btn, change_material_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *m_lbl = lv_label_create(mat_btn);
+    lv_label_set_text(m_lbl, locale_get("menu.material"));
+    lv_obj_set_style_text_font(m_lbl, &deneb_font_12, 0);
+    lv_obj_center(m_lbl);
+
     /* Pause */
     lv_obj_t *pause_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(pause_btn, 92, 32);
+    lv_obj_set_size(pause_btn, 92, 30);
     lv_obj_set_style_bg_color(pause_btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_radius(pause_btn, 4, 0);
     lv_obj_add_event_cb(pause_btn, pause_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *p_lbl = lv_label_create(pause_btn);
     lv_label_set_text(p_lbl, locale_get("print.pause"));
-    lv_obj_set_style_text_font(p_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(p_lbl, &deneb_font_12, 0);
     lv_obj_center(p_lbl);
 
     /* Resume */
     lv_obj_t *resume_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(resume_btn, 92, 32);
+    lv_obj_set_size(resume_btn, 92, 30);
     lv_obj_set_style_bg_color(resume_btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_radius(resume_btn, 4, 0);
     lv_obj_add_event_cb(resume_btn, resume_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *r_lbl = lv_label_create(resume_btn);
     lv_label_set_text(r_lbl, locale_get("print.resume"));
-    lv_obj_set_style_text_font(r_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(r_lbl, &deneb_font_12, 0);
     lv_obj_center(r_lbl);
 
     /* Cancel */
     lv_obj_t *cancel_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(cancel_btn, 92, 32);
+    lv_obj_set_size(cancel_btn, 92, 30);
     lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(0xe94560), 0);
     lv_obj_set_style_radius(cancel_btn, 4, 0);
     lv_obj_add_event_cb(cancel_btn, cancel_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *c_lbl = lv_label_create(cancel_btn);
     lv_label_set_text(c_lbl, locale_get("print.cancel"));
-    lv_obj_set_style_text_font(c_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(c_lbl, &deneb_font_12, 0);
     lv_obj_center(c_lbl);
 
     /* Status message */
     status_msg = lv_label_create(print_screen);
     lv_label_set_text(status_msg, "");
     lv_obj_set_style_text_color(status_msg, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(status_msg, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(status_msg, &deneb_font_12, 0);
     lv_obj_align(status_msg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
     /* Initial scan */
@@ -252,10 +318,13 @@ static void print_destroy(void)
     print_screen = NULL;
     file_list = NULL;
     status_msg = NULL;
+    preview_label = NULL;
+    selected_path[0] = '\0';
+    selected_name[0] = '\0';
 }
 
 const screen_ops_t screen_print = {
-    .name = "Print from USB",
+    .name = "menu.print",
     .create = print_create,
     .destroy = print_destroy,
     .show_back = true,

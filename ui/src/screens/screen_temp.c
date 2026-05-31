@@ -115,19 +115,19 @@ static lv_obj_t *create_temp_control(lv_obj_t *parent, const char *title,
     lv_obj_t *title_lbl = lv_label_create(panel);
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(0x53a8b6), 0);
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(title_lbl, &deneb_font_12, 0);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
 
     *out_cur = lv_label_create(panel);
     lv_label_set_text(*out_cur, "---\u00b0C");
     lv_obj_set_style_text_color(*out_cur, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(*out_cur, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(*out_cur, &deneb_font_12, 0);
     lv_obj_align(*out_cur, LV_ALIGN_TOP_LEFT, 60, 0);
 
     *out_target = lv_label_create(panel);
     lv_label_set_text(*out_target, "0\u00b0C");
     lv_obj_set_style_text_color(*out_target, lv_color_hex(0xe94560), 0);
-    lv_obj_set_style_text_font(*out_target, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(*out_target, &deneb_font_12, 0);
     lv_obj_align(*out_target, LV_ALIGN_TOP_RIGHT, 0, 0);
 
     *out_slider = lv_slider_create(panel);
@@ -148,7 +148,7 @@ static lv_obj_t *create_temp_control(lv_obj_t *parent, const char *title,
     lv_obj_add_event_cb(set_btn, set_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *set_lbl = lv_label_create(set_btn);
     lv_label_set_text(set_lbl, locale_get("temp.set"));
-    lv_obj_set_style_text_font(set_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(set_lbl, &deneb_font_12, 0);
     lv_obj_center(set_lbl);
 
     return panel;
@@ -207,7 +207,7 @@ static void temp_destroy(void)
 }
 
 const screen_ops_t screen_temp = {
-    .name = "Temperature",
+    .name = "menu.temp",
     .create = temp_create,
     .destroy = temp_destroy,
     .show_back = true,
