@@ -17,6 +17,7 @@ static lv_obj_t *header_title = NULL;
 static lv_obj_t *back_btn = NULL;
 
 static void update_header(void);
+static void invalidate_screen(void);
 static void back_btn_click_cb(lv_event_t *e);
 
 void screen_mgr_init(void)
@@ -25,7 +26,7 @@ void screen_mgr_init(void)
     memset(stack, 0, sizeof(stack));
     memset(screen_objs, 0, sizeof(screen_objs));
 
-    header_bar = lv_obj_create(lv_scr_act());
+    header_bar = lv_obj_create(lv_screen_active());
     lv_obj_set_size(header_bar, 320, 32);
     lv_obj_align(header_bar, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(header_bar, lv_color_hex(0x1a1a2e), 0);
@@ -35,7 +36,7 @@ void screen_mgr_init(void)
     lv_obj_remove_flag(header_bar, LV_OBJ_FLAG_SCROLLABLE);
 
     back_btn = lv_button_create(header_bar);
-    lv_obj_set_size(back_btn, 32, 24);
+    lv_obj_set_size(back_btn, 48, 28);
     lv_obj_align(back_btn, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_bg_color(back_btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_radius(back_btn, 4, 0);
@@ -68,6 +69,7 @@ void screen_mgr_push(const screen_ops_t *ops)
     screen_objs[stack_top] = ops->create();
 
     update_header();
+    invalidate_screen();
 }
 
 void screen_mgr_pop(void)
@@ -90,6 +92,7 @@ void screen_mgr_pop(void)
         lv_obj_remove_flag(screen_objs[stack_top], LV_OBJ_FLAG_HIDDEN);
 
     update_header();
+    invalidate_screen();
 }
 
 void screen_mgr_replace(const screen_ops_t *ops)
@@ -110,6 +113,7 @@ void screen_mgr_replace(const screen_ops_t *ops)
     screen_objs[stack_top] = ops->create();
 
     update_header();
+    invalidate_screen();
 }
 
 const char *screen_mgr_current_name(void)
@@ -141,6 +145,12 @@ static void update_header(void)
         lv_obj_add_flag(back_btn, LV_OBJ_FLAG_HIDDEN);
         lv_obj_align(header_title, LV_ALIGN_CENTER, 0, 0);
     }
+}
+
+static void invalidate_screen(void)
+{
+    lv_obj_invalidate(lv_screen_active());
+    lv_refr_now(NULL);
 }
 
 static void back_btn_click_cb(lv_event_t *e)

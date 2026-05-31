@@ -60,7 +60,7 @@ static void unload_btn_cb(lv_event_t *e)
 
 static lv_obj_t *material_create(void)
 {
-    material_screen = lv_obj_create(lv_scr_act());
+    material_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(material_screen, 320, 208);
     lv_obj_align(material_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(material_screen, lv_color_hex(0x0a0a1a), 0);
@@ -77,7 +77,7 @@ static lv_obj_t *material_create(void)
     lv_obj_set_style_text_color(info_label, lv_color_hex(0xe0e0e0), 0);
     lv_obj_set_style_text_font(info_label, &lv_font_montserrat_14, 0);
     lv_obj_set_width(info_label, 280);
-    lv_label_set_long_mode(info_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(info_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(info_label, LV_TEXT_ALIGN_CENTER, 0);
 
     lv_obj_t *load_btn = lv_button_create(material_screen);

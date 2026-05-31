@@ -109,7 +109,7 @@ static lv_obj_t *create_temp_row(lv_obj_t *parent, const char *icon,
 
 static lv_obj_t *status_create(void)
 {
-    status_screen = lv_obj_create(lv_scr_act());
+    status_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(status_screen, 320, 208);
     lv_obj_align(status_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(status_screen, lv_color_hex(0x0a0a1a), 0);
@@ -159,7 +159,7 @@ static lv_obj_t *status_create(void)
     lv_label_set_text(file_label, locale_get("status.no_file"));
     lv_obj_set_style_text_color(file_label, lv_color_hex(0xa0a0a0), 0);
     lv_obj_set_style_text_font(file_label, &lv_font_montserrat_12, 0);
-    lv_label_set_long_mode(file_label, LV_LABEL_LONG_DOT);
+    lv_label_set_long_mode(file_label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_width(file_label, 300);
 
     /* Position */

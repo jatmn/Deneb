@@ -139,7 +139,7 @@ static lv_obj_t *create_jog_btn(lv_obj_t *parent, const char *symbol,
 
 static lv_obj_t *jog_create(void)
 {
-    jog_screen = lv_obj_create(lv_scr_act());
+    jog_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(jog_screen, 320, 208);
     lv_obj_align(jog_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(jog_screen, lv_color_hex(0x0a0a1a), 0);
@@ -204,7 +204,7 @@ static lv_obj_t *jog_create(void)
     lv_obj_t *hz_lbl = lv_label_create(home_z_btn);
     lv_label_set_text(hz_lbl, "Z Home");
     lv_obj_set_style_text_font(hz_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_center(home_z_btn);
+    lv_obj_center(hz_lbl);
     lv_obj_align(home_z_btn, LV_ALIGN_TOP_LEFT, 250, 28);
 
     /* Bed up/down */

@@ -18,7 +18,9 @@ extern const screen_ops_t screen_about;
 
 static int valid_lang_code(const char *lang)
 {
-    static const char *const supported[] = {"en", "nl", "de", "fr", NULL};
+    static const char *const supported[] = {
+        "en", "nl", "de", "fr", "en-pirate", "en-1337", NULL
+    };
 
     if (!lang)
         return 0;
@@ -66,7 +68,7 @@ static void about_btn_cb(lv_event_t *e)
 
 static lv_obj_t *settings_create(void)
 {
-    settings_screen = lv_obj_create(lv_scr_act());
+    settings_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(settings_screen, 320, 208);
     lv_obj_align(settings_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(settings_screen, lv_color_hex(0x0a0a1a), 0);
@@ -92,11 +94,12 @@ static lv_obj_t *settings_create(void)
 
     static const struct { const char *code; const char *label; } langs[] = {
         {"en", "EN"}, {"nl", "NL"}, {"de", "DE"}, {"fr", "FR"},
+        {"en-pirate", "PR"}, {"en-1337", "L33T"},
     };
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < (int)(sizeof(langs) / sizeof(langs[0])); i++) {
         lv_obj_t *btn = lv_button_create(lang_row);
-        lv_obj_set_size(btn, 48, 28);
+        lv_obj_set_size(btn, 46, 28);
         lv_obj_set_style_bg_color(btn, lv_color_hex(0x16213e), 0);
         lv_obj_set_style_radius(btn, 4, 0);
         lv_obj_add_event_cb(btn, lang_btn_cb, LV_EVENT_CLICKED,

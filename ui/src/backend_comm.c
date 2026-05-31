@@ -54,6 +54,7 @@ void backend_deinit(void) { /* no-op */ }
 #define STATUS_URL   "tcp://127.0.0.1:5565"
 #define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
+#define MAX_STATUS_MSGS_PER_POLL 4
 
 static void *zmq_ctx = NULL;
 static void *status_socket = NULL;  /* SUB - status from coordinator */
@@ -262,15 +263,17 @@ void backend_poll(void)
         return;
 
     zmq_msg_t msg;
+    int msg_count = 0;
 
     /* Non-blocking receive on status socket */
-    while (1) {
+    while (msg_count < MAX_STATUS_MSGS_PER_POLL) {
         zmq_msg_init(&msg);
         int rc = zmq_msg_recv(&msg, status_socket, ZMQ_DONTWAIT);
         if (rc < 0) {
             zmq_msg_close(&msg);
             break;
         }
+        msg_count++;
 
         /* Parse: expect "10001<{json}" */
         const char *data = (const char *)zmq_msg_data(&msg);
@@ -278,10 +281,11 @@ void backend_poll(void)
 
         if (len > 6 && memcmp(data, "10001<", 6) == 0) {
             /* Extract JSON (skip "10001<" prefix, strip trailing "}" if needed) */
-            char *json_buf = malloc(len - 5);
+            size_t json_len = len - 6;
+            char *json_buf = malloc(json_len + 1);
             if (json_buf) {
-                memcpy(json_buf, data + 6, len - 6);
-                json_buf[len - 6] = '\0';
+                memcpy(json_buf, data + 6, json_len);
+                json_buf[json_len] = '\0';
                 parse_status(json_buf);
                 free(json_buf);
             }

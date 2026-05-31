@@ -33,6 +33,37 @@ function Normalize-LfFile {
     Write-LfFile -Path $Path -Content ([System.IO.File]::ReadAllText($Path))
 }
 
+function Get-PythonWithPillow {
+    $candidates = @()
+
+    $pyLauncher = (Get-Command py -ErrorAction SilentlyContinue).Source
+    if ($pyLauncher) {
+        $candidates += @{ Exe = $pyLauncher; Args = @("-3") }
+    }
+
+    foreach ($version in @("Python314", "Python313", "Python312", "Python311")) {
+        $candidate = Join-Path $env:LOCALAPPDATA "Programs\Python\$version\python.exe"
+        if (Test-Path -LiteralPath $candidate) {
+            $candidates += @{ Exe = $candidate; Args = @() }
+        }
+    }
+
+    $pathPython = (Get-Command python -ErrorAction SilentlyContinue).Source
+    if ($pathPython) {
+        $candidates += @{ Exe = $pathPython; Args = @() }
+    }
+
+    foreach ($candidate in $candidates) {
+        $checkArgs = @($candidate.Args) + @("-c", "import PIL")
+        & $candidate.Exe @checkArgs 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return $candidate
+        }
+    }
+
+    throw "Python with Pillow is required. Install it with: py -3 -m pip install Pillow"
+}
+
 if (!(Test-Path -LiteralPath $packageDir)) {
     throw "Package directory not found: $packageDir"
 }
@@ -56,12 +87,8 @@ Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-splash-128x102.jpg") -Dest
 $rgb565Script = Join-Path (Join-Path $repoRoot "tools") "png-to-rgb565.py"
 $rgb565Output = Join-Path $stagingDir "deneb-splash.rgb565"
 $pngSource = Join-Path $stagingDir "deneb-boot-320x240.png"
-$pyExe = (Get-Command python -ErrorAction SilentlyContinue).Source
-if (-not $pyExe) { $pyExe = "python" }
-# Prefer Python 3.14 (has Pillow) over the default venv python (may not).
-$py314 = Join-Path $env:LOCALAPPDATA "Programs\Python\Python314\python.exe"
-if (Test-Path $py314) { $pyExe = $py314 }
-& $pyExe $rgb565Script $pngSource $rgb565Output
+$python = Get-PythonWithPillow
+& $python.Exe @($python.Args) $rgb565Script $pngSource $rgb565Output
 if ($LASTEXITCODE -ne 0) {
     throw "png-to-rgb565 conversion failed with exit code $LASTEXITCODE"
 }

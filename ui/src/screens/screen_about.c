@@ -16,7 +16,7 @@ static lv_obj_t *about_screen = NULL;
 
 static lv_obj_t *about_create(void)
 {
-    about_screen = lv_obj_create(lv_scr_act());
+    about_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(about_screen, 320, 208);
     lv_obj_align(about_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(about_screen, lv_color_hex(0x0a0a1a), 0);
@@ -43,7 +43,7 @@ static lv_obj_t *about_create(void)
     lv_obj_set_style_text_color(desc_lbl, lv_color_hex(0xe0e0e0), 0);
     lv_obj_set_style_text_font(desc_lbl, &lv_font_montserrat_12, 0);
     lv_obj_set_width(desc_lbl, 280);
-    lv_label_set_long_mode(desc_lbl, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(desc_lbl, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(desc_lbl, LV_TEXT_ALIGN_CENTER, 0);
 
     lv_obj_t *license_lbl = lv_label_create(about_screen);

@@ -156,7 +156,7 @@ static lv_obj_t *create_temp_control(lv_obj_t *parent, const char *title,
 
 static lv_obj_t *temp_create(void)
 {
-    temp_screen = lv_obj_create(lv_scr_act());
+    temp_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(temp_screen, 320, 208);
     lv_obj_align(temp_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(temp_screen, lv_color_hex(0x0a0a1a), 0);

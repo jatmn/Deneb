@@ -21,7 +21,7 @@
 #define MAX_ENTRIES     64
 #define MAX_KEY_LEN     48
 #define MAX_VAL_LEN     128
-#define MAX_LANG_LEN    8
+#define MAX_LANG_LEN    16
 
 typedef struct {
     char key[MAX_KEY_LEN];
@@ -37,6 +37,8 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"menu.status", "Status"},
     {"menu.print", "Print from USB"},
     {"menu.material", "Material"},
+    {"menu.jog", "Manual Control"},
+    {"menu.temp", "Temperature"},
     {"menu.settings", "Settings"},
     {"status.idle", "Idle"},
     {"status.printing", "Printing"},
@@ -61,16 +63,143 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"settings.about", "About Deneb"},
     {"settings.network", "Network"},
     {"settings.maintenance", "Maintenance"},
-    {"about.description", "Deneb is a community firmware mod for the UltiMaker 2+ Connect."},
+    {"about.description", "Deneb is a community firmware mod for the UltiMaker 2+ Connect. Local-first, responsive, lightweight."},
     {"about.license", "Licensed under MPL-2.0"},
+    {"about.version", "Version"},
     {"error.title", "Error"},
     {"error.er_code", "ER code"},
     {"error.ok", "OK"},
     {"confirm.title", "Confirm"},
     {"confirm.yes", "Yes"},
     {"confirm.no", "No"},
+    {"jog.title", "Manual Control"},
+    {"jog.x", "X"},
+    {"jog.y", "Y"},
+    {"jog.z", "Z"},
+    {"jog.home", "Home"},
+    {"temp.title", "Temperature"},
+    {"temp.nozzle", "Nozzle"},
+    {"temp.bed", "Bed"},
+    {"temp.set", "Set"},
+    {"temp.cooldown", "Cooldown"},
+    {"cooldown.title", "Cooldown"},
+    {"cooldown.message", "Cooling nozzle and bed to safe temperature."},
     {NULL, NULL}
 };
+
+static int hex_value(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+static int append_utf8(char *out, size_t *out_len, size_t max_len, unsigned int cp)
+{
+    if (cp <= 0x7f) {
+        if (*out_len + 1 >= max_len)
+            return 0;
+        out[(*out_len)++] = (char)cp;
+    } else if (cp <= 0x7ff) {
+        if (*out_len + 2 >= max_len)
+            return 0;
+        out[(*out_len)++] = (char)(0xc0 | (cp >> 6));
+        out[(*out_len)++] = (char)(0x80 | (cp & 0x3f));
+    } else {
+        if (*out_len + 3 >= max_len)
+            return 0;
+        out[(*out_len)++] = (char)(0xe0 | (cp >> 12));
+        out[(*out_len)++] = (char)(0x80 | ((cp >> 6) & 0x3f));
+        out[(*out_len)++] = (char)(0x80 | (cp & 0x3f));
+    }
+
+    return 1;
+}
+
+static int decode_json_string(const char *start, const char *end,
+                              char *out, size_t max_len)
+{
+    size_t out_len = 0;
+    const char *p = start;
+
+    while (p < end) {
+        if (*p != '\\') {
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = *p++;
+            continue;
+        }
+
+        p++;
+        if (p >= end)
+            return 0;
+
+        switch (*p) {
+        case '"':
+        case '\\':
+        case '/':
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = *p++;
+            break;
+        case 'b':
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = '\b';
+            p++;
+            break;
+        case 'f':
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = '\f';
+            p++;
+            break;
+        case 'n':
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = '\n';
+            p++;
+            break;
+        case 'r':
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = '\r';
+            p++;
+            break;
+        case 't':
+            if (out_len + 1 >= max_len)
+                return 0;
+            out[out_len++] = '\t';
+            p++;
+            break;
+        case 'u': {
+            unsigned int cp = 0;
+            p++;
+            if (end - p < 4)
+                return 0;
+            for (int i = 0; i < 4; i++) {
+                int value = hex_value(p[i]);
+                if (value < 0)
+                    return 0;
+                cp = (cp << 4) | (unsigned int)value;
+            }
+            p += 4;
+            if (!append_utf8(out, &out_len, max_len, cp))
+                return 0;
+            break;
+        }
+        default:
+            return 0;
+        }
+    }
+
+    out[out_len] = '\0';
+    return 1;
+}
 
 /**
  * Simple JSON string value parser.
@@ -116,11 +245,12 @@ static int parse_locale_json(const char *json, locale_entry_t *out, int max_entr
         p++; /* skip closing quote */
 
         /* Store entry */
-        if (key_len < MAX_KEY_LEN && val_len < MAX_VAL_LEN) {
+        if (key_len < MAX_KEY_LEN) {
             memcpy(out[count].key, key_start, key_len);
             out[count].key[key_len] = '\0';
-            memcpy(out[count].val, val_start, val_len);
-            out[count].val[val_len] = '\0';
+            if (!decode_json_string(val_start, val_start + val_len,
+                                    out[count].val, MAX_VAL_LEN))
+                continue;
             count++;
         }
     }

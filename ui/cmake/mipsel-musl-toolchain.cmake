@@ -24,9 +24,11 @@ set(CMAKE_RANLIB "${MUSL_CROSS}/bin/mipsel-linux-musl-ranlib")
 set(CMAKE_STRIP "${MUSL_CROSS}/bin/mipsel-linux-musl-strip")
 
 # MT7688: MIPS 24KEc, little-endian, soft-float (musl default)
-set(CMAKE_C_FLAGS_INIT "-march=24kec -mtune=24kec")
+set(CMAKE_C_FLAGS_INIT "-march=24kec -mtune=24kec -fno-pie")
+set(CMAKE_CXX_FLAGS_INIT "-march=24kec -mtune=24kec -fno-pie")
 set(CMAKE_C_FLAGS_RELEASE "-Os -ffunction-sections -fdata-sections")
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--gc-sections -static")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-Wl,--gc-sections -static -no-pie")
+set(CMAKE_POSITION_INDEPENDENT_CODE OFF)
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)

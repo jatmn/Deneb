@@ -42,6 +42,9 @@ int main(int argc, char *argv[])
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--lang") == 0 && i + 1 < argc) {
             lang = argv[++i];
+        } else if (strcmp(argv[i], "--smoke-test") == 0) {
+            fprintf(stderr, "deneb-ui: smoke test ok\n");
+            return 0;
         }
     }
 

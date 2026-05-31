@@ -34,6 +34,7 @@
  *====================*/
 #define LV_USE_OS               LV_OS_NONE
 #define LV_DPI_DEF              120
+#define LV_DEF_REFR_PERIOD      16
 
 /*====================
    DRAW
@@ -81,17 +82,17 @@
    WIDGETS - disable all we don't use
  *====================*/
 #define LV_USE_ANIMIMG          0
-#define LV_USE_ARC              1   /* Required by default theme */
+#define LV_USE_ARC              0
 #define LV_USE_ARCLABEL         0
 #define LV_USE_BAR              1
 #define LV_USE_BUTTON           1
-#define LV_USE_BUTTONMATRIX     1
+#define LV_USE_BUTTONMATRIX     0
 #define LV_USE_CALENDAR         0
 #define LV_USE_CANVAS           0
 #define LV_USE_CHART            0
-#define LV_USE_CHECKBOX         1
+#define LV_USE_CHECKBOX         0
 #define LV_USE_DROPDOWN         0
-#define LV_USE_IMAGE            1
+#define LV_USE_IMAGE            0
 #define LV_USE_IMAGEBUTTON      0
 #define LV_USE_KEYBOARD         0
 #define LV_USE_LABEL            1
@@ -106,8 +107,8 @@
 #define LV_USE_SLIDER           1
 #define LV_USE_SPAN             0
 #define LV_USE_SPINBOX          0
-#define LV_USE_SPINNER          1
-#define LV_USE_SWITCH           1
+#define LV_USE_SPINNER          0
+#define LV_USE_SWITCH           0
 #define LV_USE_TABLE            0
 #define LV_USE_TABVIEW          0
 #define LV_USE_TEXTAREA         0
@@ -217,7 +218,7 @@
 #define LV_USE_LINUX_DRM           0
 #define LV_USE_TFT_ESPI            0
 #define LV_USE_LOVYAN_GFX          0
-#define LV_USE_EVDEV               0
+#define LV_USE_EVDEV               1
 #define LV_USE_LIBINPUT            0
 #define LV_USE_ST7735              0
 #define LV_USE_ST7789              0

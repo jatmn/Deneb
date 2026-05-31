@@ -81,23 +81,26 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/themes/lv_theme.c"
     "${LVGL_DIR}/src/themes/default/*.c"
     "${LVGL_DIR}/src/tick/*.c"
-    "${LVGL_DIR}/src/widgets/arc/*.c"
     "${LVGL_DIR}/src/widgets/bar/*.c"
     "${LVGL_DIR}/src/widgets/button/*.c"
-    "${LVGL_DIR}/src/widgets/buttonmatrix/*.c"
-    "${LVGL_DIR}/src/widgets/checkbox/*.c"
     "${LVGL_DIR}/src/widgets/label/*.c"
     "${LVGL_DIR}/src/widgets/slider/*.c"
-    "${LVGL_DIR}/src/widgets/spinner/*.c"
-    "${LVGL_DIR}/src/widgets/switch/*.c"
 )
 
 set(LVGL_SOURCES)
 foreach(pattern IN LISTS LVGL_SOURCE_GLOBS)
-    file(GLOB matched_sources CONFIGURE_DEPENDS "${pattern}")
+    file(GLOB matched_sources "${pattern}")
     list(APPEND LVGL_SOURCES ${matched_sources})
 endforeach()
 list(REMOVE_DUPLICATES LVGL_SOURCES)
+list(REMOVE_ITEM LVGL_SOURCES
+    "${LVGL_DIR}/src/core/lv_obj_id_builtin.c"
+    "${LVGL_DIR}/src/core/lv_obj_property.c"
+    "${LVGL_DIR}/src/draw/lv_draw_3d.c"
+    "${LVGL_DIR}/src/draw/lv_draw_arc.c"
+    "${LVGL_DIR}/src/draw/lv_draw_triangle.c"
+    "${LVGL_DIR}/src/draw/lv_draw_vector.c"
+)
 list(LENGTH LVGL_SOURCES LVGL_SOURCE_COUNT)
 
 # Option: use stub backend (no ZMQ dependency) for host/testing builds
@@ -112,6 +115,9 @@ if(WIN32 OR MINGW OR MSYS OR BACKEND_COMM_STUB)
     add_definitions(-DBACKEND_COMM_STUB)
     message(STATUS "Using stub drivers and backend")
 else()
+    list(APPEND LVGL_SOURCES
+        "${LVGL_DIR}/src/drivers/evdev/lv_evdev.c"
+    )
     set(DRIVER_SOURCES
         src/drivers/fb_driver.c
         src/drivers/touch_driver.c
@@ -138,6 +144,8 @@ set(DENEB_SOURCES
 )
 
 add_executable(deneb-ui ${DENEB_SOURCES} ${LVGL_SOURCES})
+
+target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING)
 
 target_include_directories(deneb-ui PRIVATE
     ${CMAKE_SOURCE_DIR}/config       # lv_conf.h

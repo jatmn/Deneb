@@ -10,6 +10,7 @@ set -eu
 DENEB_HOME="/home/deneb"
 DENEB_BACKUP_DIR="${DENEB_HOME}/backups/deneb-ui"
 DENEB_REBOOT_SCHEDULED=0
+STOCK_MENU_WAS_ENABLED=0
 
 log() {
     logger -t deneb-ui "$*"
@@ -58,6 +59,10 @@ backup_stock() {
         cp /etc/init.d/menu "${DENEB_BACKUP_DIR}/menu.init.orig"
         log "backed up /etc/init.d/menu"
     fi
+
+    if [ -x /etc/init.d/menu ] && /etc/init.d/menu enabled >/dev/null 2>&1; then
+        STOCK_MENU_WAS_ENABLED=1
+    fi
 }
 
 # Install the Deneb UI binary
@@ -65,6 +70,26 @@ install_binary() {
     cp /tmp/update/deneb-ui /usr/bin/deneb-ui
     chmod 0755 /usr/bin/deneb-ui
     log "installed deneb-ui to /usr/bin/deneb-ui"
+}
+
+rollback_to_stock_menu() {
+    log "rolling back to stock menu service"
+    /etc/init.d/deneb-ui stop 2>/dev/null || true
+    /etc/init.d/deneb-ui disable 2>/dev/null || true
+    if [ -x /etc/init.d/menu ]; then
+        /etc/init.d/menu enable 2>/dev/null || true
+        /etc/init.d/menu start 2>/dev/null || true
+    fi
+}
+
+smoke_test_binary() {
+    if ! /usr/bin/deneb-ui --smoke-test >/tmp/deneb-ui-smoke.log 2>&1; then
+        log "ERROR: deneb-ui smoke test failed"
+        cat /tmp/deneb-ui-smoke.log 2>/dev/null || true
+        rollback_to_stock_menu
+        exit 1
+    fi
+    log "deneb-ui smoke test passed"
 }
 
 # Install locale files
@@ -118,6 +143,7 @@ trap schedule_reboot EXIT
 validate_package
 backup_stock
 install_binary
+smoke_test_binary
 install_config
 
 log "installation complete"

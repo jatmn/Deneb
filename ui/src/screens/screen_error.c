@@ -39,7 +39,7 @@ void error_screen_show(const char *er_code, const char *description,
 
 static lv_obj_t *error_create(void)
 {
-    error_screen = lv_obj_create(lv_scr_act());
+    error_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(error_screen, 320, 208);
     lv_obj_align(error_screen, LV_ALIGN_TOP_LEFT, 0, 32);
     lv_obj_set_style_bg_color(error_screen, lv_color_hex(0x1a0a0a), 0);
@@ -69,7 +69,7 @@ static lv_obj_t *error_create(void)
     lv_obj_set_style_text_color(er_desc_label, lv_color_hex(0xe0e0e0), 0);
     lv_obj_set_style_text_font(er_desc_label, &lv_font_montserrat_12, 0);
     lv_obj_set_width(er_desc_label, 280);
-    lv_label_set_long_mode(er_desc_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(er_desc_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(er_desc_label, LV_TEXT_ALIGN_CENTER, 0);
 
     /* Recommended action */
@@ -78,7 +78,7 @@ static lv_obj_t *error_create(void)
     lv_obj_set_style_text_color(er_action_label, lv_color_hex(0xa0a0a0), 0);
     lv_obj_set_style_text_font(er_action_label, &lv_font_montserrat_12, 0);
     lv_obj_set_width(er_action_label, 280);
-    lv_label_set_long_mode(er_action_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(er_action_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(er_action_label, LV_TEXT_ALIGN_CENTER, 0);
 
     /* Dismiss button */

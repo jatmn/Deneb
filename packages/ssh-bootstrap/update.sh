@@ -243,6 +243,13 @@ write_if_changed(browse, text)
 
 handler = files["handler"]
 text = handler.read_text()
+if "import os\n" not in text:
+    lines = text.splitlines(True)
+    insert_at = 0
+    while insert_at < len(lines) and (lines[insert_at].startswith("from __future__") or lines[insert_at].strip() == ""):
+        insert_at += 1
+    lines.insert(insert_at, "import os\n")
+    text = "".join(lines)
 old = '''        # Check signature
         logger.info("Starting to verify signature")
         try:
