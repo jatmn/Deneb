@@ -126,19 +126,17 @@ install_deneb_update_lane() {
 #!/bin/sh /etc/rc.common
 # Deneb early-boot framebuffer splash
 # Writes a pre-rendered RGB565 framebuffer dump to the ILI9341 display
-# as soon as /dev/fb0 is available, covering the ~100s gap before Cygnus.
+# as soon as /dev/fb0 is available, covering the gap before Cygnus.
 
-START=11
-STOP=99
+START=10
+STOP=10
 
 DENEB_SPLASH="/home/deneb/deneb-splash.rgb565"
 DENEB_FB="/dev/fb0"
 DENEB_EXPECTED_SIZE=153600
 
 start() {
-    [ -f "$DENEB_SPLASH" ] || return 0
-
-    # Wait up to 5s for the framebuffer device to appear
+    # Wait up to 5s for the framebuffer device to appear.
     local retries=0
     while [ ! -c "$DENEB_FB" ] && [ $retries -lt 5 ]; do
         sleep 1
@@ -146,6 +144,14 @@ start() {
     done
 
     [ -c "$DENEB_FB" ] || return 0
+
+    # Zero the framebuffer immediately to clear any stale data from
+    # the previous boot.  This runs at S10 (same priority as the
+    # 'boot' script) so it's the earliest userspace can touch fb0.
+    dd if=/dev/zero of="$DENEB_FB" bs=153600 count=1 2>/dev/null
+    logger -t deneb-splash "zeroed $DENEB_FB"
+
+    [ -f "$DENEB_SPLASH" ] || return 0
 
     # Unbind fbcon from the framebuffer FIRST to prevent kernel console
     # boot messages from overwriting our splash image after we write it.
@@ -172,7 +178,14 @@ start() {
     logger -t deneb-splash "wrote $DENEB_SPLASH to $DENEB_FB"
 }
 
-stop() { :; }
+stop() {
+    # Zero the framebuffer on shutdown so that on warm reboot the
+    # display starts clean (black) instead of showing stale data
+    # from the previous boot's Cygnus UI.
+    if [ -c "$DENEB_FB" ]; then
+        dd if=/dev/zero of="$DENEB_FB" bs=153600 count=1 2>/dev/null
+    fi
+}
 INITEOF
     chmod 0755 /etc/init.d/deneb-splash
     /etc/init.d/deneb-splash enable
