@@ -88,7 +88,7 @@ static void connect_cb(lv_event_t *e)
 
     system("rm -f /tmp/deneb-df-status; "
            "(mkdir " DF_LOCK_DIR " 2>/dev/null || exit 0; "
-           "PYTHONPATH=/home /usr/bin/deneb-df-bridge connect --timeout 35 "
+           "/usr/bin/deneb-df-bridge connect --timeout 35 "
            ">/tmp/deneb-df-status 2>&1; "
            "rmdir " DF_LOCK_DIR " 2>/dev/null) &");
     lv_label_set_text(status_label, locale_get("digital_factory.requesting_pin"));
@@ -113,7 +113,7 @@ static void disconnect_cb(lv_event_t *e)
     disconnect_armed = 0;
     system("rm -f /tmp/deneb-df-status; "
            "(mkdir " DF_LOCK_DIR " 2>/dev/null || exit 0; "
-           "PYTHONPATH=/home /usr/bin/deneb-df-bridge disconnect --timeout 10 "
+           "/usr/bin/deneb-df-bridge disconnect --timeout 10 "
            ">/tmp/deneb-df-status 2>&1 || "
            "(uci -q delete ultimaker.option.cluster_id; "
            "uci -q commit ultimaker; "

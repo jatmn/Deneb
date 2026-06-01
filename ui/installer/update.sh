@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-df-bridge.py en.json; do
+    for f in deneb-ui deneb-ui.init en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -71,9 +71,8 @@ install_binary() {
     chmod 0755 /usr/bin/deneb-ui
     log "installed deneb-ui to /usr/bin/deneb-ui"
 
-    cp /tmp/update/deneb-df-bridge.py /usr/bin/deneb-df-bridge
-    chmod 0755 /usr/bin/deneb-df-bridge
-    log "installed deneb-df-bridge to /usr/bin/deneb-df-bridge"
+    ln -sf /usr/bin/deneb-ui /usr/bin/deneb-df-bridge
+    log "installed deneb-df-bridge symlink to /usr/bin/deneb-ui"
 }
 
 patch_stock_coordinator() {
@@ -127,6 +126,37 @@ if changed:
     path.write_text(src)
 PY
     log "patched stock coordinator command poll state"
+}
+
+prune_stock_menu_ui() {
+    local menu_dir="/home/cygnus/menu"
+
+    if [ ! -d "${menu_dir}" ]; then
+        log "stock menu directory not found; skipping stock UI prune"
+        return
+    fi
+
+    # Keep menu_settings.py and machine_config.json. Coordinator, file handling,
+    # firmware update handling, and utility modules still import those constants.
+    # The removed files are the dormant touchscreen implementation that Deneb
+    # replaces with /usr/bin/deneb-ui.
+    rm -rf \
+        "${menu_dir}/executor.py" \
+        "${menu_dir}/controldialog.py" \
+        "${menu_dir}/machine.py" \
+        "${menu_dir}/pylvgl.py" \
+        "${menu_dir}/screen.py" \
+        "${menu_dir}/style.py" \
+        "${menu_dir}/gui_companion" \
+        "${menu_dir}/helpers" \
+        "${menu_dir}/img" \
+        "${menu_dir}/navigator" \
+        "${menu_dir}/screens" \
+        "${menu_dir}/templates" \
+        "${menu_dir}/ui_elements"
+
+    find "${menu_dir}" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+    log "pruned stock Python touchscreen UI; retained shared menu_settings"
 }
 
 rollback_to_stock_menu() {
@@ -203,6 +233,7 @@ install_binary
 patch_stock_coordinator
 smoke_test_binary
 install_config
+prune_stock_menu_ui
 
 log "installation complete"
 schedule_reboot

@@ -24,9 +24,11 @@ LOGFILE=/var/log/deneb-ui.log
 fallback_to_stock_menu() {
     echo "deneb-ui: falling back to stock menu"
     /etc/init.d/deneb-ui disable 2>/dev/null || true
-    if [ -x /etc/init.d/menu ]; then
+    if [ -x /etc/init.d/menu ] && [ -f /home/cygnus/menu/executor.py ]; then
         /etc/init.d/menu enable 2>/dev/null || true
         /etc/init.d/menu start 2>/dev/null || true
+    else
+        logger -t deneb-ui "stock menu fallback unavailable; executor.py has been pruned"
     fi
 }
 

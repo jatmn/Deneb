@@ -26,7 +26,8 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
 - Stock menu baseline: 33.7 MB VSZ / about 21 MB RSS.
 - Current Deneb UI idle snapshot: 2.7 MB VSZ / about 2 MB RSS for `deneb-ui --lang en`.
 - Current settled idle system sample: about 90% idle after Deneb replaces the stock menu.
-- Current `.deneb` package size: about 8.6 MiB with LVGL, static ZMQ, and generated i18n fonts.
+- Current `.deneb` package size: about 1.8 MiB after release stripping, with LVGL, static ZMQ, generated i18n fonts, and the embedded C Digital Factory bridge.
+- Deneb installer prunes the dormant stock Python touchscreen UI after a successful native UI smoke test, saving about 884 KiB on disk while preserving `cygnus.menu.menu_settings` for backend imports.
 
 Before treating a build as release-ready, repeat memory and CPU sampling while
 idle, printing, installing a Deneb package, exporting diagnostics, switching

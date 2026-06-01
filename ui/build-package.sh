@@ -36,6 +36,17 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 
 # Copy binary
 cp "$BINARY" "${STAGING_DIR}/deneb-ui"
+STRIP_TOOL="${STRIP:-}"
+if [ -z "$STRIP_TOOL" ]; then
+    if command -v mipsel-linux-musl-strip >/dev/null 2>&1; then
+        STRIP_TOOL="mipsel-linux-musl-strip"
+    elif [ -x /root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-strip ]; then
+        STRIP_TOOL="/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-strip"
+    fi
+fi
+if [ -n "$STRIP_TOOL" ]; then
+    "$STRIP_TOOL" "${STAGING_DIR}/deneb-ui" 2>/dev/null || true
+fi
 chmod 0755 "${STAGING_DIR}/deneb-ui"
 
 # Copy scripts with Unix line endings. Windows worktrees can CRLF shell files,
@@ -52,10 +63,6 @@ done
 tr -d '\r' < "${SCRIPT_DIR}/init/deneb-ui.init" > "${STAGING_DIR}/deneb-ui.init"
 chmod 0755 "${STAGING_DIR}/deneb-ui.init"
 
-# Copy helper scripts
-tr -d '\r' < "${SCRIPT_DIR}/scripts/deneb-df-bridge.py" > "${STAGING_DIR}/deneb-df-bridge.py"
-chmod 0755 "${STAGING_DIR}/deneb-df-bridge.py"
-
 # Create manifest
 cat > "${STAGING_DIR}/manifest.txt" <<EOF
 package: ${PACKAGE_NAME}
@@ -64,7 +71,7 @@ date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 contents:
   deneb-ui          - LVGL touchscreen UI binary (MIPS)
   deneb-ui.init     - OpenWrt procd init script
-  deneb-df-bridge.py - Digital Factory Gershwin IPC bridge
+  deneb-df-bridge   - Symlink installed to deneb-ui C Digital Factory bridge entry point
   update.sh         - Installer script
   *.json            - Bundled Deneb locale files
   manifest.txt      - This file
@@ -72,7 +79,7 @@ EOF
 
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
-tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init deneb-df-bridge.py update.sh ./*.json manifest.txt
+tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json manifest.txt
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"

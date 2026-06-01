@@ -10,6 +10,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#if !defined(_WIN32)
+#include <syslog.h>
+#endif
 
 #include "lvgl.h"
 #include "drivers/fb_driver.h"
@@ -19,8 +22,17 @@
 #include "backend_comm.h"
 
 extern const screen_ops_t screen_home;
+#ifndef BACKEND_COMM_STUB
+int deneb_df_bridge_main(int argc, char *argv[]);
+#endif
 
 static volatile int running = 1;
+
+static const char *program_basename(const char *path)
+{
+    const char *base = strrchr(path, '/');
+    return base ? base + 1 : path;
+}
 
 static void signal_handler(int sig)
 {
@@ -37,6 +49,11 @@ static uint32_t custom_tick_get(void)
 
 int main(int argc, char *argv[])
 {
+#ifndef BACKEND_COMM_STUB
+    if (argc > 0 && strcmp(program_basename(argv[0]), "deneb-df-bridge") == 0)
+        return deneb_df_bridge_main(argc, argv);
+#endif
+
     const char *lang = "en";
 
     for (int i = 1; i < argc; i++) {
@@ -48,7 +65,14 @@ int main(int argc, char *argv[])
         }
     }
 
+#if !defined(_WIN32)
+    openlog("deneb-ui", LOG_PID, LOG_DAEMON);
+#endif
+
     fprintf(stderr, "deneb-ui: starting (lang=%s)\n", lang);
+#if !defined(_WIN32)
+    syslog(LOG_INFO, "starting lang=%s version=%s", lang, DENEB_VERSION);
+#endif
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -59,21 +83,34 @@ int main(int argc, char *argv[])
 
     if (fb_driver_init() < 0) {
         fprintf(stderr, "deneb-ui: framebuffer init failed\n");
+#if !defined(_WIN32)
+        syslog(LOG_ERR, "framebuffer init failed");
+        closelog();
+#endif
         return 1;
     }
 
     if (touch_driver_init() < 0) {
         fprintf(stderr, "deneb-ui: touchscreen init failed (continuing)\n");
+#if !defined(_WIN32)
+        syslog(LOG_WARNING, "touchscreen init failed; continuing");
+#endif
     }
 
     if (backend_init() < 0) {
         fprintf(stderr, "deneb-ui: backend init failed (continuing without IPC)\n");
+#if !defined(_WIN32)
+        syslog(LOG_WARNING, "backend init failed; continuing without IPC");
+#endif
     }
 
     screen_mgr_init();
     screen_mgr_push(&screen_home);
 
     fprintf(stderr, "deneb-ui: entering main loop\n");
+#if !defined(_WIN32)
+    syslog(LOG_INFO, "entered main loop");
+#endif
 
     uint32_t last_status_poll = 0;
 
@@ -93,11 +130,17 @@ int main(int argc, char *argv[])
     }
 
     fprintf(stderr, "deneb-ui: shutting down\n");
+#if !defined(_WIN32)
+    syslog(LOG_INFO, "shutting down");
+#endif
     backend_deinit();
     locale_deinit();
     touch_driver_deinit();
     fb_driver_deinit();
     lv_deinit();
 
+#if !defined(_WIN32)
+    closelog();
+#endif
     return 0;
 }

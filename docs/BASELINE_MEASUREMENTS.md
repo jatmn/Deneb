@@ -35,15 +35,15 @@ Swap:            0          0          0
 
 ## Deneb UI Binary Sizes
 
-| Build | Toolchain | Stripped | Notes |
+| Build | Toolchain | Size | Notes |
 |-------|-----------|----------|-------|
-| musl (production) | mipsel-linux-musl-gcc 11.2.1 | ~8.5 MiB | Static, musl libc, LVGL, ZMQ, generated i18n fonts |
+| musl (production) | mipsel-linux-musl-gcc 11.2.1 | ~1.8 MiB stripped | Static, musl libc, LVGL, ZMQ, generated i18n fonts, embedded C Digital Factory bridge |
 | glibc | mipsel-linux-gnu-gcc 14.2.0 | 2.5 MB | Static, glibc |
 | host (testing) | gcc 13.2.0 (Windows) | 1.5 MB | Stub drivers, no ZMQ |
 
-The earlier 2.0 MB musl number predated stock-menu parity work, static ZMQ,
-and generated locale font subsets. The current packaged release artifact is
-about 8.6 MiB (`Deneb_UI_<commit>.deneb`).
+The earlier 8.6 MiB package number included unstripped MIPS debug info. Release
+packaging now strips the staged binary, and the current packaged release
+artifact is about 1.8 MiB (`Deneb_UI_<commit>.deneb`).
 
 ## Deneb UI Live Idle Snapshot
 
@@ -63,11 +63,21 @@ samples before release gates should rely on the numbers.
 
 | Metric | Stock (measured) | Deneb | Reduction |
 |--------|-----------------|-------|-----------|
-| Menu binary/package | N/A (Python app tree) | ~8.6 MiB package | N/A |
+| Menu binary/package | N/A (Python app tree) | ~1.8 MiB package | N/A |
 | Menu RAM (VSZ) | 33.7 MB | 2.7 MB measured | ~92% |
 | Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
 | All Python service VSZ | 113.2 MB | ~79.5 MB after stock menu disable | ~30% |
 | ZMQ ports | Same | Same | Compatible |
+
+## Stock Menu Files
+
+`/etc/init.d/menu` starts `/home/cygnus/menu/executor.py`, which is the stock
+Python touchscreen UI. The extracted stock menu tree is about 884 KiB on disk.
+Deneb installer packages prune the dormant UI implementation after the native
+UI smoke test succeeds, while retaining `menu_settings.py` and
+`machine_config.json` because coordinator, file handling, firmware update
+handling, host ID, network, and UFP utilities still import shared constants
+from `cygnus.menu.menu_settings`.
 
 ## IPC (from live device)
 
