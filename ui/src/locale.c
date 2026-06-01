@@ -101,7 +101,7 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"language.en_1337", "L33T English"},
     {"language.saved", "Language saved"},
     {"about.description", "Deneb is a community firmware mod for the UltiMaker 2+ Connect. Local-first, responsive, lightweight."},
-    {"about.license", "Licensed under MPL-2.0"},
+    {"about.license", "Deneb MPL-2.0; LVGL MIT"},
     {"about.version", "Version"},
     {"about.stock_base_fmt", "Stock base: %s"},
     {"about.printer_id", "Printer ID"},

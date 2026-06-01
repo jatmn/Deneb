@@ -27,7 +27,7 @@
   "settings.language": "Sprache",
   "settings.about": "Über Deneb",
   "about.description": "Deneb ist eine Community-Firmware-Mod für den UltiMaker 2+ Connect. Lokal, reaktionsschnell, leichtgewichtig.",
-  "about.license": "Lizenziert unter MPL-2.0",
+  "about.license": "Deneb MPL-2.0; LVGL MIT",
   "error.ok": "OK",
   "confirm.yes": "Ja",
   "confirm.no": "Nein",

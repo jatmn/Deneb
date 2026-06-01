@@ -29,7 +29,7 @@
   "settings.network": "网络",
   "settings.maintenance": "维护",
   "about.description": "Deneb 是一个 UltiMaker 2+ Connect 的社区固件改装项目。本地优先、响应迅速、轻量级。",
-  "about.license": "许可证：MPL-2.0",
+  "about.license": "Deneb MPL-2.0; LVGL MIT",
   "error.title": "错误",
   "error.er_code": "ER 代码",
   "error.ok": "确定",

@@ -27,7 +27,7 @@
   "settings.language": "Langue",
   "settings.about": "À propos de Deneb",
   "about.description": "Deneb est un mod firmware communautaire pour l'UltiMaker 2+ Connect. Local, réactif, léger.",
-  "about.license": "Sous licence MPL-2.0",
+  "about.license": "Deneb MPL-2.0; LVGL MIT",
   "error.ok": "OK",
   "confirm.yes": "Oui",
   "confirm.no": "Non",

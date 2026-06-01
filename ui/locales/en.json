@@ -41,7 +41,7 @@
   "settings.factory_reset": "Factory Reset",
   "settings.save_failed": "Save failed",
   "about.description": "Deneb is a community firmware mod for the UltiMaker 2+ Connect. Local-first, responsive, lightweight.",
-  "about.license": "Licensed under MPL-2.0",
+  "about.license": "Deneb MPL-2.0; LVGL MIT",
   "about.version": "Version",
   "error.title": "Error",
   "error.er_code": "ER code",

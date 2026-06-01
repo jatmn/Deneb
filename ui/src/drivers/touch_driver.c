@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #include "lvgl.h"
-#include "drivers/evdev/lv_evdev.h"
+#include "lvgl/drivers/indev/lv_evdev.h"
 
 #define TOUCH_DEVICE          "/dev/input/event0"
 #define TOUCH_READ_PERIOD_MS  8

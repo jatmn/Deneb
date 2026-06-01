@@ -42,7 +42,7 @@ set(LVGL_DIR "${CMAKE_SOURCE_DIR}/lib/lvgl" CACHE PATH "LVGL source directory")
 if(NOT EXISTS "${LVGL_DIR}/src")
     message(FATAL_ERROR
         "LVGL not found at ${LVGL_DIR}\n"
-        "Run: cd ui && git submodule add https://github.com/lvgl/lvgl.git lib/lvgl\n"
+        "Run: git submodule update --init ui/lib/lvgl\n"
         "Or set -DLVGL_DIR=/path/to/lvgl"
     )
 endif()

@@ -1,0 +1,17 @@
+libzmq notice for Deneb UI release packages
+
+Component: ZeroMQ C library (libzmq)
+Version used by the Deneb UI release build: 4.3.5
+Upstream project: https://github.com/zeromq/libzmq
+Release source archive:
+https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz
+
+License: Mozilla Public License Version 2.0 (MPL-2.0)
+Official license text:
+https://www.mozilla.org/MPL/2.0/
+
+Deneb statically links libzmq into the deneb-ui executable for backend IPC and
+the Digital Factory bridge. Deneb does not vendor libzmq source in this
+repository and does not intentionally modify libzmq for the current release
+build. If a release build uses a modified libzmq source tree, publish or offer
+the corresponding modified libzmq source alongside the release artifact.
