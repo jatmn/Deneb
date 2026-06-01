@@ -124,6 +124,31 @@ static int json_get_int(const char *json, const char *key, int def)
     return atoi(tmp);
 }
 
+static int ascii_tolower(int c)
+{
+    if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
+    return c;
+}
+
+static int str_eq_ci(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (ascii_tolower((unsigned char)*a) != ascii_tolower((unsigned char)*b)) return 0;
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static int str_is_one_of_ci(const char *s, const char *const *values)
+{
+    if (!s || !*s) return 0;
+    for (int i = 0; values[i]; i++) {
+        if (str_eq_ci(s, values[i])) return 1;
+    }
+    return 0;
+}
+
 static void update_status_cache(void)
 {
     /* Pre-serialize the current state to JSON for fast serving */
@@ -223,7 +248,13 @@ void backend_zmq_poll(void)
 
             if (state.time_total > 0 && state.time_total > state.time_left)
                 state.progress = (float)(state.time_total - state.time_left) * 100.0f / (float)state.time_total;
+            else
+                state.progress = 0;
 
+            state.filename[0] = '\0';
+            state.source[0] = '\0';
+            state.uuid[0] = '\0';
+            state.current_req[0] = '\0';
             json_get_str(json, "file", state.filename, sizeof(state.filename));
             json_get_str(json, "source", state.source, sizeof(state.source));
             json_get_str(json, "uuid", state.uuid, sizeof(state.uuid));
@@ -233,10 +264,25 @@ void backend_zmq_poll(void)
             state.topcap_present = json_get_int(json, "topcapIsPresent", 0) ? true : false;
 
             /* Derive state flags */
-            state.is_printing = (state.filename[0] != '\0' &&
-                                 strcmp(state.filename, "(stub)") != 0 &&
-                                 state.current_req[0] != '\0');
-            state.is_paused = (strcmp(state.current_req, "Pause") == 0);
+            static const char *const printing_reqs[] = {
+                "JOB", "Print", "Printing", NULL
+            };
+            static const char *const paused_reqs[] = {
+                "PAUSE", "Pause", "Paused", NULL
+            };
+            int req_printing = str_is_one_of_ci(state.current_req, printing_reqs);
+            int req_paused = str_is_one_of_ci(state.current_req, paused_reqs);
+            int active_time = state.time_total > 0 &&
+                              state.time_left > 0 &&
+                              state.time_left <= state.time_total;
+
+            state.is_paused = req_paused;
+            state.is_printing = req_printing || req_paused || active_time;
+            if (!state.is_printing) {
+                state.time_total = 0;
+                state.time_left = 0;
+                state.progress = 0;
+            }
             state.has_error = (json_get_int(json, "received_faults", 0) != 0);
 
             state.connected = true;

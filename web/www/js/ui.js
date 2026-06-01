@@ -6,6 +6,8 @@
 var Deneb = Deneb || {};
 
 Deneb.ui = {
+    lastStatus: null,
+
     showPage: function(name) {
         var content = document.getElementById('content');
         var navBtns = document.querySelectorAll('.nav-btn');
@@ -19,15 +21,17 @@ Deneb.ui = {
         if (this.pages[name]) {
             content.innerHTML = this.pages[name]();
             Deneb.i18n.apply();
+            if (this.lastStatus) this.updateStatus(this.lastStatus);
         }
     },
 
     updateStatus: function(data) {
+        this.lastStatus = data || {};
         var dot = document.getElementById('status-dot');
         var text = document.getElementById('status-text');
         if (!dot || !text) return;
 
-        var status = data.status || 'idle';
+        var status = this.statusFromData(data);
         dot.className = 'status-dot ' + status;
         text.textContent = Deneb.i18n.t('web.status.' + status) || status;
 
@@ -38,28 +42,28 @@ Deneb.ui = {
     updateStatusPage: function(data) {
         var el;
         el = document.getElementById('nozzle-temp');
-        if (el) el.textContent = (data.heads ? data.heads[0].extruders[0].hotend.temperature.current : data.nozzle_temp_cur || 0).toFixed(1);
+        if (el) el.textContent = this.formatNumber(this.nozzleTemperature(data, 'current'), 1);
         el = document.getElementById('nozzle-target');
         if (el) {
-            var nt = data.heads ? data.heads[0].extruders[0].hotend.temperature.target : data.nozzle_temp_set || 0;
+            var nt = this.nozzleTemperature(data, 'target');
             el.textContent = nt > 0 ? '/ ' + nt.toFixed(0) + '\u00b0C' : '';
         }
         el = document.getElementById('bed-temp');
-        if (el) el.textContent = (data.bed ? data.bed.temperature.current : data.bed_temp_cur || 0).toFixed(1);
+        if (el) el.textContent = this.formatNumber(this.bedTemperature(data, 'current'), 1);
         el = document.getElementById('bed-target');
         if (el) {
-            var bt = data.bed ? data.bed.temperature.target : data.bed_temp_set || 0;
+            var bt = this.bedTemperature(data, 'target');
             el.textContent = bt > 0 ? '/ ' + bt.toFixed(0) + '\u00b0C' : '';
         }
         el = document.getElementById('pos-x');
-        if (el) el.textContent = (data.heads ? data.heads[0].position.x : data.pos_x || 0).toFixed(1);
+        if (el) el.textContent = this.formatNumber(this.position(data, 'x'), 1);
         el = document.getElementById('pos-y');
-        if (el) el.textContent = (data.heads ? data.heads[0].position.y : data.pos_y || 0).toFixed(1);
+        if (el) el.textContent = this.formatNumber(this.position(data, 'y'), 1);
         el = document.getElementById('pos-z');
-        if (el) el.textContent = (data.heads ? data.heads[0].position.z : data.pos_z || 0).toFixed(1);
+        if (el) el.textContent = this.formatNumber(this.position(data, 'z'), 1);
 
         /* Progress */
-        var progress = data.progress || 0;
+        var progress = this.printProgress(data);
         el = document.getElementById('progress-fill');
         if (el) el.style.width = progress + '%';
         el = document.getElementById('progress-text');
@@ -71,6 +75,56 @@ Deneb.ui = {
             var tl = data.time_total || data.time_left || 0;
             el.textContent = tl > 0 ? this.formatTime(tl) : '--:--';
         }
+    },
+
+    statusFromData: function(data) {
+        if (!data) return 'idle';
+        if (data.status) return data.status;
+        if (data.has_error) return 'error';
+        if (data.is_paused) return 'paused';
+        if (data.is_printing) return 'printing';
+        if (data.connected === false) return 'offline';
+        return 'idle';
+    },
+
+    asNumber: function(value, fallback) {
+        var n = Number(value);
+        return isFinite(n) ? n : fallback;
+    },
+
+    formatNumber: function(value, digits) {
+        return this.asNumber(value, 0).toFixed(digits);
+    },
+
+    nozzleTemperature: function(data, key) {
+        var extruder = data && data.heads && data.heads[0] &&
+            data.heads[0].extruders && data.heads[0].extruders[0];
+        if (extruder && extruder.hotend && extruder.hotend.temperature) {
+            return this.asNumber(extruder.hotend.temperature[key], 0);
+        }
+        return this.asNumber(data && (key === 'current' ? data.nozzle_temp_cur : data.nozzle_temp_set), 0);
+    },
+
+    bedTemperature: function(data, key) {
+        if (data && data.bed && data.bed.temperature) {
+            return this.asNumber(data.bed.temperature[key], 0);
+        }
+        return this.asNumber(data && (key === 'current' ? data.bed_temp_cur : data.bed_temp_set), 0);
+    },
+
+    position: function(data, axis) {
+        if (data && data.heads && data.heads[0] && data.heads[0].position) {
+            return this.asNumber(data.heads[0].position[axis], 0);
+        }
+        return this.asNumber(data && data['pos_' + axis], 0);
+    },
+
+    printProgress: function(data) {
+        var progress = this.asNumber(data && data.progress, 0);
+        if (progress > 0 && progress <= 1) progress *= 100;
+        if (progress < 0) return 0;
+        if (progress > 100) return 100;
+        return progress;
     },
 
     formatTime: function(seconds) {

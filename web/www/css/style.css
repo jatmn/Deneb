@@ -256,3 +256,116 @@ label { font-size: 13px; color: var(--text-dim); display: block; margin-top: 12p
     .btn { padding: 8px 12px; font-size: 12px; }
     .nav-icon { font-size: 16px; }
 }
+
+/* Desktop layout */
+@media (min-width: 900px) {
+    :root {
+        --header-h: 56px;
+    }
+
+    body {
+        overflow: auto;
+    }
+
+    #app {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        grid-template-rows: var(--header-h) minmax(0, 1fr);
+        width: 100%;
+        max-width: none;
+        min-height: 100vh;
+        height: 100vh;
+        margin: 0;
+    }
+
+    #header {
+        grid-column: 1 / -1;
+        padding: 0 24px;
+        gap: 12px;
+    }
+
+    #header .title {
+        font-size: 18px;
+    }
+
+    .status-text {
+        font-size: 13px;
+    }
+
+    #content {
+        grid-column: 2;
+        grid-row: 2;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        align-content: start;
+        gap: 16px;
+        padding: 24px;
+    }
+
+    #nav {
+        grid-column: 1;
+        grid-row: 2;
+        height: auto;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        padding: 12px 8px;
+        border-top: 0;
+        border-right: 1px solid var(--border);
+    }
+
+    .nav-btn {
+        flex: 0 0 auto;
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 10px;
+        min-height: 44px;
+        padding: 10px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .nav-btn.active {
+        background: var(--bg-input);
+    }
+
+    .nav-icon {
+        width: 24px;
+        text-align: center;
+    }
+
+    .card {
+        margin-bottom: 0;
+        padding: 18px;
+    }
+
+    .card-title {
+        font-size: 13px;
+        margin-bottom: 12px;
+    }
+
+    .status-grid {
+        gap: 14px;
+    }
+
+    .status-item .value {
+        font-size: 32px;
+    }
+
+    .status-item .label {
+        font-size: 12px;
+    }
+
+    .progress-text {
+        font-size: 34px;
+    }
+
+    .setup-page {
+        grid-column: 1 / -1;
+        width: 100%;
+        max-width: 420px;
+        min-height: calc(100vh - var(--header-h) - 48px);
+        justify-self: center;
+        align-self: center;
+    }
+}
