@@ -47,4 +47,5 @@ logs/
 __pycache__/
 *.pyc
 node_modules/
+/web/build-host/
 /web/build-musl/

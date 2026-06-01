@@ -4,7 +4,25 @@
 # Implements UltiMaker REST API v1 for Cura LAN compatibility.
 
 cmake_minimum_required(VERSION 3.12)
+
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+    message(FATAL_ERROR
+        "Visual Studio/MSVC generators are not supported for deneb-api. "
+        "Use WSL/Linux with gcc or the MIPS musl toolchain instead."
+    )
+endif()
+
 project(deneb-api C)
+
+if(MSVC)
+    message(FATAL_ERROR
+        "MSVC/Visual Studio builds are not supported for deneb-api. "
+        "Use WSL/Linux with gcc or the MIPS musl toolchain instead. "
+        "For a host verification build from Windows, run through WSL, e.g. "
+        "convert the repository path with wslpath, then run "
+        "cmake -S web -B /tmp/deneb-web-build -DBUILD_HOST_STUB=ON && cmake --build /tmp/deneb-web-build"
+    )
+endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

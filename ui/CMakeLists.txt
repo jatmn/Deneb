@@ -3,7 +3,23 @@
 # Deneb Touchscreen UI - CMake Build System (LVGL v9)
 
 cmake_minimum_required(VERSION 3.12)
+
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+    message(FATAL_ERROR
+        "Visual Studio/MSVC generators are not supported for deneb-ui. "
+        "Use the WSL/Linux host build or the MIPS musl release build instead."
+    )
+endif()
+
 project(deneb-ui C)
+
+if(MSVC)
+    message(FATAL_ERROR
+        "MSVC/Visual Studio builds are not supported for deneb-ui. "
+        "Use the WSL/Linux host build or the MIPS musl release build instead. "
+        "From Windows, run tools/build-ui-host.ps1 for host verification."
+    )
+endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -102,6 +118,15 @@ list(REMOVE_ITEM LVGL_SOURCES
     "${LVGL_DIR}/src/draw/lv_draw_triangle.c"
     "${LVGL_DIR}/src/draw/lv_draw_vector.c"
 )
+
+if(NOT WIN32)
+    # lv_conf.h enables LV_USE_EVDEV, and lv_init.c calls lv_evdev_deinit()
+    # even when Deneb's own touch driver is stubbed for host testing.
+    list(APPEND LVGL_SOURCES
+        "${LVGL_DIR}/src/drivers/evdev/lv_evdev.c"
+    )
+endif()
+
 list(LENGTH LVGL_SOURCES LVGL_SOURCE_COUNT)
 
 # Option: use stub backend (no ZMQ dependency) for host/testing builds
@@ -116,9 +141,6 @@ if(WIN32 OR MINGW OR MSYS OR BACKEND_COMM_STUB)
     add_definitions(-DBACKEND_COMM_STUB)
     message(STATUS "Using stub drivers and backend")
 else()
-    list(APPEND LVGL_SOURCES
-        "${LVGL_DIR}/src/drivers/evdev/lv_evdev.c"
-    )
     set(DRIVER_SOURCES
         src/drivers/fb_driver.c
         src/drivers/touch_driver.c

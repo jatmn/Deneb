@@ -59,6 +59,23 @@ Deneb's current optimization work is focused on removing dormant stock UI and se
 - [Stock UI coverage](docs/STOCK_UI_COVERAGE.md): current stock-vs-Deneb touchscreen feature parity.
 - [Resource reduction plan](docs/RESOURCE_REDUCTION_PLAN.md): RAM, CPU, and release guardrails.
 
+## Build And Verification
+
+Deneb C targets are Linux/POSIX-oriented. Do not use Visual Studio/MSVC CMake
+generators for `ui` or `web`; they are intentionally unsupported. From Windows,
+run host verification through WSL so the same POSIX headers and toolchain shape
+are used as the target-side code expects.
+
+```powershell
+# Web/API host-stub verification
+$winRepo = (Get-Location).Path.Replace('\', '/')
+$repo = (wsl -- wslpath -a "$winRepo").Trim()
+wsl -- bash -lc "cd '$repo' && cmake -S web -B /tmp/deneb-web-build -DBUILD_HOST_STUB=ON && cmake --build /tmp/deneb-web-build"
+
+# Touchscreen UI host-stub verification
+powershell -ExecutionPolicy Bypass -File tools/build-ui-host.ps1
+```
+
 ## Project Boundary
 
 This repository must not contain UltiMaker firmware images, extracted root filesystems, proprietary application source, recovered/decompiled vendor code, private keys, device secrets, or generated modified firmware images.

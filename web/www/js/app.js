@@ -5,6 +5,20 @@
 
 var Deneb = Deneb || {};
 
+Deneb.motion = {
+    stepSizes: [1, 10, 50],
+    stepIndex: 1,
+
+    currentStep: function() {
+        return this.stepSizes[this.stepIndex];
+    },
+
+    cycleStep: function() {
+        this.stepIndex = (this.stepIndex + 1) % this.stepSizes.length;
+        Deneb.ui.updateMotionState();
+    }
+};
+
 Deneb.init = function() {
     /* Load locale */
     Deneb.i18n.load();
@@ -87,6 +101,45 @@ Deneb.setBed = function() {
     var val = parseInt(document.getElementById('bed-slider').value, 10);
     if (val > 110) val = 110;
     Deneb.api.put('/printer/bed/temperature', {temperature: val});
+};
+
+Deneb.runMotion = function(fn) {
+    fn().then(function() {
+        Deneb.api.pollStatus();
+    }).catch(function(err) {
+        Deneb.ui.showError(err.message || Deneb.i18n.t('web.control.motion_failed'));
+    });
+};
+
+Deneb.jog = function(axis, direction) {
+    var step = Deneb.motion.currentStep() * direction;
+    Deneb.runMotion(function() {
+        return Deneb.api.jog(axis, step);
+    });
+};
+
+Deneb.home = function() {
+    Deneb.runMotion(function() {
+        return Deneb.api.home();
+    });
+};
+
+Deneb.zHome = function() {
+    Deneb.runMotion(function() {
+        return Deneb.api.zHome();
+    });
+};
+
+Deneb.bedUp = function() {
+    Deneb.runMotion(function() {
+        return Deneb.api.bedUp();
+    });
+};
+
+Deneb.bedDown = function() {
+    Deneb.runMotion(function() {
+        return Deneb.api.bedDown();
+    });
 };
 
 Deneb.toggleAuth = function() {

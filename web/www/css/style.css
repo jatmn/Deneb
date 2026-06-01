@@ -213,6 +213,77 @@ label { font-size: 13px; color: var(--text-dim); display: block; margin-top: 12p
     flex-wrap: wrap;
 }
 .control-group .btn { flex: 1; min-width: 80px; }
+.motion-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.motion-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+}
+.motion-jog {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas:
+        ". up ."
+        "left home right"
+        ". down .";
+    gap: 8px;
+    align-items: stretch;
+}
+.motion-up { grid-area: up; }
+.motion-left { grid-area: left; }
+.motion-home { grid-area: home; }
+.motion-right { grid-area: right; }
+.motion-down { grid-area: down; }
+.motion-btn { min-height: 48px; }
+.motion-side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.motion-axis-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.motion-axis-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.motion-vertical {
+    flex-direction: column;
+}
+.motion-vertical .btn {
+    width: 100%;
+}
+.motion-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.motion-position {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+.motion-position strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.motion-note {
+    font-size: 12px;
+    color: var(--success);
+}
+.motion-note.is-disabled {
+    color: var(--warn);
+}
 
 /* Settings page */
 .toggle {
@@ -358,6 +429,17 @@ label { font-size: 13px; color: var(--text-dim); display: block; margin-top: 12p
 
     .progress-text {
         font-size: 34px;
+    }
+
+    .motion-layout {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .motion-toolbar {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
     }
 
     .setup-page {

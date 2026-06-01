@@ -112,10 +112,11 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 
 ### Host build (for code testing, no display)
 
-```bash
-cd ui && mkdir build-host && cd build-host
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBACKEND_COMM_STUB=ON
-ninja
+Host builds are WSL/Linux builds with stub drivers. Visual Studio/MSVC is not a
+supported toolchain for Deneb C targets.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-ui-host.ps1
 ```
 
 ## Installation

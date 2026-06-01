@@ -8,9 +8,175 @@
 #include "backend_zmq.h"
 #include "json_writer.h"
 
+#include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define MAX_JOG_DISTANCE_MM 50.0f
+#define MAX_POSITION_X_MM 223.0f
+#define MAX_POSITION_Y_MM 220.0f
+#define MAX_POSITION_Z_MM 205.0f
+#define DEFAULT_MOVE_SPEED_MM_S 150.0f
+#define MAX_MOVE_SPEED_MM_S 300.0f
+
+static int motion_allowed(const printer_state_t *s)
+{
+    return s && s->connected && !s->is_printing && !s->is_paused && !s->has_error;
+}
+
+static void set_motion_blocked(http_response_t *resp)
+{
+    resp->status_code = 409;
+    api_http_set_body_str(resp, "{\"message\":\"Motion unavailable while printer is disconnected, printing, paused, or in error\"}");
+}
+
+static int parse_json_string_field(const char *body, const char *field, char *out, size_t out_sz)
+{
+    char search[64];
+    snprintf(search, sizeof(search), "\"%s\"", field);
+
+    const char *p = strstr(body, search);
+    if (!p) return -1;
+
+    p = strchr(p + strlen(search), ':');
+    if (!p) return -1;
+    p++;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (*p != '"') return -1;
+    p++;
+
+    size_t i = 0;
+    while (*p && *p != '"' && i < out_sz - 1) {
+        if (*p == '\\' && p[1]) p++;
+        out[i++] = *p++;
+    }
+    if (*p != '"') return -1;
+    out[i] = '\0';
+    return 0;
+}
+
+static int parse_json_float_field(const char *body, const char *field, float *value)
+{
+    char search[64];
+    snprintf(search, sizeof(search), "\"%s\"", field);
+
+    const char *p = strstr(body, search);
+    if (!p) return -1;
+
+    p = strchr(p + strlen(search), ':');
+    if (!p) return -1;
+    p++;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+
+    char *end = NULL;
+    float parsed = strtof(p, &end);
+    if (end == p) return -1;
+    while (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n') end++;
+    if (*end && *end != ',' && *end != '}' && *end != ']') return -1;
+    *value = parsed;
+    return 0;
+}
+
+static int json_field_present(const char *body, const char *field)
+{
+    char search[64];
+    snprintf(search, sizeof(search), "\"%s\"", field);
+    return strstr(body, search) != NULL;
+}
+
+static int parse_axis_value(const char *body, char *axis)
+{
+    char axis_buf[8];
+    if (parse_json_string_field(body, "axis", axis_buf, sizeof(axis_buf)) < 0 || !axis_buf[0] || axis_buf[1])
+        return -1;
+
+    char upper = (char)toupper((unsigned char)axis_buf[0]);
+    if (upper != 'X' && upper != 'Y' && upper != 'Z')
+        return -1;
+
+    *axis = upper;
+    return 0;
+}
+
+static int valid_jog_distance(float distance)
+{
+    float mag = fabsf(distance);
+    return isfinite(distance) &&
+        (mag == 1.0f || mag == 10.0f || mag == MAX_JOG_DISTANCE_MM);
+}
+
+static int valid_position_value(char axis, float value)
+{
+    float max_value = 0.0f;
+    if (axis == 'X') max_value = MAX_POSITION_X_MM;
+    else if (axis == 'Y') max_value = MAX_POSITION_Y_MM;
+    else if (axis == 'Z') max_value = MAX_POSITION_Z_MM;
+    else return 0;
+
+    return isfinite(value) && value >= 0.0f && value <= max_value;
+}
+
+static int send_jog_command(char axis, float distance)
+{
+    char move_cmd[64];
+    if (backend_zmq_send_gcode("G91") < 0)
+        return -1;
+    snprintf(move_cmd, sizeof(move_cmd), "G1 %c%.3g F3000", axis, distance);
+    if (backend_zmq_send_gcode(move_cmd) < 0) {
+        backend_zmq_send_gcode("G90");
+        return -1;
+    }
+    if (backend_zmq_send_gcode("G90") < 0)
+        return -1;
+    return 0;
+}
+
+static int send_absolute_position_command(int has_x, float x, int has_y, float y, int has_z, float z, float speed)
+{
+    char move_cmd[96];
+    int len;
+
+    if (backend_zmq_send_gcode("G90") < 0)
+        return -1;
+
+    len = snprintf(move_cmd, sizeof(move_cmd), "G1");
+    if (has_x)
+        len += snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " X%.3g", x);
+    if (has_y)
+        len += snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " Y%.3g", y);
+    if (has_z)
+        len += snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " Z%.3g", z);
+    if (len < 0 || (size_t)len >= sizeof(move_cmd))
+        return -1;
+    snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " F%.3g", speed * 60.0f);
+
+    return backend_zmq_send_gcode(move_cmd);
+}
+
+static int send_motion_action(const char *action)
+{
+    if (strcmp(action, "home") == 0) {
+        return backend_zmq_send_command("MACRO", "{\"macro\":\"home_and_center_head.gcode\"}");
+    }
+    if (strcmp(action, "z_home") == 0) {
+        return backend_zmq_send_gcode("G28 Z");
+    }
+    if (strcmp(action, "bed_up") == 0) {
+        return backend_zmq_send_command("MACRO", "{\"macro\":\"move_buildplate_up.gcode\"}");
+    }
+    if (strcmp(action, "bed_down") == 0) {
+        return backend_zmq_send_command("MACRO", "{\"macro\":\"move_buildplate_down.gcode\"}");
+    }
+    return -2;
+}
+
+static void set_motion_failed(http_response_t *resp)
+{
+    resp->status_code = 503;
+    api_http_set_body_str(resp, "{\"message\":\"Failed to send motion command\"}");
+}
 
 static const char *get_status_string(const printer_state_t *s)
 {
@@ -137,6 +303,10 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
 
     /* status */
     json_str(&w, "status", get_status_string(s));
+    json_bool(&w, "connected", s->connected);
+    json_bool(&w, "is_printing", s->is_printing);
+    json_bool(&w, "is_paused", s->is_paused);
+    json_bool(&w, "has_error", s->has_error);
 
     /* diagnostics */
     json_key(&w, "diagnostics");
@@ -555,28 +725,117 @@ void api_printer_bed_preheat_put(const http_request_t *req, http_response_t *res
 
 void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 {
-    (void)req;
-    (void)resp;
-    /* M7: Move head. Requires safety checks. */
-    resp->status_code = 501;
-    api_http_set_body_str(resp, "{\"message\":\"Not implemented\"}");
+    const printer_state_t *s = backend_zmq_get_state();
+    if (!motion_allowed(s)) {
+        set_motion_blocked(resp);
+        return;
+    }
+
+    char axis;
+    float distance = 0;
+    if (json_field_present(req->body, "axis") || json_field_present(req->body, "distance")) {
+        if (parse_axis_value(req->body, &axis) < 0 ||
+            parse_json_float_field(req->body, "distance", &distance) < 0) {
+            resp->status_code = 400;
+            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}");
+            return;
+        }
+
+        if (!valid_jog_distance(distance)) {
+            resp->status_code = 400;
+            api_http_set_body_str(resp, "{\"message\":\"Distance must be one of -50, -10, -1, 1, 10, or 50\"}");
+            return;
+        }
+
+        if (send_jog_command(axis, distance) < 0) {
+            set_motion_failed(resp);
+            return;
+        }
+
+        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+        return;
+    }
+
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    float speed = DEFAULT_MOVE_SPEED_MM_S;
+    int has_x = parse_json_float_field(req->body, "x", &x) == 0;
+    int has_y = parse_json_float_field(req->body, "y", &y) == 0;
+    int has_z = parse_json_float_field(req->body, "z", &z) == 0;
+
+    if (!has_x && json_field_present(req->body, "x")) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid x position\"}");
+        return;
+    }
+    if (!has_y && json_field_present(req->body, "y")) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid y position\"}");
+        return;
+    }
+    if (!has_z && json_field_present(req->body, "z")) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid z position\"}");
+        return;
+    }
+    if (!has_x && !has_y && !has_z) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}");
+        return;
+    }
+    if ((has_x && !valid_position_value('X', x)) ||
+        (has_y && !valid_position_value('Y', y)) ||
+        (has_z && !valid_position_value('Z', z))) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Position is outside the printable volume\"}");
+        return;
+    }
+    if (json_field_present(req->body, "speed") &&
+        (parse_json_float_field(req->body, "speed", &speed) < 0 ||
+         !isfinite(speed) || speed <= 0.0f || speed > MAX_MOVE_SPEED_MM_S)) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid movement speed\"}");
+        return;
+    }
+    if (send_absolute_position_command(has_x, x, has_y, y, has_z, z, speed) < 0) {
+        set_motion_failed(resp);
+        return;
+    }
+    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
 }
 
 void api_printer_position_post(const http_request_t *req, http_response_t *resp)
 {
-    /* Home command */
-    const char *p = strstr(req->body, "\"home\"");
-    if (p) {
-        if (backend_zmq_send_gcode("G28") < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to home printer\"}");
+    const printer_state_t *s = backend_zmq_get_state();
+    if (!motion_allowed(s)) {
+        set_motion_blocked(resp);
+        return;
+    }
+
+    char action[32];
+    if (parse_json_string_field(req->body, "action", action, sizeof(action)) < 0) {
+        if (strstr(req->body, "\"home\"")) {
+            snprintf(action, sizeof(action), "home");
+        } else {
+            resp->status_code = 400;
+            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"home|z_home|bed_up|bed_down\\\"}\"}");
             return;
         }
-        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Unknown action\"}");
     }
+
+    int rc = send_motion_action(action);
+    if (rc == -2) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Unknown motion action\"}");
+        return;
+    }
+    if (rc < 0) {
+        set_motion_failed(resp);
+        return;
+    }
+
+    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
 }
 
 void api_printer_led_put(const http_request_t *req, http_response_t *resp)

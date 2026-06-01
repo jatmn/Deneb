@@ -39,7 +39,7 @@ Swap:            0          0          0
 |-------|-----------|----------|-------|
 | musl (production) | mipsel-linux-musl-gcc 11.2.1 | ~1.8 MiB stripped | Static, musl libc, LVGL, ZMQ, generated i18n fonts, embedded C Digital Factory bridge |
 | glibc | mipsel-linux-gnu-gcc 14.2.0 | 2.5 MB | Static, glibc |
-| host (testing) | gcc 13.2.0 (Windows) | 1.5 MB | Stub drivers, no ZMQ |
+| host (testing) | gcc under WSL/Linux | 1.5 MB | Stub drivers, no ZMQ |
 
 The earlier 8.6 MiB package number included unstripped MIPS debug info. Release
 packaging now strips the staged binary, and the current packaged release
@@ -93,6 +93,6 @@ from `cygnus.menu.menu_settings`.
 
 | Target | Toolchain | Purpose |
 |--------|-----------|---------|
-| build-host | gcc (Windows) | Code testing, stub drivers |
+| build-host | gcc under WSL/Linux | Code testing, stub drivers |
 | build-mips | mipsel-linux-gnu-gcc | Alternative glibc build |
 | build-musl | mipsel-linux-musl-gcc | **Production build** |

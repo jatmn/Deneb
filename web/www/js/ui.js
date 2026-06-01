@@ -22,6 +22,7 @@ Deneb.ui = {
             content.innerHTML = this.pages[name]();
             Deneb.i18n.apply();
             if (this.lastStatus) this.updateStatus(this.lastStatus);
+            else this.updateMotionState();
         }
     },
 
@@ -37,6 +38,7 @@ Deneb.ui = {
 
         /* Update status page if visible */
         this.updateStatusPage(data);
+        this.updateMotionState();
     },
 
     updateStatusPage: function(data) {
@@ -62,6 +64,13 @@ Deneb.ui = {
         el = document.getElementById('pos-z');
         if (el) el.textContent = this.formatNumber(this.position(data, 'z'), 1);
 
+        el = document.getElementById('motion-pos-x');
+        if (el) el.textContent = this.formatNumber(this.position(data, 'x'), 1);
+        el = document.getElementById('motion-pos-y');
+        if (el) el.textContent = this.formatNumber(this.position(data, 'y'), 1);
+        el = document.getElementById('motion-pos-z');
+        if (el) el.textContent = this.formatNumber(this.position(data, 'z'), 1);
+
         /* Progress */
         var progress = this.printProgress(data);
         el = document.getElementById('progress-fill');
@@ -77,13 +86,49 @@ Deneb.ui = {
         }
     },
 
+    updateMotionState: function() {
+        var data = this.lastStatus || {};
+        var allowed = this.motionAllowed(data);
+        var buttons = document.querySelectorAll('[data-motion-btn]');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = !allowed;
+        }
+
+        var note = document.getElementById('motion-note');
+        if (note) {
+            note.textContent = allowed ?
+                (Deneb.i18n.t('web.control.motion_ready') || 'Motion controls are ready.') :
+                (Deneb.i18n.t('web.control.motion_unavailable') || 'Motion unavailable while disconnected, printing, paused, or in error.');
+            note.classList.toggle('is-disabled', !allowed);
+        }
+
+        var step = document.getElementById('motion-step');
+        if (step) step.textContent = Deneb.motion.currentStep() + ' mm';
+    },
+
+    motionAllowed: function(data) {
+        if (!data) return false;
+
+        var status = this.statusFromData(data);
+        if (status === 'offline' || status === 'printing' || status === 'paused' || status === 'error') {
+            return false;
+        }
+
+        if (typeof data.connected !== 'undefined' || typeof data.is_printing !== 'undefined' ||
+            typeof data.is_paused !== 'undefined' || typeof data.has_error !== 'undefined' || data.status) {
+            return true;
+        }
+
+        return false;
+    },
+
     statusFromData: function(data) {
         if (!data) return 'idle';
+        if (data.connected === false) return 'offline';
         if (data.status) return data.status;
         if (data.has_error) return 'error';
         if (data.is_paused) return 'paused';
         if (data.is_printing) return 'printing';
-        if (data.connected === false) return 'offline';
         return 'idle';
     },
 
@@ -186,6 +231,40 @@ Deneb.ui = {
                 '<span id="bed-val">0</span>\u00b0C ' +
                 '<button class="btn btn-primary" onclick="Deneb.setBed()" data-i18n="web.control.set">Set</button>' +
                 '<button class="btn btn-secondary btn-block" onclick="Deneb.cmdCooldown()" data-i18n="web.control.cooldown">Cooldown</button>' +
+                '</div>' +
+                '<div class="card motion-card">' +
+                '<div class="card-title" data-i18n="web.control.motion">Manual Control</div>' +
+                '<div class="motion-layout">' +
+                '<div class="motion-jog">' +
+                '<button class="btn btn-secondary motion-btn motion-up" data-motion-btn onclick="Deneb.jog(\'Y\', 1)">&#9650;</button>' +
+                '<button class="btn btn-secondary motion-btn motion-left" data-motion-btn onclick="Deneb.jog(\'X\', -1)">&#9664;</button>' +
+                '<button class="btn btn-primary motion-btn motion-home" data-motion-btn onclick="Deneb.home()" data-i18n="web.control.home">Home</button>' +
+                '<button class="btn btn-secondary motion-btn motion-right" data-motion-btn onclick="Deneb.jog(\'X\', 1)">&#9654;</button>' +
+                '<button class="btn btn-secondary motion-btn motion-down" data-motion-btn onclick="Deneb.jog(\'Y\', -1)">&#9660;</button>' +
+                '</div>' +
+                '<div class="motion-side">' +
+                '<div class="motion-axis-group">' +
+                '<div class="motion-axis-label">Z</div>' +
+                '<div class="control-group motion-vertical">' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.jog(\'Z\', 1)">&#9650;</button>' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.jog(\'Z\', -1)">&#9660;</button>' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.zHome()" data-i18n="web.control.z_home">Z Home</button>' +
+                '</div></div>' +
+                '<div class="motion-axis-group">' +
+                '<div class="motion-axis-label" data-i18n="web.control.build_plate">Build Plate</div>' +
+                '<div class="control-group motion-vertical">' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.bedUp()" data-i18n="web.control.bed_up">Up</button>' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.bedDown()" data-i18n="web.control.bed_down">Down</button>' +
+                '</div></div>' +
+                '</div></div>' +
+                '<div class="motion-toolbar">' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.motion.cycleStep()"><span data-i18n="web.control.step">Step</span>: <span id="motion-step">10 mm</span></button>' +
+                '<div class="motion-position">' +
+                '<span>X <strong id="motion-pos-x">--</strong></span>' +
+                '<span>Y <strong id="motion-pos-y">--</strong></span>' +
+                '<span>Z <strong id="motion-pos-z">--</strong></span>' +
+                '</div></div>' +
+                '<div class="motion-note" id="motion-note" data-i18n="web.control.motion_ready">Motion controls are ready.</div>' +
                 '</div>';
         },
 

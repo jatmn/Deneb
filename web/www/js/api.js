@@ -48,6 +48,30 @@ Deneb.api = {
     post: function(path, body) { return this.request('POST', path, body); },
     put: function(path, body) { return this.request('PUT', path, body); },
 
+    jog: function(axis, distance) {
+        return this.put('/printer/heads/0/position', {axis: axis, distance: distance});
+    },
+
+    motionAction: function(action) {
+        return this.post('/printer/heads/0/position', {action: action});
+    },
+
+    home: function() {
+        return this.motionAction('home');
+    },
+
+    zHome: function() {
+        return this.motionAction('z_home');
+    },
+
+    bedUp: function() {
+        return this.motionAction('bed_up');
+    },
+
+    bedDown: function() {
+        return this.motionAction('bed_down');
+    },
+
     isTokenValid: function() {
         return this.token && Date.now() / 1000 < this.tokenExpiry;
     },
