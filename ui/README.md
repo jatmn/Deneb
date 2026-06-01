@@ -51,6 +51,9 @@ ui/
     locale.c / locale.h                 JSON i18n loader
     screen_mgr.c / screen_mgr.h         Navigation stack
     backend_comm.c / backend_comm.h     ZMQ IPC client
+    net_utils.c / net_utils.h           Shared USB network config helpers
+    wifi_setup.c / wifi_setup.h         wifi.txt import and UCI apply logic
+    eth_setup.c / eth_setup.h           eth.txt import and UCI apply logic
     drivers/
       fb_driver.c / fb_driver.h         /dev/fb0 mmap (Linux target)
       touch_driver.c / touch_driver.h   evdev touchscreen (Linux target)
@@ -80,6 +83,8 @@ ui/
     fonts/
       deneb_font_i18n_*.c               Generated exact-subset locale fonts
   build-package.sh                      Build .deneb update package
+  wifi.txt.example                      Example WiFi USB import file
+  eth.txt.example                       Example Ethernet USB import file
   README.md                             This file
 ```
 
@@ -142,7 +147,21 @@ The installer will:
 - Disable the stock Cygnus menu (S96)
 - Install the Deneb UI binary, init script, locales, and Digital Factory bridge
 - Patch the stock coordinator ZMQ poll-state issue that can pin CPU after updates
+- Disable the stock WiFi AP/captive portal and replace it with USB import
 - Reboot into the new UI
+
+## Network Setup
+
+Deneb configures networking from USB files instead of the stock WiFi captive
+portal. On the touchscreen, open Settings > Network, insert a USB drive, then
+choose the relevant import action.
+
+- Use [WiFi setup via USB](../docs/WIFI_SETUP.md) with `wifi.txt` to configure
+  WiFi SSID, password, DHCP/static IP, DNS, NTP, hostname, and country.
+- Use [Ethernet setup via USB](../docs/ETH_SETUP.md) with `eth.txt` to set
+  Ethernet DHCP/static IP, DNS, NTP, or hostname.
+- Template files live at [`wifi.txt.example`](wifi.txt.example) and
+  [`eth.txt.example`](eth.txt.example).
 
 ## Backend IPC
 
@@ -177,6 +196,12 @@ Home (Deneb)
         +-- Language (EN/NL/DE/FR/ZH-Hans/Pirate/1337)
         +-- Set Nozzle Size
         +-- Network
+              +-- WiFi status
+              +-- Import WiFi from USB
+              +-- Disconnect WiFi
+              +-- Ethernet status
+              +-- Import Ethernet from USB
+              +-- Reset Ethernet to DHCP
         +-- Digital Factory
         +-- Frame Lighting
         +-- Factory Reset

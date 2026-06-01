@@ -22,7 +22,8 @@ This is not legal advice. It is the working project boundary for Deneb.
   obtain that source.
 - Cura-derived compatibility code, if any: use Cura-compatible terms and preserve attribution.
 - Marlin firmware work: keep in a clearly separate GPL-compatible tree or fork and satisfy Marlin obligations.
-- Documentation license is still to be decided unless covered by the project default.
+- Original Deneb documentation and example configuration files: `MPL-2.0`
+  under the project default unless a file declares different terms.
 
 ## Publication Approach
 

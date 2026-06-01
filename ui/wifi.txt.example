@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# WiFi Configuration for Deneb
+# Place this file on a USB drive as wifi.txt
+# Insert USB into printer, go to Settings > Network > Import WiFi from USB
+#
+# Required:
+#   ssid = YourNetworkName
+#
+# Optional:
+#   password = YourPassword
+#   encryption = psk2              # psk2 (WPA2), psk (WPA), sae (WPA3), wep, none
+#   country = US                   # 2-letter country code
+#   ip = 192.168.1.100             # Static IP (omit for DHCP)
+#   netmask = 255.255.255.0        # Subnet mask (default: 255.255.255.0)
+#   gateway = 192.168.1.1          # Default gateway
+#   dns = 8.8.8.8 8.8.4.4         # DNS servers (space-separated)
+#   ntp = pool.ntp.org             # NTP time server(s), space-separated
+#   hostname = MyPrinter           # Device name on network (default: Ultimaker-2C)
+#
+# Lines starting with # are comments.
+# Keys are case-insensitive.
+# Encryption aliases: wpa2 -> psk2, wpa -> psk, wpa3/sae -> sae, open -> none
+#
+# Example: Simple WPA2 network with DHCP
+ssid=MyHomeNetwork
+password=MySecretPassword
+
+# Example: Static IP configuration
+# ssid=OfficeNetwork
+# password=OfficePass123
+# encryption=psk2
+# ip=10.0.0.50
+# netmask=255.255.255.0
+# gateway=10.0.0.1
+# dns=10.0.0.1 8.8.8.8
+# country=US
+
+# Example: Open network (no password)
+# ssid=GuestNetwork
+# encryption=none

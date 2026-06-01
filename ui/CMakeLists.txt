@@ -135,6 +135,9 @@ set(DENEB_SOURCES
     src/locale.c
     src/screen_mgr.c
     src/backend_comm.c
+    src/net_utils.c
+    src/wifi_setup.c
+    src/eth_setup.c
     src/screens/screen_home.c
     src/screens/screen_status.c
     src/screens/screen_print.c

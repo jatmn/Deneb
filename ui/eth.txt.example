@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Ethernet Configuration for Deneb
+# Place this file on a USB drive as eth.txt
+# Insert USB into printer, go to Settings > Network > Import Ethernet from USB
+#
+# All fields are optional. If no ip is set, DHCP is used.
+#
+#   ip = 192.168.1.100             # Static IP (omit for DHCP)
+#   netmask = 255.255.255.0        # Subnet mask (default: 255.255.255.0)
+#   gateway = 192.168.1.1          # Default gateway
+#   dns = 8.8.8.8 8.8.4.4         # DNS servers (space-separated)
+#   ntp = pool.ntp.org             # NTP time server(s), space-separated
+#   hostname = MyPrinter           # Device name on network
+#
+# Lines starting with # are comments.
+# Keys are case-insensitive.
+
+# Example: Simple static IP
+ip=192.168.1.100
+gateway=192.168.1.1
+dns=8.8.8.8
+
+# Example: Full static config
+# hostname=Printer-3D-01
+# ip=10.0.0.50
+# netmask=255.255.255.0
+# gateway=10.0.0.1
+# dns=10.0.0.1 8.8.8.8
+# ntp=ntp.example.com

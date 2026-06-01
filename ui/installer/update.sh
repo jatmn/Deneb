@@ -128,6 +128,59 @@ PY
     log "patched stock coordinator command poll state"
 }
 
+prune_stock_wifi_portal() {
+    # Disable the WiFi AP at boot. The AP was used for the stock captive-portal
+    # WiFi setup which is replaced by USB wifi.txt import in Deneb.
+    # Only disable the AP - preserve existing STA config if WiFi is already set up.
+    local sta_disabled
+    sta_disabled=$(uci -q get wireless.sta.disabled 2>/dev/null || echo "1")
+
+    uci set wireless.ap.disabled='1'
+    uci set wireless.ap.hidden='1'
+    # Only disable the radio if STA is also not configured
+    if [ "$sta_disabled" = "1" ]; then
+        local sta_ssid
+        sta_ssid=$(uci -q get wireless.sta.ssid 2>/dev/null || echo "")
+        if [ -z "$sta_ssid" ]; then
+            uci set wireless.radio0.disabled='1'
+            log "WiFi radio disabled (no WiFi config found)"
+        fi
+    fi
+    uci commit wireless
+
+    # Disable nodogsplash captive portal
+    /etc/init.d/nodogsplash stop 2>/dev/null || true
+    /etc/init.d/nodogsplash disable 2>/dev/null || true
+    uci set nodogsplash.@nodogsplash[0].enabled='0' 2>/dev/null || true
+    uci commit nodogsplash 2>/dev/null || true
+
+    # Move stock WiFi portal files into Deneb backup storage so stock-menu
+    # rollback can restore the captive-portal setup path.
+    if [ -d /home/cygnus/wificonnect ]; then
+        if [ ! -e "${DENEB_BACKUP_DIR}/wificonnect" ]; then
+            mv /home/cygnus/wificonnect "${DENEB_BACKUP_DIR}/wificonnect"
+            log "backed up stock wificonnect server"
+        else
+            rm -rf /home/cygnus/wificonnect
+            log "removed duplicate stock wificonnect server"
+        fi
+    fi
+
+    # Move nodogsplash web assets if present.
+    if [ -d /etc/nodogsplash/htdocs ]; then
+        mkdir -p "${DENEB_BACKUP_DIR}/nodogsplash"
+        if [ ! -e "${DENEB_BACKUP_DIR}/nodogsplash/htdocs" ]; then
+            mv /etc/nodogsplash/htdocs "${DENEB_BACKUP_DIR}/nodogsplash/htdocs"
+            log "backed up nodogsplash web assets"
+        else
+            rm -rf /etc/nodogsplash/htdocs
+            log "removed duplicate nodogsplash web assets"
+        fi
+    fi
+
+    log "stock WiFi AP portal disabled"
+}
+
 prune_stock_menu_ui() {
     local menu_dir="/home/cygnus/menu"
 
@@ -163,6 +216,18 @@ rollback_to_stock_menu() {
     log "rolling back to stock menu service"
     /etc/init.d/deneb-ui stop 2>/dev/null || true
     /etc/init.d/deneb-ui disable 2>/dev/null || true
+
+    if [ -d "${DENEB_BACKUP_DIR}/wificonnect" ] && [ ! -e /home/cygnus/wificonnect ]; then
+        mv "${DENEB_BACKUP_DIR}/wificonnect" /home/cygnus/wificonnect
+        log "restored stock wificonnect server"
+    fi
+    if [ -d "${DENEB_BACKUP_DIR}/nodogsplash/htdocs" ] && [ ! -e /etc/nodogsplash/htdocs ]; then
+        mkdir -p /etc/nodogsplash
+        mv "${DENEB_BACKUP_DIR}/nodogsplash/htdocs" /etc/nodogsplash/htdocs
+        log "restored nodogsplash web assets"
+    fi
+    /etc/init.d/nodogsplash enable 2>/dev/null || true
+
     if [ -x /etc/init.d/menu ]; then
         /etc/init.d/menu enable 2>/dev/null || true
         /etc/init.d/menu start 2>/dev/null || true
@@ -233,6 +298,7 @@ install_binary
 patch_stock_coordinator
 smoke_test_binary
 install_config
+prune_stock_wifi_portal
 prune_stock_menu_ui
 
 log "installation complete"

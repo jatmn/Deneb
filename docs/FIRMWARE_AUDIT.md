@@ -142,7 +142,7 @@ with static C binaries:
 |-----------|-------|------------|-------------|
 | print_service.py | ~500+ | MEDIUM-HIGH | ~19 MB VSZ |
 | coordinator.py | ~183 main + 15 handlers | HIGH | ~27 MB VSZ |
-| wificonnect/server.py | ~138 | LOW-MEDIUM | Eliminates Tornado |
+| wificonnect/server.py | ~138 | LOW-MEDIUM | Replaced by Deneb USB `wifi.txt` import |
 
 ### Phase 3: Longer term
 
@@ -157,7 +157,7 @@ with static C binaries:
 - [x] Deneb .deneb package update system
 - [x] Branding assets, splash screen
 - [x] Digital Factory bridge C rewrite embedded in `deneb-ui`; `/usr/bin/deneb-df-bridge` is installed as a symlink entry point
-- [ ] WiFi connect server C rewrite
+- [x] WiFi setup replacement: USB `wifi.txt` import, stock AP/captive portal disabled by installer
 - [ ] Print service C rewrite
 - [ ] Coordinator C rewrite
 - [ ] OS/service modernization
@@ -181,7 +181,9 @@ Or: `plink -batch -pw deneb root@10.10.10.244 '<command>'`
 
 Stock menu (executor.py): NOT RUNNING (replaced by deneb-ui; pruned by Deneb installer after smoke test)
 Digital Factory (connector.py): NOT RUNNING (starts async, disabled by default)
-WiFi Connect server: NOT RUNNING (started on demand by stock menu)
+WiFi Connect server: REMOVED by Deneb installer after the native UI smoke test.
+WiFi setup is handled by USB `wifi.txt` import; see
+[WiFi setup via USB](WIFI_SETUP.md).
 
 Total remaining Python RSS: ~37.9 MB. The stock-service table above uses VSZ,
 so compare VSZ-to-VSZ or RSS-to-RSS only.

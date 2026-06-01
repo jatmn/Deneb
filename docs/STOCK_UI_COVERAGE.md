@@ -33,16 +33,17 @@ Deneb now exposes:
 | Print | Select from USB, browse, preview, prepare, pause/resume/abort, conflict/error pages | Partial. USB browse, file selection, and explicit start controls exist; thumbnail preview/conflict flows are not implemented. |
 | Materials | Change material, load material, unload material, set material, move material; import material appears inside Set Material as "Add a new material" | Mostly present. Load/unload/change/move shortcuts exist; Set Material writes stock Generic material GUIDs; Import Material invokes the stock USB profile importer. The deeper stock brand/type/color browser is still richer. Deneb currently also exposes Import Material as a top-level shortcut. |
 | Maintenance | Set nozzle temperature, update firmware, move build plate, level build plate, diagnostics/save logs | Mostly present. Temperature, Deneb package update from USB, move build plate, leveling macro steps, diagnostics telemetry, Air Manager fan toggle, and stock-shaped log export exist. Deneb intentionally does not install stock UltiMaker firmware updates. |
-| Settings | Set nozzle size, network configuration, Digital Factory, frame lighting, factory reset, about | Mostly present. Nozzle size, network info/Wi-Fi setup actions, Digital Factory status/restart/disconnect/PIN pairing, frame lighting, factory reset, language, and about exist. |
+| Settings | Set nozzle size, network configuration, Digital Factory, frame lighting, factory reset, about | Mostly present. Nozzle size, network info, USB WiFi/Ethernet config import, Digital Factory status/restart/disconnect/PIN pairing, frame lighting, factory reset, language, and about exist. |
 | About | About, printer ID, certifications | Present. Deneb About shows version/project info, stock base version, printer ID, and stock certification text. |
 | Startup/status | Welcome/update success, recovered print, faults, cloud state | Partial. Deneb has status and error display, but stock recovery/update-success/cloud flows are not yet matched. |
 
 ## Release-Critical Gaps
 
-1. Wi-Fi setup progress wizard
+1. Stock-style WiFi setup progress animation
 
-   Deneb exposes network information and starts the stock Wi-Fi setup portal,
-   but it does not yet reproduce stock's full progress wizard.
+   Deneb replaces the stock AP/captive-portal wizard with USB `wifi.txt`
+   import. This avoids the stock Tornado wificonnect service, but it does not
+   reproduce the stock animated progress wizard.
 
 2. Print preparation parity
 
@@ -62,8 +63,9 @@ Deneb now exposes:
 
 2. Network configuration
 
-   Deneb now displays printer/network address information and exposes stock
-   Wi-Fi setup/disconnect actions.
+   Deneb now displays printer/network address information and supports USB
+   WiFi/Ethernet imports from `wifi.txt` and `eth.txt`. See
+   [WiFi setup](WIFI_SETUP.md) and [Ethernet setup](ETH_SETUP.md).
 
 3. Build plate leveling
 
@@ -93,8 +95,7 @@ Deneb now exposes:
 
 1. Expand the material selector from Generic shortcuts to the full stock
    brand/type/color database browser.
-2. Add a native Wi-Fi setup progress screen around the stock setup portal.
-3. Add richer print preparation pages for thumbnails and material/nozzle
+2. Add richer print preparation pages for thumbnails and material/nozzle
    conflicts.
 
 ## Resource Guardrail
