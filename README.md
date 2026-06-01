@@ -12,6 +12,9 @@ This repository is private while the project is being organized.
 - [x] Early-boot framebuffer splash (S11, raw RGB565 to /dev/fb0)
 - [x] Touchscreen UI replacement (LVGL v9 C, replaces Python/Cygnus menu)
 - [x] Backend IPC integration (ZeroMQ client for coordinator)
+- [x] Client-only network setup via USB `wifi.txt` / `eth.txt`
+- [x] Stock WiFi AP/captive-portal web setup disabled and hidden from the live filesystem view
+- [x] AP-side DHCP/DNS/IPv6 server services disabled for Deneb installs
 - [x] Live device inspection (process list, memory, IPC ports, macros)
 - [x] Baseline measurements documented
 - [x] Initial on-device Deneb UI resource measurements
@@ -36,7 +39,17 @@ This repository is private while the project is being organized.
 
 ## Touchscreen UI
 
-The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 2 MB RSS at idle, with a roughly 8.6 MiB `.deneb` package after adding stock-menu coverage and generated i18n fonts. See [ui/README.md](ui/README.md) for build instructions and architecture details.
+The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 1.5-2 MB RSS at idle, with a roughly 1.8 MiB stripped `.deneb` package after adding stock-menu coverage, generated i18n fonts, and the embedded C Digital Factory bridge. See [ui/README.md](ui/README.md) for build instructions and architecture details.
+
+## Optimization Notes
+
+Deneb's current optimization work is focused on removing dormant stock UI and setup paths while keeping the printer on the stock motion/backend services until clean-room replacements are ready.
+
+- The stock touchscreen UI no longer runs; Deneb starts the native LVGL UI instead.
+- The installer prunes the dormant stock Python touchscreen files after a successful Deneb UI smoke test.
+- WiFi setup is client-only through USB import. The old AP/captive-portal flow, Tornado `wificonnect` server, nodogsplash htdocs, and stock React WiFi setup assets are hidden from the live filesystem view.
+- AP-side DHCP/DNS/IPv6 server services (`dnsmasq` and `odhcpd`) are stopped and disabled; the stock binaries remain in the read-only base image, but they no longer run.
+- `.deneb` packages do not rebuild the vendor squashfs/rootfs. Cleanup hides stock base-image files with overlayfs whiteouts where needed, but reclaiming read-only base-image flash is intentionally outside the clean repository boundary.
 
 ## Device Setup Docs
 

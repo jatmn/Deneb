@@ -157,8 +157,12 @@ encryption=wep
 
 ## Behavior Notes
 
-- **Boot behavior**: WiFi radio is OFF at boot. It only starts after a successful
-  wifi.txt import. Once configured, WiFi auto-connects on subsequent boots.
+- **Boot behavior**: WiFi station mode is disabled until a successful
+  `wifi.txt` import. The legacy AP/captive-portal setup path is disabled and
+  hidden from the live filesystem view, including AP-side DHCP/DNS and IPv6
+  router-advertisement services and the AP DHCP scope. The stock service
+  binaries remain in the read-only base image, but they are not run by Deneb.
+  Once configured, WiFi auto-connects on subsequent boots as a client.
 
 - **Changing WiFi**: Create a new wifi.txt and import again. The old config is
   overwritten.

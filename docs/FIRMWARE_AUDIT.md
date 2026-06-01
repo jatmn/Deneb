@@ -1,6 +1,6 @@
 # Deneb Firmware Audit
 
-Date: 2026-05-31
+Date: 2026-05-31, updated 2026-06-01 after WiFi web asset cleanup and live resource sampling
 Source: Live device SSH (10.10.10.244) + unpacked firmware recovery in `rootfs/`
 Hardware: UltiMaker 2+ Connect (Onion Omega2+, MediaTek MT7688)
 Printer hostname: Ultimaker-2C-9CF8
@@ -181,7 +181,16 @@ Or: `plink -batch -pw deneb root@10.10.10.244 '<command>'`
 
 Stock menu (executor.py): NOT RUNNING (replaced by deneb-ui; pruned by Deneb installer after smoke test)
 Digital Factory (connector.py): NOT RUNNING (starts async, disabled by default)
-WiFi Connect server: REMOVED by Deneb installer after the native UI smoke test.
+WiFi Connect server: HIDDEN from the live filesystem view by Deneb installer
+after the native UI smoke test.
+Stock WiFi React assets and asset hash: HIDDEN from the live filesystem view by
+Deneb installer commit `ec32a4a`.
+Nodogsplash captive-portal htdocs: HIDDEN from the live filesystem view by the
+Deneb installer.
+AP-side DHCP/DNS and IPv6 router-advertisement services: DISABLED by the Deneb
+installer because Deneb networking is client-only. IPv4 client networking is
+handled by `netifd` and `udhcpc`; the stale `dhcp.wlan` AP DHCP scope is
+removed. The `dnsmasq` and `odhcpd` binaries remain in the read-only base image.
 WiFi setup is handled by USB `wifi.txt` import; see
 [WiFi setup via USB](WIFI_SETUP.md).
 
@@ -201,8 +210,16 @@ Cached:       27,592 kB
 ### Flash Storage
 
 ```
-/dev/mtdblock6   10.9M   4.6M used   6.4M available (42%)
+/dev/mtdblock6   10.9M   1.5M used   9.5M available (13%)
 ```
+
+The hidden stock WiFi portal files originate in the read-only squashfs lower
+layer. The `.deneb` installer hides them with overlayfs whiteouts, which removes
+runtime visibility and reachability but does not reclaim squashfs/base-image
+flash space. Service binaries such as `dnsmasq` and `odhcpd` are likewise
+disabled rather than removed from the base image. Reclaiming that space would
+require rebuilding the vendor rootfs or firmware image, which is outside the
+clean repository boundary.
 
 ### Network Listeners
 
@@ -248,3 +265,43 @@ Uses paramiko with ssh-rsa monkey-patch to handle the ancient Dropbear.
 Needs Python 3.13 with paramiko installed (`pip install paramiko`).
 
 Alternative: `/c/Program Files/PuTTY/plink -batch -pw deneb root@10.10.10.244 '<command>'`
+
+## Live Device Snapshot (2026-06-01, after `ec32a4a`)
+
+### Running Processes and Memory
+
+| Process | VSZ (kB) | RSS (kB) | Notes |
+|---------|----------|----------|-------|
+| python3 `coordinator.py` | 27,860 | 22,788 | Stock coordinator, Deneb status/command backend |
+| python3 `print_service.py` | 18,884 | 15,080 | Stock Marlin serial driver |
+| deneb-ui | 2,780 | 1,472 | Deneb LVGL C UI |
+| onion-helper | 1,968 | 1,196 | Candidate for investigation |
+| netifd | 1,724 | 1,012 | Network interface daemon |
+| rpcd | 1,788 | 956 | OpenWrt RPC daemon |
+| ntpd | 1,220 | 900 | NTP client |
+| odhcpd | 1,412 | 868 | AP-side IPv6 RA/DHCPv6 service; disabled by Deneb installer after this sample |
+| logread mirror | 1,348 | 808 | Candidate if file mirror is optional |
+| dropbear | 1,064 | 808 | SSH daemon |
+
+### Memory State
+
+```
+Mem:              124584 total, 80440 used, 44144 free
+-/+ buffers/cache:        41304 used, 83280 free
+Swap:                  0 total,     0 used,     0 free
+```
+
+### Network Listeners
+
+No HTTP server is listening. The live listeners are SSH plus localhost-only
+stock backend sockets:
+
+| Address | Service |
+|---------|---------|
+| 0.0.0.0:22 / :::22 | dropbear |
+| 127.0.0.1:5546 | print_service Gershwin pub |
+| 127.0.0.1:5548 | coordinator Gershwin pub |
+| 127.0.0.1:5555 | print_service status PUB |
+| 127.0.0.1:5556 | print_service command REP |
+| 127.0.0.1:5565 | coordinator status PUB |
+| 127.0.0.1:5566 | coordinator command REP |

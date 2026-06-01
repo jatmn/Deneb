@@ -14,16 +14,18 @@ Replaces the stock Python/Cygnus menu with a lightweight native LVGL C implement
 
 | Metric | Stock (Python) | Deneb (LVGL C) | Reduction |
 |--------|---------------|-----------------|-----------|
-| Runtime package | N/A (Python app tree) | ~8.6 MiB `.deneb` | N/A |
+| Runtime package | N/A (Python app tree) | ~1.8 MiB stripped `.deneb` | N/A |
 | Menu RAM (VSZ) | 33.7 MB | 2.7 MB measured | ~92% |
 | Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
 | All Python service VSZ | 113.2 MB | ~79.5 MB after stock menu disable | ~30% |
 | Settled idle CPU | Stock baseline still being normalized | ~90% idle system sample | In progress |
 | IPC backend | ZMQ + Python | ZMQ + C | Same protocol |
 
-The Deneb measurements are from a live idle printer sample after the stock menu
-was disabled and `deneb-ui --lang en` was running. CPU numbers are a snapshot,
-not yet a full benchmark across printing, update, and diagnostic workflows.
+The Deneb measurements are from live idle printer samples after the stock menu
+was disabled and `deneb-ui --lang en` was running. The earlier 8.6 MiB package
+number included unstripped debug data; release packages are stripped. CPU
+numbers are snapshots, not yet a full benchmark across printing, update, and
+diagnostic workflows.
 
 ## Architecture
 
@@ -147,7 +149,10 @@ The installer will:
 - Disable the stock Cygnus menu (S96)
 - Install the Deneb UI binary, init script, locales, and Digital Factory bridge
 - Patch the stock coordinator ZMQ poll-state issue that can pin CPU after updates
-- Disable the stock WiFi AP/captive portal and replace it with USB import
+- Disable the stock WiFi AP/captive portal, remove the obsolete stock web
+  assets from the live filesystem view with overlayfs, disable AP-side
+  DHCP/DNS/IPv6 server services without removing their read-only base-image
+  binaries, and replace setup with USB import
 - Reboot into the new UI
 
 ## Network Setup

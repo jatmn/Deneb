@@ -129,9 +129,9 @@ PY
 }
 
 prune_stock_wifi_portal() {
-    # Disable the WiFi AP at boot. The AP was used for the stock captive-portal
-    # WiFi setup which is replaced by USB wifi.txt import in Deneb.
-    # Only disable the AP - preserve existing STA config if WiFi is already set up.
+    # Disable the WiFi AP at boot. The AP/router path was used for the stock
+    # captive-portal WiFi setup; Deneb is client-only and uses USB wifi.txt
+    # import instead. Preserve existing STA config if WiFi is already set up.
     local sta_disabled
     sta_disabled=$(uci -q get wireless.sta.disabled 2>/dev/null || echo "1")
 
@@ -148,29 +148,42 @@ prune_stock_wifi_portal() {
     fi
     uci commit wireless
 
+    # Disable server-side AP plumbing. IPv4/IPv6 clients still use netifd and
+    # udhcpc; Deneb should not serve DHCP, DNS, or router advertisements. The
+    # service binaries live in the read-only squashfs base, so stopping and
+    # disabling them is the runtime win available to a .deneb package.
+    /etc/init.d/dnsmasq stop 2>/dev/null || true
+    /etc/init.d/dnsmasq disable 2>/dev/null || true
+    /etc/init.d/odhcpd stop 2>/dev/null || true
+    /etc/init.d/odhcpd disable 2>/dev/null || true
+    uci delete dhcp.wlan 2>/dev/null || true
+    uci commit dhcp 2>/dev/null || true
+    log "disabled AP DHCP/DNS/IPv6 server services"
+
     # Disable nodogsplash captive portal
     /etc/init.d/nodogsplash stop 2>/dev/null || true
     /etc/init.d/nodogsplash disable 2>/dev/null || true
     uci set nodogsplash.@nodogsplash[0].enabled='0' 2>/dev/null || true
     uci commit nodogsplash 2>/dev/null || true
 
-    # Remove stock WiFi portal files. Deneb replaces the AP/captive-portal
-    # setup path with USB wifi.txt import, so keeping the old Python webserver,
-    # React bundle, and nodogsplash assets only costs flash/storage.
+    # Hide stock WiFi portal files. Deneb replaces the AP/captive-portal setup
+    # path with USB wifi.txt import. These paths usually originate in the
+    # read-only squashfs base, so rm creates overlayfs whiteouts rather than
+    # reclaiming base-image flash.
     if [ -d /home/cygnus/wificonnect ]; then
         rm -rf /home/cygnus/wificonnect
-        log "removed obsolete stock wificonnect server"
+        log "hid obsolete stock wificonnect server"
     fi
 
     if [ -d /home/cygnus-web-assets ]; then
         rm -rf /home/cygnus-web-assets
-        log "removed obsolete stock WiFi setup web assets"
+        log "hid obsolete stock WiFi setup web assets"
     fi
     rm -f /home/cygnus-web-assets_git_hash
 
     if [ -d /etc/nodogsplash/htdocs ]; then
         rm -rf /etc/nodogsplash/htdocs
-        log "removed obsolete nodogsplash web assets"
+        log "hid obsolete nodogsplash web assets"
     fi
 
     # Clean backups left by older Deneb installers now that rollback no longer
