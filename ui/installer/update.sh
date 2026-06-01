@@ -41,12 +41,16 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api lighttpd deneb-api.init deneb-web.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
         fi
     done
+    if [ ! -d /tmp/update/www ]; then
+        log "ERROR: missing required directory: www"
+        missing=1
+    fi
     [ "$missing" -eq 0 ] || exit 1
 }
 
@@ -73,6 +77,38 @@ install_binary() {
 
     ln -sf /usr/bin/deneb-ui /usr/bin/deneb-df-bridge
     log "installed deneb-df-bridge symlink to /usr/bin/deneb-ui"
+}
+
+install_web_runtime() {
+    /etc/init.d/deneb-web stop 2>/dev/null || true
+    /etc/init.d/deneb-api stop 2>/dev/null || true
+
+    cp /tmp/update/deneb-api /usr/bin/deneb-api
+    chmod 0755 /usr/bin/deneb-api
+    log "installed deneb-api to /usr/bin/deneb-api"
+
+    cp /tmp/update/lighttpd /usr/sbin/lighttpd
+    chmod 0755 /usr/sbin/lighttpd
+    log "installed lighttpd to /usr/sbin/lighttpd"
+
+    mkdir -p /etc/deneb /www/deneb
+    cp /tmp/update/lighttpd.conf /etc/deneb/lighttpd.conf
+    cp -r /tmp/update/www/* /www/deneb/
+    log "installed Deneb web assets"
+
+    cp /tmp/update/deneb-api.init /etc/init.d/deneb-api
+    cp /tmp/update/deneb-web.init /etc/init.d/deneb-web
+    chmod 0755 /etc/init.d/deneb-api /etc/init.d/deneb-web
+    log "installed Deneb web init scripts"
+
+    [ -f /etc/config/deneb ] || touch /etc/config/deneb
+    uci -q set deneb.web=web 2>/dev/null || true
+    uci -q set deneb.web.enabled='1' 2>/dev/null || true
+    uci -q commit deneb 2>/dev/null || true
+
+    /etc/init.d/deneb-api enable 2>/dev/null || true
+    /etc/init.d/deneb-web enable 2>/dev/null || true
+    log "enabled Deneb web services for next boot"
 }
 
 patch_stock_coordinator() {
@@ -299,6 +335,7 @@ trap schedule_reboot EXIT
 validate_package
 backup_stock
 install_binary
+install_web_runtime
 patch_stock_coordinator
 smoke_test_binary
 install_config

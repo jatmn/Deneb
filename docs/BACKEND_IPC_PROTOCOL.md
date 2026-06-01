@@ -7,8 +7,8 @@ ZeroMQ (ZMQ) over localhost TCP between three Python services and the UI.
 ## Port Map
 
 ### Print Service (marlindriver/print_service.py, PID 1124)
-- tcp://127.0.0.1:5555 - ZMQ REP (receives commands)
-- tcp://127.0.0.1:5556 - ZMQ PUB (publishes status, topic "10001")
+- tcp://127.0.0.1:5555 - ZMQ PUB (publishes status, topic "10001")
+- tcp://127.0.0.1:5556 - ZMQ REP (receives commands)
 
 ### Coordinator (coordinator/coordinator.py, PID 1129)
 - tcp://127.0.0.1:5565 - ZMQ PUB (republishes aggregated status)
@@ -20,7 +20,7 @@ ZeroMQ (ZMQ) over localhost TCP between three Python services and the UI.
 
 ## Data Flow
 
-  print_service --[PUB 5556]--> coordinator --[PUB 5565]--> deneb-ui
+  print_service --[PUB 5555]--> coordinator --[PUB 5565]--> deneb-ui
   deneb-ui --[REQ 5566]--> coordinator --[REQ 5556]--> print_service
 
 ## Status Protocol (SUB on port 5565)

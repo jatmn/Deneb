@@ -43,7 +43,8 @@ Swap:            0          0          0
 
 The earlier 8.6 MiB package number included unstripped MIPS debug info. Release
 packaging now strips the staged binary, and the current packaged release
-artifact is about 1.8 MiB (`Deneb_UI_<commit>.deneb`).
+artifact was about 1.8 MiB before the web runtime was bundled
+(`Deneb_Update_<commit>.deneb` is the update release lane).
 
 ## Deneb UI Live Idle Snapshot
 

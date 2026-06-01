@@ -41,15 +41,28 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   disabling them.
 - Current remaining idle RAM pressure is dominated by stock Python backend
   services: `coordinator.py` at about 22.8 MB RSS and `print_service.py` at
-  about 15.1 MB RSS on the latest sample.
+  about 15.1 MB RSS on the latest sample. `print_service.py` is the Marlin
+  serial bridge and motion-controller command/status service, so it is a
+  clean-room rewrite candidate rather than something to disable.
 
 ## Next Measurement Targets
 
 - Test whether the persistent `logread -f -F /var/log/ultimaker/system.log`
   mirror is still needed when diagnostics can capture `logread` output on
   demand; the latest sample shows about 0.8 MB RSS.
-- Identify whether `onion-helper` is required on the UM2C runtime path before
-  disabling it; the latest sample shows about 1.2 MB RSS.
+- Map `print_service.py` replacement requirements before any implementation
+  work. The live investigation shows it owns `/dev/ttyS1`, verifies/programs
+  the motion-controller firmware at startup, handles job/macro/G-code control,
+  publishes live status on ZMQ, and implements Marlin flow control, CRC/framing,
+  resend handling, and pause/resume state. It is a meaningful RAM target, but
+  high risk.
+- Keep `onion-helper` under observation, but do not disable it yet. A live
+  stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
+  `coordinator.py`, `print_service.py`, and the separate `onion` ubus API
+  remained healthy. The daemon exposes generic ubus helper methods for process
+  launch, file writes, and downloads, so it is more of an attack-surface
+  candidate than a large RAM win: its latest sample shows about 1.2 MB RSS, but
+  only about 100 KiB was anonymous/private memory.
 - Remove or suppress stock Python `__pycache__` writes only if it does not hurt
   boot/runtime behavior; the latest overlay sample shows about 260 KiB of
   bytecode cache.

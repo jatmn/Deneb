@@ -103,29 +103,11 @@ wsl -d Debian -- bash -c 'cd /tmp && curl -sL -o musl-cross.tar.gz \
   tar xzf musl-cross.tar.gz && \
   cp -r mipsel-linux-musl-cross ~/mipsel-linux-musl-cross'
 
-# First run only: cross-compile libzmq
-wsl -d Debian -- bash -c 'cd /tmp && \
-  curl -sL -o zeromq-4.3.5.tar.gz \
-  https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz && \
-  tar xzf zeromq-4.3.5.tar.gz && \
-  cd zeromq-4.3.5 && mkdir build-musl && cd build-musl && \
-  cmake .. -DCMAKE_TOOLCHAIN_FILE=/mnt/c/temp/Deneb/ui/cmake/mipsel-musl-toolchain.cmake \
-    -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF \
-    -DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON && \
-  make -j$(nproc)'
+# First run only: fetch/build release dependencies
+powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1 -RebuildZmq -RebuildLighttpd
 
-# Build the UI
-wsl -d Debian -- bash -c 'cd /mnt/c/temp/Deneb/ui && \
-  mkdir -p build-musl && cd build-musl && \
-  cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake \
-    -DCMAKE_BUILD_TYPE=MinSizeRel \
-    -DZMQ_LIBRARY=/tmp/zeromq-4.3.5/build-musl/lib/libzmq.a \
-    -DZMQ_INCLUDE_DIR=/tmp/zeromq-4.3.5/include && \
-  make -j$(nproc)'
-
-# Build .deneb package
-wsl -d Debian -- bash -c 'cd /mnt/c/temp/Deneb && \
-  bash ui/build-package.sh ui/build-musl/deneb-ui'
+# Later builds
+powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 
 ### Host build (for code testing, no display)
@@ -138,16 +120,16 @@ ninja
 
 ## Installation
 
-1. Copy the latest `dist/Deneb_UI_<commit>.deneb` package to a USB drive
+1. Copy the latest `dist/Deneb_Update_<commit>.deneb` package to a USB drive
 2. Insert USB into the UltiMaker 2+ Connect
 3. On Deneb: Maintenance > Update Firmware
-4. Select the Deneb UI .deneb file
+4. Select the Deneb update .deneb file
 5. Wait for installation and reboot
 
 The installer will:
 - Back up the stock menu init script
 - Disable the stock Cygnus menu (S96)
-- Install the Deneb UI binary, init script, locales, and Digital Factory bridge
+- Install the Deneb UI, web/API runtime, init scripts, locales, and Digital Factory bridge
 - Patch the stock coordinator ZMQ poll-state issue that can pin CPU after updates
 - Disable the stock WiFi AP/captive portal, remove the obsolete stock web
   assets from the live filesystem view with overlayfs, disable AP-side

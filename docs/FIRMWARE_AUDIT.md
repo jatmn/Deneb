@@ -275,7 +275,7 @@ Alternative: `/c/Program Files/PuTTY/plink -batch -pw deneb root@10.10.10.244 '<
 | python3 `coordinator.py` | 27,860 | 22,788 | Stock coordinator, Deneb status/command backend |
 | python3 `print_service.py` | 18,884 | 15,080 | Stock Marlin serial driver |
 | deneb-ui | 2,780 | 1,472 | Deneb LVGL C UI |
-| onion-helper | 1,968 | 1,196 | Candidate for investigation |
+| onion-helper | 1,968 | 1,196 | Generic Onion ubus helper; investigated, not disabled |
 | netifd | 1,724 | 1,012 | Network interface daemon |
 | rpcd | 1,788 | 956 | OpenWrt RPC daemon |
 | ntpd | 1,220 | 900 | NTP client |
@@ -305,3 +305,64 @@ stock backend sockets:
 | 127.0.0.1:5556 | print_service command REP |
 | 127.0.0.1:5565 | coordinator status PUB |
 | 127.0.0.1:5566 | coordinator command REP |
+
+### Print Service Investigation
+
+`/home/cygnus/marlindriver/print_service.py` is the stock Marlin-facing service,
+not a removable UI-side helper. It is started by `/etc/init.d/printserver` at
+boot priority `S95`, before the coordinator at `S96`. The service opens
+`/dev/ttyS1`, owns `/tmp/log/ultimaker/print.log`, and keeps localhost ZMQ
+endpoints for status and command traffic:
+
+- `127.0.0.1:5546`: Gershwin publish slot.
+- `127.0.0.1:5555`: raw ZMQ status PUB, topic `10001`.
+- `127.0.0.1:5556`: raw ZMQ command REP.
+
+The service package is about 1,700 lines across `print_service.py`,
+`marlin_datalink.py`, `marlin_protocol.py`, `marlin_executor.py`, serial-port
+glue, and small Marlin companion helpers. `print_service.py` is the composition
+root: it wires the serial driver, datalink framing, Marlin protocol parser,
+G-code execution queue, and ZMQ/Gershwin sockets.
+
+Observed responsibilities:
+
+- Verify or program the motion-controller firmware at startup through
+  `/home/atmel_programmer/prog.sh /home/atmel_programmer/cygnus-marlin.hex`.
+- Stream jobs and macros to Marlin over `/dev/ttyS1`.
+- Handle raw commands such as `JOB`, `MACRO`, `GCODE`, `ABORT`, `PAUSE`, and
+  `RESUME`.
+- Publish live printer state: bed/nozzle temperatures, top-cap state,
+  coordinates, progress, requested state, idle/print status, errors, received
+  Marlin faults, and firmware fields.
+- Maintain flow control, CRC/framing, resend handling, pause/resume state, and
+  macro file execution from `/home/cygnus/marlindriver/gcode/`.
+
+The latest process sample was about 18.9 MB VSZ / 15.1 MB RSS, with about
+7.5 MB anonymous/private RSS, 5 threads, and many local sockets. Replacing it is
+one of the larger possible RAM wins, but it is also high risk: it sits directly
+between Linux and the motion controller. Treat this as a clean-room replacement
+project, not an installer disable candidate.
+
+### Onion Helper Investigation
+
+`onion-helper` is started by `/etc/init.d/onion-helper` at boot priority `S61`
+from package `onion-helper 0.1-1`. The package owns only
+`/usr/sbin/onion-helper` and its init script. The process registers a ubus object
+named `onion-helper` with generic helper methods:
+
+- `background`: spawn a command in the background.
+- `echo`: echo a message.
+- `write`: write data to a path, optionally base64-decoded or appended.
+- `download`: fetch a URL to a path, optionally in the background.
+
+No Deneb files, stock `/home`, `/etc`, `/usr/share`, `/www`, init, or hotplug
+files referenced `onion-helper` during the 2026-06-01 scan. The broader Onion
+board API is separate: the `onion` ubus object is provided by `onion-ubus`
+through `/usr/libexec/rpcd/onion`.
+
+A reversible live stop test left SSH, Ethernet client networking, `udhcpc`,
+`deneb-ui`, `coordinator.py`, `print_service.py`, and the separate `onion` ubus
+status call healthy. The daemon had about 1.2 MB RSS, but `/proc` showed only
+about 100 KiB anonymous/private memory and about 1.1 MB file-backed library RSS.
+Treat this as an attack-surface candidate with modest RAM benefit. Do not
+disable it by default until more runtime workflows have been exercised.

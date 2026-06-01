@@ -1,29 +1,40 @@
 #!/bin/sh
 # SPDX-License-Identifier: MPL-2.0
 #
-# Build the Deneb Touchscreen UI update package (.deneb).
-# Run from the Deneb repo root after cross-compiling deneb-ui for MIPS.
+# Build the Deneb update package (.deneb).
+# Run from the Deneb repo root after cross-compiling runtime binaries for MIPS.
 #
 # Usage:
-#   ./ui/build-package.sh <path-to-compiled-deneb-ui>
+#   ./ui/build-package.sh <path-to-compiled-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>
 #
 # Produces:
-#   dist/Deneb_UI_<version>.deneb
+#   dist/Deneb_Update_<version>.deneb
 
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BINARY="${1:?Usage: $0 <path-to-deneb-ui>}"
+BINARY="${1:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>}"
+WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>}"
+LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>}"
 
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: binary not found: $BINARY"
     exit 1
 fi
 
+if [ ! -f "$WEB_API_BINARY" ]; then
+    echo "ERROR: deneb-api binary not found: $WEB_API_BINARY"
+    exit 1
+fi
+if [ ! -f "$LIGHTTPD_BINARY" ]; then
+    echo "ERROR: lighttpd binary not found: $LIGHTTPD_BINARY"
+    exit 1
+fi
+
 # Get version from git
 VERSION=$(cd "$REPO_ROOT" && git describe --tags --always 2>/dev/null || echo "dev")
-PACKAGE_NAME="Deneb_UI_${VERSION}"
+PACKAGE_NAME="Deneb_Update_${VERSION}"
 STAGING_DIR="${REPO_ROOT}/build/ui-package/${PACKAGE_NAME}"
 OUTPUT_DIR="${REPO_ROOT}/dist"
 OUTPUT_IMG="${OUTPUT_DIR}/${PACKAGE_NAME}.deneb"
@@ -48,6 +59,27 @@ if [ -n "$STRIP_TOOL" ]; then
     "$STRIP_TOOL" "${STAGING_DIR}/deneb-ui" 2>/dev/null || true
 fi
 chmod 0755 "${STAGING_DIR}/deneb-ui"
+
+# Copy web/API runtime into the same Deneb update package.
+cp "$WEB_API_BINARY" "${STAGING_DIR}/deneb-api"
+if [ -n "$STRIP_TOOL" ]; then
+    "$STRIP_TOOL" "${STAGING_DIR}/deneb-api" 2>/dev/null || true
+fi
+chmod 0755 "${STAGING_DIR}/deneb-api"
+
+cp "$LIGHTTPD_BINARY" "${STAGING_DIR}/lighttpd"
+if [ -n "$STRIP_TOOL" ]; then
+    "$STRIP_TOOL" "${STAGING_DIR}/lighttpd" 2>/dev/null || true
+fi
+chmod 0755 "${STAGING_DIR}/lighttpd"
+
+tr -d '\r' < "${REPO_ROOT}/web/lighttpd.conf" > "${STAGING_DIR}/lighttpd.conf"
+tr -d '\r' < "${REPO_ROOT}/web/init/deneb-api.init" > "${STAGING_DIR}/deneb-api.init"
+tr -d '\r' < "${REPO_ROOT}/web/init/deneb-web.init" > "${STAGING_DIR}/deneb-web.init"
+chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init"
+
+mkdir -p "${STAGING_DIR}/www"
+cp -r "${REPO_ROOT}/web/www/"* "${STAGING_DIR}/www/"
 
 # Copy scripts with Unix line endings. Windows worktrees can CRLF shell files,
 # and OpenWrt shebangs fail hard on /etc/rc.common\r.
@@ -81,6 +113,12 @@ contents:
   deneb-ui          - LVGL touchscreen UI binary (MIPS)
   deneb-ui.init     - OpenWrt procd init script
   deneb-df-bridge   - Symlink installed to deneb-ui C Digital Factory bridge entry point
+  deneb-api         - Local REST API and web session service (MIPS)
+  lighttpd          - Static web server and API reverse proxy (MIPS)
+  deneb-api.init    - OpenWrt procd init script for deneb-api
+  deneb-web.init    - OpenWrt procd init script for lighttpd
+  lighttpd.conf     - Deneb web server configuration
+  www/              - Static Deneb web UI assets
   update.sh         - Installer script
   *.json            - Bundled Deneb locale files
   LICENSE           - Deneb MPL-2.0 project license summary
@@ -95,7 +133,8 @@ EOF
 
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
-tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt
+tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
+    deneb-api lighttpd deneb-api.init deneb-web.init lighttpd.conf www
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"

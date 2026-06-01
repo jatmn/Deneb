@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deneb</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🖨</text></svg>">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header id="header">
+            <span class="title">Deneb</span>
+            <span class="status-dot" id="status-dot"></span>
+            <span class="status-text" id="status-text">--</span>
+        </header>
+
+        <!-- Content area -->
+        <main id="content">
+            <!-- Pages loaded here by router -->
+        </main>
+
+        <!-- Navigation -->
+        <nav id="nav">
+            <a href="#/status" class="nav-btn" data-page="status">
+                <span class="nav-icon">&#9632;</span>
+                <span class="nav-label" data-i18n="web.nav.status">Status</span>
+            </a>
+            <a href="#/control" class="nav-btn" data-page="control">
+                <span class="nav-icon">&#9654;</span>
+                <span class="nav-label" data-i18n="web.nav.control">Control</span>
+            </a>
+            <a href="#/settings" class="nav-btn" data-page="settings">
+                <span class="nav-icon">&#9881;</span>
+                <span class="nav-label" data-i18n="web.nav.settings">Settings</span>
+            </a>
+            <a href="#/about" class="nav-btn" data-page="about">
+                <span class="nav-icon">?</span>
+                <span class="nav-label" data-i18n="web.nav.about">About</span>
+            </a>
+        </nav>
+    </div>
+
+    <script src="js/i18n.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
