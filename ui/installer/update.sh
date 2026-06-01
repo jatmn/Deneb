@@ -155,12 +155,18 @@ prune_stock_wifi_portal() {
     uci commit nodogsplash 2>/dev/null || true
 
     # Remove stock WiFi portal files. Deneb replaces the AP/captive-portal
-    # setup path with USB wifi.txt import, so keeping the old Python webserver
-    # and nodogsplash assets only costs flash/storage.
+    # setup path with USB wifi.txt import, so keeping the old Python webserver,
+    # React bundle, and nodogsplash assets only costs flash/storage.
     if [ -d /home/cygnus/wificonnect ]; then
         rm -rf /home/cygnus/wificonnect
         log "removed obsolete stock wificonnect server"
     fi
+
+    if [ -d /home/cygnus-web-assets ]; then
+        rm -rf /home/cygnus-web-assets
+        log "removed obsolete stock WiFi setup web assets"
+    fi
+    rm -f /home/cygnus-web-assets_git_hash
 
     if [ -d /etc/nodogsplash/htdocs ]; then
         rm -rf /etc/nodogsplash/htdocs
@@ -170,7 +176,9 @@ prune_stock_wifi_portal() {
     # Clean backups left by older Deneb installers now that rollback no longer
     # restores the captive-portal WiFi setup.
     rm -rf "${DENEB_BACKUP_DIR}/wificonnect" \
+           "${DENEB_BACKUP_DIR}/cygnus-web-assets" \
            "${DENEB_BACKUP_DIR}/nodogsplash/htdocs"
+    rm -f "${DENEB_BACKUP_DIR}/cygnus-web-assets_git_hash"
 
     log "stock WiFi AP portal disabled"
 }
