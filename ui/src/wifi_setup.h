@@ -95,6 +95,13 @@ wifi_result_t wifi_setup_import(char *status_msg, int msg_size);
 bool wifi_setup_is_configured(void);
 
 /**
+ * Check if configured WiFi is currently enabled.
+ *
+ * @return true if radio and STA are enabled and an SSID is saved
+ */
+bool wifi_setup_is_enabled(void);
+
+/**
  * Get current WiFi connection status string.
  * Writes a brief status like "Connected to MyNetwork" or "Not configured".
  *
@@ -110,5 +117,13 @@ void wifi_setup_get_status(char *buf, int size);
  * @return WIFI_OK on success
  */
 wifi_result_t wifi_setup_clear(void);
+
+/**
+ * Enable or disable saved WiFi without deleting credentials.
+ *
+ * @param enabled true to enable radio/STA, false to disable them
+ * @return WIFI_OK on success
+ */
+wifi_result_t wifi_setup_set_enabled(bool enabled);
 
 #endif /* WIFI_SETUP_H */

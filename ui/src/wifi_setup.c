@@ -8,6 +8,7 @@
 
 #include "wifi_setup.h"
 #include "net_utils.h"
+#include "locale.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -355,9 +356,11 @@ wifi_result_t wifi_setup_import(char *status_msg, int msg_size)
     if (res != WIFI_OK) {
         if (status_msg) {
             if (res == WIFI_ERR_NO_USB)
-                snprintf(status_msg, msg_size, "No USB drive found");
+                snprintf(status_msg, msg_size, "%s",
+                         locale_get("network.no_usb"));
             else
-                snprintf(status_msg, msg_size, "wifi.txt not found on USB");
+                snprintf(status_msg, msg_size, "%s",
+                         locale_get("network.no_wifi_txt"));
         }
         return res;
     }
@@ -368,10 +371,12 @@ wifi_result_t wifi_setup_import(char *status_msg, int msg_size)
         if (status_msg) {
             switch (res) {
             case WIFI_ERR_NO_SSID:
-                snprintf(status_msg, msg_size, "No SSID in wifi.txt");
+                snprintf(status_msg, msg_size, "%s",
+                         locale_get("network.wifi_no_ssid"));
                 break;
             default:
-                snprintf(status_msg, msg_size, "Parse error in wifi.txt");
+                snprintf(status_msg, msg_size, "%s",
+                         locale_get("network.wifi_parse_error"));
                 break;
             }
         }
@@ -383,16 +388,20 @@ wifi_result_t wifi_setup_import(char *status_msg, int msg_size)
     if (status_msg) {
         switch (res) {
         case WIFI_OK:
-            snprintf(status_msg, msg_size, "WiFi configured: %s", cfg.ssid);
+            snprintf(status_msg, msg_size,
+                     locale_get("network.wifi_configured_fmt"), cfg.ssid);
             break;
         case WIFI_ERR_UCI_FAIL:
-            snprintf(status_msg, msg_size, "Failed to save WiFi config");
+            snprintf(status_msg, msg_size, "%s",
+                     locale_get("network.wifi_save_failed"));
             break;
         case WIFI_ERR_NET_FAIL:
-            snprintf(status_msg, msg_size, "WiFi configured, restarting...");
+            snprintf(status_msg, msg_size, "%s",
+                     locale_get("network.wifi_restarting"));
             break;
         default:
-            snprintf(status_msg, msg_size, "WiFi setup failed");
+            snprintf(status_msg, msg_size, "%s",
+                     locale_get("network.wifi_setup_failed"));
             break;
         }
     }
@@ -406,24 +415,34 @@ wifi_result_t wifi_setup_import(char *status_msg, int msg_size)
 
 bool wifi_setup_is_configured(void)
 {
-    /* Check if STA is enabled and has an SSID configured */
-    FILE *fp;
+    /* Check if STA has an SSID configured */
     char buf[128] = {0};
-    int disabled = 1;
 
-    /* Check disabled status */
-    net_read_command(buf, sizeof(buf),
-                     "uci -q get wireless.sta.disabled 2>/dev/null");
-    disabled = atoi(buf);
-    if (disabled == 1)
-        return false;
-
-    /* Check SSID is set */
-    buf[0] = '\0';
     net_read_command(buf, sizeof(buf),
                      "uci -q get wireless.sta.ssid 2>/dev/null");
 
     return buf[0] != '\0';
+}
+
+bool wifi_setup_is_enabled(void)
+{
+    char buf[128] = {0};
+    int radio_disabled = 1;
+    int sta_disabled = 1;
+
+    if (!wifi_setup_is_configured())
+        return false;
+
+    net_read_command(buf, sizeof(buf),
+                     "uci -q get wireless.radio0.disabled 2>/dev/null");
+    radio_disabled = atoi(buf);
+
+    buf[0] = '\0';
+    net_read_command(buf, sizeof(buf),
+                     "uci -q get wireless.sta.disabled 2>/dev/null");
+    sta_disabled = atoi(buf);
+
+    return radio_disabled != 1 && sta_disabled != 1;
 }
 
 void wifi_setup_get_status(char *buf, int size)
@@ -434,7 +453,7 @@ void wifi_setup_get_status(char *buf, int size)
     buf[0] = '\0';
 
     if (!wifi_setup_is_configured()) {
-        snprintf(buf, size, "WiFi not configured");
+        snprintf(buf, size, "%s", locale_get("network.wifi_not_configured"));
         return;
     }
 
@@ -443,18 +462,28 @@ void wifi_setup_get_status(char *buf, int size)
     net_read_command(ssid, sizeof(ssid),
                      "uci -q get wireless.sta.ssid 2>/dev/null");
 
+    if (!wifi_setup_is_enabled()) {
+        if (ssid[0] != '\0')
+            snprintf(buf, size, locale_get("network.wifi_off_fmt"), ssid);
+        else
+            snprintf(buf, size, "%s", locale_get("network.wifi_disabled"));
+        return;
+    }
+
     /* Check if actually connected (has IP on apcli0) */
     char ip[64] = {0};
     net_read_command(ip, sizeof(ip),
                      "ip -4 addr show apcli0 2>/dev/null | "
-                     "grep -o 'inet [^ ]*' | cut -d' ' -f2");
+                     "grep -o 'inet [^ ]*' | cut -d' ' -f2 | cut -d/ -f1");
 
     if (ip[0] != '\0')
-        snprintf(buf, size, "Connected to %s (%s)", ssid, ip);
+        snprintf(buf, size, locale_get("network.wifi_connected_fmt"),
+                 ssid, ip);
     else if (ssid[0] != '\0')
-        snprintf(buf, size, "Connecting to %s...", ssid);
+        snprintf(buf, size, locale_get("network.wifi_connecting_fmt"),
+                 ssid);
     else
-        snprintf(buf, size, "WiFi configured");
+        snprintf(buf, size, "%s", locale_get("network.wifi_configured"));
 }
 
 /* ------------------------------------------------------------------ */
@@ -484,4 +513,33 @@ wifi_result_t wifi_setup_clear(void)
     system("(wifi down) >/dev/null 2>&1");
 
     return rc == 0 ? WIFI_OK : WIFI_ERR_UCI_FAIL;
+}
+
+wifi_result_t wifi_setup_set_enabled(bool enabled)
+{
+    int rc;
+
+    if (enabled && !wifi_setup_is_configured())
+        return WIFI_ERR_NO_SSID;
+
+    if (enabled) {
+        system("uci set wireless.radio0.disabled='0'");
+        system("uci set wireless.sta.disabled='0'");
+        system("uci set wireless.ap.disabled='1'");
+        system("uci set wireless.ap.hidden='1'");
+    } else {
+        system("uci set wireless.sta.disabled='1'");
+        system("uci set wireless.radio0.disabled='1'");
+    }
+
+    rc = system("uci commit");
+    if (rc != 0)
+        return WIFI_ERR_UCI_FAIL;
+
+    if (enabled)
+        rc = system("(wifi reload; /etc/init.d/network restart) >/dev/null 2>&1");
+    else
+        rc = system("(wifi down) >/dev/null 2>&1");
+
+    return rc == 0 ? WIFI_OK : WIFI_ERR_NET_FAIL;
 }

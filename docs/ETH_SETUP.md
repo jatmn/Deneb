@@ -18,7 +18,7 @@ gateway=192.168.1.1
 ```
 
 3. Insert USB drive into the printer
-4. On the touchscreen: **Settings > Network > Import Ethernet from USB**
+4. On the touchscreen: **Settings > Network > Load Ethernet Settings from USB**
 5. Wait for confirmation.
 
 If no `eth.txt` is present or all fields are omitted, the Ethernet interface

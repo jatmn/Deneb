@@ -109,6 +109,8 @@ install_deneb_update_lane() {
         exit 1
     fi
 
+    mkdir -p /home/cygnus/menu/img /etc/nodogsplash/htdocs/images
+
     if [ ! -f "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig" ] && [ -f /etc/nodogsplash/htdocs/images/splash.jpg ]; then
         cp /etc/nodogsplash/htdocs/images/splash.jpg "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig"
     fi

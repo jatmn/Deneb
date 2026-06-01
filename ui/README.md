@@ -196,11 +196,12 @@ Home (Deneb)
         +-- Language (EN/NL/DE/FR/ZH-Hans/Pirate/1337)
         +-- Set Nozzle Size
         +-- Network
+              +-- Hostname
               +-- WiFi status
-              +-- Import WiFi from USB
-              +-- Disconnect WiFi
               +-- Ethernet status
-              +-- Import Ethernet from USB
+              +-- WiFi on/off switch
+              +-- Load WiFi Settings from USB
+              +-- Load Ethernet Settings from USB
               +-- Reset Ethernet to DHCP
         +-- Digital Factory
         +-- Frame Lighting

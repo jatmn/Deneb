@@ -85,6 +85,7 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/widgets/button/*.c"
     "${LVGL_DIR}/src/widgets/label/*.c"
     "${LVGL_DIR}/src/widgets/slider/*.c"
+    "${LVGL_DIR}/src/widgets/switch/*.c"
 )
 
 set(LVGL_SOURCES)

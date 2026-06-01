@@ -8,6 +8,7 @@
 
 #include "eth_setup.h"
 #include "net_utils.h"
+#include "locale.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -219,10 +220,11 @@ eth_result_t eth_setup_import(char *status_msg, int msg_size)
     if (res != ETH_OK) {
         if (status_msg) {
             if (res == ETH_ERR_NO_USB)
-                snprintf(status_msg, msg_size, "No USB drive found");
+                snprintf(status_msg, msg_size, "%s",
+                         locale_get("network.no_usb"));
             else
                 snprintf(status_msg, msg_size,
-                         "eth.txt not found on USB");
+                         "%s", locale_get("network.no_eth_txt"));
         }
         return res;
     }
@@ -230,7 +232,8 @@ eth_result_t eth_setup_import(char *status_msg, int msg_size)
     res = eth_setup_parse(path, &cfg);
     if (res != ETH_OK) {
         if (status_msg)
-            snprintf(status_msg, msg_size, "Parse error in eth.txt");
+            snprintf(status_msg, msg_size, "%s",
+                     locale_get("network.eth_parse_error"));
         return res;
     }
 
@@ -240,21 +243,23 @@ eth_result_t eth_setup_import(char *status_msg, int msg_size)
         case ETH_OK:
             if (cfg.ip_address[0] != '\0')
                 snprintf(status_msg, msg_size,
-                         "Ethernet static: %s", cfg.ip_address);
+                         locale_get("network.eth_static_fmt"),
+                         cfg.ip_address);
             else
                 snprintf(status_msg, msg_size,
-                         "Ethernet set to DHCP");
+                         "%s", locale_get("network.eth_dhcp_set"));
             break;
         case ETH_ERR_UCI_FAIL:
             snprintf(status_msg, msg_size,
-                     "Failed to save Ethernet config");
+                     "%s", locale_get("network.eth_save_failed"));
             break;
         case ETH_ERR_NET_FAIL:
             snprintf(status_msg, msg_size,
-                     "Ethernet configured, restarting...");
+                     "%s", locale_get("network.eth_restarting"));
             break;
         default:
-            snprintf(status_msg, msg_size, "Ethernet setup failed");
+            snprintf(status_msg, msg_size, "%s",
+                     locale_get("network.eth_setup_failed"));
             break;
         }
     }
@@ -284,7 +289,7 @@ void eth_setup_get_status(char *buf, int size)
     char ip[64] = {0};
     net_read_command(ip, sizeof(ip),
                      "ip -4 addr show eth0 2>/dev/null | "
-                     "grep -o 'inet [^ ]*' | cut -d' ' -f2");
+                     "grep -o 'inet [^ ]*' | cut -d' ' -f2 | cut -d/ -f1");
 
     char proto[32] = {0};
     net_read_command(proto, sizeof(proto),
@@ -292,11 +297,13 @@ void eth_setup_get_status(char *buf, int size)
 
     if (ip[0] != '\0') {
         if (strcmp(proto, "static") == 0)
-            snprintf(buf, size, "Ethernet: %s (static)", ip);
+            snprintf(buf, size, locale_get("network.eth_status_static_fmt"),
+                     ip);
         else
-            snprintf(buf, size, "Ethernet: %s (DHCP)", ip);
+            snprintf(buf, size, locale_get("network.eth_status_dhcp_fmt"),
+                     ip);
     } else {
-        snprintf(buf, size, "Ethernet: not connected");
+        snprintf(buf, size, "%s", locale_get("network.not_connected"));
     }
 }
 

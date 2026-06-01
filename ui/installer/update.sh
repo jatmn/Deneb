@@ -154,29 +154,23 @@ prune_stock_wifi_portal() {
     uci set nodogsplash.@nodogsplash[0].enabled='0' 2>/dev/null || true
     uci commit nodogsplash 2>/dev/null || true
 
-    # Move stock WiFi portal files into Deneb backup storage so stock-menu
-    # rollback can restore the captive-portal setup path.
+    # Remove stock WiFi portal files. Deneb replaces the AP/captive-portal
+    # setup path with USB wifi.txt import, so keeping the old Python webserver
+    # and nodogsplash assets only costs flash/storage.
     if [ -d /home/cygnus/wificonnect ]; then
-        if [ ! -e "${DENEB_BACKUP_DIR}/wificonnect" ]; then
-            mv /home/cygnus/wificonnect "${DENEB_BACKUP_DIR}/wificonnect"
-            log "backed up stock wificonnect server"
-        else
-            rm -rf /home/cygnus/wificonnect
-            log "removed duplicate stock wificonnect server"
-        fi
+        rm -rf /home/cygnus/wificonnect
+        log "removed obsolete stock wificonnect server"
     fi
 
-    # Move nodogsplash web assets if present.
     if [ -d /etc/nodogsplash/htdocs ]; then
-        mkdir -p "${DENEB_BACKUP_DIR}/nodogsplash"
-        if [ ! -e "${DENEB_BACKUP_DIR}/nodogsplash/htdocs" ]; then
-            mv /etc/nodogsplash/htdocs "${DENEB_BACKUP_DIR}/nodogsplash/htdocs"
-            log "backed up nodogsplash web assets"
-        else
-            rm -rf /etc/nodogsplash/htdocs
-            log "removed duplicate nodogsplash web assets"
-        fi
+        rm -rf /etc/nodogsplash/htdocs
+        log "removed obsolete nodogsplash web assets"
     fi
+
+    # Clean backups left by older Deneb installers now that rollback no longer
+    # restores the captive-portal WiFi setup.
+    rm -rf "${DENEB_BACKUP_DIR}/wificonnect" \
+           "${DENEB_BACKUP_DIR}/nodogsplash/htdocs"
 
     log "stock WiFi AP portal disabled"
 }
@@ -216,17 +210,6 @@ rollback_to_stock_menu() {
     log "rolling back to stock menu service"
     /etc/init.d/deneb-ui stop 2>/dev/null || true
     /etc/init.d/deneb-ui disable 2>/dev/null || true
-
-    if [ -d "${DENEB_BACKUP_DIR}/wificonnect" ] && [ ! -e /home/cygnus/wificonnect ]; then
-        mv "${DENEB_BACKUP_DIR}/wificonnect" /home/cygnus/wificonnect
-        log "restored stock wificonnect server"
-    fi
-    if [ -d "${DENEB_BACKUP_DIR}/nodogsplash/htdocs" ] && [ ! -e /etc/nodogsplash/htdocs ]; then
-        mkdir -p /etc/nodogsplash
-        mv "${DENEB_BACKUP_DIR}/nodogsplash/htdocs" /etc/nodogsplash/htdocs
-        log "restored nodogsplash web assets"
-    fi
-    /etc/init.d/nodogsplash enable 2>/dev/null || true
 
     if [ -x /etc/init.d/menu ]; then
         /etc/init.d/menu enable 2>/dev/null || true

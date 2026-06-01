@@ -18,7 +18,7 @@ password=MyPassword
 ```
 
 3. Insert USB drive into the printer
-4. On the touchscreen: **Settings > Network > Import WiFi from USB**
+4. On the touchscreen: **Settings > Network > Load WiFi Settings from USB**
 5. Wait for confirmation. WiFi will connect automatically.
 
 ## Supported Fields
