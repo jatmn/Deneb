@@ -1,16 +1,24 @@
 # Deneb UM2C Modding Checklist
 
-Date: 2026-05-22
+Date: 2026-06-02
 
 This checklist tracks what appears technically possible, what still needs proof, and how to keep public development exposure low. It is not legal advice. Treat it as an engineering and publication-risk checklist.
 
 Current execution order:
 
-1. Establish a legally clean public project boundary.
-2. Build the SSH-only bootstrap update so live-device inspection is possible.
-3. Gather real resource, service, hardware, storage, and boot data from the live printer.
-4. Prioritize touchscreen replacement and resource reduction before broader feature expansion.
-5. Add web UI, LAN printing, slicer compatibility, OS/service modernization, and Marlin work only after the baseline and UI path are understood.
+1. Keep the legally clean project boundary intact while the repo grows.
+2. Use the established SSH/bootstrap and `.deneb` package lanes for hardware validation.
+3. Close release-critical touchscreen parity gaps: print preparation, material/profile depth, recovery/update states, and startup readiness.
+4. Keep resource reduction measurable, especially around the remaining Python backend services.
+5. Harden web/API controls, rollback/signing, local storage printing, and Cura discovery/upload after the UI/status baseline is stable.
+
+Current open focus:
+
+- Hardware-proof the 20-screen touchscreen catalog against real idle, printing, paused, error, material, update, network, and recovery states.
+- Finish `.deneb` rollback/signature verification before treating packages as stable releases.
+- Measure print/update/upload/diagnostics resource behavior, not just idle UI memory.
+- Decide the next backend reduction target; current idle RAM is dominated by stock `coordinator.py` and `print_service.py`.
+- Keep Cura/mDNS/upload work gated behind a tested local status/API baseline.
 
 ## 0. Project Identity
 
@@ -21,8 +29,8 @@ Current execution order:
   - Deneb is the brightest star in the constellation Cygnus.
   - The name keeps a respectful relationship to the original `Cygnus` lineage while making clear this is a separate community mod, not official UltiMaker firmware.
   - Deneb also works thematically for this project: a local-first guide star for the UM2+ Connect, moving the printer away from cloud-only workflows while staying anchored to the original platform.
-- [ ] Add this naming rationale to the future public `README.md`.
-- [ ] Use wording that avoids implying UltiMaker endorsement, affiliation, or official status.
+- [x] Add this naming rationale to the future public `README.md`.
+- [x] Use wording that avoids implying UltiMaker endorsement, affiliation, or official status.
 
 ## 1. Confirmed Technical Facts
 
@@ -44,14 +52,14 @@ Current execution order:
 ## 2. System-Wide Resource Reduction Budget
 
 - [x] Project assumption: the stock firmware is already resource-taxed enough that maintaining current RAM/CPU behavior is not an acceptable long-term outcome.
-- [ ] Treat RAM, CPU, flash/storage, boot time, and UI latency reduction as release-blocking constraints for every Deneb feature.
+- [x] Treat RAM, CPU, flash/storage, boot time, and UI latency reduction as release-blocking constraints for every Deneb feature.
 - [ ] Establish baseline idle, booting, printing, paused, uploading, updating, and diagnostics-export resource usage on stock firmware before major replacements so we can prove measurable reductions.
-- [ ] Define reduction targets for each Deneb component: maximum resident memory, average CPU, peak CPU, startup time, disk footprint, log volume, socket count, and file descriptor count.
+- [x] Define initial reduction targets for each Deneb component: maximum resident memory, average CPU, peak CPU, startup time, disk footprint, log volume, socket count, and file descriptor count.
 - [ ] Do not add a long-running service unless its memory and CPU budget is documented and measured on target hardware.
 - [ ] New features must either reduce total system load, replace heavier stock behavior, or justify their cost with an explicit opt-in/disabled-by-default design.
 - [ ] Prefer event-driven designs over polling loops; if polling is required, set explicit intervals and prove they do not affect print streaming or UI responsiveness.
 - [ ] Prefer streaming/parsing in chunks over loading full print files, logs, thumbnails, or update metadata into memory.
-- [ ] Prefer simple native/static components for hot paths when they materially reduce RAM, CPU, startup time, or latency.
+- [x] Prefer simple native/static components for hot paths when they materially reduce RAM, CPU, startup time, or latency.
 - [ ] Avoid adding heavyweight runtimes, package managers, databases, message buses, web frameworks, or frontend bundles unless there is no lighter practical option.
 - [ ] Keep optional features disabled or lazy-loaded until the user opens them or enables them.
 - [ ] Track memory fragmentation, leaks, process restarts, and swap/oom behavior during multi-day uptime and repeated print tests.
@@ -67,14 +75,14 @@ Current execution order:
 - [x] Keep the public project as an addon/mod kit, not a redistributed firmware fork.
 - [x] Do not publish the extracted full firmware image, full `rootfs`, full `/home/cygnus`, full `/home/lib/stardustWebsocketProtocol`, full web assets, binaries, or modified complete firmware images.
 - [x] Publish only original code we write, build scripts, installer scripts, documentation, and minimal patches where unavoidable.
-- [ ] Add `.gitignore` rules that exclude extracted firmware trees, downloaded images, generated modified images, private keys, logs, and device-specific identifiers.
-- [ ] Add a repo `README.md` explaining that users must supply their own printer/firmware and that the project does not distribute UltiMaker firmware files.
-- [ ] Add a `LEGAL_NOTES.md` or `COMPLIANCE.md` documenting the boundary between original addon code and vendor firmware artifacts.
+- [x] Add `.gitignore` rules that exclude extracted firmware trees, downloaded images, generated modified images, private keys, logs, and device-specific identifiers.
+- [x] Add a repo `README.md` explaining that users must supply their own printer/firmware and that the project does not distribute UltiMaker firmware files.
+- [x] Add a `LEGAL_NOTES.md` or `COMPLIANCE.md` documenting the boundary between original addon code and vendor firmware artifacts.
 - [ ] Review every copied snippet before commit. If it came from `/home/cygnus` or another UltiMaker-owned tree without a clear license, do not commit the full file.
 - [ ] Keep patches small. Prefer installer transforms that insert or replace narrow sections over committing full modified vendor files.
 - [ ] If a file is a tiny patch against UltiMaker-owned firmware code, mark it as a patch against user-supplied firmware and keep context minimal.
 - [ ] Avoid publishing decompiled vendor code. Reverse-engineering notes, API maps, original compatibility implementations, and clean-room replacements are the safer direction.
-- [ ] Document warranty and safety risks clearly. This modifies printer behavior and may affect thermal, motion, and update safety.
+- [x] Document warranty and safety risks clearly. This modifies printer behavior and may affect thermal, motion, and update safety.
 
 ### Repo License Decision
 
@@ -85,9 +93,9 @@ Current execution order:
 - [x] Do not use `MIT` as the default if we want downstream fixes to our addon files to remain open.
 - [x] Do not use `GPL-3.0` as the default for the whole addon if the goal is to keep clean separation from proprietary/unclearly licensed firmware components.
 - [x] Do not use `LGPL-3.0` as the default unless the repo primarily becomes a library intended for linking.
-- [ ] Add a `LICENSE` file containing MPL-2.0 for original project files.
-- [ ] Add SPDX headers to original source files, for example `SPDX-License-Identifier: MPL-2.0`.
-- [ ] Add a license scope note explaining that the license applies only to original files in this repo, not to UltiMaker firmware, extracted firmware, or user-supplied device files.
+- [x] Add a `LICENSE` file containing MPL-2.0 for original project files.
+- [x] Add SPDX headers to original source files, for example `SPDX-License-Identifier: MPL-2.0`.
+- [x] Add a license scope note explaining that the license applies only to original files in this repo, not to UltiMaker firmware, extracted firmware, or user-supplied device files.
 - [ ] Consider `Apache-2.0` only if we decide broad permissive reuse is more important than requiring changes to our files to stay open.
 - [ ] Consider `AGPL-3.0` only if we intentionally want strong network-service copyleft for the web UI/API; this is probably too aggressive for compatibility with the firmware-adjacent addon model.
 - [ ] Keep license choices per component if the repo grows:
@@ -100,8 +108,8 @@ Current execution order:
 
 ### Notices And Disclosures
 
-- [ ] Add a `NOTICE` or `THIRD_PARTY_NOTICES.md` file for dependencies, firmware-interface notes, and attribution.
-- [ ] Track all new dependencies and licenses. Preserve notices for open-source components and update any about/legal disclosure shown in the UI/web UI.
+- [x] Add a `NOTICE` or `THIRD_PARTY_NOTICES.md` file for dependencies, firmware-interface notes, and attribution.
+- [x] Track all new dependencies and licenses. Preserve notices for open-source components and update any about/legal disclosure shown in the UI/web UI.
 - [ ] If any GPL/LGPL component is modified or redistributed, document source availability and license obligations.
 - [ ] If any file is copied or adapted from Cura, keep that file/component under Cura's license, currently LGPL-3.0, and preserve attribution.
 - [ ] If any Marlin firmware work is included, keep it in a clearly separate GPL-3.0-compatible tree or fork and comply with Marlin's GPL-3.0 obligations.
@@ -113,44 +121,44 @@ Current execution order:
 
 ### Priority 1: SSH Bootstrap Plan
 
-- [ ] Make the first implementation target a minimal SSH-only bootstrap update.
-- [ ] Do not bundle UI changes, web UI changes, LAN printing, service cleanup, diagnostics, or optimization work into the SSH bootstrap package.
-- [ ] Confirm target-device account state before building: check `/etc/passwd`, `/etc/shadow`, `/etc/config/dropbear`, `/etc/rc.d`, and `/etc/uci-defaults`.
-- [ ] Treat `root` as the confirmed default interactive login user unless live-device inspection proves another login user exists.
-- [ ] If a live device has an `ultimaker` Unix login account, include it in the SSH password setup; otherwise do not create extra users in the bootstrap package.
-- [ ] Set the bootstrap password to `deneb` for `root`.
-- [ ] If an existing `ultimaker` login user is found, set its bootstrap password to `deneb` too and verify it has an SSH-capable shell.
-- [ ] Ensure Dropbear password auth, root password auth, and root login are enabled.
-- [ ] Enable Dropbear at boot with `/etc/init.d/dropbear enable`.
+- [x] Make the first implementation target a minimal SSH-only bootstrap update.
+- [x] Do not bundle UI changes, web UI changes, LAN printing, service cleanup, diagnostics, or optimization work into the SSH bootstrap package.
+- [x] Confirm target-device account state before building: check `/etc/passwd`, `/etc/shadow`, `/etc/config/dropbear`, `/etc/rc.d`, and `/etc/uci-defaults`.
+- [x] Treat `root` as the confirmed default interactive login user unless live-device inspection proves another login user exists.
+- [x] If a live device has an `ultimaker` Unix login account, include it in the SSH password setup; otherwise do not create extra users in the bootstrap package.
+- [x] Set the bootstrap password to `deneb` for `root`.
+- [x] If an existing `ultimaker` login user is found, set its bootstrap password to `deneb` too and verify it has an SSH-capable shell.
+- [x] Ensure Dropbear password auth, root password auth, and root login are enabled.
+- [x] Enable Dropbear at boot with `/etc/init.d/dropbear enable`.
 - [ ] Start or restart Dropbear during install so SSH is available immediately after the update, not only after reboot.
-- [ ] Keep the package legally clean: only original `update.sh`, manifest, and documentation; no vendor files.
-- [ ] Build the bootstrap package as a tar-backed `.img` compatible with the existing touchscreen USB firmware update flow.
-- [ ] Test the package on target hardware by installing from USB, rebooting, and confirming SSH login on port 22.
-- [ ] Confirm both intended login paths:
-  - [ ] `root` with password `deneb`.
-  - [ ] `ultimaker` with password `deneb` only if that account exists on the live device.
-- [ ] Immediately after SSH access works, use the live device to gather resource usage, service state, storage layout, and hardware details instead of baking probe scripts into firmware packages.
-- [ ] Add clear security notes: bootstrap password is known, use trusted LAN only, and change the password after first login.
+- [x] Keep the package legally clean: only original `update.sh`, manifest, and documentation; no vendor files.
+- [x] Build the bootstrap package as a tar-backed `.img` compatible with the existing touchscreen USB firmware update flow.
+- [x] Test the package on target hardware by installing from USB, rebooting, and confirming SSH login on port 22.
+- [x] Confirm both intended login paths:
+  - [x] `root` with password `deneb`.
+  - [x] `ultimaker` with password `deneb` only if that account exists on the live device.
+- [x] Immediately after SSH access works, use the live device to gather resource usage, service state, storage layout, and hardware details instead of baking probe scripts into firmware packages.
+- [x] Add clear security notes: bootstrap password is known, use trusted LAN only, and change the password after first login.
 - [ ] Decide later whether Deneb should keep SSH enabled, make it toggleable, or disable it again after diagnostics are complete.
 
 ### USB Installer
 
-- [ ] Build USB `.deneb` installer packages that contain only our files and `update.sh` after the bootstrap update lane is installed.
-- [ ] Keep installer scripts small, deterministic, and low-memory; do not unpack or transform large firmware artifacts in RAM.
-- [ ] Release packages should be installable through the Deneb USB `.deneb` update flow and through our future in-device updater.
-- [ ] Installer should create a backup of touched files before changing anything.
+- [x] Build USB `.deneb` installer packages that contain only our files and `update.sh` after the bootstrap update lane is installed.
+- [x] Keep installer scripts small, deterministic, and low-memory; do not unpack or transform large firmware artifacts in RAM.
+- [x] Release packages should be installable through the Deneb USB `.deneb` update flow and through our future in-device updater.
+- [x] Installer should create a backup of touched files before changing anything.
 - [ ] Installer should write a manifest of installed files, versions, hashes, and rollback instructions.
 - [ ] Installer should provide a rollback mode.
 - [ ] Installer should avoid modifying vendor files unless absolutely needed.
-- [ ] Add a version marker so the UI/web UI can display the mod version separately from UltiMaker firmware version.
+- [x] Add a version marker so the UI/web UI can display the mod version separately from UltiMaker firmware version.
 - [ ] Test install, reboot persistence, uninstall, and failed-install recovery on a spare device before recommending use.
 
 ### Service Strategy
 
-- [ ] Treat limited compute, memory, and storage as first-order design constraints for every service decision.
+- [x] Treat limited compute, memory, and storage as first-order design constraints for every service decision.
 - [ ] Assume current Python-heavy services may be contributing to latency, memory pressure, or print-quality issues until measured otherwise.
 - [ ] Make CPU and memory reduction an explicit goal of every service audit, replacement, wrapper, or modernization decision.
-- [ ] Audit existing init services before deciding whether to add, wrap, modify, or replace them.
+- [x] Audit existing init services before deciding whether to add, wrap, modify, or replace them.
 - [ ] Prefer the lowest-risk service strategy supported by evidence, not automatically a new service.
 - [ ] If an existing service is poorly selected, fragile, insecure, overcomplicated, or part of a performance/reliability issue, consider replacing it with a cleaner service.
 - [ ] For each service, decide whether to keep Python, optimize Python, split hot paths into native code, or replace the service with a more memory-light implementation.
@@ -160,8 +168,8 @@ Current execution order:
 - [ ] Require before/after resource measurements for every service change that ships in Stable, with preference for changes that reduce total resident memory, idle wakeups, and boot cost.
 - [ ] Keep service changes legally clean: publish original replacement services where possible, and keep modifications to vendor init files minimal or generated by installer logic.
 - [ ] Document why each service is kept, wrapped, modified, disabled, or replaced.
-- [ ] If replacing the touchscreen UI, disable/wrap `/etc/init.d/menu` and install a new UI service rather than rewriting large sections of `/home/cygnus/menu`.
-- [ ] Keep the stock backend services running where possible: coordinator, printserver, firmware update, material handling, heating, and status channels.
+- [x] If replacing the touchscreen UI, disable/wrap `/etc/init.d/menu` and install a new UI service rather than rewriting large sections of `/home/cygnus/menu`.
+- [x] Keep the stock backend services running where possible: coordinator, printserver, firmware update, material handling, heating, and status channels.
 
 ### Official Firmware Escape Hatch
 
@@ -178,7 +186,7 @@ Current execution order:
 
 ### Update Channels
 
-- [ ] Disable or disconnect modified devices from UltiMaker firmware update checks so an official update does not overwrite or break the modded system unexpectedly.
+- [x] Disable or disconnect modified devices from UltiMaker firmware update checks so an official update does not overwrite or break the modded system unexpectedly.
 - [ ] Replace UltiMaker update checks with an opt-in updater that checks our selected GitHub repository releases.
 - [ ] Keep update checks lightweight: no always-on heavy updater process, no frequent polling, and no large release metadata retained in memory.
 - [ ] Do not silently install updates. Updates should require user-visible confirmation from the touchscreen or web UI.
@@ -216,7 +224,7 @@ Current execution order:
 
 - [ ] Update package should include a manifest: project name, version, channel, commit, supported hardware, supported base firmware, installed files, checksums, and rollback metadata.
 - [ ] Cache the downloaded update artifact locally and verify it before applying.
-- [ ] Build automation should generate stable/nightly artifacts reproducibly.
+- [x] Build automation should generate Deneb update artifacts reproducibly.
 - [ ] Build automation should fail if vendor firmware files, extracted rootfs files, private keys, or device-specific identifiers are accidentally included.
 - [ ] Build automation should run lint/tests for installer scripts, service code, web UI code, and generated manifests.
 - [ ] Build automation should run resource-reduction checks or enforce recorded hardware benchmark thresholds where practical.
@@ -232,12 +240,12 @@ Current execution order:
 
 - [x] Default direction: replace the Python-powered touchscreen frontend with an original, lighter implementation.
 - [x] Do not preserve Python for touchscreen UI by default. Use Python only if profiling and implementation evidence show it is the best practical option.
-- [ ] Make lower memory use, lower CPU use, and faster screen transitions primary success criteria for the replacement UI.
-- [ ] Treat UI parity as incomplete until the replacement UI is demonstrably lighter and more responsive than the stock Python UI.
+- [x] Make lower memory use, lower CPU use, and faster screen transitions primary success criteria for the replacement UI.
+- [x] Treat UI parity as incomplete until the replacement UI is demonstrably lighter and more responsive than the stock Python UI.
 - [ ] Keep backend services only where they are useful, stable, and efficient enough after measurement.
-- [ ] Treat the existing `/home/cygnus/menu` UI as a behavioral reference, not as the implementation base.
-- [ ] Avoid patching stock Cygnus menu except for minimal installer handoff, service disablement/wrapping, compatibility shims, or emergency fallback.
-- [ ] Keep replacement UI source publishable by ensuring it is original code, not a copy of `/home/cygnus/menu`.
+- [x] Treat the existing `/home/cygnus/menu` UI as a behavioral reference, not as the implementation base.
+- [x] Avoid patching stock Cygnus menu except for minimal installer handoff, service disablement/wrapping, compatibility shims, or emergency fallback.
+- [x] Keep replacement UI source publishable by ensuring it is original code, not a copy of `/home/cygnus/menu`.
 
 #### Replacement UI Architecture
 
@@ -255,12 +263,12 @@ Current execution order:
 #### UI Test Automation / CI
 
 - [ ] Build automated CI checks for touchscreen UI functionality.
-- [ ] Add a host-side UI simulator or test harness so navigation and state changes can be tested without a physical printer for every run.
+- [x] Add a host-side UI simulator or test harness so navigation and state changes can be tested without a physical printer for every run.
 - [ ] Add automated tests for every required menu route and screen transition.
 - [ ] Add automated tests for button actions, back/close behavior, confirmation dialogs, and disabled/enabled states.
 - [ ] Add automated tests for printer-state-driven UI changes: idle, preparing, printing, paused, aborting/canceling, complete, error/ER code, cooldown, USB missing, storage full, and network disconnected.
-- [ ] Add screenshot or framebuffer snapshot tests for critical screens where practical.
-- [ ] Add layout checks for 320x240 rendering: no overlapping text, clipped labels, unreadable buttons, or off-screen controls.
+- [x] Add screenshot or framebuffer snapshot tests for critical screens where practical.
+- [x] Add layout checks for 320x240 rendering: no overlapping text, clipped labels, unreadable buttons, or off-screen controls.
 - [ ] Add locale CI checks using the JSON locale files.
 - [ ] Add performance reduction checks for startup time, page transition latency, render loop stalls, and memory use.
 - [ ] Add CPU reduction checks for idle UI, rapid navigation, print-status updates, temperature graph/refresh views, and modal-heavy flows.
@@ -273,7 +281,7 @@ Current execution order:
 
 - [x] Profiled stock: menu VSZ 33.7MB, all Python 113MB/124MB RAM. See docs/BASELINE_MEASUREMENTS.md.
 - [x] Benchmark documented. Deneb binary 2.0MB (musl), estimated <0.3MB runtime RAM.
-- [ ] Map every current touchscreen screen, menu route, backend request, status dependency, and internal error/ER-code path.
+- [x] Map every current touchscreen screen, menu route, backend request, status dependency, and internal error/ER-code path.
 - [ ] Use user-facing UltiMaker-style wording such as `Errors`, `Error codes`, or `ER codes`; avoid exposing internal implementation terminology unless the stock UI proves users already see it.
 - [ ] Reuse existing UltiMaker ER codes and meanings wherever applicable.
 - [ ] Build an ER-code mapping table from the firmware, UI, documentation, and any public UltiMaker references before adding new codes.
@@ -281,7 +289,7 @@ Current execution order:
 - [ ] Keep Deneb-specific codes clearly namespaced or distinguishable so they cannot be confused with official UltiMaker ER codes.
 - [ ] Identify which current Cygnus UI behaviors must be preserved exactly, which can be improved, and which can be removed or hidden.
 - [ ] Identify which backend services are UI dependencies versus implementation conveniences.
-- [ ] Build a compatibility test checklist for replacement UI parity.
+- [x] Build a compatibility test checklist for replacement UI parity.
 
 #### Required Feature Parity
 
@@ -290,8 +298,8 @@ Current execution order:
   - [x] Status screen. (screen_status: live temps/progress/position via ZMQ)
   - [x] Pause/resume/cancel. (screen_print: PAUSE/RESUME/ABORT buttons)
   - [x] Material workflows. (screen_material: load/unload via MACRO commands)
-  - [ ] Bed leveling/maintenance. (macro files mapped, UI pending)
-  - [ ] Firmware update. (stock flow preserved, UI pending)
+  - [x] Bed leveling/maintenance. (macro files mapped, maintenance UI present)
+  - [x] Firmware update. (Deneb USB package flow present; official restore path still needs UX proof)
   - [x] Settings. (screen_settings: language selector)
   - [x] Errors / ER codes. (screen_error: ER code display)
   - [x] Cooldown warnings. (screen_temp: cooldown button)
@@ -306,8 +314,8 @@ Current execution order:
 - [x] Add first-class touchscreen controls for manual bed temperature setting. (screen_temp: slider + M140)
 - [x] Add touchscreen cooldown controls for nozzle, bed, and combined cooldown. (screen_temp: cooldown button)
 - [x] Show current and target temperatures clearly on manual temperature screens. (screen_temp: live update via lv_timer)
-- [ ] Show heating/cooling progress where useful.
-- [ ] Add guardrails so manual motion, heating, and cooldown actions are blocked or limited during incompatible printer states.
+- [x] Show heating/cooling progress where useful.
+- [x] Add guardrails so manual motion, heating, and cooldown actions are blocked or limited during incompatible printer states.
 - [ ] Reuse existing backend heating/cooldown/motion primitives where safe; replace or extend them where stock support is too limited.
 - [ ] Add clear confirmation/warning behavior for actions that can move hardware or heat components.
 - [ ] Ensure manual touchscreen motion and temperature actions are visible in diagnostics, preferring existing firmware logs when they already capture the needed event.
@@ -336,25 +344,25 @@ Current execution order:
 
 #### About, Legal, And Notices
 
-- [ ] Add or update about/legal disclosure for changed dependencies, removed dependencies, and original project notices.
+- [x] Add or update about/legal disclosure for changed dependencies, removed dependencies, and original project notices.
 
 ### Lightweight Web UI
 
-- [ ] Build a lightweight local web UI, preferably served by our own small service.
-- [ ] Avoid a heavy SPA. Use simple static HTML/CSS/JS or a very small framework only if justified.
-- [ ] Set explicit web UI budgets for RAM, CPU while idle, CPU while polling status, bundle size, and request latency.
-- [ ] Keep the web UI optional and low-impact so enabling it does not undo touchscreen/service memory reductions.
-- [ ] Prefer static assets and small JSON endpoints over server-side rendering, heavy websocket fanout, or large client frameworks.
-- [ ] Expose printer status, current file, progress, time remaining, printer errors / ER codes, bed/nozzle temperatures, and firmware/mod version.
-- [ ] Display existing UltiMaker ER codes and recommended actions where applicable.
-- [ ] Add controls for start, pause, resume, stop/cancel.
-- [ ] Add manual nozzle heat and bed heat controls with safe limits.
-- [ ] Add cooldown controls.
-- [ ] Add manual jogging for X/Y/Z/E with safe feedrates and clear lockouts.
-- [ ] Add guardrails so jogging/heating is blocked or limited during active print states unless explicitly safe.
+- [x] Build a lightweight local web UI, preferably served by our own small service.
+- [x] Avoid a heavy SPA. Use simple static HTML/CSS/JS or a very small framework only if justified.
+- [x] Set explicit web UI budgets for RAM, CPU while idle, CPU while polling status, bundle size, and request latency.
+- [x] Keep the web UI optional and low-impact so enabling it does not undo touchscreen/service memory reductions.
+- [x] Prefer static assets and small JSON endpoints over server-side rendering, heavy websocket fanout, or large client frameworks.
+- [x] Expose printer status, current file, progress, time remaining, printer errors / ER codes, bed/nozzle temperatures, and firmware/mod version.
+- [x] Display existing UltiMaker ER codes and recommended actions where applicable.
+- [x] Add controls for start, pause, resume, stop/cancel.
+- [x] Add manual nozzle heat and bed heat controls with safe limits.
+- [x] Add cooldown controls.
+- [x] Add manual jogging for X/Y/Z/E with safe feedrates and clear lockouts.
+- [x] Add guardrails so jogging/heating is blocked or limited during active print states unless explicitly safe.
 - [ ] Add file upload/list/start for local storage if storage behavior is confirmed safe.
-- [ ] Keep all web UI strings in the same translation/resource strategy as touchscreen UI if practical.
-- [ ] Include license/about page listing our project license and third-party dependencies.
+- [x] Keep all web UI strings in the same translation/resource strategy as touchscreen UI if practical.
+- [x] Include license/about page listing our project license and third-party dependencies.
 
 ### USB And Local Storage Printing
 
@@ -534,14 +542,14 @@ Current execution order:
 
 ## 10. Milestones
 
-- [ ] Milestone 0: public repo scaffold with legal boundary, no vendor files, `.gitignore`, and documentation.
-- [ ] Milestone 1: SSH-only bootstrap `.img` plan, build, install, and login verification.
-- [ ] Milestone 2: live-device resource baseline and first resource reduction targets gathered over SSH.
+- [x] Milestone 0: public repo scaffold with legal boundary, no vendor files, `.gitignore`, and documentation.
+- [x] Milestone 1: SSH-only bootstrap `.img` plan, build, install, and login verification.
+- [x] Milestone 2: live-device resource baseline and first resource reduction targets gathered over SSH.
 - [ ] Milestone 3: general Deneb USB `.deneb` installer framework with backup, manifest, rollback, and low-memory install behavior.
 - [x] Milestone 4: replacement touchscreen UI architecture choice and resource proof. (LVGL v9 C, 2.0MB binary)
-- [x] Milestone 5: replacement touchscreen UI MVP preserving core stock functionality. (9 screens, ZMQ IPC, 7 locales)
-- [ ] Milestone 6: status-only web UI using existing firmware status channels.
-- [ ] Milestone 7: web UI controls for pause/resume/cancel/manual heat with safety gates.
+- [x] Milestone 5: replacement touchscreen UI MVP preserving core stock functionality. (20-screen catalog, ZMQ IPC, 7 locales)
+- [x] Milestone 6: status-only web UI using existing firmware status channels.
+- [x] Milestone 7: web UI controls for pause/resume/cancel/manual heat with safety gates.
 - [ ] Milestone 8: local storage print-flow verification and USB-removal-safe behavior.
 - [ ] Milestone 9: Cura discovery/status compatibility.
 - [ ] Milestone 10: Cura LAN upload/start print compatibility.
@@ -550,7 +558,7 @@ Current execution order:
 - [ ] Milestone 13: Marlin modernization feasibility branch.
 - [ ] Milestone 14: OS/service inventory, OpenWrt-specific security review, and resource-reduction plan.
 - [ ] Milestone 15: targeted OS/service updates or replacements with rollback.
-- [ ] Milestone 16: GitHub release builder for signed Stable/Nightly artifacts.
+- [ ] Milestone 16: release package builder exists; signed Stable/Nightly GitHub artifact automation remains pending.
 - [ ] Milestone 17: in-device update checker pointed at our GitHub Releases.
 - [ ] Milestone 18: boot-time profiling and startup progress screen.
 
