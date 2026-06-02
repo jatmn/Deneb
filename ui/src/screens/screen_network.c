@@ -38,6 +38,14 @@ static volatile int wifi_toggle_running = 0;
 static volatile int wifi_toggle_done = 0;
 static volatile int wifi_toggle_enable = 0;
 static char wifi_toggle_result_msg[128] = {0};
+#ifdef BACKEND_COMM_STUB
+static int catalog_placeholder_mode = 0;
+
+void screen_network_set_catalog_placeholder_mode(int enabled)
+{
+    catalog_placeholder_mode = enabled != 0;
+}
+#endif
 
 static void set_status_text(const char *text)
 {
@@ -97,6 +105,12 @@ static void refresh_wifi_status(void)
 {
     if (!wifi_status_label)
         return;
+#ifdef BACKEND_COMM_STUB
+    if (catalog_placeholder_mode) {
+        lv_label_set_text(wifi_status_label, "WiFi not configured");
+        return;
+    }
+#endif
     char status[128];
     wifi_setup_get_status(status, sizeof(status));
     lv_label_set_text(wifi_status_label, status);
@@ -106,6 +120,12 @@ static void refresh_eth_status(void)
 {
     if (!eth_status_label)
         return;
+#ifdef BACKEND_COMM_STUB
+    if (catalog_placeholder_mode) {
+        lv_label_set_text(eth_status_label, "Ethernet not connected");
+        return;
+    }
+#endif
     char status[128];
     eth_setup_get_status(status, sizeof(status));
     lv_label_set_text(eth_status_label, status);
@@ -115,6 +135,14 @@ static void refresh_wifi_switch(void)
 {
     if (!wifi_switch)
         return;
+
+#ifdef BACKEND_COMM_STUB
+    if (catalog_placeholder_mode) {
+        lv_obj_remove_state(wifi_switch, LV_STATE_CHECKED);
+        lv_obj_add_state(wifi_switch, LV_STATE_DISABLED);
+        return;
+    }
+#endif
 
     if (wifi_setup_is_enabled())
         lv_obj_add_state(wifi_switch, LV_STATE_CHECKED);
@@ -129,6 +157,14 @@ static void refresh_wifi_switch(void)
 
 static void refresh_buttons(void)
 {
+#ifdef BACKEND_COMM_STUB
+    if (catalog_placeholder_mode) {
+        if (reset_eth_btn)
+            lv_obj_add_flag(reset_eth_btn, LV_OBJ_FLAG_HIDDEN);
+        refresh_wifi_switch();
+        return;
+    }
+#endif
     int wifi_cfg = wifi_setup_is_configured();
     int eth_static = eth_setup_is_static();
     int busy = import_running || wifi_toggle_running;
@@ -377,6 +413,11 @@ static lv_obj_t *network_create(void)
 {
     char name[96];
 
+#ifdef BACKEND_COMM_STUB
+    if (catalog_placeholder_mode) {
+        snprintf(name, sizeof(name), "Deneb-Printer");
+    } else
+#endif
     net_read_command(name, sizeof(name),
                      "uci -q get system.@system[0].hostname 2>/dev/null || "
                      "uci -q get ultimaker.system.printer_name 2>/dev/null || "

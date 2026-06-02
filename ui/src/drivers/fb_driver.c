@@ -192,3 +192,29 @@ void fb_driver_deinit(void)
         fb_fd = -1;
     }
 }
+
+int fb_driver_save_ppm(const char *path)
+{
+    if (!fb_mem) return -1;
+
+    FILE *f = fopen(path, "wb");
+    if (!f) return -1;
+
+    fprintf(f, "P6\n320 240\n255\n");
+    for (uint32_t y = 0; y < FB_HEIGHT; y++) {
+        const uint16_t *row = (const uint16_t *)(fb_mem + y * fb_stride);
+        for (uint32_t x = 0; x < FB_WIDTH; x++) {
+            uint16_t c = row[x];
+            if (fb_bgr565)
+                c = rgb565_to_bgr565(c);
+            unsigned char rgb[3] = {
+                (unsigned char)(((c >> 11) & 0x1f) * 255 / 31),
+                (unsigned char)(((c >> 5) & 0x3f) * 255 / 63),
+                (unsigned char)((c & 0x1f) * 255 / 31),
+            };
+            fwrite(rgb, 1, sizeof(rgb), f);
+        }
+    }
+
+    return fclose(f) == 0 ? 0 : -1;
+}

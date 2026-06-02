@@ -202,6 +202,9 @@ lane Deneb-only. See `docs/STOCK_UI_COVERAGE.md` for the current stock-vs-Deneb
 coverage matrix, including the stock base version shown on the About screen and
 the remaining native LVGL replacement work.
 
+For visual reference, see the screenshot-backed
+[`docs/TOUCHSCREEN_SCREEN_CATALOG.md`](../docs/TOUCHSCREEN_SCREEN_CATALOG.md).
+
 ## Locale Support
 
 JSON locale files in /etc/deneb/locales/ on the device.

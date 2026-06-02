@@ -5,6 +5,7 @@
  */
 
 #include <signal.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 #include <unistd.h>
 #if !defined(_WIN32)
 #include <syslog.h>
+#include <sys/stat.h>
 #endif
 
 #include "lvgl.h"
@@ -22,6 +24,30 @@
 #include "backend_comm.h"
 
 extern const screen_ops_t screen_home;
+extern const screen_ops_t screen_status;
+extern const screen_ops_t screen_print;
+extern const screen_ops_t screen_material;
+extern const screen_ops_t screen_maintenance;
+extern const screen_ops_t screen_jog;
+extern const screen_ops_t screen_temp;
+extern const screen_ops_t screen_settings;
+extern const screen_ops_t screen_update;
+extern const screen_ops_t screen_level;
+extern const screen_ops_t screen_diagnostics;
+extern const screen_ops_t screen_language;
+extern const screen_ops_t screen_nozzle_size;
+extern const screen_ops_t screen_network;
+extern const screen_ops_t screen_digital_factory;
+extern const screen_ops_t screen_frame_lighting;
+extern const screen_ops_t screen_factory_reset;
+extern const screen_ops_t screen_about;
+extern const screen_ops_t screen_set_material;
+extern const screen_ops_t screen_error;
+void error_screen_show(const char *er_code, const char *description,
+                       const char *action);
+#ifdef BACKEND_COMM_STUB
+void screen_network_set_catalog_placeholder_mode(int enabled);
+#endif
 #ifndef BACKEND_COMM_STUB
 int deneb_df_bridge_main(int argc, char *argv[]);
 #endif
@@ -47,6 +73,94 @@ static uint32_t custom_tick_get(void)
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+#ifdef BACKEND_COMM_STUB
+typedef struct screenshot_screen {
+    const char *slug;
+    const screen_ops_t *ops;
+    const char *er_code;
+    const char *er_desc;
+    const char *er_action;
+} screenshot_screen_t;
+
+static void render_for_screenshot(void)
+{
+    lv_obj_invalidate(lv_screen_active());
+    for (int i = 0; i < 8; i++) {
+        lv_tick_inc(5);
+        lv_timer_handler();
+    }
+    lv_refr_now(NULL);
+}
+
+static int save_current_screenshot(const char *dir, const char *slug)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s.ppm", dir, slug);
+    render_for_screenshot();
+    return fb_driver_save_ppm(path);
+}
+
+static int run_screenshot_catalog(const char *dir)
+{
+#if !defined(_WIN32)
+    if (mkdir(dir, 0755) < 0 && errno != EEXIST) {
+        perror("deneb-ui: mkdir screenshot dir");
+        return 1;
+    }
+#endif
+
+    screen_network_set_catalog_placeholder_mode(1);
+
+    const screenshot_screen_t screens[] = {
+        {"status", &screen_status, NULL, NULL, NULL},
+        {"print-from-usb", &screen_print, NULL, NULL, NULL},
+        {"material", &screen_material, NULL, NULL, NULL},
+        {"set-material", &screen_set_material, NULL, NULL, NULL},
+        {"maintenance", &screen_maintenance, NULL, NULL, NULL},
+        {"temperature", &screen_temp, NULL, NULL, NULL},
+        {"update-firmware", &screen_update, NULL, NULL, NULL},
+        {"manual-control", &screen_jog, NULL, NULL, NULL},
+        {"level-build-plate", &screen_level, NULL, NULL, NULL},
+        {"diagnostics", &screen_diagnostics, NULL, NULL, NULL},
+        {"settings", &screen_settings, NULL, NULL, NULL},
+        {"language", &screen_language, NULL, NULL, NULL},
+        {"nozzle-size", &screen_nozzle_size, NULL, NULL, NULL},
+        {"network", &screen_network, NULL, NULL, NULL},
+        {"digital-factory", &screen_digital_factory, NULL, NULL, NULL},
+        {"frame-lighting", &screen_frame_lighting, NULL, NULL, NULL},
+        {"factory-reset", &screen_factory_reset, NULL, NULL, NULL},
+        {"about", &screen_about, NULL, NULL, NULL},
+        {"error", &screen_error, "ER999",
+         "Example blocking printer error shown for catalog reference.",
+         "Resolve the condition, then confirm on the printer."},
+    };
+
+    if (save_current_screenshot(dir, "home") < 0) {
+        fprintf(stderr, "deneb-ui: failed to save home screenshot\n");
+        return 1;
+    }
+
+    for (size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); i++) {
+        screen_mgr_push(screens[i].ops);
+        if (screens[i].er_code) {
+            error_screen_show(screens[i].er_code, screens[i].er_desc,
+                              screens[i].er_action);
+        }
+
+        if (save_current_screenshot(dir, screens[i].slug) < 0) {
+            fprintf(stderr, "deneb-ui: failed to save %s screenshot\n",
+                    screens[i].slug);
+            return 1;
+        }
+        screen_mgr_pop();
+    }
+
+    screen_network_set_catalog_placeholder_mode(0);
+
+    return 0;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
 #ifndef BACKEND_COMM_STUB
@@ -55,10 +169,15 @@ int main(int argc, char *argv[])
 #endif
 
     const char *lang = "en";
+    const char *screenshot_dir = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--lang") == 0 && i + 1 < argc) {
             lang = argv[++i];
+#ifdef BACKEND_COMM_STUB
+        } else if (strcmp(argv[i], "--screenshot-dir") == 0 && i + 1 < argc) {
+            screenshot_dir = argv[++i];
+#endif
         } else if (strcmp(argv[i], "--smoke-test") == 0) {
             fprintf(stderr, "deneb-ui: smoke test ok\n");
             return 0;
@@ -106,6 +225,21 @@ int main(int argc, char *argv[])
 
     screen_mgr_init();
     screen_mgr_push(&screen_home);
+
+#ifdef BACKEND_COMM_STUB
+    if (screenshot_dir) {
+        int rc = run_screenshot_catalog(screenshot_dir);
+        backend_deinit();
+        locale_deinit();
+        touch_driver_deinit();
+        fb_driver_deinit();
+        lv_deinit();
+#if !defined(_WIN32)
+        closelog();
+#endif
+        return rc;
+    }
+#endif
 
     fprintf(stderr, "deneb-ui: entering main loop\n");
 #if !defined(_WIN32)
