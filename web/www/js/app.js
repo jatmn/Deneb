@@ -6,16 +6,38 @@
 var Deneb = Deneb || {};
 
 Deneb.motion = {
-    stepSizes: [1, 10, 50],
-    stepIndex: 1,
+    stepValue: 10,
 
     currentStep: function() {
-        return this.stepSizes[this.stepIndex];
+        return this.stepValue;
     },
 
-    cycleStep: function() {
-        this.stepIndex = (this.stepIndex + 1) % this.stepSizes.length;
+    normalizeStep: function(value) {
+        var text = String(value == null ? '' : value).trim();
+        if (!/^[0-9]+$/.test(text)) return null;
+        var parsed = parseInt(text, 10);
+        if (parsed < 1 || parsed > 50) return null;
+        return parsed;
+    },
+
+    setStep: function(value, silent) {
+        var normalized = this.normalizeStep(value);
+        if (normalized === null) {
+            if (!silent) {
+                Deneb.ui.showError(Deneb.i18n.t('web.control.step_invalid') || 'Enter a whole number from 1 to 50 mm.');
+            }
+            Deneb.ui.updateMotionState();
+            return false;
+        }
+        this.stepValue = normalized;
         Deneb.ui.updateMotionState();
+        return true;
+    },
+
+    setStepFromInput: function() {
+        var input = document.getElementById('motion-step-input');
+        if (!input) return true;
+        return this.setStep(input.value, false);
     }
 };
 
@@ -112,10 +134,15 @@ Deneb.runMotion = function(fn) {
 };
 
 Deneb.jog = function(axis, direction) {
+    if (!Deneb.motion.setStepFromInput()) return;
     var step = Deneb.motion.currentStep() * direction;
     Deneb.runMotion(function() {
         return Deneb.api.jog(axis, step);
     });
+};
+
+Deneb.setMotionStep = function(value) {
+    Deneb.motion.setStep(value, false);
 };
 
 Deneb.home = function() {

@@ -189,10 +189,10 @@ static lv_obj_t *jog_create(void)
     lv_obj_set_style_text_font(z_title, &deneb_font_14, 0);
     lv_obj_align(z_title, LV_ALIGN_TOP_LEFT, 190, 8);
 
-    create_jog_btn(jog_screen, LV_SYMBOL_UP, "Z+", jog_btn_cb);
+    create_jog_btn(jog_screen, LV_SYMBOL_UP, "Z-", jog_btn_cb);
     lv_obj_align(lv_obj_get_child(jog_screen, -1), LV_ALIGN_TOP_LEFT, 190, 28);
 
-    create_jog_btn(jog_screen, LV_SYMBOL_DOWN, "Z-", jog_btn_cb);
+    create_jog_btn(jog_screen, LV_SYMBOL_DOWN, "Z+", jog_btn_cb);
     lv_obj_align(lv_obj_get_child(jog_screen, -1), LV_ALIGN_TOP_LEFT, 190, 68);
 
     /* Home Z */

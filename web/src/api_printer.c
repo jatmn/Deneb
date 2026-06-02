@@ -103,8 +103,11 @@ static int parse_axis_value(const char *body, char *axis)
 static int valid_jog_distance(float distance)
 {
     float mag = fabsf(distance);
+    float whole = floorf(mag);
     return isfinite(distance) &&
-        (mag == 1.0f || mag == 10.0f || mag == MAX_JOG_DISTANCE_MM);
+        mag >= 1.0f &&
+        mag <= MAX_JOG_DISTANCE_MM &&
+        mag == whole;
 }
 
 static int valid_position_value(char axis, float value)
@@ -307,6 +310,10 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
     json_bool(&w, "is_printing", s->is_printing);
     json_bool(&w, "is_paused", s->is_paused);
     json_bool(&w, "has_error", s->has_error);
+    json_float(&w, "progress", s->progress);
+    json_int(&w, "time_total", s->time_total);
+    json_int(&w, "time_left", s->time_left);
+    json_str(&w, "filename", s->filename);
 
     /* diagnostics */
     json_key(&w, "diagnostics");
@@ -743,7 +750,7 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 
         if (!valid_jog_distance(distance)) {
             resp->status_code = 400;
-            api_http_set_body_str(resp, "{\"message\":\"Distance must be one of -50, -10, -1, 1, 10, or 50\"}");
+            api_http_set_body_str(resp, "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}");
             return;
         }
 

@@ -149,31 +149,58 @@ static int str_is_one_of_ci(const char *s, const char *const *values)
     return 0;
 }
 
+static void json_escape_string(const char *src, char *dst, size_t dst_sz)
+{
+    size_t di = 0;
+    if (dst_sz == 0) return;
+    for (size_t si = 0; src && src[si] && di + 1 < dst_sz; si++) {
+        char c = src[si];
+        if ((c == '"' || c == '\\') && di + 2 < dst_sz) {
+            dst[di++] = '\\';
+            dst[di++] = c;
+        } else if (c != '"' && c != '\\') {
+            dst[di++] = c;
+        }
+    }
+    dst[di] = '\0';
+}
+
 static void update_status_cache(void)
 {
     /* Pre-serialize the current state to JSON for fast serving */
-    if (!status_json_cache) status_json_cache = malloc(1024);
+    if (!status_json_cache) status_json_cache = malloc(1536);
     if (!status_json_cache) return;
 
     char *p = status_json_cache;
-    int rem = 1024;
+    int rem = 1536;
     int n;
+    char escaped_filename[sizeof(state.filename) * 2 + 1];
+    const char *status = state.has_error ? "error" :
+        (state.is_paused ? "paused" :
+        (state.is_printing ? "printing" :
+        (state.connected ? "idle" : "offline")));
+
+    json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
 
     n = snprintf(p, rem,
         "{\"nozzle_temp_cur\":%.1f,\"nozzle_temp_set\":%.1f,"
         "\"bed_temp_cur\":%.1f,\"bed_temp_set\":%.1f,"
         "\"pos_x\":%.1f,\"pos_y\":%.1f,\"pos_z\":%.1f,"
         "\"progress\":%.1f,\"time_total\":%d,\"time_left\":%d,"
+        "\"filename\":\"%s\",\"status\":\"%s\","
         "\"is_printing\":%s,\"is_paused\":%s,\"has_error\":%s,"
         "\"connected\":%s}",
         state.nozzle_temp_cur, state.nozzle_temp_set,
         state.bed_temp_cur, state.bed_temp_set,
         state.pos_x, state.pos_y, state.pos_z,
         state.progress, state.time_total, state.time_left,
+        escaped_filename,
+        status,
         state.is_printing ? "true" : "false",
         state.is_paused ? "true" : "false",
         state.has_error ? "true" : "false",
         state.connected ? "true" : "false");
+
     p += n; rem -= n;
 
     (void)rem;

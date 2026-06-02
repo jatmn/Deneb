@@ -16,6 +16,7 @@
 #include <sys/un.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -32,6 +33,7 @@
 #define MAX_EVENTS      16
 #define EPOLL_TIMEOUT_MS 100
 #define MAX_SSE_CLIENTS 4
+#define SSE_PUSH_INTERVAL_MS 250
 
 static volatile int running = 1;
 static int listen_fd = -1;
@@ -40,7 +42,7 @@ static int epoll_fd = -1;
 /* SSE client tracking */
 static int sse_clients[MAX_SSE_CLIENTS];
 static int sse_client_count = 0;
-static time_t sse_last_push = 0;
+static uint64_t sse_last_push_ms = 0;
 
 static void signal_handler(int sig)
 {
@@ -468,11 +470,13 @@ int main(int argc, char *argv[])
             }
         }
 
-        /* Push SSE updates at 1 Hz */
-        time_t now = time(NULL);
-        if (now != sse_last_push && sse_client_count > 0) {
+        /* Push SSE updates at 250 ms cadence */
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        uint32_t now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+        if (sse_client_count > 0 && (sse_last_push_ms == 0 || now_ms - sse_last_push_ms >= SSE_PUSH_INTERVAL_MS)) {
             sse_push_status();
-            sse_last_push = now;
+            sse_last_push_ms = now_ms;
         }
     }
 

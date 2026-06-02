@@ -81,7 +81,7 @@ Deneb.ui = {
         if (el) el.textContent = data.name || data.filename || Deneb.i18n.t('web.status.no_print');
         el = document.getElementById('time-left');
         if (el) {
-            var tl = data.time_total || data.time_left || 0;
+            var tl = data.time_left || data.time_total || 0;
             el.textContent = tl > 0 ? this.formatTime(tl) : '--:--';
         }
     },
@@ -104,7 +104,19 @@ Deneb.ui = {
 
         var step = document.getElementById('motion-step');
         if (step) step.textContent = Deneb.motion.currentStep() + ' mm';
+
+        var stepInput = document.getElementById('motion-step-input');
+        if (stepInput && document.activeElement !== stepInput) {
+            stepInput.value = String(Deneb.motion.currentStep());
+        }
+
+        var presetButtons = document.querySelectorAll('[data-motion-step]');
+        for (var j = 0; j < presetButtons.length; j++) {
+            var preset = parseInt(presetButtons[j].getAttribute('data-motion-step'), 10);
+            presetButtons[j].classList.toggle('is-active', preset === Deneb.motion.currentStep());
+        }
     },
+
 
     motionAllowed: function(data) {
         if (!data) return false;
@@ -246,8 +258,8 @@ Deneb.ui = {
                 '<div class="motion-axis-group">' +
                 '<div class="motion-axis-label">Z</div>' +
                 '<div class="control-group motion-vertical">' +
-                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.jog(\'Z\', 1)">&#9650;</button>' +
-                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.jog(\'Z\', -1)">&#9660;</button>' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.jog(\'Z\', -1)">&#9650;</button>' +
+                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.jog(\'Z\', 1)">&#9660;</button>' +
                 '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.zHome()" data-i18n="web.control.z_home">Z Home</button>' +
                 '</div></div>' +
                 '<div class="motion-axis-group">' +
@@ -258,7 +270,15 @@ Deneb.ui = {
                 '</div></div>' +
                 '</div></div>' +
                 '<div class="motion-toolbar">' +
-                '<button class="btn btn-secondary" data-motion-btn onclick="Deneb.motion.cycleStep()"><span data-i18n="web.control.step">Step</span>: <span id="motion-step">10 mm</span></button>' +
+                '<div class="motion-step-row">' +
+                '<label class="motion-step-label" for="motion-step-input" data-i18n="web.control.step_input">Step (mm)</label>' +
+                '<input class="input motion-step-input" id="motion-step-input" type="text" inputmode="numeric" value="10" onblur="Deneb.motion.setStepFromInput()">' +
+                '</div>' +
+                '<div class="motion-presets">' +
+                '<button class="btn btn-secondary" type="button" data-motion-step="1" onclick="Deneb.setMotionStep(1)">1</button>' +
+                '<button class="btn btn-secondary" type="button" data-motion-step="10" onclick="Deneb.setMotionStep(10)">10</button>' +
+                '<button class="btn btn-secondary" type="button" data-motion-step="50" onclick="Deneb.setMotionStep(50)">50</button>' +
+                '</div>' +
                 '<div class="motion-position">' +
                 '<span>X <strong id="motion-pos-x">--</strong></span>' +
                 '<span>Y <strong id="motion-pos-y">--</strong></span>' +

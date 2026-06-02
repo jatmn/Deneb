@@ -266,6 +266,29 @@ label { font-size: 13px; color: var(--text-dim); display: block; margin-top: 12p
     flex-direction: column;
     gap: 10px;
 }
+.motion-step-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.motion-step-label {
+    margin-top: 0;
+}
+.motion-step-input {
+    margin: 0;
+    max-width: 160px;
+}
+.motion-presets {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.motion-presets .btn {
+    min-width: 56px;
+}
+.motion-presets .btn.is-active {
+    background: var(--accent);
+}
 .motion-position {
     display: flex;
     gap: 12px;
