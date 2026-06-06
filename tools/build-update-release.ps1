@@ -146,7 +146,7 @@ $buildUi = "set -euo pipefail; " +
            "fi; " +
            "make -j`$(nproc); " +
            "cd '$repoWsl'; " +
-           "bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary'"
+           "bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns"
 
 & wsl -d $Distro -- bash -lc $buildUi
 if ($LASTEXITCODE -ne 0) {

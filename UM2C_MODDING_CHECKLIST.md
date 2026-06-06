@@ -1,6 +1,6 @@
 # Deneb UM2C Modding Checklist
 
-Date: 2026-06-02
+Date: 2026-06-06
 
 This checklist tracks what appears technically possible, what still needs proof, and how to keep public development exposure low. It is not legal advice. Treat it as an engineering and publication-risk checklist.
 
@@ -18,7 +18,7 @@ Current open focus:
 - Finish `.deneb` rollback/signature verification before treating packages as stable releases.
 - Measure print/update/upload/diagnostics resource behavior, not just idle UI memory.
 - Decide the next backend reduction target; current idle RAM is dominated by stock `coordinator.py` and `print_service.py`.
-- Keep Cura/mDNS/upload work gated behind a tested local status/API baseline.
+- Validate Cura discovery against the new mDNS advertiser before moving on to upload/start compatibility.
 
 ## 0. Project Identity
 
@@ -358,7 +358,8 @@ Current open focus:
 - [x] Add controls for start, pause, resume, stop/cancel.
 - [x] Add manual nozzle heat and bed heat controls with safe limits.
 - [x] Add cooldown controls.
-- [x] Add manual jogging for X/Y/Z/E with safe feedrates and clear lockouts.
+- [x] Add manual jogging for X/Y/Z with safe feedrates and clear lockouts.
+- [ ] Decide whether web UI extruder jogging is included, and if so require safe nozzle temperature before extrusion.
 - [x] Add guardrails so jogging/heating is blocked or limited during active print states unless explicitly safe.
 - [ ] Add file upload/list/start for local storage if storage behavior is confirmed safe.
 - [x] Keep all web UI strings in the same translation/resource strategy as touchscreen UI if practical.
@@ -382,7 +383,8 @@ Current open focus:
 - [ ] Pull or inspect current UltiMaker Cura source, especially `UM3NetworkPrinting`, as source of truth.
 - [ ] Inspect S-series/local cluster API docs and compare with Cura client behavior.
 - [ ] Produce a compatibility matrix of required Cura endpoints, fields, request formats, and response formats.
-- [ ] Implement mDNS/zeroconf advertisement so Cura's local network scanner can discover the printer.
+- [x] Implement mDNS/zeroconf advertisement so Cura's local network scanner can discover the printer. (`deneb-mdns`, hardware/Cura-version validation still required)
+- [ ] Validate the advertised `machine` TXT value against current Cura builds so UM2+ Connect is recognized without selecting the wrong printer profile.
 - [ ] Implement enough `/cluster-api/v1/` to support detection and status first.
 - [ ] Keep LAN API implementation lightweight and mostly idle when no Cura client is connected.
 - [ ] Prefer implementing LAN printing by replacing or reusing existing communication paths instead of adding a heavy always-on stack.
@@ -551,7 +553,7 @@ Current open focus:
 - [x] Milestone 6: status-only web UI using existing firmware status channels.
 - [x] Milestone 7: web UI controls for pause/resume/cancel/manual heat with safety gates.
 - [ ] Milestone 8: local storage print-flow verification and USB-removal-safe behavior.
-- [ ] Milestone 9: Cura discovery/status compatibility.
+- [ ] Milestone 9: Cura discovery/status compatibility. (`deneb-mdns` exists; current Cura hardware validation and status compatibility remain pending)
 - [ ] Milestone 10: Cura LAN upload/start print compatibility.
 - [ ] Milestone 11: generic slicer G-code support with thumbnails.
 - [ ] Milestone 12: print-quality degradation root-cause fix.

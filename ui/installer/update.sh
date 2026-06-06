@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api lighttpd deneb-api.init deneb-web.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns lighttpd deneb-api.init deneb-web.init deneb-mdns.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -80,12 +80,17 @@ install_binary() {
 }
 
 install_web_runtime() {
+    /etc/init.d/deneb-mdns stop 2>/dev/null || true
     /etc/init.d/deneb-web stop 2>/dev/null || true
     /etc/init.d/deneb-api stop 2>/dev/null || true
 
     cp /tmp/update/deneb-api /usr/bin/deneb-api
     chmod 0755 /usr/bin/deneb-api
     log "installed deneb-api to /usr/bin/deneb-api"
+
+    cp /tmp/update/deneb-mdns /usr/bin/deneb-mdns
+    chmod 0755 /usr/bin/deneb-mdns
+    log "installed deneb-mdns to /usr/bin/deneb-mdns"
 
     cp /tmp/update/lighttpd /usr/sbin/lighttpd
     chmod 0755 /usr/sbin/lighttpd
@@ -98,16 +103,23 @@ install_web_runtime() {
 
     cp /tmp/update/deneb-api.init /etc/init.d/deneb-api
     cp /tmp/update/deneb-web.init /etc/init.d/deneb-web
-    chmod 0755 /etc/init.d/deneb-api /etc/init.d/deneb-web
+    cp /tmp/update/deneb-mdns.init /etc/init.d/deneb-mdns
+    chmod 0755 /etc/init.d/deneb-api /etc/init.d/deneb-web /etc/init.d/deneb-mdns
     log "installed Deneb web init scripts"
 
     [ -f /etc/config/deneb ] || touch /etc/config/deneb
     uci -q set deneb.web=web 2>/dev/null || true
     uci -q set deneb.web.enabled='1' 2>/dev/null || true
+    uci -q set deneb.mdns=mdns 2>/dev/null || true
+    uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
+    if ! uci -q get deneb.mdns.machine >/dev/null 2>&1; then
+        uci -q set deneb.mdns.machine='ultimaker2_plus_connect' 2>/dev/null || true
+    fi
     uci -q commit deneb 2>/dev/null || true
 
     /etc/init.d/deneb-api enable 2>/dev/null || true
     /etc/init.d/deneb-web enable 2>/dev/null || true
+    /etc/init.d/deneb-mdns enable 2>/dev/null || true
     log "enabled Deneb web services for next boot"
 }
 

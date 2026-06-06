@@ -15,16 +15,20 @@ This repository is private while the project is being organized.
 - [x] Client-only network setup via USB `wifi.txt` / `eth.txt`
 - [x] Stock WiFi AP/captive-portal web setup disabled and hidden from the live filesystem view
 - [x] AP-side DHCP/DNS/IPv6 server services disabled for Deneb installs
+- [x] Lightweight local web UI and `deneb-api` runtime bundled into `.deneb` update releases
+- [x] Web status, pause/resume/cancel, manual heat, cooldown, and X/Y/Z jog controls
 - [x] Live device inspection (process list, memory, IPC ports, macros)
 - [x] Baseline measurements documented
 - [x] Initial on-device Deneb UI resource measurements
 
 ### In Progress
 - [ ] Broader release testing of the new UI on hardware
-- [ ] RAM/CPU benchmark comparisons while printing and updating
+- [ ] Web/API validation on hardware, including resource behavior while serving status and controls
+- [ ] RAM/CPU benchmark comparisons while printing, uploading, updating, and exporting diagnostics
+- [ ] `.deneb` package manifest, rollback, signing, and release-channel hardening
+- [ ] Cura discovery/upload compatibility validation
 
 ### Planned
-- [ ] Web UI (lightweight local web interface)
 - [ ] LAN printing (Cura compatibility)
 - [ ] Generic slicer G-code support
 - [ ] OS/service modernization
@@ -33,13 +37,19 @@ This repository is private while the project is being organized.
 ## Priorities
 
 1. Keep the public/project repo legally clean.
-2. Build and test the touchscreen UI replacement.
-3. Keep resource reductions measurable as stock-menu parity expands.
-4. Expand features only when the hardware behavior can be tested safely.
+2. Keep the touchscreen and web UI replacements hardware-tested and resource-measured.
+3. Close package rollback/signing gaps before calling `.deneb` releases stable.
+4. Expand Cura, local-storage printing, and slicer compatibility only when the hardware behavior can be tested safely.
 
 ## Touchscreen UI
 
-The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 1.5-2 MB RSS at idle, with a roughly 1.8 MiB stripped `.deneb` package after adding stock-menu coverage, generated i18n fonts, and the embedded C Digital Factory bridge. See [ui/README.md](ui/README.md) for build instructions and architecture details.
+The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 1.5-2 MB RSS at idle. The native UI release artifact was about 1.8 MiB before the web runtime was bundled, after adding stock-menu coverage, generated i18n fonts, and the embedded C Digital Factory bridge. See [ui/README.md](ui/README.md) for build instructions and architecture details.
+
+## Web UI
+
+Deneb now includes a lightweight local web runtime: static HTML/CSS/JS served by lighttpd, with `deneb-api` proxying status and controls to the stock coordinator over ZeroMQ. A small `deneb-mdns` service advertises `_ultimaker._tcp.local.` for Cura's local discovery browser. The implemented web surface covers status, current print job, temperatures, pause/resume/cancel, manual heat/cooldown, and guarded X/Y/Z motion controls.
+
+The API includes initial UltiMaker REST API v1-shaped endpoints, including multipart `POST /api/v1/print_job`, but Cura compatibility is not complete until mDNS discovery is validated against current Cura builds, any required `/cluster-api/v1/` behavior is implemented, and real Cura upload/start testing passes. See [docs/WEB_UI.md](docs/WEB_UI.md).
 
 ## Optimization Notes
 
@@ -55,6 +65,7 @@ Deneb's current optimization work is focused on removing dormant stock UI and se
 
 - [WiFi setup via USB](docs/WIFI_SETUP.md): configure WiFi by placing `wifi.txt` on a USB drive and importing it from Settings > Network.
 - [Ethernet setup via USB](docs/ETH_SETUP.md): configure static Ethernet or reset Ethernet to DHCP with `eth.txt`.
+- [Web UI](docs/WEB_UI.md): local web status and controls plus the current API compatibility surface.
 - [Backend IPC protocol](docs/BACKEND_IPC_PROTOCOL.md): coordinator command/status protocol used by the native UI.
 - [Stock UI coverage](docs/STOCK_UI_COVERAGE.md): current stock-vs-Deneb touchscreen feature parity.
 - [Resource reduction plan](docs/RESOURCE_REDUCTION_PLAN.md): RAM, CPU, and release guardrails.

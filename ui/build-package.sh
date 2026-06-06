@@ -5,7 +5,7 @@
 # Run from the Deneb repo root after cross-compiling runtime binaries for MIPS.
 #
 # Usage:
-#   ./ui/build-package.sh <path-to-compiled-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>
+#   ./ui/build-package.sh <path-to-compiled-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns]
 #
 # Produces:
 #   dist/Deneb_Update_<version>.deneb
@@ -14,9 +14,10 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BINARY="${1:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>}"
-WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>}"
-LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd>}"
+BINARY="${1:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns]}"
+WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns]}"
+LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns]}"
+MDNS_BINARY="${4:-$(dirname "$WEB_API_BINARY")/deneb-mdns}"
 
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: binary not found: $BINARY"
@@ -29,6 +30,10 @@ if [ ! -f "$WEB_API_BINARY" ]; then
 fi
 if [ ! -f "$LIGHTTPD_BINARY" ]; then
     echo "ERROR: lighttpd binary not found: $LIGHTTPD_BINARY"
+    exit 1
+fi
+if [ ! -f "$MDNS_BINARY" ]; then
+    echo "ERROR: deneb-mdns binary not found: $MDNS_BINARY"
     exit 1
 fi
 
@@ -73,10 +78,17 @@ if [ -n "$STRIP_TOOL" ]; then
 fi
 chmod 0755 "${STAGING_DIR}/lighttpd"
 
+cp "$MDNS_BINARY" "${STAGING_DIR}/deneb-mdns"
+if [ -n "$STRIP_TOOL" ]; then
+    "$STRIP_TOOL" "${STAGING_DIR}/deneb-mdns" 2>/dev/null || true
+fi
+chmod 0755 "${STAGING_DIR}/deneb-mdns"
+
 tr -d '\r' < "${REPO_ROOT}/web/lighttpd.conf" > "${STAGING_DIR}/lighttpd.conf"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-api.init" > "${STAGING_DIR}/deneb-api.init"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-web.init" > "${STAGING_DIR}/deneb-web.init"
-chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init"
+tr -d '\r' < "${REPO_ROOT}/web/init/deneb-mdns.init" > "${STAGING_DIR}/deneb-mdns.init"
+chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init"
 
 mkdir -p "${STAGING_DIR}/www"
 cp -r "${REPO_ROOT}/web/www/"* "${STAGING_DIR}/www/"
@@ -114,9 +126,11 @@ contents:
   deneb-ui.init     - OpenWrt procd init script
   deneb-df-bridge   - Symlink installed to deneb-ui C Digital Factory bridge entry point
   deneb-api         - Local REST API and web session service (MIPS)
+  deneb-mdns        - Lightweight mDNS advertiser for Cura local discovery (MIPS)
   lighttpd          - Static web server and API reverse proxy (MIPS)
   deneb-api.init    - OpenWrt procd init script for deneb-api
   deneb-web.init    - OpenWrt procd init script for lighttpd
+  deneb-mdns.init   - OpenWrt procd init script for deneb-mdns
   lighttpd.conf     - Deneb web server configuration
   www/              - Static Deneb web UI assets
   update.sh         - Installer script
@@ -134,7 +148,7 @@ EOF
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
-    deneb-api lighttpd deneb-api.init deneb-web.init lighttpd.conf www
+    deneb-api deneb-mdns lighttpd deneb-api.init deneb-web.init deneb-mdns.init lighttpd.conf www
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"
