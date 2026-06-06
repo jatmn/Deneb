@@ -1,0 +1,20 @@
+{
+    "version": 2,
+    "name": "Deneb UM2C",
+    "inherits": "ultimaker2_plus_connect",
+    "metadata":
+    {
+        "visible": false,
+        "author": "Deneb",
+        "manufacturer": "Ultimaker B.V.",
+        "bom_numbers": [ "deneb_um2c" ],
+        "first_start_actions": [],
+        "supported_actions": [],
+        "supports_network_connection": true,
+        "supports_usb_connection": false
+    },
+    "overrides":
+    {
+        "machine_name": { "default_value": "Deneb UM2C" }
+    }
+}

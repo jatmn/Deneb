@@ -36,6 +36,7 @@
 #define DNS_TYPE_SRV 33
 #define TTL_SECONDS 120
 #define ROUTE_FLAG_UP 0x1
+#define DENEB_DEFAULT_CURA_MACHINE "deneb_um2c"
 
 static volatile sig_atomic_t running = 1;
 
@@ -381,7 +382,7 @@ int main(void)
     get_printer_name(printer_name, sizeof(printer_name));
     get_instance_id(instance_id, sizeof(instance_id));
 
-    const char *machine = env_or_default("DENEB_MDNS_MACHINE", "ultimaker2_plus_connect");
+    const char *machine = env_or_default("DENEB_MDNS_MACHINE", DENEB_DEFAULT_CURA_MACHINE);
     const char *firmware = env_or_default("DENEB_MDNS_FIRMWARE", DENEB_VERSION);
 
     int fd = open_mdns_socket();

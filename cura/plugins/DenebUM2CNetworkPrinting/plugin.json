@@ -1,0 +1,8 @@
+{
+    "name": "Deneb UM2C Network Printing",
+    "author": "Deneb",
+    "description": "Adds Deneb UM2C network discovery support using Cura's stock Ultimaker 2+ Connect machine profile.",
+    "version": "0.1.0",
+    "api": 8,
+    "i18n-catalog": "cura"
+}

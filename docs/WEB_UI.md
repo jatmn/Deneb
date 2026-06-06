@@ -53,9 +53,24 @@ Implemented local API surface:
 
 `deneb-mdns` advertises `_ultimaker._tcp.local.` with `type=printer`, the
 printer name/address, firmware version, and a configurable `machine` TXT value.
-The default `machine` value is `ultimaker2_plus_connect`; if a specific Cura
-build requires a BOM-style value, set `deneb.mdns.machine` through UCI and
-restart `deneb-mdns`.
+Current Cura derives the displayed network printer model by matching this value
+against BOM numbers in its bundled machine definitions. The UM2+ Connect
+definition is network-capable but does not currently publish a BOM number. Deneb
+therefore advertises `deneb_um2c`. Cura support for that id must come from the
+Deneb Cura plugin in `cura/plugins/DenebUM2CNetworkPrinting`, which contributes
+a plugin-owned definition that inherits the stock UM2+ Connect profile and maps
+Deneb discovery back to UM2+ Connect geometry, materials, and quality settings.
+Do not patch Cura's bundled resources or copy definition files into Cura's user
+profile directly.
+
+Build the Cura plugin package with:
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-cura-plugin.ps1
+```
+
+Install `dist/DenebUM2CNetworkPrinting.curapackage` through Cura's package
+install flow, then restart Cura so the plugin can register its resources before
+network discovery loads machine metadata.
 
 This is not yet a completed Cura upload compatibility claim. Any required
 `/cluster-api/v1/` behavior and validation against current Cura behavior on real
@@ -70,9 +85,8 @@ control.
 - Upload/start behavior exists in `deneb-api`, but local storage behavior,
   free-space checks, USB-removal-safe printing, and real Cura upload/start
   testing remain release blockers.
-- Cura discovery depends on the Cura version's handling of UM2+ Connect local
-  network printers. The mDNS layer is present, but the advertised `machine`
-  value may need hardware/Cura-version validation.
+- Cura discovery requires installing the Deneb Cura plugin until Cura exposes a
+  BOM-backed UM2+ Connect local network definition.
 - Motion controls are intentionally limited to guarded X/Y/Z movement; extruder
   jogging is not exposed until safe-temperature gating is designed and tested.
 
@@ -90,7 +104,7 @@ Web UI is opt-in via UCI:
 uci set deneb.web.enabled=1  # Enable
 uci set deneb.web.enabled=0  # Disable
 uci set deneb.mdns.enabled=1 # Enable Cura/mDNS advertisement
-uci set deneb.mdns.machine=ultimaker2_plus_connect
+uci set deneb.mdns.machine=deneb_um2c
 uci commit deneb
 ```
 

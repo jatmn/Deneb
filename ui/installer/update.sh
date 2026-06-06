@@ -112,8 +112,9 @@ install_web_runtime() {
     uci -q set deneb.web.enabled='1' 2>/dev/null || true
     uci -q set deneb.mdns=mdns 2>/dev/null || true
     uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
-    if ! uci -q get deneb.mdns.machine >/dev/null 2>&1; then
-        uci -q set deneb.mdns.machine='ultimaker2_plus_connect' 2>/dev/null || true
+    mdns_machine="$(uci -q get deneb.mdns.machine 2>/dev/null || true)"
+    if [ -z "${mdns_machine}" ] || [ "${mdns_machine}" = "ultimaker2_plus_connect" ] || [ "${mdns_machine}" = "9066" ]; then
+        uci -q set deneb.mdns.machine='deneb_um2c' 2>/dev/null || true
     fi
     uci -q commit deneb 2>/dev/null || true
 
