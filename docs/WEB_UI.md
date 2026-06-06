@@ -13,7 +13,7 @@ Browser/Cura  --->  lighttpd (:80)  --->  deneb-api (Unix socket)
      +-------->  deneb-mdns (:5353 UDP, _ultimaker._tcp.local.)
 ```
 
-- **lighttpd** serves static files and reverse-proxies `/api/v1/*` to deneb-api
+- **lighttpd** serves static files and reverse-proxies `/api/v1/*` and `/cluster-api/v1/*` to deneb-api
 - **deneb-api** implements the UltiMaker REST API v1, connecting to the stock coordinator via ZeroMQ
 - **deneb-mdns** advertises the printer on `_ultimaker._tcp.local.` for Cura's local discovery browser
 - **Static web UI** is vanilla HTML/CSS/JS (~25 KB), no frameworks
@@ -50,6 +50,10 @@ Implemented local API surface:
 - `GET /api/v1/system` — system information
 - `POST /api/v1/print_job` — initial multipart upload and start handler
 - `PUT /api/v1/print_job/state` — pause/resume/cancel
+- `GET /cluster-api/v1/printers` — Cura local-network single-printer status
+- `GET /cluster-api/v1/print_jobs` — Cura local-network active print job status
+- `POST /cluster-api/v1/print_jobs/` — Cura local-network multipart upload/start handler; requires Open Access or Deneb auth
+- `PUT /cluster-api/v1/print_jobs/{uuid}/action` — Cura pause/resume/abort bridge; requires Open Access or Deneb auth
 
 `deneb-mdns` advertises `_ultimaker._tcp.local.` with `type=printer`, the
 printer name/address, firmware version, and a configurable `machine` TXT value.
@@ -72,19 +76,22 @@ Install `dist/DenebUM2CNetworkPrinting.curapackage` through Cura's package
 install flow, then restart Cura so the plugin can register its resources before
 network discovery loads machine metadata.
 
-This is not yet a completed Cura upload compatibility claim. Any required
-`/cluster-api/v1/` behavior and validation against current Cura behavior on real
-hardware remain open. Password-protected web UI mode does not expose the
-unauthenticated UltiMaker pairing flow; use the Deneb web UI for protected LAN
-control.
+The Cura local-network path implements the single-printer cluster endpoints that
+Cura 5.13 polls for monitor, upload, and basic print-job actions. Stock Cura
+does not send Deneb session credentials on these cluster write requests, so Cura
+LAN upload/control currently requires Open Access mode. In password-protected
+mode, use the Deneb web UI for protected LAN control until Deneb implements a
+Cura-compatible pairing/auth flow. Validation against current Cura behavior on
+real hardware remains open.
 
 ## Current Limits
 
 - Web/API resource numbers still need hardware measurement while idle, polling,
   uploading, printing, and updating.
-- Upload/start behavior exists in `deneb-api`, but local storage behavior,
-  free-space checks, USB-removal-safe printing, and real Cura upload/start
-  testing remain release blockers.
+- Upload/start behavior exists in `deneb-api` for both UM API v1 and Cura's
+  local cluster API, but local storage behavior, free-space checks,
+  USB-removal-safe printing, and real Cura upload/start testing remain release
+  blockers.
 - Cura discovery requires installing the Deneb Cura plugin until Cura exposes a
   BOM-backed UM2+ Connect local network definition.
 - Motion controls are intentionally limited to guarded X/Y/Z movement; extruder

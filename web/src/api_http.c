@@ -12,6 +12,7 @@
 #include "api_materials.h"
 #include "api_auth.h"
 #include "api_deneb.h"
+#include "api_cluster.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -97,6 +98,15 @@ static const api_route_t routes[] = {
     {"POST", "/api/v1/deneb/setup",                                api_deneb_setup_post,      0},
     {"POST", "/api/v1/deneb/auth",                                 api_deneb_auth_post,       0},
     {"GET",  "/api/v1/deneb/config",                               api_deneb_config_get,      0},
+
+    /* Cura local cluster API endpoints */
+    {"GET",  "/cluster-api/v1/materials",                           api_cluster_materials_get, 0},
+    {"GET",  "/cluster-api/v1/printers",                            api_cluster_printers_get,  0},
+    {"GET",  "/cluster-api/v1/print_jobs",                          api_cluster_print_jobs_get, 0},
+    {"GET",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_preview_get, 0},
+    {"POST", "/cluster-api/v1/print_jobs/",                         api_cluster_print_jobs_post, 1},
+    {"PUT",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_action_put, 1},
+    {"DELETE", "/cluster-api/v1/print_jobs/",                       api_cluster_print_job_delete, 1},
 
     /* M7 write endpoints (PUT/POST) */
     {"PUT",  "/api/v1/print_job/state",                            api_print_job_state_put,   1},
@@ -277,6 +287,7 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
         case 403: status_text = "Forbidden"; break;
         case 404: status_text = "Not Found"; break;
         case 405: status_text = "Method Not Allowed"; break;
+        case 409: status_text = "Conflict"; break;
         case 500: status_text = "Internal Server Error"; break;
         case 501: status_text = "Not Implemented"; break;
         case 503: status_text = "Service Unavailable"; break;

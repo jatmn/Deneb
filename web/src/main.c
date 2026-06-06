@@ -257,49 +257,72 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
     snprintf(boundary_line, sizeof(boundary_line), "--%s", boundary);
     size_t blen = strlen(boundary_line);
 
-    /* Find first boundary */
-    char *part_start = memmem(data, (size_t)st.st_size, boundary_line, blen);
-    if (!part_start) { munmap(data, (size_t)st.st_size); return -1; }
-    part_start += blen;
-
-    /* Skip to next line (after CRLF) */
-    char *line_end = memmem(part_start, (size_t)(data + st.st_size - part_start), "\r\n", 2);
-    if (!line_end) { munmap(data, (size_t)st.st_size); return -1; }
-    part_start = line_end + 2;
-
-    /* Parse Content-Disposition to find filename */
     filename[0] = '\0';
-    size_t remaining = (size_t)(data + st.st_size - part_start);
-    char *disp = memmem(part_start, remaining, "Content-Disposition:", 20);
-    if (disp) {
-        size_t disp_remaining = (size_t)(data + st.st_size - disp);
-        char *fn = memmem(disp, disp_remaining, "filename=\"", 10);
-        if (fn) {
-            fn += 10;
-            char *fn_end = memchr(fn, '"', (size_t)(data + st.st_size - fn));
-            if (fn_end && (size_t)(fn_end - fn) < (size_t)fn_sz) {
-                memcpy(filename, fn, (size_t)(fn_end - fn));
-                filename[fn_end - fn] = '\0';
+
+    char *content_start = NULL;
+    char *content_end = NULL;
+    char *part = data;
+    char *data_end = data + st.st_size;
+
+    while ((part = memmem(part, (size_t)(data_end - part), boundary_line, blen)) != NULL) {
+        part += blen;
+        if (part + 2 <= data_end && part[0] == '-' && part[1] == '-') break;
+
+        if (part + 2 <= data_end && part[0] == '\r' && part[1] == '\n') {
+            part += 2;
+        } else if (part < data_end && part[0] == '\n') {
+            part += 1;
+        }
+
+        char *headers_end = memmem(part, (size_t)(data_end - part), "\r\n\r\n", 4);
+        int header_sep_len = 4;
+        if (!headers_end) {
+            headers_end = memmem(part, (size_t)(data_end - part), "\n\n", 2);
+            header_sep_len = 2;
+        }
+        if (!headers_end) break;
+
+        size_t headers_len = (size_t)(headers_end - part);
+        char *disp = memmem(part, headers_len, "Content-Disposition:", 20);
+        int is_file_part = 0;
+        if (disp) {
+            size_t disp_len = headers_len - (size_t)(disp - part);
+            char *line_end = memmem(disp, disp_len, "\r\n", 2);
+            if (!line_end) line_end = memchr(disp, '\n', disp_len);
+            size_t line_len = line_end ? (size_t)(line_end - disp) : disp_len;
+
+            if (memmem(disp, line_len, "filename=\"", 10) ||
+                memmem(disp, line_len, "name=\"file\"", 11)) {
+                is_file_part = 1;
+            }
+
+            char *fn = memmem(disp, line_len, "filename=\"", 10);
+            if (fn) {
+                fn += 10;
+                char *fn_end = memchr(fn, '"', (size_t)(disp + line_len - fn));
+                if (fn_end) {
+                    size_t copy_len = (size_t)(fn_end - fn);
+                    if (copy_len >= (size_t)fn_sz) copy_len = (size_t)fn_sz - 1;
+                    memcpy(filename, fn, copy_len);
+                    filename[copy_len] = '\0';
+                }
             }
         }
-    }
 
-    /* Find the end of headers (double CRLF) */
-    char *content_start = memmem(part_start, remaining, "\r\n\r\n", 4);
-    if (!content_start) { munmap(data, (size_t)st.st_size); return -1; }
-    content_start += 4;
+        char *part_content = headers_end + header_sep_len;
+        char *next_boundary = memmem(part_content, (size_t)(data_end - part_content), boundary_line, blen);
+        if (!next_boundary) break;
 
-    /* Find the closing boundary (search backwards from end) */
-    char *content_end = NULL;
-    if ((size_t)st.st_size < blen) { munmap(data, (size_t)st.st_size); return -1; }
-    char *search_end = data + st.st_size - (off_t)blen;
-    for (char *p = search_end; p >= content_start; p--) {
-        if (memcmp(p, boundary_line, blen) == 0) {
-            content_end = p;
+        if (is_file_part) {
+            content_start = part_content;
+            content_end = next_boundary;
             break;
         }
+
+        part = next_boundary;
     }
-    if (!content_end) { munmap(data, (size_t)st.st_size); return -1; }
+
+    if (!content_start || !content_end) { munmap(data, (size_t)st.st_size); return -1; }
 
     /* Trim trailing CRLF before boundary */
     if (content_end > content_start && content_end[-1] == '\n') content_end--;

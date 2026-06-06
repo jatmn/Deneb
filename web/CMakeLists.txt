@@ -62,6 +62,7 @@ set(DENEB_API_SOURCES
     src/api_print_job.c
     src/api_system.c
     src/api_materials.c
+    src/api_cluster.c
     src/api_auth.c
     src/api_deneb.c
     src/backend_zmq.c
