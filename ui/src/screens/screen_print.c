@@ -101,6 +101,7 @@ static void file_click_cb(lv_event_t *e)
                           locale_get("print.selected_fmt"),
                           selected_name);
     lv_label_set_text(status_msg, locale_get("print.ready"));
+    fprintf(stderr, "touch-ui: file selected for print: %s (%s)\n", selected_name, selected_path);
 }
 
 static void start_btn_cb(lv_event_t *e)
@@ -119,8 +120,10 @@ static void start_btn_cb(lv_event_t *e)
     if (backend_send_command("JOB", args) == 0) {
         lv_label_set_text_fmt(status_msg, locale_get("print.starting_fmt"),
                               selected_name);
+        fprintf(stderr, "touch-ui: sent JOB command for %s\n", selected_path);
     } else {
         lv_label_set_text(status_msg, locale_get("print.send_failed"));
+        fprintf(stderr, "touch-ui: failed to send JOB command for %s\n", selected_path);
     }
 }
 
@@ -144,10 +147,13 @@ static void resume_btn_cb(lv_event_t *e)
         lv_label_set_text(status_msg, locale_get("print.resumed"));
 }
 
-static void cancel_btn_cb(lv_event_t *e)
+static void stop_btn_cb(lv_event_t *e)
 {
     (void)e;
-    if (backend_abort_print() == 0)
+    fprintf(stderr, "touch-ui: stop requested\n");
+    if (backend_stop_print() == 0)
+        lv_label_set_text(status_msg, locale_get("print.stopping"));
+    else
         lv_label_set_text(status_msg, locale_get("print.cancelled"));
 }
 
@@ -290,13 +296,13 @@ static lv_obj_t *print_create(void)
     lv_obj_center(r_lbl);
 
     /* Cancel */
-    lv_obj_t *cancel_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(cancel_btn, 92, 30);
-    lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(0xe94560), 0);
-    lv_obj_set_style_radius(cancel_btn, 4, 0);
-    lv_obj_add_event_cb(cancel_btn, cancel_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *c_lbl = lv_label_create(cancel_btn);
-    lv_label_set_text(c_lbl, locale_get("print.cancel"));
+    lv_obj_t *stop_btn = lv_button_create(ctrl_row);
+    lv_obj_set_size(stop_btn, 92, 30);
+    lv_obj_set_style_bg_color(stop_btn, lv_color_hex(0xe94560), 0);
+    lv_obj_set_style_radius(stop_btn, 4, 0);
+    lv_obj_add_event_cb(stop_btn, stop_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *c_lbl = lv_label_create(stop_btn);
+    lv_label_set_text(c_lbl, locale_get("print.stop"));
     lv_obj_set_style_text_font(c_lbl, &deneb_font_12, 0);
     lv_obj_center(c_lbl);
 

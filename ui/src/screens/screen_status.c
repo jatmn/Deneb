@@ -19,8 +19,27 @@ static lv_obj_t *progress_bar = NULL;
 static lv_obj_t *progress_label = NULL;
 static lv_obj_t *file_label = NULL;
 static lv_obj_t *pos_label = NULL;
+static lv_obj_t *stop_btn = NULL;
 
 static lv_timer_t *update_timer = NULL;
+
+static void set_btn_enabled(lv_obj_t *btn, int enabled)
+{
+    if (!btn)
+        return;
+
+    if (enabled)
+        lv_obj_remove_state(btn, LV_STATE_DISABLED);
+    else
+        lv_obj_add_state(btn, LV_STATE_DISABLED);
+}
+
+static void stop_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    if (backend_stop_print() == 0)
+        lv_label_set_text(state_label, locale_get("status.cooling"));
+}
 
 static void set_temp_label(lv_obj_t *label, float cur, float target)
 {
@@ -67,6 +86,8 @@ static void update_timer_cb(lv_timer_t *timer)
         lv_label_set_text(file_label, s->filename);
     else
         lv_label_set_text(file_label, locale_get("status.no_file"));
+
+    set_btn_enabled(stop_btn, s->is_printing || s->is_paused);
 
     /* Position */
     set_position_label(pos_label, s->pos_x, s->pos_y, s->pos_z);
@@ -162,6 +183,27 @@ static lv_obj_t *status_create(void)
     lv_label_set_long_mode(file_label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_width(file_label, 300);
 
+    /* Stop print button */
+    lv_obj_t *stop_row = lv_obj_create(status_screen);
+    lv_obj_set_size(stop_row, 300, 36);
+    lv_obj_set_style_bg_opa(stop_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(stop_row, 0, 0);
+    lv_obj_set_style_pad_all(stop_row, 0, 0);
+    lv_obj_remove_flag(stop_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    stop_btn = lv_button_create(stop_row);
+    lv_obj_set_size(stop_btn, 140, 30);
+    lv_obj_set_style_bg_color(stop_btn, lv_color_hex(0xe94560), 0);
+    lv_obj_set_style_radius(stop_btn, 4, 0);
+    lv_obj_add_event_cb(stop_btn, stop_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_text_color(stop_btn, lv_color_hex(0xe0e0e0), 0);
+    lv_obj_center(stop_btn);
+    lv_obj_t *stop_lbl = lv_label_create(stop_btn);
+    lv_label_set_text(stop_lbl, locale_get("print.stop"));
+    lv_obj_set_style_text_font(stop_lbl, &deneb_font_12, 0);
+    lv_obj_center(stop_lbl);
+    set_btn_enabled(stop_btn, 0);
+
     /* Position */
     pos_label = lv_label_create(status_screen);
     lv_label_set_text(pos_label, "X:--- Y:--- Z:---");
@@ -188,6 +230,7 @@ static void status_destroy(void)
     progress_label = NULL;
     file_label = NULL;
     pos_label = NULL;
+    stop_btn = NULL;
 }
 
 const screen_ops_t screen_status = {

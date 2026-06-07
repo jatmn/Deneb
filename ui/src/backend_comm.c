@@ -41,6 +41,7 @@ const printer_state_t *backend_get_state(void) { return &state; }
 int backend_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_abort_print(void) { return 0; }
+int backend_stop_print(void) { return 0; }
 int backend_pause_print(void) { return 0; }
 int backend_resume_print(void) { return 0; }
 void backend_deinit(void) { /* no-op */ }
@@ -61,6 +62,10 @@ static void *status_socket = NULL;  /* SUB - status from coordinator */
 static void *rpc_socket = NULL;     /* REQ - commands to coordinator */
 
 static printer_state_t state = {0};
+static int had_previous_status = 0;
+static printer_state_t previous_state = {0};
+static int preheat_targets_logged = 0;
+static int preheat_reached_logged = 0;
 
 static int configure_socket_linger(void *socket)
 {
@@ -168,11 +173,112 @@ static int str_is_one_of(const char *value, const char *const *choices)
     return 0;
 }
 
+static int str_is_one_of_ci(const char *value, const char *const *choices)
+{
+    if (!value)
+        return 0;
+
+    for (int i = 0; choices[i]; i++) {
+        const char *a = value;
+        const char *b = choices[i];
+        int match = 1;
+        while (*a && *b) {
+            char ca = *a >= 'A' && *a <= 'Z' ? *a + ('a' - 'A') : *a;
+            char cb = *b >= 'A' && *b <= 'Z' ? *b + ('a' - 'A') : *b;
+            if (ca != cb) {
+                match = 0;
+                break;
+            }
+            a++;
+            b++;
+        }
+        if (match && *a == '\0' && *b == '\0')
+            return 1;
+    }
+
+    return 0;
+}
+
+static int has_temp_targets(const printer_state_t *s)
+{
+    return (s->bed_temp_set > 0.0f) || (s->nozzle_temp_set > 0.0f);
+}
+
+static int is_temp_reached(float current, float target)
+{
+    return target > 0.0f && current >= target - 1.0f;
+}
+
+static int have_jobs_targets(const printer_state_t *s)
+{
+    return (s->bed_temp_set > 0.0f && is_temp_reached(s->bed_temp_cur, s->bed_temp_set)) &&
+           (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_cur, s->nozzle_temp_set));
+}
+
+static void log_status_transition(const printer_state_t *curr)
+{
+    if (!had_previous_status) {
+        previous_state = *curr;
+        had_previous_status = 1;
+        return;
+    }
+
+    if (strcmp(previous_state.current_req, curr->current_req) != 0)
+        fprintf(stderr, "backend: printer req changed: \"%s\" -> \"%s\"\n",
+                previous_state.current_req[0] ? previous_state.current_req : "none",
+                curr->current_req[0] ? curr->current_req : "none");
+
+    if (previous_state.is_paused && !curr->is_paused)
+        fprintf(stderr, "backend: print resumed (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
+    if (!previous_state.is_paused && curr->is_paused)
+        fprintf(stderr, "backend: print paused (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
+
+    if (previous_state.is_printing && !curr->is_printing) {
+        if (curr->has_error)
+            fprintf(stderr, "backend: print ended with error (filename=%s)\n",
+                    previous_state.filename[0] ? previous_state.filename : "(unknown)");
+        else if (curr->time_total > 0 && curr->time_left <= 0)
+            fprintf(stderr, "backend: print completed (filename=%s)\n",
+                    previous_state.filename[0] ? previous_state.filename : "(unknown)");
+        else
+            fprintf(stderr, "backend: print stopped before completion (filename=%s)\n",
+                    previous_state.filename[0] ? previous_state.filename : "(unknown)");
+    }
+
+    if (!previous_state.is_printing && curr->is_printing)
+        fprintf(stderr, "backend: print started (filename=%s, req=%s, uuid=%s, source=%s)\n",
+                curr->filename[0] ? curr->filename : "(unknown)",
+                curr->current_req[0] ? curr->current_req : "unknown",
+                curr->uuid[0] ? curr->uuid : "(none)",
+                curr->source[0] ? curr->source : "(none)");
+
+    if (!preheat_targets_logged && has_temp_targets(curr)) {
+        fprintf(stderr, "backend: print preheating targets active: bed=%0.1fC(nozzle=%0.1fC)\n",
+                curr->bed_temp_set, curr->nozzle_temp_set);
+        preheat_targets_logged = 1;
+    }
+
+    if (preheat_targets_logged && !preheat_reached_logged && have_jobs_targets(curr)) {
+        fprintf(stderr, "backend: print preheat targets reached: bed=%0.1fC(nozzle=%0.1fC)\n",
+                curr->bed_temp_cur, curr->nozzle_temp_cur);
+        preheat_reached_logged = 1;
+    }
+
+    if (!has_temp_targets(curr)) {
+        preheat_targets_logged = 0;
+        preheat_reached_logged = 0;
+    }
+
+    previous_state = *curr;
+}
+
 /**
  * Parse a status JSON payload and update the cached state.
  */
 static void parse_status(const char *json)
 {
+    printer_state_t prev = state;
+    int was_printing = prev.is_printing || prev.is_paused;
     state.nozzle_temp_set = json_get_float(json, "headTset");
     state.nozzle_temp_cur = json_get_float(json, "headTcur");
     state.bed_temp_set = json_get_float(json, "bedTset");
@@ -192,8 +298,12 @@ static void parse_status(const char *json)
     state.time_left = json_get_int(json, "Tleft");
 
     const char *file = json_get_str(json, "file");
-    if (file && *file)
+    int has_file = file && *file && strcmp(file, "none") != 0;
+    if (has_file) {
         strncpy(state.filename, file, sizeof(state.filename) - 1);
+    } else {
+        state.filename[0] = '\0';
+    }
 
     const char *src = json_get_str(json, "source");
     if (src && *src)
@@ -206,6 +316,8 @@ static void parse_status(const char *json)
     const char *req = json_get_str(json, "req");
     if (req && *req)
         strncpy(state.current_req, req, sizeof(state.current_req) - 1);
+    else
+        state.current_req[0] = '\0';
 
     /* Calculate progress from time */
     if (state.time_total > 0) {
@@ -215,12 +327,41 @@ static void parse_status(const char *json)
 
     static const char *const printing_reqs[] = {"JOB", "Print", "Printing", NULL};
     static const char *const paused_reqs[] = {"PAUSE", "Pause", "Paused", NULL};
+    int active_time = state.time_total > 0 &&
+                      state.time_left > 0 &&
+                      state.time_left <= state.time_total;
 
     /* Derive state flags */
-    state.is_printing = str_is_one_of(state.current_req, printing_reqs) ||
-                        (state.filename[0] != '\0' &&
-                         strcmp(state.filename, "none") != 0);
-    state.is_paused = str_is_one_of(state.current_req, paused_reqs);
+    state.is_printing = str_is_one_of_ci(state.current_req, printing_reqs) ||
+                        str_is_one_of_ci(state.current_req, paused_reqs) ||
+                        active_time;
+    state.is_paused = str_is_one_of_ci(state.current_req, paused_reqs);
+
+    if (!has_file) {
+        if (was_printing || (prev.uuid[0] && state.uuid[0] &&
+                             strcmp(prev.uuid, state.uuid) == 0) ||
+            state.is_printing || state.is_paused)
+            strncpy(state.filename, prev.filename, sizeof(state.filename) - 1);
+    } else if (!state.filename[0]) {
+        state.filename[0] = '\0';
+    }
+
+    if (was_printing && !state.is_printing && !state.is_paused && !has_file) {
+        state.filename[0] = '\0';
+    }
+
+    if (state.time_total > 0 && state.time_left >= 0 && !state.is_printing && !state.is_paused) {
+        state.time_total = 0;
+        state.time_left = 0;
+        state.progress = 0;
+    }
+
+    if (state.time_total > 0 && state.time_left > state.time_total)
+        state.time_left = state.time_total;
+
+    state.has_error = (json_get_int(json, "received_faults") != 0);
+
+    log_status_transition(&state);
 
     /* Update timestamp */
     struct timespec ts;
@@ -357,6 +498,7 @@ int backend_send_gcode(const char *gcode)
 
 int backend_send_command(const char *cmd, const char *args_json)
 {
+    fprintf(stderr, "backend: command send cmd=%s args=%s\n", cmd, args_json ? args_json : "{}");
     char msg[256];
     int len = snprintf(msg, sizeof(msg), "%s<%s", cmd, args_json);
     return send_formatted_rpc(msg, len, sizeof(msg));
@@ -375,6 +517,17 @@ int backend_pause_print(void)
 int backend_resume_print(void)
 {
     return backend_send_command("RESUME", "{}");
+}
+
+int backend_stop_print(void)
+{
+    if (backend_send_command("ABORT", "{}") != 0)
+        return -1;
+    if (backend_send_gcode("M140 S0") != 0)
+        return -1;
+    if (backend_send_gcode("M104 S0") != 0)
+        return -1;
+    return backend_send_gcode("G28");
 }
 
 void backend_deinit(void)
