@@ -67,18 +67,25 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/print_state_rules.c
     ../common/print/status_payload.c
     src/command.c
+    src/command_reply.c
     src/crc.c
     src/diagnostics_log.c
     src/error_map.c
     src/flow_control.c
     src/gcode_stream.c
     src/heater_wait.c
+    src/job_lifecycle.c
     src/macro_registry.c
+    src/macro_runner.c
     src/marlin_packet.c
     src/motion_firmware.c
+    src/motion_observer.c
     src/motion_policy.c
+    src/motion_sender.c
+    src/pause_resume.c
     src/pending_job.c
     src/print_control.c
+    src/runtime_diagnostics.c
     src/serial_transport.c
     src/sha256.c
     src/service.c

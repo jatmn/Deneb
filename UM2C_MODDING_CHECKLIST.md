@@ -856,6 +856,39 @@ Completed implementation slices:
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.
+- [x] Move native pause/resume transition ownership into
+  `printsvc/src/pause_resume.*` so the service command dispatcher no longer
+  hand-rolls paused/preparing/printing transitions, idle pause/resume commands
+  fail explicitly, and host tests cover active, preheat, complete, and error
+  cases.
+- [x] Move native active-job lifecycle status ownership into
+  `printsvc/src/job_lifecycle.*` so accepted, streaming, completed, aborted,
+  and storage-error transitions are not embedded directly in the service
+  dispatcher/poller, with host tests covering source defaults, request labels,
+  abort cleanup, and fault mapping.
+- [x] Move native runtime diagnostic counter projection into
+  `printsvc/src/runtime_diagnostics.*` so flow in-flight/sent/ACK/resend/reject,
+  queued job depth, streamed line number, and planner-starvation fields are not
+  refreshed by ad hoc service code, with host tests covering active and idle
+  job projections.
+- [x] Move native stock-compatible command reply formatting into
+  `printsvc/src/command_reply.*` so the `{"status","message"}` response shape
+  and JSON escaping are not private service-dispatcher details, with host tests
+  for OK, error, escaping, and truncation failure.
+- [x] Move native motion-send ownership into
+  `printsvc/src/motion_sender.*` so Marlin packet preparation, serial-ready
+  behavior, resend packet writes, and multi-command motion-policy dispatch are
+  no longer private `service.c` helpers, with host tests for dry-run sends,
+  resend lookup, invalid input, and abort-policy expansion.
+- [x] Move native macro/file streaming ownership into
+  `printsvc/src/macro_runner.*` so macro path resolution, bounded G-code stream
+  iteration, abort checks, flow-window waits, motion sends, and motion polling
+  are driven by a tested callback contract instead of private service helper
+  loops.
+- [x] Move native motion-observation ownership into
+  `printsvc/src/motion_observer.*` so Marlin status parsing, heater-wait
+  updates, ACK/reject/resend accounting, and resend-sequence detection are one
+  tested per-line policy instead of inline serial-poll logic.
 - [x] Publish native diagnostics for flow in-flight depth, sent/ACK/resend/reject
   counters, queued job depth, streamed job line number, command latency, and a
   planner-starvation indicator so lab comparisons have one service-owned source.

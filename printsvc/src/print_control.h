@@ -23,6 +23,7 @@ typedef enum {
 } deneb_print_action_t;
 
 deneb_print_phase_t deneb_print_control_phase_from_state(deneb_print_state_t state);
+deneb_print_state_t deneb_print_control_state_for_phase(deneb_print_phase_t phase);
 const char *deneb_print_control_phase_name(deneb_print_phase_t phase);
 const char *deneb_print_control_req_for_phase(deneb_print_phase_t phase);
 int deneb_print_control_phase_active(deneb_print_phase_t phase);

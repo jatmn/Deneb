@@ -24,6 +24,27 @@ deneb_print_phase_t deneb_print_control_phase_from_state(deneb_print_state_t sta
     }
 }
 
+deneb_print_state_t deneb_print_control_state_for_phase(deneb_print_phase_t phase)
+{
+    switch (phase) {
+        case DENEB_PRINT_PHASE_PREPARING:
+            return DENEB_PRINT_STATE_PREPARING;
+        case DENEB_PRINT_PHASE_PRINTING:
+            return DENEB_PRINT_STATE_PRINTING;
+        case DENEB_PRINT_PHASE_PAUSED:
+            return DENEB_PRINT_STATE_PAUSED;
+        case DENEB_PRINT_PHASE_ABORTING:
+            return DENEB_PRINT_STATE_ABORTING;
+        case DENEB_PRINT_PHASE_COMPLETE:
+            return DENEB_PRINT_STATE_COMPLETE;
+        case DENEB_PRINT_PHASE_ERROR:
+            return DENEB_PRINT_STATE_ERROR;
+        case DENEB_PRINT_PHASE_IDLE:
+        default:
+            return DENEB_PRINT_STATE_IDLE;
+    }
+}
+
 const char *deneb_print_control_phase_name(deneb_print_phase_t phase)
 {
     switch (phase) {

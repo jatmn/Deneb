@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "command.h"
 #include "command_format.h"
+#include "command_reply.h"
 #include "config.h"
 #include "crc.h"
 #include "diagnostics_log.h"
@@ -11,11 +12,16 @@
 #include "json_field.h"
 #include "json_file.h"
 #include "json_string.h"
+#include "job_lifecycle.h"
 #include "macro_registry.h"
+#include "macro_runner.h"
 #include "material_catalog.h"
 #include "marlin_packet.h"
 #include "motion_firmware.h"
+#include "motion_observer.h"
 #include "motion_policy.h"
+#include "motion_sender.h"
+#include "pause_resume.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
 #include "printer_identity.h"
@@ -27,6 +33,7 @@
 #include "print_backend_route.h"
 #include "print_profile.h"
 #include "print_state_rules.h"
+#include "runtime_diagnostics.h"
 #include "sha256.h"
 #include "service.h"
 #include "status.h"
@@ -114,6 +121,21 @@ static void test_command_format_round_trip(void)
     assert(cmd.type == DENEB_COMMAND_ABORT);
 }
 
+static void test_command_reply_helpers(void)
+{
+    char reply[256];
+
+    assert(deneb_command_reply_ok(reply, sizeof(reply), "job accepted") == 0);
+    assert(strcmp(reply, "{\"status\":\"ok\",\"message\":\"job accepted\"}") == 0);
+
+    assert(deneb_command_reply_error(reply, sizeof(reply),
+                                     "bad \"quoted\" path") == 0);
+    assert(strcmp(reply,
+                  "{\"status\":\"error\",\"message\":\"bad \\\"quoted\\\" path\"}") == 0);
+
+    assert(deneb_command_reply_json(reply, 8, "ok", "too long") < 0);
+}
+
 static void test_status_frame(void)
 {
     deneb_status_t status;
@@ -178,11 +200,279 @@ static void test_print_control_contract(void)
     assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING), DENEB_PRINT_REQ_PREPARE) == 0);
     assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PRINTING), DENEB_COMMAND_VERB_JOB) == 0);
     assert(strcmp(deneb_print_control_action_command(DENEB_PRINT_ACTION_ABORT), DENEB_COMMAND_VERB_ABORT) == 0);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_IDLE) == DENEB_PRINT_STATE_IDLE);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_PREPARING) == DENEB_PRINT_STATE_PREPARING);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_PRINTING) == DENEB_PRINT_STATE_PRINTING);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_PAUSED) == DENEB_PRINT_STATE_PAUSED);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_ABORTING) == DENEB_PRINT_STATE_ABORTING);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_COMPLETE) == DENEB_PRINT_STATE_COMPLETE);
+    assert(deneb_print_control_state_for_phase(DENEB_PRINT_PHASE_ERROR) == DENEB_PRINT_STATE_ERROR);
     assert(deneb_print_control_phase_active(DENEB_PRINT_PHASE_PREPARING));
     assert(deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_PREPARING));
     assert(deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_PRINTING));
     assert(!deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_IDLE));
     assert(!deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_COMPLETE));
+}
+
+static void test_pause_resume_policy(void)
+{
+    deneb_status_t status;
+
+    deneb_status_init(&status);
+    assert(deneb_pause_resume_pause(&status) < 0);
+    assert(deneb_pause_resume_resume(&status, 0) < 0);
+
+    status.state = DENEB_PRINT_STATE_PREPARING;
+    snprintf(status.req, sizeof(status.req), "%s",
+             deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING));
+    assert(deneb_pause_resume_pause(&status) == 1);
+    assert(status.state == DENEB_PRINT_STATE_PAUSED);
+    assert(strcmp(status.req, DENEB_PRINT_REQ_PAUSED) == 0);
+    assert(deneb_pause_resume_pause(&status) == 0);
+    assert(deneb_pause_resume_resume(&status, 1) == 1);
+    assert(status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(strcmp(status.req, DENEB_PRINT_REQ_PREPARE) == 0);
+
+    status.state = DENEB_PRINT_STATE_PRINTING;
+    snprintf(status.req, sizeof(status.req), "%s",
+             deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PRINTING));
+    assert(deneb_pause_resume_pause(&status) == 1);
+    assert(status.state == DENEB_PRINT_STATE_PAUSED);
+    assert(deneb_pause_resume_resume(&status, 0) == 1);
+    assert(status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(strcmp(status.req, DENEB_COMMAND_VERB_JOB) == 0);
+
+    status.state = DENEB_PRINT_STATE_COMPLETE;
+    assert(deneb_pause_resume_pause(&status) < 0);
+    status.state = DENEB_PRINT_STATE_ERROR;
+    assert(deneb_pause_resume_pause(&status) < 0);
+}
+
+static void test_job_lifecycle_policy(void)
+{
+    deneb_status_t status;
+
+    deneb_status_init(&status);
+    deneb_job_lifecycle_start(&status, "/tmp/cube.gcode", "", "uuid-1",
+                              60.0f, 205.0f);
+    assert(status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(strcmp(status.req, DENEB_PRINT_REQ_PREPARE) == 0);
+    assert(strcmp(status.file, "/tmp/cube.gcode") == 0);
+    assert(strcmp(status.source, DENEB_PRINT_USB_JOB_SOURCE) == 0);
+    assert(strcmp(status.uuid, "uuid-1") == 0);
+    assert(status.bed_t_set == 60.0f);
+    assert(status.head_t_set == 205.0f);
+
+    deneb_job_lifecycle_streaming(&status);
+    assert(status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(strcmp(status.req, DENEB_COMMAND_VERB_JOB) == 0);
+
+    deneb_job_lifecycle_complete(&status);
+    assert(status.state == DENEB_PRINT_STATE_COMPLETE);
+    assert(strcmp(status.req, DENEB_PRINT_REQ_COMPLETE) == 0);
+
+    deneb_job_lifecycle_start(&status, "/tmp/cube.gcode", "WEB_API", "",
+                              0.0f, 0.0f);
+    status.time_total = 120;
+    status.time_left = 90;
+    deneb_job_lifecycle_abort(&status);
+    assert(status.state == DENEB_PRINT_STATE_IDLE);
+    assert(strcmp(status.req, DENEB_PRINT_REQ_IDLE) == 0);
+    assert(strcmp(status.file, DENEB_PRINT_NONE_VALUE) == 0);
+    assert(status.time_total == 0);
+    assert(status.time_left == 0);
+
+    deneb_job_lifecycle_error(&status,
+                              deneb_error_make(DENEB_ERROR_STORAGE,
+                                               "read failed"));
+    assert(status.state == DENEB_PRINT_STATE_ERROR);
+    assert(status.fault);
+    assert(status.error.code == DENEB_ERROR_STORAGE);
+}
+
+static void test_runtime_diagnostics_policy(void)
+{
+    deneb_status_t status;
+    deneb_flow_control_t flow;
+    uint8_t packet[DENEB_PRINTSVC_MAX_GCODE_LINE + 64];
+    size_t written = 0;
+    uint8_t seq = 0;
+    uint8_t resend = 0;
+
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    assert(deneb_flow_prepare_packet(&flow, "M105", packet, sizeof(packet),
+                                     &written, &seq) == 0);
+    assert(deneb_flow_handle_response(&flow, "Resend: 0", &resend) == 2);
+    assert(deneb_flow_handle_response(&flow, "Error:Bad checksum", &resend) == -1);
+
+    deneb_runtime_diagnostics_refresh(&status, &flow, 1, 42, 3);
+    assert(status.flow_inflight == 1);
+    assert(status.flow_sent == 1);
+    assert(status.flow_ack == 0);
+    assert(status.flow_resend == 1);
+    assert(status.flow_reject == 1);
+    assert(status.job_queue_depth == 1);
+    assert(status.job_line_number == 42);
+    assert(status.planner_starvation_count == 3);
+
+    deneb_runtime_diagnostics_refresh(&status, &flow, 0, 42, 4);
+    assert(status.job_queue_depth == 0);
+    assert(status.job_line_number == 0);
+    assert(status.planner_starvation_count == 4);
+}
+
+static void test_motion_sender_policy(void)
+{
+    deneb_flow_control_t flow;
+    deneb_serial_transport_t serial;
+    deneb_motion_policy_t policy;
+
+    deneb_flow_init(&flow);
+    memset(&serial, 0, sizeof(serial));
+    serial.fd = -1;
+
+    assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, NULL) < 0);
+    assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, "") < 0);
+    assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, "M105") == 0);
+    assert(deneb_flow_inflight(&flow) == 1);
+    assert(flow.sent_count == 1);
+    assert(deneb_motion_sender_resend_sequence(&flow, &serial, 0, 0) == 0);
+    assert(deneb_motion_sender_resend_sequence(&flow, &serial, 0, 7) < 0);
+
+    deneb_flow_init(&flow);
+    deneb_motion_policy_abort(&policy);
+    assert(deneb_motion_sender_apply_policy(&flow, &serial, 0, &policy) == 0);
+    assert(flow.sent_count == policy.count);
+    assert(deneb_flow_inflight(&flow) == policy.count);
+    assert(deneb_motion_sender_apply_policy(&flow, &serial, 0, NULL) < 0);
+}
+
+typedef struct {
+    int abort_after_sends;
+    int fail_wait;
+    int fail_send;
+    int sends;
+    int polls;
+    char sent[3][DENEB_PRINTSVC_MAX_GCODE_LINE];
+} macro_runner_fake_t;
+
+static int macro_runner_fake_abort(void *ctx)
+{
+    macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
+    return fake->abort_after_sends >= 0 &&
+           fake->sends >= fake->abort_after_sends;
+}
+
+static int macro_runner_fake_wait(void *ctx, long long timeout_ms)
+{
+    macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
+    assert(timeout_ms == 5000);
+    return fake->fail_wait ? -1 : 0;
+}
+
+static int macro_runner_fake_send(void *ctx, const char *line)
+{
+    macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
+    if (fake->fail_send)
+        return -1;
+    if (fake->sends < 3)
+        snprintf(fake->sent[fake->sends], sizeof(fake->sent[fake->sends]),
+                 "%s", line);
+    fake->sends++;
+    return 0;
+}
+
+static int macro_runner_fake_poll(void *ctx)
+{
+    macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
+    fake->polls++;
+    return 0;
+}
+
+static void test_motion_observer_policy(void)
+{
+    deneb_status_t status;
+    deneb_heater_wait_t wait;
+    deneb_flow_control_t flow;
+    uint8_t packet[DENEB_PRINTSVC_MAX_GCODE_LINE + 64];
+    size_t written = 0;
+    uint8_t seq = 0;
+    uint8_t resend = 0;
+
+    deneb_status_init(&status);
+    deneb_heater_wait_init(&wait);
+    deneb_flow_init(&flow);
+    deneb_heater_wait_start(&wait, 60.0f, 200.0f, 1.0f);
+
+    assert(deneb_motion_observer_handle_line(NULL, &wait, &flow, "ok",
+                                             &resend) < 0);
+    assert(deneb_motion_observer_handle_line(&status, &wait, &flow,
+                                             "ok T:150.0 /200.0 B:55.0 /60.0",
+                                             &resend) == 1);
+    assert(wait.active);
+    assert(status.head_t_cur == 150.0f);
+    assert(status.head_t_set == 200.0f);
+    assert(status.bed_t_cur == 55.0f);
+    assert(status.bed_t_set == 60.0f);
+
+    assert(deneb_motion_observer_handle_line(&status, &wait, &flow,
+                                             "ok T:200.0 /200.0 B:60.0 /60.0",
+                                             &resend) == 1);
+    assert(!wait.active);
+
+    assert(deneb_flow_prepare_packet(&flow, "M105", packet, sizeof(packet),
+                                     &written, &seq) == 0);
+    assert(deneb_motion_observer_handle_line(&status, &wait, &flow,
+                                             "Resend: 0", &resend) == 2);
+    assert(resend == 0);
+}
+
+static void test_macro_runner_policy(void)
+{
+    const char *path = "/tmp/deneb-printsvc-macro-runner-test.gcode";
+    deneb_macro_runner_io_t io;
+    macro_runner_fake_t fake;
+    FILE *f = fopen(path, "wb");
+
+    assert(f != NULL);
+    fputs(";comment\nG1 X1\n\nG1 X2\n", f);
+    fclose(f);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = -1;
+    io.ctx = &fake;
+    io.abort_requested = macro_runner_fake_abort;
+    io.wait_for_window = macro_runner_fake_wait;
+    io.send_gcode = macro_runner_fake_send;
+    io.poll_motion = macro_runner_fake_poll;
+    assert(deneb_macro_runner_run_file(path, &io) == 0);
+    assert(fake.sends == 2);
+    assert(fake.polls == 2);
+    assert(strcmp(fake.sent[0], "G1 X1") == 0);
+    assert(strcmp(fake.sent[1], "G1 X2") == 0);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = 1;
+    io.ctx = &fake;
+    assert(deneb_macro_runner_run_file(path, &io) == -2);
+    assert(fake.sends == 1);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = -1;
+    fake.fail_wait = 1;
+    io.ctx = &fake;
+    assert(deneb_macro_runner_run_file(path, &io) < 0);
+    assert(fake.sends == 0);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = -1;
+    fake.fail_send = 1;
+    io.ctx = &fake;
+    assert(deneb_macro_runner_run_file(path, &io) < 0);
+    assert(deneb_macro_runner_run_file(path, NULL) < 0);
+    assert(deneb_macro_runner_run_macro("../bad.gcode", &io) < 0);
+    remove(path);
 }
 
 static void test_print_state_rules(void)
@@ -1441,8 +1731,15 @@ int main(void)
 {
     test_command_parse();
     test_command_format_round_trip();
+    test_command_reply_helpers();
     test_error_mapping();
     test_print_control_contract();
+    test_pause_resume_policy();
+    test_job_lifecycle_policy();
+    test_runtime_diagnostics_policy();
+    test_motion_sender_policy();
+    test_motion_observer_policy();
+    test_macro_runner_policy();
     test_print_state_rules();
     test_print_job_summary();
     test_json_field_helpers();

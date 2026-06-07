@@ -1,13 +1,17 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "config.h"
+#include "command_reply.h"
 #include "diagnostics_log.h"
-#include "gcode_stream.h"
-#include "macro_registry.h"
+#include "job_lifecycle.h"
+#include "macro_runner.h"
+#include "motion_observer.h"
 #include "motion_policy.h"
+#include "motion_sender.h"
+#include "pause_resume.h"
 #include "print_control.h"
 #include "print_state_rules.h"
+#include "runtime_diagnostics.h"
 #include "service.h"
-#include "status_parser.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -38,40 +42,6 @@ int deneb_print_service_open_motion(deneb_print_service_t *svc)
     return -1;
 }
 
-static int service_send_gcode(deneb_print_service_t *svc, const char *line)
-{
-    uint8_t packet[DENEB_PRINTSVC_MAX_GCODE_LINE + 64];
-    size_t written = 0;
-    uint8_t sequence = 0;
-
-    if (!svc || !line || !*line)
-        return -1;
-
-    if (deneb_flow_prepare_packet(&svc->flow, line, packet, sizeof(packet),
-                                  &written, &sequence) != 0)
-        return -1;
-
-    if (!svc->serial_ready)
-        return 0;
-
-    return deneb_serial_write_all(&svc->serial, packet, written);
-}
-
-static int service_resend_sequence(deneb_print_service_t *svc, uint8_t sequence)
-{
-    uint8_t packet[DENEB_PRINTSVC_MAX_GCODE_LINE + 64];
-    size_t written = 0;
-
-    if (deneb_flow_get_resend_packet(&svc->flow, sequence, packet,
-                                     sizeof(packet), &written) != 0)
-        return -1;
-
-    if (!svc->serial_ready)
-        return 0;
-
-    return deneb_serial_write_all(&svc->serial, packet, written);
-}
-
 int deneb_print_service_poll_motion(deneb_print_service_t *svc)
 {
     char line[DENEB_PRINTSVC_SERIAL_LINE];
@@ -91,16 +61,13 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
             break;
 
         handled++;
-        deneb_status_parse_marlin_line(&svc->status, line);
-        if (deneb_heater_wait_ready(&svc->heater_wait, &svc->status)) {
-            svc->heater_wait.active = 0;
-        } else {
-            deneb_heater_wait_apply_status(&svc->heater_wait, &svc->status);
-        }
-        int flow_rc = deneb_flow_handle_response(&svc->flow, line,
-                                                 &resend_sequence);
+        int flow_rc = deneb_motion_observer_handle_line(
+            &svc->status, &svc->heater_wait, &svc->flow, line,
+            &resend_sequence);
         if (flow_rc == 2) {
-            service_resend_sequence(svc, resend_sequence);
+            deneb_motion_sender_resend_sequence(&svc->flow, &svc->serial,
+                                                svc->serial_ready,
+                                                resend_sequence);
         }
     }
 
@@ -121,15 +88,10 @@ void deneb_print_service_refresh_diagnostics(deneb_print_service_t *svc)
     if (!svc)
         return;
 
-    svc->status.flow_inflight = (unsigned int)deneb_flow_inflight(&svc->flow);
-    svc->status.flow_sent = svc->flow.sent_count;
-    svc->status.flow_ack = svc->flow.ack_count;
-    svc->status.flow_resend = svc->flow.resend_count;
-    svc->status.flow_reject = svc->flow.reject_count;
-    svc->status.job_queue_depth = svc->job_active ? 1u : 0u;
-    svc->status.job_line_number = svc->job_active ?
-        (unsigned int)svc->job_stream.line_number : 0u;
-    svc->status.planner_starvation_count = svc->planner_starvation_count;
+    deneb_runtime_diagnostics_refresh(
+        &svc->status, &svc->flow, svc->job_active,
+        (unsigned int)svc->job_stream.line_number,
+        svc->planner_starvation_count);
 }
 
 static int service_wait_for_stream_window(deneb_print_service_t *svc, long long timeout_ms)
@@ -149,112 +111,79 @@ static int service_wait_for_stream_window(deneb_print_service_t *svc, long long 
     return 0;
 }
 
-static int service_stream_file_blocking(deneb_print_service_t *svc, const char *path)
+static int service_abort_requested_cb(void *ctx)
 {
-    deneb_gcode_stream_t stream;
-    char line[DENEB_PRINTSVC_MAX_GCODE_LINE];
-    int rc;
-
-    if (deneb_gcode_stream_open(&stream, path) != 0)
-        return -1;
-
-    while ((rc = deneb_gcode_stream_next(&stream, line, sizeof(line))) > 0) {
-        if (svc->abort_requested) {
-            deneb_gcode_stream_close(&stream);
-            return -2;
-        }
-        rc = service_wait_for_stream_window(svc, 5000);
-        if (rc != 0) {
-            deneb_gcode_stream_close(&stream);
-            return rc;
-        }
-        if (service_send_gcode(svc, line) != 0) {
-            deneb_gcode_stream_close(&stream);
-            return -1;
-        }
-        deneb_print_service_poll_motion(svc);
-    }
-
-    deneb_gcode_stream_close(&stream);
-    return rc < 0 ? -1 : 0;
+    deneb_print_service_t *svc = (deneb_print_service_t *)ctx;
+    return svc && svc->abort_requested;
 }
 
-static int service_apply_motion_policy(deneb_print_service_t *svc,
-                                       const deneb_motion_policy_t *policy)
+static int service_wait_for_stream_window_cb(void *ctx, long long timeout_ms)
 {
-    if (!svc || !policy)
-        return -1;
-
-    for (size_t i = 0; i < policy->count; i++) {
-        if (service_send_gcode(svc, policy->commands[i]) != 0)
-            return -1;
-    }
-    return 0;
+    return service_wait_for_stream_window((deneb_print_service_t *)ctx,
+                                          timeout_ms);
 }
 
-static void reply_json(char *reply, size_t reply_sz, const char *status, const char *message)
+static int service_send_gcode_cb(void *ctx, const char *line)
 {
-    snprintf(reply, reply_sz, "{\"status\":\"%s\",\"message\":\"%s\"}",
-             status, message ? message : "");
+    deneb_print_service_t *svc = (deneb_print_service_t *)ctx;
+    if (!svc)
+        return -1;
+    return deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                          svc->serial_ready, line);
+}
+
+static int service_poll_motion_cb(void *ctx)
+{
+    return deneb_print_service_poll_motion((deneb_print_service_t *)ctx);
 }
 
 static int handle_job(deneb_print_service_t *svc, const deneb_command_t *cmd,
                       char *reply, size_t reply_sz)
 {
     if (!cmd->file[0]) {
-        reply_json(reply, reply_sz, "error", "missing job file");
+        deneb_command_reply_error(reply, reply_sz, "missing job file");
         return -1;
     }
 
     if (svc->job_active) {
-        reply_json(reply, reply_sz, "error", "job already active");
+        deneb_command_reply_error(reply, reply_sz, "job already active");
         return -1;
     }
 
     if (deneb_gcode_stream_open(&svc->job_stream, cmd->file) != 0) {
         svc->status.error = deneb_error_make(DENEB_ERROR_STORAGE, "failed to open job file");
-        reply_json(reply, reply_sz, "error", "failed to open job file");
+        deneb_command_reply_error(reply, reply_sz, "failed to open job file");
         return -1;
     }
 
     svc->abort_requested = 0;
     svc->job_active = 1;
-    svc->status.state = DENEB_PRINT_STATE_PREPARING;
-    snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-             deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING));
-    snprintf(svc->status.file, sizeof(svc->status.file), "%s", cmd->file);
-    snprintf(svc->status.source, sizeof(svc->status.source), "%s",
-             cmd->source[0] ? cmd->source : DENEB_PRINT_USB_JOB_SOURCE);
-    snprintf(svc->status.uuid, sizeof(svc->status.uuid), "%s", cmd->uuid);
-    if (cmd->bed_target > 0.0f)
-        svc->status.bed_t_set = cmd->bed_target;
-    if (cmd->head_target > 0.0f)
-        svc->status.head_t_set = cmd->head_target;
+    deneb_job_lifecycle_start(&svc->status, cmd->file, cmd->source,
+                              cmd->uuid, cmd->bed_target, cmd->head_target);
     deneb_heater_wait_start(&svc->heater_wait, svc->status.bed_t_set,
                             svc->status.head_t_set, 1.0f);
 
-    reply_json(reply, reply_sz, "ok", "job accepted");
+    deneb_command_reply_ok(reply, reply_sz, "job accepted");
     return 0;
 }
 
 static int handle_macro(deneb_print_service_t *svc, const deneb_command_t *cmd,
                         char *reply, size_t reply_sz)
 {
-    char path[256];
+    deneb_macro_runner_io_t io;
 
-    if (deneb_macro_resolve(cmd->macro, path, sizeof(path)) != 0) {
-        svc->status.error = deneb_error_make(DENEB_ERROR_COMMAND, "invalid macro");
-        reply_json(reply, reply_sz, "error", "invalid macro");
-        return -1;
-    }
-
-    if (service_stream_file_blocking(svc, path) != 0) {
+    io.ctx = svc;
+    io.abort_requested = service_abort_requested_cb;
+    io.wait_for_window = service_wait_for_stream_window_cb;
+    io.send_gcode = service_send_gcode_cb;
+    io.poll_motion = service_poll_motion_cb;
+    if (deneb_macro_runner_run_macro(cmd->macro, &io) != 0) {
         svc->status.error = deneb_error_make(DENEB_ERROR_COMMAND, "macro failed");
-        reply_json(reply, reply_sz, "error", "macro failed");
+        deneb_command_reply_error(reply, reply_sz, "macro failed");
         return -1;
     }
 
-    reply_json(reply, reply_sz, "ok", "macro complete");
+    deneb_command_reply_ok(reply, reply_sz, "macro complete");
     return 0;
 }
 
@@ -265,13 +194,16 @@ static int service_handle_command_inner(deneb_print_service_t *svc,
     switch (cmd->type) {
         case DENEB_COMMAND_GCODE:
             for (size_t i = 0; i < cmd->gcode_count; i++) {
-                if (service_send_gcode(svc, cmd->gcode[i]) != 0) {
+                if (deneb_motion_sender_send_gcode(&svc->flow,
+                                                   &svc->serial,
+                                                   svc->serial_ready,
+                                                   cmd->gcode[i]) != 0) {
                     svc->status.error = deneb_error_make(DENEB_ERROR_COMMAND, "gcode failed");
-                    reply_json(reply, reply_sz, "error", "gcode failed");
+                    deneb_command_reply_error(reply, reply_sz, "gcode failed");
                     return -1;
                 }
             }
-            reply_json(reply, reply_sz, "ok", "gcode accepted");
+            deneb_command_reply_ok(reply, reply_sz, "gcode accepted");
             return 0;
 
         case DENEB_COMMAND_MACRO:
@@ -288,43 +220,36 @@ static int service_handle_command_inner(deneb_print_service_t *svc,
                 deneb_gcode_stream_close(&svc->job_stream);
                 svc->job_active = 0;
             }
-            service_apply_motion_policy(svc, &abort_policy);
+            deneb_motion_sender_apply_policy(&svc->flow, &svc->serial,
+                                             svc->serial_ready,
+                                             &abort_policy);
             svc->abort_requested = 1;
-            svc->status.state = DENEB_PRINT_STATE_IDLE;
-            snprintf(svc->status.file, sizeof(svc->status.file), "%s",
-                     DENEB_PRINT_NONE_VALUE);
-            snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-                     deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_IDLE));
-            svc->status.time_total = 0;
-            svc->status.time_left = 0;
-            reply_json(reply, reply_sz, "ok", "abort accepted");
+            deneb_job_lifecycle_abort(&svc->status);
+            deneb_command_reply_ok(reply, reply_sz, "abort accepted");
             return 0;
             }
 
         case DENEB_COMMAND_PAUSE:
-            if (deneb_status_has_active_print(&svc->status)) {
-                svc->status.state = DENEB_PRINT_STATE_PAUSED;
-                snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-                         deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PAUSED));
+            if (deneb_pause_resume_pause(&svc->status) < 0) {
+                deneb_command_reply_error(reply, reply_sz,
+                                          "no active print to pause");
+                return -1;
             }
-            reply_json(reply, reply_sz, "ok", "pause accepted");
+            deneb_command_reply_ok(reply, reply_sz, "pause accepted");
             return 0;
 
         case DENEB_COMMAND_RESUME:
-            if (svc->status.state == DENEB_PRINT_STATE_PAUSED) {
-                svc->status.state = svc->heater_wait.active ?
-                    DENEB_PRINT_STATE_PREPARING : DENEB_PRINT_STATE_PRINTING;
-                snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-                         deneb_print_control_req_for_phase(
-                             svc->heater_wait.active ?
-                             DENEB_PRINT_PHASE_PREPARING :
-                             DENEB_PRINT_PHASE_PRINTING));
+            if (deneb_pause_resume_resume(&svc->status,
+                                          svc->heater_wait.active) < 0) {
+                deneb_command_reply_error(reply, reply_sz,
+                                          "print is not paused");
+                return -1;
             }
-            reply_json(reply, reply_sz, "ok", "resume accepted");
+            deneb_command_reply_ok(reply, reply_sz, "resume accepted");
             return 0;
 
         default:
-            reply_json(reply, reply_sz, "error", "unknown command");
+            deneb_command_reply_error(reply, reply_sz, "unknown command");
             return -1;
     }
 }
@@ -385,11 +310,9 @@ int deneb_print_service_poll_job(deneb_print_service_t *svc)
     if (rc < 0) {
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;
-        svc->status.state = DENEB_PRINT_STATE_ERROR;
-        svc->status.fault = true;
-        svc->status.error = deneb_error_make(DENEB_ERROR_STORAGE, "job stream read failed");
-        snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-                 deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_ERROR));
+        deneb_job_lifecycle_error(&svc->status,
+                                  deneb_error_make(DENEB_ERROR_STORAGE,
+                                                   "job stream read failed"));
         return -1;
     }
 
@@ -398,19 +321,19 @@ int deneb_print_service_poll_job(deneb_print_service_t *svc)
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;
         deneb_motion_policy_finish(&finish_policy);
-        service_apply_motion_policy(svc, &finish_policy);
-        svc->status.state = DENEB_PRINT_STATE_COMPLETE;
-        snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-                 deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_COMPLETE));
+        deneb_motion_sender_apply_policy(&svc->flow, &svc->serial,
+                                         svc->serial_ready,
+                                         &finish_policy);
+        deneb_job_lifecycle_complete(&svc->status);
         return 1;
     }
 
-    svc->status.state = DENEB_PRINT_STATE_PRINTING;
-    snprintf(svc->status.req, sizeof(svc->status.req), "%s",
-             deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PRINTING));
+    deneb_job_lifecycle_streaming(&svc->status);
     if (deneb_flow_inflight(&svc->flow) == 0)
         svc->planner_starvation_count++;
-    return service_send_gcode(svc, line) == 0 ? 1 : -1;
+    return deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                          svc->serial_ready, line) == 0 ?
+        1 : -1;
 }
 
 void deneb_print_service_close(deneb_print_service_t *svc)
