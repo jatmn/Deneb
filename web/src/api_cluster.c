@@ -481,6 +481,10 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
         return;
     }
 
+    if (access(DENEB_CLUSTER_PENDING_JOB, F_OK) == 0) {
+        unlink(DENEB_CLUSTER_PENDING_JOB);
+    }
+
     read_guid(guid, sizeof(guid));
     snprintf(created_at, sizeof(created_at), "%lld", (long long)time(NULL));
 
@@ -621,7 +625,7 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
         }
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        /* Keep pending print metadata visible during preheat / queued startup. */
     } else if (action_is_abort(action) && has_pending_job) {
         if (send_pending_job_instruction("ABORT") != 0) {
             resp->status_code = 503;
