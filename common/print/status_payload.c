@@ -14,6 +14,33 @@ void deneb_status_payload_init(deneb_status_payload_t *payload)
     memset(payload, 0, sizeof(*payload));
 }
 
+void deneb_status_filename_context_init(
+    deneb_status_filename_context_t *ctx,
+    const char *req,
+    const char *filename,
+    const char *uuid,
+    int time_total,
+    int time_left,
+    float bed_target,
+    float nozzle_target,
+    int is_printing,
+    int is_paused)
+{
+    if (!ctx)
+        return;
+
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->req = req;
+    ctx->filename = filename;
+    ctx->uuid = uuid;
+    ctx->time_total = time_total;
+    ctx->time_left = time_left;
+    ctx->bed_target = bed_target;
+    ctx->nozzle_target = nozzle_target;
+    ctx->is_printing = is_printing;
+    ctx->is_paused = is_paused;
+}
+
 static void copy_json_value(const char *json, const char *key,
                             char *out, size_t out_sz)
 {
@@ -64,12 +91,10 @@ int deneb_status_payload_parse(const char *json,
     copy_json_value(json, "uuid", payload->uuid, sizeof(payload->uuid));
     copy_json_value(json, "req", payload->req, sizeof(payload->req));
 
-    payload->observation.req = payload->req;
-    payload->observation.file = payload->file;
-    payload->observation.time_total = payload->time_total;
-    payload->observation.time_left = payload->time_left;
-    payload->observation.bed_target = payload->bed_temp_set;
-    payload->observation.nozzle_target = payload->nozzle_temp_set;
+    deneb_print_observation_init(&payload->observation, payload->req,
+                                 payload->file, payload->time_total,
+                                 payload->time_left, payload->bed_temp_set,
+                                 payload->nozzle_temp_set);
 
     payload->is_paused = deneb_print_req_is_paused(payload->req);
     payload->is_printing = deneb_print_req_is_abort(payload->req) ?
@@ -110,8 +135,9 @@ static void set_display_or_empty(char *dst, size_t dst_sz, const char *value)
         dst[0] = '\0';
 }
 
-void deneb_status_payload_resolve_filename(
-    const deneb_status_payload_t *payload,
+void deneb_status_payload_resolve_filename_value(
+    const char *file,
+    int has_file,
     const deneb_status_filename_context_t *curr,
     const deneb_status_filename_context_t *prev,
     char *retained,
@@ -123,7 +149,7 @@ void deneb_status_payload_resolve_filename(
     int has_pending_name;
     int hold;
 
-    if (!payload || !curr || !prev || !out || out_sz == 0)
+    if (!curr || !prev || !out || out_sz == 0)
         return;
 
     out[0] = '\0';
@@ -132,8 +158,8 @@ void deneb_status_payload_resolve_filename(
                                                     sizeof(pending_name)) == 0 &&
         pending_name[0] != '\0';
 
-    if (payload->has_file) {
-        if (deneb_print_file_is_transient(payload->file)) {
+    if (has_file && file && file[0]) {
+        if (deneb_print_file_is_transient(file)) {
             if (has_pending_name)
                 set_display_or_empty(out, out_sz, pending_name);
             else if (retained && retained[0])
@@ -141,16 +167,16 @@ void deneb_status_payload_resolve_filename(
             else if (prev->filename && prev->filename[0] &&
                      deneb_print_file_is_candidate(prev->filename))
                 set_display_or_empty(out, out_sz, prev->filename);
-        } else if (!deneb_print_file_is_candidate(payload->file)) {
+        } else if (!deneb_print_file_is_candidate(file)) {
             if (retained && retained[0])
                 set_display_or_empty(out, out_sz, retained);
             else if (prev->filename && prev->filename[0] &&
                      deneb_print_file_is_candidate(prev->filename))
                 set_display_or_empty(out, out_sz, prev->filename);
         } else {
-            set_display_or_empty(out, out_sz, payload->file);
+            set_display_or_empty(out, out_sz, file);
             if (retained && retained_sz > 0)
-                set_display_or_empty(retained, retained_sz, payload->file);
+                set_display_or_empty(retained, retained_sz, file);
         }
     }
 
@@ -179,4 +205,21 @@ void deneb_status_payload_resolve_filename(
         retained && retained_sz > 0) {
         retained[0] = '\0';
     }
+}
+
+void deneb_status_payload_resolve_filename(
+    const deneb_status_payload_t *payload,
+    const deneb_status_filename_context_t *curr,
+    const deneb_status_filename_context_t *prev,
+    char *retained,
+    size_t retained_sz,
+    char *out,
+    size_t out_sz)
+{
+    if (!payload)
+        return;
+
+    deneb_status_payload_resolve_filename_value(
+        payload->file, payload->has_file, curr, prev, retained, retained_sz,
+        out, out_sz);
 }

@@ -13,6 +13,7 @@
 #include "material_catalog.h"
 #include "pending_job_file.h"
 #include "printer_identity.h"
+#include "print_job_summary.h"
 #include "print_profile.h"
 #include "print_state_rules.h"
 
@@ -32,16 +33,13 @@ static const char *cluster_printer_status(const printer_state_t *s)
                                     s->is_paused, s->is_printing);
 }
 
-static const char *cluster_job_status(const printer_state_t *s)
-{
-    return deneb_print_job_status_label(s->has_error, s->is_paused,
-                                        s->is_printing);
-}
-
 static int has_active_job(const printer_state_t *s)
 {
-    return deneb_print_job_is_active(s->has_error, s->is_paused,
-                                     s->is_printing);
+    deneb_print_job_summary_t summary;
+    deneb_print_job_summary_init(&summary, s->filename, s->uuid, s->source,
+                                 s->has_error, s->is_paused, s->is_printing,
+                                 s->time_total, s->time_left, s->progress);
+    return summary.active;
 }
 
 static int serve_pending_cluster_job(http_response_t *resp)
@@ -99,13 +97,7 @@ static int send_pending_job_instruction(const char *instruction)
         return -1;
     }
 
-    if (plan.mark_handled_after_success &&
-        deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
-        deneb_pending_job_file_clear_default();
-    if (plan.clear_after_success)
-        deneb_pending_job_file_clear_default();
-
-    return 0;
+    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
 }
 
 static void write_configuration(json_writer_t *w)
@@ -239,8 +231,12 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     char created_at[32];
     char buf[2048];
     json_writer_t w;
+    deneb_print_job_summary_t summary;
 
-    if (!has_active_job(s)) {
+    deneb_print_job_summary_init(&summary, s->filename, s->uuid, s->source,
+                                 s->has_error, s->is_paused, s->is_printing,
+                                 s->time_total, s->time_left, s->progress);
+    if (!summary.active) {
         if (serve_pending_cluster_job(resp))
             return;
         api_http_set_body_str(resp, "[]");
@@ -256,15 +252,14 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_str(&w, "created_at", created_at);
     json_bool(&w, "force", 0);
     json_str(&w, "machine_variant", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
-    json_str(&w, "name", deneb_print_job_name_or_default(s->filename));
-    json_bool(&w, "started", s->is_printing || s->is_paused);
-    json_str(&w, "status", cluster_job_status(s));
-    json_int(&w, "time_total", s->time_total);
-    json_int(&w, "time_elapsed",
-             deneb_print_elapsed_seconds(s->time_total, s->time_left));
-    json_str(&w, "uuid", deneb_print_job_uuid_or_default(s->uuid));
+    json_str(&w, "name", summary.name);
+    json_bool(&w, "started", summary.started);
+    json_str(&w, "status", summary.state);
+    json_int(&w, "time_total", summary.time_total);
+    json_int(&w, "time_elapsed", summary.time_elapsed);
+    json_str(&w, "uuid", summary.uuid);
     write_configuration(&w);
-    json_str(&w, "owner", deneb_print_job_source_or_default(s->source));
+    json_str(&w, "owner", summary.source);
     json_str(&w, "printer_uuid", guid);
     json_str(&w, "assigned_to", guid);
     json_key(&w, "build_plate");

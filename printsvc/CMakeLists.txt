@@ -62,6 +62,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/pending_job_file.c
     ../common/print/print_history.c
     ../common/print/print_job_file.c
+    ../common/print/print_job_summary.c
     ../common/print/print_profile.c
     ../common/print/print_state_rules.c
     ../common/print/status_payload.c

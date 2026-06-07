@@ -656,10 +656,14 @@ Completed implementation slices:
   and native tests share one owner for temperature, position, job identity,
   topcap, fault, progress, pause, and active-print derivation from ZMQ JSON.
 - [x] Move stock/native active filename resolution into
-  `common/print/status_payload.*` so LCD `backend_comm` and web `backend_zmq`
-  share pending-job fallback, transient macro filtering, retained print-name
-  behavior, and abort cleanup instead of exposing temporary macro filenames
-  during preheat or conflict continuation.
+  `common/print/status_payload.*` so LCD `backend_comm`, the LCD status
+  screen, and web `backend_zmq` share pending-job fallback, transient macro
+  filtering, retained print-name behavior, and abort cleanup instead of
+  exposing temporary macro filenames during preheat or conflict continuation.
+- [x] Move active filename context construction into
+  `common/print/status_payload.*` so LCD status rendering, LCD backend status
+  parsing, and web backend status parsing do not each hand-build the same
+  print context when resolving retained job names.
 - [x] Move uploaded print-file metadata sniffing into
   `common/print/print_job_file.*` so Cura upload registration, conflict
   detection, and future native print-service entry points share one parser for
@@ -736,6 +740,10 @@ Completed implementation slices:
   conflict prompts share the same native decision for `PREPARE` -> `JOB`,
   `ABORT`, handled-state marking, and metadata cleanup while keeping only the
   transport send in each client.
+- [x] Move pending-job action success completion into
+  `common/print/pending_job_file.*` so Cura cluster actions and touchscreen
+  conflict prompts share one native owner for mark-handled versus clear-after-
+  abort behavior after their backend command succeeds.
 - [x] Move pending-job presence/path/conflict predicates into
   `common/print/pending_job_file.*` so web upload dedupe, Cura cluster pending
   actions, and touchscreen conflict prompts use one tracker/path/conflict
@@ -791,6 +799,9 @@ Completed implementation slices:
   print-state rules so `pause`, `print`, `resume`, `continue`, `force`,
   `start`, `abort`, `cancel`, and `stop` are not duplicated between the parser,
   cluster pending fallback, and host tests.
+- [x] Move web print-job action planning into shared native print-state rules
+  so pause, resume/start, abort/cancel, and stop share one owner for backend
+  command selection, failure classification, and pending-job cleanup intent.
 - [x] Move web and Cura print-job action dispatch onto one native web helper
   so UM API state changes and cluster API actions share pause/resume/abort/stop
   backend calls, pending-job cleanup, success bodies, and failure messages,
@@ -798,6 +809,10 @@ Completed implementation slices:
 - [x] Move current-job fallback identity into shared native print-state rules
   so native pending metadata, Cura cluster jobs, UM API, and Deneb API use the
   same default job UUID, display name, and source instead of local literals.
+- [x] Move current/queued print-job response summaries into
+  `common/print/print_job_summary.*` so UM API, Cura cluster API, Deneb API,
+  and upload acceptance responses share one native owner for job activity,
+  identity defaults, state, elapsed time, and progress scaling.
 - [x] Move Cura/pending native job-start identity onto the shared print-state
   defaults so upload auto-start, Cura cluster continue, and touchscreen
   conflict continue no longer carry their own `"deneb-current-job"` literals.
@@ -812,6 +827,10 @@ Completed implementation slices:
   native print-state rules so the touchscreen Stop button, preheat status, and
   abort cleanup use the same tested contract instead of local screen/backend
   predicates.
+- [x] Move print observation construction into shared native print-state rules
+  so LCD status rendering, LCD backend status parsing, web backend status
+  parsing, and native status parsing do not each hand-build the same
+  active/preheat/stoppable context input.
 - [x] Move stock print-service request/status vocabulary for `PREPARE`,
   preheat/preheating, idle, printing, paused, aborting, complete, and error
   into shared native print-state rules so native status serialization,

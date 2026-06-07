@@ -162,6 +162,26 @@ int deneb_pending_job_file_plan_action(const deneb_pending_job_file_t *job,
     return -1;
 }
 
+int deneb_pending_job_file_finish_action(
+    const char *path,
+    const deneb_pending_job_action_plan_t *plan)
+{
+    const char *target_path = path && path[0] ? path : DENEB_PENDING_JOB_PATH;
+
+    if (!plan)
+        return -1;
+
+    if (plan->mark_handled_after_success &&
+        deneb_pending_job_file_mark_handled(target_path) < 0) {
+        return deneb_pending_job_file_clear(target_path);
+    }
+
+    if (plan->clear_after_success)
+        return deneb_pending_job_file_clear(target_path);
+
+    return 0;
+}
+
 int deneb_pending_job_file_check_upload(const deneb_pending_job_file_t *job,
                                         const char *candidate_path,
                                         const char *fallback_name,

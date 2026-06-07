@@ -58,6 +58,9 @@ int deneb_pending_job_file_load_conflict_default(deneb_pending_job_file_t *job);
 int deneb_pending_job_file_plan_action(const deneb_pending_job_file_t *job,
                                        const char *instruction,
                                        deneb_pending_job_action_plan_t *plan);
+int deneb_pending_job_file_finish_action(
+    const char *path,
+    const deneb_pending_job_action_plan_t *plan);
 int deneb_pending_job_file_check_upload(const deneb_pending_job_file_t *job,
                                         const char *candidate_path,
                                         const char *fallback_name,

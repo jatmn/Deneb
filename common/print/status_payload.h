@@ -46,11 +46,31 @@ typedef struct {
 void deneb_status_payload_init(deneb_status_payload_t *payload);
 int deneb_status_payload_parse(const char *json,
                                deneb_status_payload_t *payload);
+void deneb_status_filename_context_init(
+    deneb_status_filename_context_t *ctx,
+    const char *req,
+    const char *filename,
+    const char *uuid,
+    int time_total,
+    int time_left,
+    float bed_target,
+    float nozzle_target,
+    int is_printing,
+    int is_paused);
 int deneb_status_payload_should_hold_filename(
     const deneb_status_filename_context_t *curr,
     const deneb_status_filename_context_t *prev);
 void deneb_status_payload_resolve_filename(
     const deneb_status_payload_t *payload,
+    const deneb_status_filename_context_t *curr,
+    const deneb_status_filename_context_t *prev,
+    char *retained,
+    size_t retained_sz,
+    char *out,
+    size_t out_sz);
+void deneb_status_payload_resolve_filename_value(
+    const char *file,
+    int has_file,
     const deneb_status_filename_context_t *curr,
     const deneb_status_filename_context_t *prev,
     char *retained,

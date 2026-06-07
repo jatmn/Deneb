@@ -12,7 +12,7 @@
 #include "json_writer.h"
 #include "pending_job_file.h"
 #include "print_history.h"
-#include "print_state_rules.h"
+#include "print_job_summary.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -301,21 +301,21 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
 
     /* Current job */
     const printer_state_t *s = backend_zmq_get_state();
-    if (deneb_print_job_is_active(s->has_error, s->is_paused, s->is_printing)) {
-        int elapsed = deneb_print_elapsed_seconds(s->time_total, s->time_left);
-        const char *st = deneb_print_job_state_or_none(s->has_error,
-                                                       s->is_paused,
-                                                       s->is_printing);
+    deneb_print_job_summary_t summary;
+    deneb_print_job_summary_init(&summary, s->filename, s->uuid, s->source,
+                                 s->has_error, s->is_paused, s->is_printing,
+                                 s->time_total, s->time_left, s->progress);
+    if (summary.active) {
         json_key(&w, "current");
         json_obj_open(&w);
-        json_str(&w, "name", deneb_print_job_name_or_default(s->filename));
-        json_str(&w, "uuid", deneb_print_job_uuid_or_default(s->uuid));
-        json_str(&w, "source", deneb_print_job_source_or_default(s->source));
-        json_str(&w, "state", st);
-        json_float(&w, "progress", s->progress);
-        json_int(&w, "time_total", s->time_total);
-        json_int(&w, "time_elapsed", elapsed);
-        json_int(&w, "time_left", s->time_left);
+        json_str(&w, "name", summary.name);
+        json_str(&w, "uuid", summary.uuid);
+        json_str(&w, "source", summary.source);
+        json_str(&w, "state", summary.state);
+        json_float(&w, "progress", summary.progress_percent);
+        json_int(&w, "time_total", summary.time_total);
+        json_int(&w, "time_elapsed", summary.time_elapsed);
+        json_int(&w, "time_left", summary.time_left);
         json_obj_close(&w);
     } else {
         json_null(&w, "current");

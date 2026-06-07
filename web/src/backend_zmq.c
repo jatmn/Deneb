@@ -111,12 +111,9 @@ static int state_has_print_context(const printer_state_t *s)
 
     if (!s)
         return 0;
-    obs.req = s->current_req;
-    obs.file = s->filename;
-    obs.time_total = s->time_total;
-    obs.time_left = s->time_left;
-    obs.bed_target = s->bed_temp_set;
-    obs.nozzle_target = s->nozzle_temp_set;
+    deneb_print_observation_init(&obs, s->current_req, s->filename,
+                                 s->time_total, s->time_left,
+                                 s->bed_temp_set, s->nozzle_temp_set);
     return deneb_print_has_active_context(&obs, s->is_printing,
                                           s->is_paused,
                                           deneb_print_file_is_candidate(s->filename));
@@ -127,18 +124,15 @@ static deneb_status_filename_context_t filename_context_from_state(
 {
     deneb_status_filename_context_t ctx;
 
-    memset(&ctx, 0, sizeof(ctx));
-    if (!s)
+    if (!s) {
+        deneb_status_filename_context_init(&ctx, NULL, NULL, NULL, 0, 0,
+                                           0.0f, 0.0f, 0, 0);
         return ctx;
-    ctx.req = s->current_req;
-    ctx.filename = s->filename;
-    ctx.uuid = s->uuid;
-    ctx.time_total = s->time_total;
-    ctx.time_left = s->time_left;
-    ctx.bed_target = s->bed_temp_set;
-    ctx.nozzle_target = s->nozzle_temp_set;
-    ctx.is_printing = s->is_printing;
-    ctx.is_paused = s->is_paused;
+    }
+    deneb_status_filename_context_init(&ctx, s->current_req, s->filename,
+                                       s->uuid, s->time_total, s->time_left,
+                                       s->bed_temp_set, s->nozzle_temp_set,
+                                       s->is_printing, s->is_paused);
     return ctx;
 }
 

@@ -46,6 +46,21 @@ typedef struct {
     int cooldown_ms;
 } deneb_print_stop_guard_t;
 
+typedef enum {
+    DENEB_PRINT_ACTION_PLAN_NONE = 0,
+    DENEB_PRINT_ACTION_PLAN_PAUSE,
+    DENEB_PRINT_ACTION_PLAN_RESUME,
+    DENEB_PRINT_ACTION_PLAN_ABORT,
+    DENEB_PRINT_ACTION_PLAN_STOP
+} deneb_print_action_plan_kind_t;
+
+typedef struct {
+    deneb_print_action_plan_kind_t kind;
+    const char *command;
+    const char *failure_message;
+    int clear_pending_after_success;
+} deneb_print_action_plan_t;
+
 int deneb_print_req_is_print(const char *req);
 int deneb_print_req_is_paused(const char *req);
 int deneb_print_req_is_lifecycle(const char *req);
@@ -57,6 +72,13 @@ int deneb_print_temp_target_ready(float current, float target, float tolerance);
 int deneb_print_temp_targets_ready(float bed_current, float bed_target,
                                    float nozzle_current, float nozzle_target);
 int deneb_print_active_time(int time_total, int time_left);
+void deneb_print_observation_init(deneb_print_observation_t *obs,
+                                  const char *req,
+                                  const char *file,
+                                  int time_total,
+                                  int time_left,
+                                  float bed_target,
+                                  float nozzle_target);
 int deneb_print_observation_has_context(const deneb_print_observation_t *obs);
 int deneb_print_has_active_context(const deneb_print_observation_t *obs,
                                    int is_printing, int is_paused,
@@ -94,6 +116,9 @@ int deneb_print_action_is_resume_or_start(const char *action);
 int deneb_print_action_is_abort(const char *action);
 int deneb_print_action_is_stop(const char *action);
 int deneb_print_action_is_force(const char *action);
+void deneb_print_action_plan_init(deneb_print_action_plan_t *plan);
+int deneb_print_action_plan(const char *action,
+                            deneb_print_action_plan_t *plan);
 int deneb_print_elapsed_seconds(int time_total, int time_left);
 float deneb_print_progress_percent(int time_total, int time_left);
 float deneb_print_progress_fraction(float progress_percent);

@@ -172,6 +172,25 @@ int deneb_print_active_time(int time_total, int time_left)
     return time_total > 0 && time_left > 0 && time_left <= time_total;
 }
 
+void deneb_print_observation_init(deneb_print_observation_t *obs,
+                                  const char *req,
+                                  const char *file,
+                                  int time_total,
+                                  int time_left,
+                                  float bed_target,
+                                  float nozzle_target)
+{
+    if (!obs)
+        return;
+
+    obs->req = req;
+    obs->file = file;
+    obs->time_total = time_total;
+    obs->time_left = time_left;
+    obs->bed_target = bed_target;
+    obs->nozzle_target = nozzle_target;
+}
+
 int deneb_print_observation_has_context(const deneb_print_observation_t *obs)
 {
     int has_time;
@@ -470,6 +489,56 @@ int deneb_print_action_is_stop(const char *action)
 int deneb_print_action_is_force(const char *action)
 {
     return str_eq_ci(action, DENEB_PRINT_ACTION_FORCE_TEXT);
+}
+
+void deneb_print_action_plan_init(deneb_print_action_plan_t *plan)
+{
+    if (!plan)
+        return;
+    plan->kind = DENEB_PRINT_ACTION_PLAN_NONE;
+    plan->command = "";
+    plan->failure_message = "Unknown print job action";
+    plan->clear_pending_after_success = 0;
+}
+
+int deneb_print_action_plan(const char *action,
+                            deneb_print_action_plan_t *plan)
+{
+    if (!plan)
+        return -1;
+
+    deneb_print_action_plan_init(plan);
+    if (deneb_print_action_is_pause(action)) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_PAUSE;
+        plan->command = DENEB_COMMAND_VERB_PAUSE;
+        plan->failure_message = "Failed to pause print";
+        return 0;
+    }
+
+    if (deneb_print_action_is_resume_or_start(action)) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_RESUME;
+        plan->command = DENEB_COMMAND_VERB_RESUME;
+        plan->failure_message = "Failed to resume print";
+        return 0;
+    }
+
+    if (deneb_print_action_is_abort(action)) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_ABORT;
+        plan->command = DENEB_COMMAND_VERB_ABORT;
+        plan->failure_message = "Failed to abort print";
+        plan->clear_pending_after_success = 1;
+        return 0;
+    }
+
+    if (deneb_print_action_is_stop(action)) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_STOP;
+        plan->command = DENEB_COMMAND_VERB_ABORT;
+        plan->failure_message = "Failed to stop print";
+        plan->clear_pending_after_success = 1;
+        return 0;
+    }
+
+    return -1;
 }
 
 int deneb_print_elapsed_seconds(int time_total, int time_left)

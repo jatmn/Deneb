@@ -50,13 +50,7 @@ static int send_pending_instruction(const char *instruction)
         return -1;
     }
 
-    if (plan.mark_handled_after_success &&
-        deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
-        deneb_pending_job_file_clear_default();
-    if (plan.clear_after_success)
-        deneb_pending_job_file_clear_default();
-
-    return 0;
+    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
 }
 
 static void finish_prompt(const char *status_key, int remove_pending)
