@@ -37,6 +37,7 @@
 #define TTL_SECONDS 120
 #define ROUTE_FLAG_UP 0x1
 #define DENEB_DEFAULT_CURA_MACHINE "deneb_um2c"
+#define DENEB_DEFAULT_CURA_CONNECT_VERSION "4.0.0"
 
 static volatile sig_atomic_t running = 1;
 
@@ -383,7 +384,7 @@ int main(void)
     get_instance_id(instance_id, sizeof(instance_id));
 
     const char *machine = env_or_default("DENEB_MDNS_MACHINE", DENEB_DEFAULT_CURA_MACHINE);
-    const char *firmware = env_or_default("DENEB_MDNS_FIRMWARE", DENEB_VERSION);
+    const char *firmware = env_or_default("DENEB_MDNS_FIRMWARE", DENEB_DEFAULT_CURA_CONNECT_VERSION);
 
     int fd = open_mdns_socket();
     if (fd < 0) {

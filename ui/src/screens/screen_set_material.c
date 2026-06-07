@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
     const char *label;
@@ -32,6 +33,54 @@ static const material_choice_t materials[] = {
 
 static lv_obj_t *screen = NULL;
 static lv_obj_t *status_label = NULL;
+
+static int read_current_material_guid(char *guid, size_t guid_size)
+{
+    FILE *f;
+
+    if (!guid || guid_size == 0)
+        return -1;
+
+    guid[0] = '\0';
+    f = popen("uci -q get ultimaker.option.material_guid 2>/dev/null", "r");
+    if (!f)
+        return -1;
+
+    if (!fgets(guid, guid_size, f)) {
+        pclose(f);
+        return -1;
+    }
+    pclose(f);
+
+    guid[strcspn(guid, "\r\n")] = '\0';
+    return guid[0] ? 0 : -1;
+}
+
+static const char *find_material_label(const char *guid)
+{
+    if (!guid || !*guid)
+        return NULL;
+
+    for (int i = 0; i < (int)(sizeof(materials) / sizeof(materials[0])); i++) {
+        if (strcmp(materials[i].guid, guid) == 0)
+            return materials[i].label;
+    }
+
+    return NULL;
+}
+
+static void update_current_material_status(void)
+{
+    char guid[64];
+    const char *label = NULL;
+
+    if (read_current_material_guid(guid, sizeof(guid)) == 0)
+        label = find_material_label(guid);
+
+    lv_label_set_text_fmt(status_label, locale_get("material.current_fmt"),
+                          label ? label
+                                : locale_get("material.current_unknown"));
+}
 
 static void set_material_cb(lv_event_t *e)
 {
@@ -101,18 +150,19 @@ static lv_obj_t *set_material_create(void)
     lv_obj_set_style_text_color(title, lv_color_hex(0x53a8b6), 0);
     lv_obj_set_style_text_font(title, &deneb_font_14, 0);
 
-    for (int i = 0; i < (int)(sizeof(materials) / sizeof(materials[0])); i++)
-        create_btn(screen, materials[i].label, set_material_cb,
-                   (void *)(intptr_t)i);
-
-    create_btn(screen, locale_get("material.import"), import_material_cb, NULL);
-
     status_label = lv_label_create(screen);
     lv_label_set_text(status_label, "");
     lv_obj_set_width(status_label, 292);
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);
     lv_obj_set_style_text_font(status_label, &deneb_font_12, 0);
+    update_current_material_status();
+
+    for (int i = 0; i < (int)(sizeof(materials) / sizeof(materials[0])); i++)
+        create_btn(screen, materials[i].label, set_material_cb,
+                   (void *)(intptr_t)i);
+
+    create_btn(screen, locale_get("material.import"), import_material_cb, NULL);
 
     return screen;
 }

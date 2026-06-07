@@ -112,11 +112,20 @@ install_web_runtime() {
     uci -q set deneb.web.enabled='1' 2>/dev/null || true
     uci -q set deneb.mdns=mdns 2>/dev/null || true
     uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
+    if [ -z "$(uci -q get ultimaker.option.nozzle_size 2>/dev/null || true)" ]; then
+        uci -q set ultimaker.option.nozzle_size='0.4' 2>/dev/null || true
+        log "defaulted nozzle size to 0.40 mm"
+    fi
+    if [ -z "$(uci -q get ultimaker.option.material_guid 2>/dev/null || true)" ]; then
+        uci -q set ultimaker.option.material_guid='506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9' 2>/dev/null || true
+        log "defaulted material to Generic PLA"
+    fi
     mdns_machine="$(uci -q get deneb.mdns.machine 2>/dev/null || true)"
     if [ -z "${mdns_machine}" ] || [ "${mdns_machine}" = "ultimaker2_plus_connect" ] || [ "${mdns_machine}" = "9066" ]; then
         uci -q set deneb.mdns.machine='deneb_um2c' 2>/dev/null || true
     fi
     uci -q commit deneb 2>/dev/null || true
+    uci -q commit ultimaker 2>/dev/null || true
 
     /etc/init.d/deneb-api enable 2>/dev/null || true
     /etc/init.d/deneb-web enable 2>/dev/null || true

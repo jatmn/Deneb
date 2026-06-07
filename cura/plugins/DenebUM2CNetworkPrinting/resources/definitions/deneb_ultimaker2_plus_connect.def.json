@@ -7,7 +7,6 @@
         "visible": false,
         "author": "Deneb",
         "manufacturer": "Ultimaker B.V.",
-        "bom_numbers": [ "deneb_um2c" ],
         "first_start_actions": [],
         "supported_actions": [],
         "supports_network_connection": true,

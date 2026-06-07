@@ -283,24 +283,40 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
         if (!headers_end) break;
 
         size_t headers_len = (size_t)(headers_end - part);
-        char *disp = memmem(part, headers_len, "Content-Disposition:", 20);
         int is_file_part = 0;
-        if (disp) {
-            size_t disp_len = headers_len - (size_t)(disp - part);
-            char *line_end = memmem(disp, disp_len, "\r\n", 2);
-            if (!line_end) line_end = memchr(disp, '\n', disp_len);
-            size_t line_len = line_end ? (size_t)(line_end - disp) : disp_len;
+        char *headers = malloc(headers_len + 1);
+        if (!headers) break;
+        memcpy(headers, part, headers_len);
+        headers[headers_len] = '\0';
 
-            if (memmem(disp, line_len, "filename=\"", 10) ||
-                memmem(disp, line_len, "name=\"file\"", 11)) {
+        char *disp = strcasestr(headers, "content-disposition:");
+        if (disp) {
+            char *line_end = strstr(disp, "\r\n");
+            if (!line_end) line_end = strchr(disp, '\n');
+            if (line_end) *line_end = '\0';
+
+            if (strcasestr(disp, "filename=\"") ||
+                strcasestr(disp, "name=\"file\"") ||
+                strcasestr(disp, "name=file")) {
                 is_file_part = 1;
             }
 
-            char *fn = memmem(disp, line_len, "filename=\"", 10);
+            char *fn = strcasestr(disp, "filename=\"");
             if (fn) {
                 fn += 10;
-                char *fn_end = memchr(fn, '"', (size_t)(disp + line_len - fn));
+                char *fn_end = strchr(fn, '"');
                 if (fn_end) {
+                    size_t copy_len = (size_t)(fn_end - fn);
+                    if (copy_len >= (size_t)fn_sz) copy_len = (size_t)fn_sz - 1;
+                    memcpy(filename, fn, copy_len);
+                    filename[copy_len] = '\0';
+                }
+            } else {
+                fn = strcasestr(disp, "filename=");
+                if (fn) {
+                    fn += 9;
+                    char *fn_end = fn;
+                    while (*fn_end && *fn_end != ';' && *fn_end != ' ' && *fn_end != '\t') fn_end++;
                     size_t copy_len = (size_t)(fn_end - fn);
                     if (copy_len >= (size_t)fn_sz) copy_len = (size_t)fn_sz - 1;
                     memcpy(filename, fn, copy_len);
@@ -308,6 +324,7 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
                 }
             }
         }
+        free(headers);
 
         char *part_content = headers_end + header_sep_len;
         char *next_boundary = memmem(part_content, (size_t)(data_end - part_content), boundary_line, blen);
@@ -393,7 +410,7 @@ static void handle_client(int fd)
         api_http_route(&req, &resp);
     }
 
-    char out_buf[16384];
+    char out_buf[65536];
     int out_len = api_http_serialize(&resp, out_buf, sizeof(out_buf));
 
     /* Write response with partial-write handling */

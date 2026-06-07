@@ -18,7 +18,7 @@
 #include <string.h>
 
 #define LOCALE_DIR      "/etc/deneb/locales"
-#define MAX_ENTRIES     192
+#define MAX_ENTRIES     256
 #define MAX_KEY_LEN     48
 #define MAX_VAL_LEN     128
 #define MAX_LANG_LEN    16
@@ -34,7 +34,7 @@ static char current_lang[MAX_LANG_LEN] = "en";
 
 /* Embedded English defaults - matches en.json */
 static const struct { const char *key; const char *val; } en_defaults[] = {
-    {"menu.status", "Status"},
+    {"menu.status", "Home"},
     {"menu.print", "Print from USB"},
     {"menu.material", "Material"},
     {"menu.maintenance", "Maintenance"},
@@ -66,19 +66,38 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"print.resumed", "Resumed"},
     {"print.cancelled", "Cancelled"},
     {"print.select_usb_file", "Select a USB print file"},
+    {"print_conflict.title", "Material Mismatch"},
+    {"print_conflict.message_fmt", "This job was sliced for %s, but %s is loaded."},
+    {"print_conflict.job_fmt", "Job: %s"},
+    {"print_conflict.continue", "Continue Anyway"},
+    {"print_conflict.cancel", "Cancel"},
+    {"print_conflict.continuing", "Continuing print..."},
+    {"print_conflict.cancelled", "Print cancelled"},
+    {"print_conflict.action_failed", "Unable to update print. Try again."},
     {"material.load", "Load Material"},
+    {"material.load_short", "Load"},
     {"material.unload", "Unload Material"},
+    {"material.unload_short", "Unload"},
     {"material.change", "Change Material"},
+    {"material.load_change", "Load / Change Material"},
     {"material.set", "Set Material"},
     {"material.move", "Move Material"},
     {"material.finish_move", "Finish Material Move"},
+    {"material.stop", "Stop"},
     {"material.import", "Import Material"},
     {"material.insert_material", "Insert material and select an option below."},
     {"material.busy", "Printer busy or status unavailable"},
+    {"material.cooling", "Cooling nozzle to 0C."},
+    {"material.heating", "Heating nozzle to target temperature..."},
+    {"material.set_target", "Set target temperature to start heating."},
+    {"material.ready_to_move", "Nozzle ready. Load or unload material."},
+    {"material.target_too_low", "Set target to at least 170C before moving material."},
     {"material.loading", "Loading material (210C)..."},
     {"material.unloading", "Unloading material (210C)..."},
     {"material.change_started", "Change material: unload started"},
     {"material.moving", "Moving material..."},
+    {"material.current_fmt", "Current material: %s"},
+    {"material.current_unknown", "Unknown"},
     {"material.move_finished", "Material move finished"},
     {"material.set_fmt", "Material set: %s"},
     {"material.importing", "Importing material profiles..."},
@@ -204,6 +223,8 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"level.finish", "Finish Leveling"},
     {"frame_lighting.on", "Frame Light On"},
     {"frame_lighting.off", "Frame Light Off"},
+    {"frame_lighting.brightness_fmt", "Brightness: %d%%"},
+    {"frame_lighting.status_fmt", "Saved: %s at %d%%"},
     {"factory_reset.warning", "Factory reset erases local printer settings and reboots."},
     {"factory_reset.started", "Factory reset started"},
     {"factory_reset.tap_again", "Tap again to erase settings"},

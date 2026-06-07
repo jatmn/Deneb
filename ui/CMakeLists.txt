@@ -164,6 +164,7 @@ set(DENEB_SOURCES
     src/screens/screen_home.c
     src/screens/screen_status.c
     src/screens/screen_print.c
+    src/screens/screen_print_conflict.c
     src/screens/screen_maintenance.c
     src/screens/screen_material.c
     src/screens/screen_set_material.c

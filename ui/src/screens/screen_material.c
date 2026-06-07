@@ -1,11 +1,11 @@
 /**
  * SPDX-License-Identifier: MPL-2.0
  *
- * Material screen - load/unload via coordinator macros. LVGL v9.
+ * Material screen - load/change workflow via coordinator macros. LVGL v9.
  *
  * Macro files on device (from /home/cygnus/marlindriver/gcode/):
- *   material_down.gcode        - Feed material down (unload)
- *   move_material_up.gcode     - Move material up (load)
+ *   material_down.gcode        - Feed material into hotend (load)
+ *   move_material_up.gcode     - Retract material from hotend (unload)
  *   move_material_finish.gcode - Finish material operation
  *   retract.gcode              - Retract filament
  *
@@ -18,89 +18,241 @@
 #include "locale.h"
 #include "backend_comm.h"
 #include "lvgl.h"
+#include <stdint.h>
 #include <stdio.h>
 
 static lv_obj_t *material_screen = NULL;
-static lv_obj_t *status_label = NULL;
+static lv_obj_t *workflow_screen = NULL;
+static lv_obj_t *workflow_status_label = NULL;
+static lv_obj_t *workflow_temp_label = NULL;
+static lv_obj_t *workflow_target_label = NULL;
+static lv_obj_t *workflow_slider = NULL;
+static lv_obj_t *workflow_load_btn = NULL;
+static lv_obj_t *workflow_unload_btn = NULL;
+static lv_obj_t *workflow_stop_btn = NULL;
+static lv_timer_t *workflow_timer = NULL;
+static int workflow_target_temp = 210;
+static int workflow_moving = 0;
+static uint32_t workflow_move_done_at = 0;
+static int workflow_target_sent = 0;
 
 extern const screen_ops_t screen_set_material;
+extern const screen_ops_t screen_material_workflow;
 
-static int material_actions_allowed(void)
+#define MATERIAL_DEFAULT_TEMP 210
+#define MATERIAL_MAX_TEMP     260
+#define MATERIAL_MIN_MOVE_TEMP 170
+#define MATERIAL_READY_WINDOW  2.0f
+#define MATERIAL_MOVE_DISTANCE 360
+#define MATERIAL_LOAD_FEEDRATE 60
+#define MATERIAL_UNLOAD_FEEDRATE 300
+#define MATERIAL_MOVE_MARGIN_MS 2000
+
+static int material_backend_ready(void)
 {
     const printer_state_t *s = backend_get_state();
-    return s && s->connected && !s->is_printing && !s->is_paused &&
-           !s->has_error;
+    return s && s->connected && !s->has_error;
 }
 
-static void load_btn_cb(lv_event_t *e)
+static int material_motion_allowed(void)
+{
+    const printer_state_t *s = backend_get_state();
+    return material_backend_ready() && !s->is_printing && !s->is_paused;
+}
+
+static int material_temp_ready(const printer_state_t *s)
+{
+    return s && workflow_target_temp >= MATERIAL_MIN_MOVE_TEMP &&
+           s->nozzle_temp_cur + MATERIAL_READY_WINDOW >=
+               (float)workflow_target_temp;
+}
+
+static void set_btn_enabled(lv_obj_t *btn, int enabled)
+{
+    if (!btn)
+        return;
+
+    if (enabled)
+        lv_obj_remove_state(btn, LV_STATE_DISABLED);
+    else
+        lv_obj_add_state(btn, LV_STATE_DISABLED);
+}
+
+static void set_celsius_label(lv_obj_t *label, float temp)
+{
+    char text[16];
+    snprintf(text, sizeof(text), "%.0f\u00b0C", temp);
+    lv_label_set_text(label, text);
+}
+
+static void workflow_update(void)
+{
+    const printer_state_t *s = backend_get_state();
+    int backend_ready = material_backend_ready();
+    int motion_allowed = material_motion_allowed();
+    int ready = material_temp_ready(s);
+
+    if (workflow_moving && workflow_move_done_at &&
+        (int32_t)(lv_tick_get() - workflow_move_done_at) >= 0) {
+        workflow_moving = 0;
+        workflow_move_done_at = 0;
+    }
+
+    if (workflow_temp_label && s)
+        set_celsius_label(workflow_temp_label, s->nozzle_temp_cur);
+
+    if (workflow_target_label)
+        lv_label_set_text_fmt(workflow_target_label, "%d\u00b0C",
+                              workflow_target_temp);
+
+    if (workflow_status_label) {
+        if (!backend_ready) {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.busy"));
+        } else if (workflow_moving) {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.moving"));
+        } else if (!workflow_target_sent && !ready) {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.set_target"));
+        } else if (workflow_target_temp == 0) {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.cooling"));
+        } else if (workflow_target_temp < MATERIAL_MIN_MOVE_TEMP) {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.target_too_low"));
+        } else if (ready) {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.ready_to_move"));
+        } else {
+            lv_label_set_text(workflow_status_label,
+                              locale_get("material.heating"));
+        }
+    }
+
+    set_btn_enabled(workflow_load_btn,
+                    motion_allowed && ready && !workflow_moving);
+    set_btn_enabled(workflow_unload_btn,
+                    motion_allowed && ready && !workflow_moving);
+    set_btn_enabled(workflow_stop_btn,
+                    backend_ready && (workflow_moving || workflow_target_sent));
+}
+
+static void workflow_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    workflow_update();
+}
+
+static void send_material_target(void)
+{
+    char gcode[32];
+    snprintf(gcode, sizeof(gcode), "M104 S%d", workflow_target_temp);
+    if (backend_send_gcode(gcode) == 0)
+        workflow_target_sent = workflow_target_temp > 0;
+}
+
+static void workflow_slider_cb(lv_event_t *e)
+{
+    workflow_target_temp = lv_slider_get_value(lv_event_get_target(e));
+    workflow_update();
+}
+
+static void workflow_set_temp_cb(lv_event_t *e)
 {
     (void)e;
-    if (!material_actions_allowed()) {
-        lv_label_set_text(status_label, locale_get("material.busy"));
+
+    /* Intentionally allow setting a target nozzle temperature during active
+     * print flow; only actual filament motion is blocked while printing.
+     */
+    if (!material_backend_ready()) {
+        workflow_update();
         return;
     }
 
-    /* Heat nozzle to 210C then move material up */
-    backend_send_gcode("M104 S210");
-    backend_send_command("MACRO", "{\"macro\":\"move_material_up.gcode\"}");
-    lv_label_set_text(status_label, locale_get("material.loading"));
+    send_material_target();
+    workflow_update();
 }
 
-static void unload_btn_cb(lv_event_t *e)
+static void workflow_load_cb(lv_event_t *e)
 {
     (void)e;
-    if (!material_actions_allowed()) {
-        lv_label_set_text(status_label, locale_get("material.busy"));
+    const printer_state_t *s = backend_get_state();
+    char args[64];
+    if (!material_motion_allowed() || !material_temp_ready(s)) {
+        workflow_update();
         return;
     }
 
-    /* Heat nozzle to 210C then move material down */
-    backend_send_gcode("M104 S210");
-    backend_send_command("MACRO", "{\"macro\":\"material_down.gcode\"}");
-    lv_label_set_text(status_label, locale_get("material.unloading"));
+    snprintf(args, sizeof(args), "[\"G92 E0\",\"G1 E%d F%d\"]",
+             MATERIAL_MOVE_DISTANCE, MATERIAL_LOAD_FEEDRATE);
+    if (backend_send_command("GCODE", args) == 0) {
+        workflow_moving = 1;
+        workflow_move_done_at =
+            lv_tick_get() +
+            (uint32_t)((MATERIAL_MOVE_DISTANCE * 60000) /
+                       MATERIAL_LOAD_FEEDRATE) +
+            MATERIAL_MOVE_MARGIN_MS;
+    }
+    workflow_update();
 }
 
-static void change_btn_cb(lv_event_t *e)
+static void workflow_unload_cb(lv_event_t *e)
 {
     (void)e;
-    if (!material_actions_allowed()) {
-        lv_label_set_text(status_label, locale_get("material.busy"));
+    const printer_state_t *s = backend_get_state();
+    char args[64];
+    if (!material_motion_allowed() || !material_temp_ready(s)) {
+        workflow_update();
         return;
     }
 
-    backend_send_gcode("M104 S210");
-    backend_send_command("MACRO", "{\"macro\":\"material_down.gcode\"}");
-    lv_label_set_text(status_label, locale_get("material.change_started"));
-}
-
-static void move_btn_cb(lv_event_t *e)
-{
-    (void)e;
-    if (!material_actions_allowed()) {
-        lv_label_set_text(status_label, locale_get("material.busy"));
-        return;
+    snprintf(args, sizeof(args), "[\"G92 E0\",\"G1 E-%d F%d\"]",
+             MATERIAL_MOVE_DISTANCE, MATERIAL_UNLOAD_FEEDRATE);
+    if (backend_send_command("GCODE", args) == 0) {
+        workflow_moving = 1;
+        workflow_move_done_at =
+            lv_tick_get() +
+            (uint32_t)((MATERIAL_MOVE_DISTANCE * 60000) /
+                       MATERIAL_UNLOAD_FEEDRATE) +
+            MATERIAL_MOVE_MARGIN_MS;
     }
-
-    backend_send_gcode("M104 S210");
-    backend_send_command("MACRO", "{\"macro\":\"home_and_center_head.gcode\"}");
-    backend_send_command("MACRO", "{\"macro\":\"move_material_up.gcode\"}");
-    lv_label_set_text(status_label, locale_get("material.moving"));
+    workflow_update();
 }
 
-static void finish_btn_cb(lv_event_t *e)
+static void workflow_cooldown_nozzle(int update_ui)
+{
+    workflow_target_temp = 0;
+    if (backend_send_gcode("M104 S0") == 0)
+        workflow_target_sent = 0;
+    if (update_ui && workflow_slider)
+        lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_ON);
+    if (update_ui)
+        workflow_update();
+}
+
+static void workflow_stop_material(int update_ui)
+{
+    if (workflow_moving)
+        backend_send_gcode("M401");
+    workflow_moving = 0;
+    workflow_move_done_at = 0;
+    workflow_cooldown_nozzle(update_ui);
+}
+
+static void workflow_stop_cb(lv_event_t *e)
 {
     (void)e;
-    backend_send_command("MACRO", "{\"macro\":\"move_material_finish.gcode\"}");
-    lv_label_set_text(status_label, locale_get("material.move_finished"));
+    workflow_stop_material(1);
+}
+
+static void load_change_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    screen_mgr_push(&screen_material_workflow);
 }
 
 static void set_material_btn_cb(lv_event_t *e)
-{
-    (void)e;
-    screen_mgr_push(&screen_set_material);
-}
-
-static void import_btn_cb(lv_event_t *e)
 {
     (void)e;
     screen_mgr_push(&screen_set_material);
@@ -146,25 +298,10 @@ static lv_obj_t *material_create(void)
     lv_label_set_long_mode(info_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(info_label, LV_TEXT_ALIGN_CENTER, 0);
 
-    create_action_btn(material_screen, locale_get("material.change"),
-                      change_btn_cb);
-    create_action_btn(material_screen, locale_get("material.load"),
-                      load_btn_cb);
-    create_action_btn(material_screen, locale_get("material.unload"),
-                      unload_btn_cb);
+    create_action_btn(material_screen, locale_get("material.load_change"),
+                      load_change_btn_cb);
     create_action_btn(material_screen, locale_get("material.set"),
                       set_material_btn_cb);
-    create_action_btn(material_screen, locale_get("material.move"),
-                      move_btn_cb);
-    create_action_btn(material_screen, locale_get("material.finish_move"),
-                      finish_btn_cb);
-    create_action_btn(material_screen, locale_get("material.import"),
-                      import_btn_cb);
-
-    status_label = lv_label_create(material_screen);
-    lv_label_set_text(status_label, "");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(status_label, &deneb_font_12, 0);
 
     return material_screen;
 }
@@ -172,12 +309,166 @@ static lv_obj_t *material_create(void)
 static void material_destroy(void)
 {
     material_screen = NULL;
-    status_label = NULL;
 }
 
 const screen_ops_t screen_material = {
     .name = "menu.material",
     .create = material_create,
     .destroy = material_destroy,
+    .show_back = true,
+};
+
+static lv_obj_t *create_workflow_btn(lv_obj_t *parent, const char *label,
+                                     lv_event_cb_t cb, lv_color_t color)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, 88, 34);
+    lv_obj_set_style_bg_color(btn, color, 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x343448),
+                              LV_STATE_DISABLED);
+    lv_obj_set_style_radius(btn, 4, 0);
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, label);
+    lv_obj_set_style_text_font(lbl, &deneb_font_12, 0);
+    lv_obj_center(lbl);
+
+    return btn;
+}
+
+static lv_obj_t *material_workflow_create(void)
+{
+    workflow_target_temp = MATERIAL_DEFAULT_TEMP;
+    workflow_moving = 0;
+    workflow_move_done_at = 0;
+    workflow_target_sent = 0;
+
+    workflow_screen = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(workflow_screen, 320, 208);
+    lv_obj_align(workflow_screen, LV_ALIGN_TOP_LEFT, 0, 32);
+    lv_obj_set_style_bg_color(workflow_screen, lv_color_hex(0x0a0a1a), 0);
+    lv_obj_set_style_radius(workflow_screen, 0, 0);
+    lv_obj_set_style_border_width(workflow_screen, 0, 0);
+    lv_obj_set_style_pad_all(workflow_screen, 10, 0);
+    lv_obj_set_flex_flow(workflow_screen, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(workflow_screen, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(workflow_screen, 8, 0);
+
+    lv_obj_t *panel = lv_obj_create(workflow_screen);
+    lv_obj_set_size(panel, 300, 82);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(0x0f0f23), 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0x16213e), 0);
+    lv_obj_set_style_radius(panel, 6, 0);
+    lv_obj_set_style_pad_all(panel, 8, 0);
+
+    lv_obj_t *nozzle_lbl = lv_label_create(panel);
+    lv_label_set_text(nozzle_lbl, locale_get("temp.nozzle"));
+    lv_obj_set_style_text_color(nozzle_lbl, lv_color_hex(0x53a8b6), 0);
+    lv_obj_set_style_text_font(nozzle_lbl, &deneb_font_12, 0);
+    lv_obj_align(nozzle_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    workflow_temp_label = lv_label_create(panel);
+    lv_label_set_text(workflow_temp_label, "---\u00b0C");
+    lv_obj_set_style_text_color(workflow_temp_label, lv_color_hex(0xe0e0e0), 0);
+    lv_obj_set_style_text_font(workflow_temp_label, &deneb_font_14, 0);
+    lv_obj_align(workflow_temp_label, LV_ALIGN_TOP_LEFT, 74, -1);
+
+    workflow_target_label = lv_label_create(panel);
+    lv_label_set_text_fmt(workflow_target_label, "%d\u00b0C",
+                          workflow_target_temp);
+    lv_obj_set_style_text_color(workflow_target_label,
+                                lv_color_hex(0xe94560), 0);
+    lv_obj_set_style_text_font(workflow_target_label, &deneb_font_14, 0);
+    lv_obj_align(workflow_target_label, LV_ALIGN_TOP_RIGHT, 0, -1);
+
+    workflow_slider = lv_slider_create(panel);
+    lv_obj_set_size(workflow_slider, 210, 12);
+    lv_obj_align(workflow_slider, LV_ALIGN_BOTTOM_LEFT, 0, -4);
+    lv_slider_set_range(workflow_slider, 0, MATERIAL_MAX_TEMP);
+    lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0x16213e), 0);
+    lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0xe94560),
+                              LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0xe0e0e0),
+                              LV_PART_KNOB);
+    lv_obj_add_event_cb(workflow_slider, workflow_slider_cb,
+                        LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t *set_btn = lv_button_create(panel);
+    lv_obj_set_size(set_btn, 52, 24);
+    lv_obj_set_style_bg_color(set_btn, lv_color_hex(0x16213e), 0);
+    lv_obj_set_style_radius(set_btn, 4, 0);
+    lv_obj_align(set_btn, LV_ALIGN_BOTTOM_RIGHT, 0, -1);
+    lv_obj_add_event_cb(set_btn, workflow_set_temp_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *set_lbl = lv_label_create(set_btn);
+    lv_label_set_text(set_lbl, locale_get("temp.set"));
+    lv_obj_set_style_text_font(set_lbl, &deneb_font_12, 0);
+    lv_obj_center(set_lbl);
+
+    workflow_status_label = lv_label_create(workflow_screen);
+    lv_label_set_text(workflow_status_label, "");
+    lv_obj_set_width(workflow_status_label, 300);
+    lv_label_set_long_mode(workflow_status_label, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_text_align(workflow_status_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(workflow_status_label, lv_color_hex(0xa0a0a0),
+                                0);
+    lv_obj_set_style_text_font(workflow_status_label, &deneb_font_12, 0);
+
+    lv_obj_t *actions = lv_obj_create(workflow_screen);
+    lv_obj_set_size(actions, 300, 38);
+    lv_obj_set_style_bg_opa(actions, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(actions, 0, 0);
+    lv_obj_set_style_pad_all(actions, 0, 0);
+    lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    workflow_load_btn = create_workflow_btn(actions,
+                                            locale_get("material.load_short"),
+                                            workflow_load_cb,
+                                            lv_color_hex(0x1f7a5a));
+    workflow_unload_btn = create_workflow_btn(actions,
+                                              locale_get("material.unload_short"),
+                                              workflow_unload_cb,
+                                              lv_color_hex(0x8a6b24));
+    workflow_stop_btn = create_workflow_btn(actions, locale_get("material.stop"),
+                                            workflow_stop_cb,
+                                            lv_color_hex(0xe94560));
+
+    workflow_update();
+    workflow_timer = lv_timer_create(workflow_timer_cb, 500, NULL);
+
+    return workflow_screen;
+}
+
+static void material_workflow_destroy(void)
+{
+    if (workflow_moving)
+        workflow_stop_material(0);
+    else if (workflow_target_sent)
+        workflow_cooldown_nozzle(0);
+
+    if (workflow_timer) {
+        lv_timer_delete(workflow_timer);
+        workflow_timer = NULL;
+    }
+
+    workflow_screen = NULL;
+    workflow_status_label = NULL;
+    workflow_temp_label = NULL;
+    workflow_target_label = NULL;
+    workflow_slider = NULL;
+    workflow_load_btn = NULL;
+    workflow_unload_btn = NULL;
+    workflow_stop_btn = NULL;
+}
+
+const screen_ops_t screen_material_workflow = {
+    .name = "material.change",
+    .create = material_workflow_create,
+    .destroy = material_workflow_destroy,
     .show_back = true,
 };

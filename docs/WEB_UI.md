@@ -52,19 +52,25 @@ Implemented local API surface:
 - `PUT /api/v1/print_job/state` — pause/resume/cancel
 - `GET /cluster-api/v1/printers` — Cura local-network single-printer status
 - `GET /cluster-api/v1/print_jobs` — Cura local-network active print job status
-- `POST /cluster-api/v1/print_jobs/` — Cura local-network multipart upload/start handler; requires Open Access or Deneb auth
-- `PUT /cluster-api/v1/print_jobs/{uuid}/action` — Cura pause/resume/abort bridge; requires Open Access or Deneb auth
+- `POST /cluster-api/v1/print_jobs/` — Cura local-network multipart upload/start handler; intentionally unauthenticated for stock Cura compatibility
+- `PUT /cluster-api/v1/print_jobs/{uuid}/action` — Cura pause/resume/abort bridge; intentionally unauthenticated for stock Cura compatibility
 
 `deneb-mdns` advertises `_ultimaker._tcp.local.` with `type=printer`, the
-printer name/address, firmware version, and a configurable `machine` TXT value.
-Current Cura derives the displayed network printer model by matching this value
-against BOM numbers in its bundled machine definitions. The UM2+ Connect
-definition is network-capable but does not currently publish a BOM number. Deneb
-therefore advertises `deneb_um2c`. Cura support for that id must come from the
-Deneb Cura plugin in `cura/plugins/DenebUM2CNetworkPrinting`, which contributes
-a plugin-owned definition that inherits the stock UM2+ Connect profile and maps
-Deneb discovery back to UM2+ Connect geometry, materials, and quality settings.
-Do not patch Cura's bundled resources or copy definition files into Cura's user
+printer name/address, a configurable `machine` TXT value, and a Cura Connect
+compatibility `firmware_version`. Cura rejects local-network devices whose
+advertised firmware version is older than `4.0.0`, so Deneb defaults the mDNS
+`firmware_version` to `4.0.0` instead of the Deneb git build version. The real
+Deneb build version remains available from `/api/v1/deneb/version`.
+
+Current Cura derives the displayed network printer model by matching the mDNS
+`machine` value against BOM numbers in its bundled machine definitions. The
+UM2+ Connect definition is network-capable but does not currently publish a BOM
+number. Deneb therefore advertises `deneb_um2c`. Cura support for that id must
+come from the Deneb Cura plugin in `cura/plugins/DenebUM2CNetworkPrinting`,
+which patches Cura's local network discovery mapping so `deneb_um2c` resolves
+to the stock `ultimaker2_plus_connect` machine id. This preserves stock UM2+
+Connect materials, variants, quality profiles, and printer presets. Do not
+patch Cura's bundled resources or copy definition files into Cura's user
 profile directly.
 
 Build the Cura plugin package with:
@@ -78,11 +84,11 @@ network discovery loads machine metadata.
 
 The Cura local-network path implements the single-printer cluster endpoints that
 Cura 5.13 polls for monitor, upload, and basic print-job actions. Stock Cura
-does not send Deneb session credentials on these cluster write requests, so Cura
-LAN upload/control currently requires Open Access mode. In password-protected
-mode, use the Deneb web UI for protected LAN control until Deneb implements a
-Cura-compatible pairing/auth flow. Validation against current Cura behavior on
-real hardware remains open.
+does not send Deneb session credentials on these cluster write requests, so
+Deneb accepts cluster upload/control without Deneb auth to preserve stock Cura
+LAN behavior. The UM API v1 write endpoints and Deneb web UI remain protected by
+Open Access or Deneb auth. Validation against current Cura behavior on real
+hardware remains open.
 
 ## Current Limits
 
@@ -112,6 +118,7 @@ uci set deneb.web.enabled=1  # Enable
 uci set deneb.web.enabled=0  # Disable
 uci set deneb.mdns.enabled=1 # Enable Cura/mDNS advertisement
 uci set deneb.mdns.machine=deneb_um2c
+uci set deneb.mdns.firmware=4.0.0
 uci commit deneb
 ```
 

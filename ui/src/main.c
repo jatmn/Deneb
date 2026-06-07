@@ -43,8 +43,11 @@ extern const screen_ops_t screen_factory_reset;
 extern const screen_ops_t screen_about;
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_error;
+extern const screen_ops_t screen_print_conflict;
+void frame_lighting_schedule_saved_apply(void);
 void error_screen_show(const char *er_code, const char *description,
                        const char *action);
+int print_conflict_has_pending(void);
 #ifdef BACKEND_COMM_STUB
 void screen_network_set_catalog_placeholder_mode(int enabled);
 #endif
@@ -114,6 +117,7 @@ static int run_screenshot_catalog(const char *dir)
     const screenshot_screen_t screens[] = {
         {"status", &screen_status, NULL, NULL, NULL},
         {"print-from-usb", &screen_print, NULL, NULL, NULL},
+        {"print-conflict", &screen_print_conflict, NULL, NULL, NULL},
         {"material", &screen_material, NULL, NULL, NULL},
         {"set-material", &screen_set_material, NULL, NULL, NULL},
         {"maintenance", &screen_maintenance, NULL, NULL, NULL},
@@ -225,6 +229,12 @@ int main(int argc, char *argv[])
 
     screen_mgr_init();
     screen_mgr_push(&screen_home);
+    if (!screenshot_dir)
+        screen_mgr_push(&screen_status);
+
+#ifndef BACKEND_COMM_STUB
+    frame_lighting_schedule_saved_apply();
+#endif
 
 #ifdef BACKEND_COMM_STUB
     if (screenshot_dir) {
@@ -247,6 +257,7 @@ int main(int argc, char *argv[])
 #endif
 
     uint32_t last_status_poll = 0;
+    uint32_t last_conflict_poll = 0;
 
     while (running) {
         uint32_t now = custom_tick_get();
@@ -259,6 +270,17 @@ int main(int argc, char *argv[])
             backend_poll();
             last_status_poll = now;
         }
+
+#ifndef BACKEND_COMM_STUB
+        if (now - last_conflict_poll >= 1000) {
+            const char *current = screen_mgr_current_name();
+            if (strcmp(current, "print_conflict.title") != 0 &&
+                print_conflict_has_pending()) {
+                screen_mgr_push(&screen_print_conflict);
+            }
+            last_conflict_poll = now;
+        }
+#endif
 
         usleep(5000); /* 5ms */
     }

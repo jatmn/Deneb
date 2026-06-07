@@ -15,12 +15,12 @@ start_service() {
 
     local machine firmware
     machine=$(uci -q get deneb.mdns.machine 2>/dev/null || echo "deneb_um2c")
-    firmware=$(uci -q get deneb.mdns.firmware 2>/dev/null || echo "")
+    firmware=$(uci -q get deneb.mdns.firmware 2>/dev/null || echo "4.0.0")
 
     procd_open_instance
     procd_set_param command "$PROG"
     procd_set_param env DENEB_MDNS_MACHINE="$machine"
-    [ -z "$firmware" ] || procd_set_param env DENEB_MDNS_FIRMWARE="$firmware"
+    procd_set_param env DENEB_MDNS_FIRMWARE="$firmware"
     procd_set_param respawn 3600 5 5
     procd_set_param stdout 1
     procd_set_param stderr 1

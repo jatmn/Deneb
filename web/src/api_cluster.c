@@ -5,16 +5,54 @@
  */
 
 #include "api_cluster.h"
+#include "api_cluster_materials.h"
 #include "api_print_job.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
 
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
-#define DENEB_CURA_MACHINE_VARIANT "deneb_ultimaker2_plus_connect"
+#define DENEB_CURA_MACHINE_FAMILY "ultimaker2_plus_connect"
+#define DENEB_CURA_MACHINE_VARIANT "Ultimaker 2+ Connect"
 #define DENEB_CLUSTER_JOB_UUID "deneb-current-job"
+#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
+#define DENEB_CLUSTER_MATERIAL_DIR "/home/3D/deneb-materials"
+#define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
+#define DENEB_DEFAULT_MATERIAL_GUID "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"
+#define DENEB_DEFAULT_MATERIAL_BRAND "Generic"
+#define DENEB_DEFAULT_MATERIAL_TYPE "PLA"
+#define DENEB_DEFAULT_MATERIAL_COLOR "#ffc924"
+
+static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback);
+static int persist_uploaded_material(const http_request_t *req);
+static void write_cluster_materials_response(http_response_t *resp);
+
+static void read_nozzle_size(char *out, size_t out_sz)
+{
+    read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
+                      out, out_sz, DENEB_DEFAULT_NOZZLE_SIZE);
+}
+
+static void read_nozzle_id(char *out, size_t out_sz)
+{
+    char nozzle[16];
+    read_nozzle_size(nozzle, sizeof(nozzle));
+    snprintf(out, out_sz, "%s mm", nozzle);
+}
+
+static void read_material_guid(char *out, size_t out_sz)
+{
+    read_line_command("uci -q get ultimaker.option.material_guid 2>/dev/null",
+                      out, out_sz, DENEB_DEFAULT_MATERIAL_GUID);
+}
 
 static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback)
 {
@@ -64,6 +102,89 @@ static int has_active_job(const printer_state_t *s)
     return s->is_printing || s->is_paused || s->has_error;
 }
 
+static int serve_pending_cluster_job(http_response_t *resp)
+{
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f) return 0;
+
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    int truncated = !feof(f);
+    fclose(f);
+
+    if (n == 0 || truncated) return 0;
+    buf[n] = '\0';
+
+    const char *p = buf;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p != '[') return 0;
+
+    api_http_set_body(resp, buf, n);
+    return 1;
+}
+
+static int pending_job_tracker(void)
+{
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f) return -1;
+
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    const char *p = strstr(buf, "\"deneb_tracker\"");
+    if (!p) return -1;
+    p = strchr(p, ':');
+    if (!p) return -1;
+    p++;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (!isdigit((unsigned char)*p)) return -1;
+    return atoi(p);
+}
+
+static int send_pending_job_instruction(const char *instruction)
+{
+    int tracker = pending_job_tracker();
+    if (tracker < 0) return -1;
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "PYTHONPATH=/home:/home/lib python3 -c \""
+             "import sys;"
+             "from sponge.spinner import spinner;"
+             "from sponge.ipc import zmqipc;"
+             "import gershwin.constructs as gershwin;"
+             "import gershwin.node as node;"
+             "from gershwin.manager import Manager;"
+             "from cygnus.marshal.types.printing import PrintHandlingRequest,PrintHandlingInstruction;"
+             "result={'done':False,'reply':None}\n"
+             "@gershwin.node('client')\n"
+             "class ClientNode(node.Node):\n"
+             " def plan(self):\n"
+             "  self.doOption(gershwin.DO_OPTIONS.DO_IMMEDIATELY)\n"
+             "  self.addStep(goal='pending print action', func=self._run)\n"
+             " def _run(self):\n"
+             "  i=PrintHandlingInstruction.%s\n"
+             "  r=PrintHandlingRequest.create(tracker=int(sys.argv[1]), instruction=i, options={})\n"
+             "  result['reply']=yield from self.call('coordinator::print::handling', r)\n"
+             "  result['done']=True\n"
+             "m=Manager('deneb-api-print-action', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3);"
+             "m.addNode(ClientNode.id, ClientNode);"
+             "\nfor _ in range(30):\n"
+             " m.spinner.spin(100)\n"
+             " m.run_time=m.spinner.getElapsed()\n"
+             " m.spin()\n"
+             " if result['done']:\n"
+             "  break\n"
+             "reply=result.get('reply') or {}\n"
+             "sys.exit(0 if result['done'] and reply.get('accepted') else 1)\n"
+             "\" %d >/tmp/deneb-print-action.log 2>&1",
+             instruction, tracker);
+
+    return system(cmd);
+}
+
 static int elapsed_seconds(const printer_state_t *s)
 {
     if (s->time_total <= 0) return 0;
@@ -84,17 +205,22 @@ static const char *active_job_name(const printer_state_t *s)
 
 static void write_configuration(json_writer_t *w)
 {
+    char nozzle_id[24];
+    char material_guid[48];
+    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
+    read_material_guid(material_guid, sizeof(material_guid));
+
     json_key(w, "configuration");
     json_arr_open(w);
     json_obj_open(w);
     json_int(w, "extruder_index", 0);
-    json_str(w, "print_core_id", "AA+ 0.4");
+    json_str(w, "print_core_id", nozzle_id);
     json_key(w, "material");
     json_obj_open(w);
-    json_str(w, "guid", "");
-    json_str(w, "brand", "");
-    json_str(w, "material", "unknown");
-    json_str(w, "color", "#ffc924");
+    json_str(w, "guid", material_guid);
+    json_str(w, "brand", DENEB_DEFAULT_MATERIAL_BRAND);
+    json_str(w, "material", DENEB_DEFAULT_MATERIAL_TYPE);
+    json_str(w, "color", DENEB_DEFAULT_MATERIAL_COLOR);
     json_obj_close(w);
     json_obj_close(w);
     json_arr_close(w);
@@ -102,8 +228,203 @@ static void write_configuration(json_writer_t *w)
 
 void api_cluster_materials_get(const http_request_t *req, http_response_t *resp)
 {
-    (void)req;
-    api_http_set_body_str(resp, "[]");
+    if (strcmp(req->method, "POST") == 0) {
+        if (persist_uploaded_material(req) < 0) {
+            resp->status_code = 400;
+            api_http_set_body_str(resp, "{\"message\":\"Material not added\"}");
+            return;
+        }
+        api_http_set_body_str(resp, "{\"message\":\"Material accepted\"}");
+        return;
+    }
+    write_cluster_materials_response(resp);
+}
+
+static int copy_tag_value(const char *xml, const char *tag, char *out, size_t out_sz)
+{
+    char open_tag[32];
+    char close_tag[32];
+    snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
+    snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
+
+    const char *start = strstr(xml, open_tag);
+    if (!start) return -1;
+    start += strlen(open_tag);
+    const char *end = strstr(start, close_tag);
+    if (!end || end <= start) return -1;
+
+    size_t len = (size_t)(end - start);
+    while (len > 0 && isspace((unsigned char)*start)) {
+        start++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)start[len - 1])) len--;
+    if (len == 0 || len >= out_sz) return -1;
+
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 0;
+}
+
+static int is_safe_guid(const char *guid)
+{
+    size_t len = strlen(guid);
+    if (len < 32 || len >= 64) return 0;
+    for (const char *p = guid; *p; p++) {
+        if (!(isxdigit((unsigned char)*p) || *p == '-')) return 0;
+    }
+    return 1;
+}
+
+static int parse_material_file(const char *path, char *guid, size_t guid_sz, int *version)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    char *xml = malloc(131073);
+    if (!xml) {
+        fclose(f);
+        return -1;
+    }
+
+    size_t n = fread(xml, 1, 131072, f);
+    fclose(f);
+    xml[n] = '\0';
+
+    char version_str[32];
+    int ok = copy_tag_value(xml, "GUID", guid, guid_sz) == 0 &&
+             copy_tag_value(xml, "version", version_str, sizeof(version_str)) == 0 &&
+             is_safe_guid(guid);
+    if (ok) {
+        *version = atoi(version_str);
+        ok = *version >= 0;
+    }
+
+    free(xml);
+    return ok ? 0 : -1;
+}
+
+static int persist_uploaded_material(const http_request_t *req)
+{
+    char material_path[256] = "";
+    char filename[128] = "material.xml";
+    char guid[64];
+    int version = 0;
+
+    if (!req->multipart_boundary[0] || !req->upload_path[0]) {
+        fprintf(stderr, "deneb-api: material upload rejected: missing multipart upload\n");
+        return -1;
+    }
+
+    if (extract_multipart_file(req->multipart_boundary, req->upload_path,
+                               material_path, sizeof(material_path),
+                               filename, sizeof(filename)) < 0) {
+        fprintf(stderr, "deneb-api: material upload rejected: failed to extract multipart file\n");
+        return -1;
+    }
+
+    if (parse_material_file(material_path, guid, sizeof(guid), &version) < 0) {
+        fprintf(stderr, "deneb-api: material upload rejected: failed to parse %s\n", filename);
+        unlink(material_path);
+        return -1;
+    }
+
+    if (mkdir(DENEB_CLUSTER_MATERIAL_DIR, 0755) < 0 && errno != EEXIST) {
+        fprintf(stderr, "deneb-api: failed to create material catalog %s: %s\n",
+                DENEB_CLUSTER_MATERIAL_DIR, strerror(errno));
+        unlink(material_path);
+        return -1;
+    }
+
+    char record_path[256];
+    snprintf(record_path, sizeof(record_path), "%s/%s.json", DENEB_CLUSTER_MATERIAL_DIR, guid);
+    FILE *out = fopen(record_path, "w");
+    if (!out) {
+        fprintf(stderr, "deneb-api: failed to write material record %s: %s\n",
+                record_path, strerror(errno));
+        unlink(material_path);
+        return -1;
+    }
+    fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, version);
+    fclose(out);
+    unlink(material_path);
+    fprintf(stderr, "deneb-api: accepted material %s version %d\n", guid, version);
+    return 0;
+}
+
+static int append_str(char **buf, size_t *cap, size_t *pos, const char *s)
+{
+    size_t len = strlen(s);
+    while (*pos + len + 1 > *cap) {
+        size_t new_cap = *cap ? (*cap * 2) : 256;
+        while (new_cap < *pos + len + 1) new_cap *= 2;
+
+        char *new_buf = realloc(*buf, new_cap);
+        if (!new_buf)
+            return -1;
+
+        *buf = new_buf;
+        *cap = new_cap;
+    }
+
+    memcpy(*buf + *pos, s, len);
+    *pos += len;
+    (*buf)[*pos] = '\0';
+    return 0;
+}
+
+static void write_cluster_materials_response(http_response_t *resp)
+{
+    const size_t stock_len = strlen(DENEB_CLUSTER_MATERIALS_JSON);
+    size_t cap = stock_len + 1024;
+    char *body = malloc(cap);
+    if (!body) {
+        api_http_set_body_str(resp, DENEB_CLUSTER_MATERIALS_JSON);
+        return;
+    }
+
+    size_t pos = stock_len > 0 ? stock_len - 1 : 0;
+    memcpy(body, DENEB_CLUSTER_MATERIALS_JSON, pos);
+    body[pos] = '\0';
+
+    DIR *dir = opendir(DENEB_CLUSTER_MATERIAL_DIR);
+    if (dir) {
+        struct dirent *ent;
+        while ((ent = readdir(dir)) != NULL) {
+            if (ent->d_name[0] == '.') continue;
+            if (!strstr(ent->d_name, ".json")) continue;
+
+            char path[256];
+            snprintf(path, sizeof(path), "%s/%s", DENEB_CLUSTER_MATERIAL_DIR, ent->d_name);
+            FILE *f = fopen(path, "r");
+            if (!f) continue;
+
+            char record[160];
+            size_t n = fread(record, 1, sizeof(record) - 1, f);
+            fclose(f);
+            record[n] = '\0';
+            if (n == 0 || record[0] != '{') continue;
+
+            if (append_str(&body, &cap, &pos, ",") < 0 ||
+                append_str(&body, &cap, &pos, record) < 0) {
+                closedir(dir);
+                resp->status_code = 500;
+                api_http_set_body_str(resp, "{\"message\":\"Material catalog response too large\"}");
+                free(body);
+                return;
+            }
+        }
+        closedir(dir);
+    }
+
+    if (append_str(&body, &cap, &pos, "]") < 0) {
+        resp->status_code = 500;
+        api_http_set_body_str(resp, "{\"message\":\"Material catalog response too large\"}");
+        free(body);
+        return;
+    }
+    api_http_set_body(resp, body, pos);
+    free(body);
 }
 
 void api_cluster_printers_get(const http_request_t *req, http_response_t *resp)
@@ -154,6 +475,8 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_writer_t w;
 
     if (!has_active_job(s)) {
+        if (serve_pending_cluster_job(resp))
+            return;
         api_http_set_body_str(resp, "[]");
         return;
     }
@@ -183,7 +506,7 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_obj_close(&w);
     json_key(&w, "compatible_machine_families");
     json_arr_open(&w);
-    json_arr_str(&w, "ultimaker2_plus_connect");
+    json_arr_str(&w, DENEB_CURA_MACHINE_FAMILY);
     json_arr_str(&w, DENEB_CURA_MACHINE_VARIANT);
     json_arr_close(&w);
     json_key(&w, "impediments_to_printing");
@@ -237,7 +560,23 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
         return;
     }
 
-    if (strcmp(action, "pause") == 0) {
+    if ((strcmp(action, "print") == 0 || strcmp(action, "resume") == 0 ||
+         strcmp(action, "continue") == 0 || strcmp(action, "force") == 0) &&
+        pending_job_tracker() >= 0) {
+        if (send_pending_job_instruction("PREPARE") != 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
+            return;
+        }
+        unlink(DENEB_CLUSTER_PENDING_JOB);
+    } else if (strcmp(action, "abort") == 0 && pending_job_tracker() >= 0) {
+        if (send_pending_job_instruction("ABORT") != 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
+            return;
+        }
+        unlink(DENEB_CLUSTER_PENDING_JOB);
+    } else if (strcmp(action, "pause") == 0) {
         if (backend_zmq_pause() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
@@ -281,6 +620,7 @@ void api_cluster_print_job_delete(const http_request_t *req, http_response_t *re
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
     if (!has_active_job(s)) {
+        unlink(DENEB_CLUSTER_PENDING_JOB);
         resp->status_code = 204;
         return;
     }

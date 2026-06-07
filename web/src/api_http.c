@@ -101,12 +101,15 @@ static const api_route_t routes[] = {
 
     /* Cura local cluster API endpoints */
     {"GET",  "/cluster-api/v1/materials",                           api_cluster_materials_get, 0},
+    {"POST", "/cluster-api/v1/materials",                           api_cluster_materials_get, 0},
+    {"GET",  "/cluster-api/v1/materials/",                          api_cluster_materials_get, 0},
+    {"POST", "/cluster-api/v1/materials/",                          api_cluster_materials_get, 0},
     {"GET",  "/cluster-api/v1/printers",                            api_cluster_printers_get,  0},
     {"GET",  "/cluster-api/v1/print_jobs",                          api_cluster_print_jobs_get, 0},
     {"GET",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_preview_get, 0},
-    {"POST", "/cluster-api/v1/print_jobs/",                         api_cluster_print_jobs_post, 1},
-    {"PUT",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_action_put, 1},
-    {"DELETE", "/cluster-api/v1/print_jobs/",                       api_cluster_print_job_delete, 1},
+    {"POST", "/cluster-api/v1/print_jobs/",                         api_cluster_print_jobs_post, 0},
+    {"PUT",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_action_put, 0},
+    {"DELETE", "/cluster-api/v1/print_jobs/",                       api_cluster_print_job_delete, 0},
 
     /* M7 write endpoints (PUT/POST) */
     {"PUT",  "/api/v1/print_job/state",                            api_print_job_state_put,   1},
@@ -190,8 +193,10 @@ int api_http_parse(http_request_t *req, const char *raw, size_t len)
                 const char *bp = strstr(req->headers[req->header_count].value, "boundary=");
                 if (bp) {
                     bp += 9;
+                    if (*bp == '"') bp++;
                     const char *end = strchr(bp, ';');
                     if (!end) end = bp + strlen(bp);
+                    if (end > bp && end[-1] == '"') end--;
                     size_t blen = (size_t)(end - bp);
                     if (blen >= sizeof(req->multipart_boundary)) blen = sizeof(req->multipart_boundary) - 1;
                     memcpy(req->multipart_boundary, bp, blen);

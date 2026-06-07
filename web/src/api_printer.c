@@ -20,6 +20,35 @@
 #define MAX_POSITION_Z_MM 205.0f
 #define DEFAULT_MOVE_SPEED_MM_S 150.0f
 #define MAX_MOVE_SPEED_MM_S 300.0f
+#define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
+
+static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback)
+{
+    FILE *f = popen(cmd, "r");
+    if (f) {
+        if (fgets(out, out_sz, f) && out[0]) {
+            char *nl = strchr(out, '\n');
+            if (nl) *nl = '\0';
+            pclose(f);
+            return;
+        }
+        pclose(f);
+    }
+    snprintf(out, out_sz, "%s", fallback);
+}
+
+static void read_nozzle_size(char *out, size_t out_sz)
+{
+    read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
+                      out, out_sz, DENEB_DEFAULT_NOZZLE_SIZE);
+}
+
+static void read_nozzle_id(char *out, size_t out_sz)
+{
+    char nozzle[16];
+    read_nozzle_size(nozzle, sizeof(nozzle));
+    snprintf(out, out_sz, "%s mm", nozzle);
+}
 
 static int motion_allowed(const printer_state_t *s)
 {
@@ -202,8 +231,11 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
+    char nozzle_id[24];
     char buf[2048];
     json_writer_t w;
+
+    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
 
     json_obj_open(&w);
@@ -252,7 +284,7 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
     /* hotend */
     json_key(&w, "hotend");
     json_obj_open(&w);
-    json_str(&w, "id", "AA+ 0.4");
+    json_str(&w, "id", nozzle_id);
     json_str(&w, "serial", "");
     json_key(&w, "temperature");
     json_obj_open(&w);
@@ -463,8 +495,11 @@ void api_printer_extruders_get(const http_request_t *req, http_response_t *resp)
 {
     /* Return extruders as an array with single element */
     const printer_state_t *s = backend_zmq_get_state();
+    char nozzle_id[24];
     char buf[640];
     json_writer_t w;
+
+    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
     json_arr_open(&w);
     json_obj_open(&w);
@@ -482,7 +517,7 @@ void api_printer_extruders_get(const http_request_t *req, http_response_t *resp)
     json_obj_close(&w);
     json_key(&w, "hotend");
     json_obj_open(&w);
-    json_str(&w, "id", "AA+ 0.4");
+    json_str(&w, "id", nozzle_id);
     json_str(&w, "serial", "");
     json_key(&w, "temperature");
     json_obj_open(&w);
@@ -500,8 +535,11 @@ void api_printer_extruder_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
+    char nozzle_id[24];
     char buf[512];
     json_writer_t w;
+
+    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
     json_obj_open(&w);
 
@@ -521,7 +559,7 @@ void api_printer_extruder_get(const http_request_t *req, http_response_t *resp)
 
     json_key(&w, "hotend");
     json_obj_open(&w);
-    json_str(&w, "id", "AA+ 0.4");
+    json_str(&w, "id", nozzle_id);
     json_str(&w, "serial", "");
     json_key(&w, "temperature");
     json_obj_open(&w);
@@ -539,11 +577,14 @@ void api_printer_hotend_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
+    char nozzle_id[24];
     char buf[384];
     json_writer_t w;
+
+    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
     json_obj_open(&w);
-    json_str(&w, "id", "AA+ 0.4");
+    json_str(&w, "id", nozzle_id);
     json_str(&w, "serial", "");
     json_key(&w, "temperature");
     json_obj_open(&w);
