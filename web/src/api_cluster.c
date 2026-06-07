@@ -58,8 +58,7 @@ static int serve_pending_cluster_job(http_response_t *resp)
 
 static int load_pending_job(deneb_pending_job_file_t *job)
 {
-    return deneb_pending_job_file_load_default(job) == 0 &&
-           job->tracker >= 0 ? 0 : -1;
+    return deneb_pending_job_file_load_pending_default(job);
 }
 
 static int pending_job_tracker(void)
@@ -71,29 +70,42 @@ static int pending_job_tracker(void)
 static int send_pending_job_instruction(const char *instruction)
 {
     deneb_pending_job_file_t job;
+    deneb_pending_job_action_plan_t plan;
+
     if (load_pending_job(&job) < 0)
         return -1;
 
-    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0 && !job.path[0]) {
-        fprintf(stderr, "deneb-api: failed to read pending job path for PREPARE\n");
+    if (deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0) {
+        fprintf(stderr, "deneb-api: failed to plan pending job instruction=%s\n",
+                instruction ? instruction : "(none)");
         return -1;
     }
-    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
+    if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
         fprintf(stderr, "deneb-api: pending print path resolved to %s\n",
-                job.path[0] ? job.path : "(none)");
+                plan.path[0] ? plan.path : "(none)");
     }
 
-    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n", instruction, job.tracker);
+    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n",
+            instruction, plan.tracker);
 
-    if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0)
-        return backend_zmq_abort();
-
-    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
-        return backend_zmq_send_job(job.path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
-                                    DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
+    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
+        if (backend_zmq_abort() < 0)
+            return -1;
+    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
+        if (backend_zmq_send_job(plan.path, plan.source, plan.uuid,
+                                 0.0f, 0.0f) < 0)
+            return -1;
+    } else {
+        return -1;
     }
 
-    return -1;
+    if (plan.mark_handled_after_success &&
+        deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
+        deneb_pending_job_file_clear_default();
+    if (plan.clear_after_success)
+        deneb_pending_job_file_clear_default();
+
+    return 0;
 }
 
 static void write_configuration(json_writer_t *w)
@@ -319,14 +331,12 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
         }
-        /* Keep pending print metadata visible during preheat / queued startup. */
     } else if (deneb_print_action_is_abort(action) && has_pending_job) {
         if (send_pending_job_instruction(DENEB_COMMAND_VERB_ABORT) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
             return;
         }
-        deneb_pending_job_file_clear_default();
     } else {
         api_print_job_dispatch_action(action, resp,
                                       "{\"message\":\"Unknown print job action\"}");

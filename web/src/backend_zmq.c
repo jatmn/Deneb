@@ -17,7 +17,6 @@
 #include "command_format.h"
 #include "json_field.h"
 #include "json_string.h"
-#include "json_writer.h"
 #include "pending_job_file.h"
 #include "print_backend_route.h"
 #include "print_history.h"
@@ -75,6 +74,7 @@ void backend_zmq_deinit(void) {}
 
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 4
+#define STOP_INFLIGHT_MS 3000
 
 static deneb_print_backend_route_t backend_route;
 
@@ -88,7 +88,8 @@ static printer_state_t previous_state;
 static int preheat_targets_logged = 0;
 static int preheat_reached_logged = 0;
 static time_t current_print_start_time = 0;
-static long long last_stop_ms = -1;
+static char retained_print_filename[128];
+static deneb_print_stop_guard_t stop_guard;
 
 static int has_temp_targets(const printer_state_t *s)
 {
@@ -101,7 +102,58 @@ static int have_jobs_targets(const printer_state_t *s)
                                           s->nozzle_temp_cur, s->nozzle_temp_set);
 }
 
-static void append_print_history(const printer_state_t *prev, const printer_state_t *curr);
+static void append_print_history(const printer_state_t *prev,
+                                 const printer_state_t *curr);
+
+static int state_has_print_context(const printer_state_t *s)
+{
+    deneb_print_observation_t obs;
+
+    if (!s)
+        return 0;
+    obs.req = s->current_req;
+    obs.file = s->filename;
+    obs.time_total = s->time_total;
+    obs.time_left = s->time_left;
+    obs.bed_target = s->bed_temp_set;
+    obs.nozzle_target = s->nozzle_temp_set;
+    return deneb_print_has_active_context(&obs, s->is_printing,
+                                          s->is_paused,
+                                          deneb_print_file_is_candidate(s->filename));
+}
+
+static deneb_status_filename_context_t filename_context_from_state(
+    const printer_state_t *s)
+{
+    deneb_status_filename_context_t ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    if (!s)
+        return ctx;
+    ctx.req = s->current_req;
+    ctx.filename = s->filename;
+    ctx.uuid = s->uuid;
+    ctx.time_total = s->time_total;
+    ctx.time_left = s->time_left;
+    ctx.bed_target = s->bed_temp_set;
+    ctx.nozzle_target = s->nozzle_temp_set;
+    ctx.is_printing = s->is_printing;
+    ctx.is_paused = s->is_paused;
+    return ctx;
+}
+
+static void retain_backend_filename(const char *path)
+{
+    if (!path || !*path)
+        return;
+
+    deneb_pending_job_file_display_value(path, retained_print_filename,
+                                         sizeof(retained_print_filename));
+    deneb_pending_job_file_display_value(path, state.filename,
+                                         sizeof(state.filename));
+    fprintf(stderr, "backend_zmq: job command path retained as active filename=%s\n",
+            state.filename[0] ? state.filename : "(none)");
+}
 
 static void log_status_transition(const printer_state_t *curr)
 {
@@ -165,76 +217,22 @@ static void log_status_transition(const printer_state_t *curr)
 
 static void append_print_history(const printer_state_t *prev, const printer_state_t *curr)
 {
-    time_t now = time(NULL);
-    struct tm *tm;
+    deneb_print_history_entry_t entry;
 
-    char started[32] = "";
-    if (current_print_start_time > 0) {
-        time_t t = current_print_start_time;
-        tm = gmtime(&t);
-        if (tm)
-            snprintf(started, sizeof(started), "%04d-%02d-%02dT%02d:%02d:%02dZ",
-                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-                     tm->tm_hour, tm->tm_min, tm->tm_sec);
-    }
-
-    char finished[32];
-    time_t t = now;
-    tm = gmtime(&t);
-    if (tm)
-        snprintf(finished, sizeof(finished), "%04d-%02d-%02dT%02d:%02d:%02dZ",
-                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-                 tm->tm_hour, tm->tm_min, tm->tm_sec);
-
-    const char *state_str =
-        deneb_print_completion_state_label(curr->has_error, prev->time_total,
-                                           prev->time_left);
-
-    int elapsed = deneb_print_elapsed_seconds(prev->time_total,
-                                              prev->time_left);
-
-    char entry[1024];
-    json_writer_t w;
-    json_init(&w, entry, sizeof(entry));
-    json_obj_open(&w);
-    json_str(&w, "name", prev->filename);
-    json_str(&w, "uuid", prev->uuid);
-    json_str(&w, "source", prev->source);
-    json_str(&w, "state", state_str);
-    json_int(&w, "time_total", prev->time_total);
-    json_int(&w, "time_elapsed", elapsed);
-    json_float(&w, "progress", prev->progress);
-    json_str(&w, "started_at", started);
-    json_str(&w, "finished_at", finished);
-    json_obj_close(&w);
-
-    char buf[65536] = {0};
-    FILE *f = fopen(DENEB_PRINT_HISTORY_PATH, "r");
-    if (f) {
-        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-        fclose(f);
-        if (n > 0) buf[n] = '\0';
-    }
-
-    FILE *out = fopen(DENEB_PRINT_HISTORY_PATH ".tmp", "w");
-    if (!out) return;
-
-    if (buf[0] == '\0' || buf[0] != '[') {
-        fprintf(out, "[\n%s\n]\n", entry);
-    } else {
-        char *p = strrchr(buf, ']');
-        if (p && p > buf) {
-            *p = '\0';
-            char *end = p - 1;
-            while (end > buf && (*end == '\n' || *end == '\r' || *end == ' ' || *end == '\t')) end--;
-            *(end + 1) = '\0';
-            fprintf(out, "%s,\n%s\n]\n", buf, entry);
-        } else {
-            fprintf(out, "[\n%s\n]\n", entry);
-        }
-    }
-    fclose(out);
-    rename(DENEB_PRINT_HISTORY_PATH ".tmp", DENEB_PRINT_HISTORY_PATH);
+    memset(&entry, 0, sizeof(entry));
+    entry.name = prev->filename;
+    entry.uuid = prev->uuid;
+    entry.source = prev->source;
+    entry.state = deneb_print_completion_state_label(curr->has_error,
+                                                     prev->time_total,
+                                                     prev->time_left);
+    entry.time_total = prev->time_total;
+    entry.time_elapsed = deneb_print_elapsed_seconds(prev->time_total,
+                                                     prev->time_left);
+    entry.progress = prev->progress;
+    entry.started_at = (long long)current_print_start_time;
+    entry.finished_at = (long long)time(NULL);
+    deneb_print_history_append_entry(DENEB_PRINT_HISTORY_PATH, &entry);
     current_print_start_time = 0;
 }
 
@@ -311,6 +309,7 @@ static void update_status_cache(void)
 int backend_zmq_init(void)
 {
     memset(&state, 0, sizeof(state));
+    deneb_print_stop_guard_init(&stop_guard, STOP_INFLIGHT_MS);
     backend_route = deneb_print_backend_route_detect();
 
     zmq_ctx = zmq_ctx_new();
@@ -366,6 +365,7 @@ void backend_zmq_poll(void)
         const char *json = memchr(data, '<', len);
         if (json) {
             deneb_status_payload_t payload;
+            printer_state_t prev = state;
 
             json++; /* skip the '<' */
             if (deneb_status_payload_parse(json, &payload) != 0) {
@@ -384,22 +384,52 @@ void backend_zmq_poll(void)
             state.time_total = payload.time_total;
             state.time_left = payload.time_left;
             state.progress = payload.progress;
-            snprintf(state.filename, sizeof(state.filename), "%s", payload.file);
             snprintf(state.source, sizeof(state.source), "%s", payload.source);
             snprintf(state.uuid, sizeof(state.uuid), "%s", payload.uuid);
             snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
             state.topcap_temp_cur = payload.topcap_temp_cur;
             state.topcap_present = payload.topcap_present != 0;
             state.is_paused = payload.is_paused != 0;
-            state.is_printing =
-                deneb_print_has_active_context(&payload.observation, 0, state.is_paused,
-                                               deneb_print_file_is_candidate(state.filename));
+            state.is_printing = payload.is_printing != 0;
+            {
+                deneb_status_filename_context_t curr_ctx =
+                    filename_context_from_state(&state);
+                deneb_status_filename_context_t prev_ctx =
+                    filename_context_from_state(&prev);
+                deneb_status_payload_resolve_filename(&payload,
+                                                      &curr_ctx,
+                                                      &prev_ctx,
+                                                      retained_print_filename,
+                                                      sizeof(retained_print_filename),
+                                                      state.filename,
+                                                      sizeof(state.filename));
+            }
             if (!state.is_printing) {
                 state.time_total = 0;
                 state.time_left = 0;
                 state.progress = 0;
             }
             state.has_error = payload.has_error != 0;
+
+            {
+                deneb_status_filename_context_t curr_ctx =
+                    filename_context_from_state(&state);
+                deneb_status_filename_context_t prev_ctx =
+                    filename_context_from_state(&prev);
+                if (!deneb_status_payload_should_hold_filename(
+                        &curr_ctx, &prev_ctx) &&
+                state.time_total <= 0 &&
+                state.time_left <= 0 &&
+                state.bed_temp_set <= 0.0f &&
+                state.nozzle_temp_set <= 0.0f &&
+                state.current_req[0] == '\0' &&
+                !state.is_printing &&
+                !state.is_paused &&
+                !prev.is_printing &&
+                !prev.is_paused) {
+                    deneb_print_stop_guard_clear(&stop_guard);
+                }
+            }
 
             state.connected = true;
             struct timespec ts;
@@ -467,6 +497,11 @@ int backend_zmq_send_command(const char *cmd, const char *args)
     int len;
 
     if (!rpc_sock || !cmd || !*cmd) return -1;
+    if (strcmp(cmd, DENEB_COMMAND_VERB_JOB) == 0 && args) {
+        char path[256];
+        if (deneb_command_extract_job_path(args, path, sizeof(path)) == 0)
+            retain_backend_filename(path);
+    }
     if (cmd &&
         (strcmp(cmd, DENEB_COMMAND_VERB_ABORT) == 0 ||
          strcmp(cmd, DENEB_COMMAND_VERB_PAUSE) == 0 ||
@@ -525,6 +560,7 @@ int backend_zmq_send_job(const char *path, const char *source,
         fprintf(stderr, "backend_zmq: job payload too large\n");
         return -1;
     }
+    retain_backend_filename(path);
     return backend_zmq_send_frame(buf, (size_t)len);
 }
 
@@ -550,7 +586,10 @@ int backend_zmq_stop_print(void)
         return -1;
 
     long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
-    if (last_stop_ms >= 0 && (now_ms - last_stop_ms) < 3000)
+    if (deneb_print_stop_guard_inflight(&stop_guard, now_ms,
+                                        state_has_print_context(&state)))
+        return 0;
+    if (!deneb_print_stop_guard_begin(&stop_guard, now_ms))
         return 0;
 
     fprintf(stderr, "deneb-api: stop print command requested\n");
@@ -558,13 +597,13 @@ int backend_zmq_stop_print(void)
 
     if (backend_zmq_abort() < 0)
         rc = -1;
-    else
-        last_stop_ms = now_ms;
 
-    if (rc == 0)
+    if (rc == 0) {
         fprintf(stderr, "deneb-api: stop print command sent successfully\n");
-    else
+    } else {
+        deneb_print_stop_guard_clear(&stop_guard);
         fprintf(stderr, "deneb-api: stop print command completed with one or more failures\n");
+    }
 
     return rc;
 }

@@ -187,6 +187,7 @@ static void test_print_control_contract(void)
 static void test_print_state_rules(void)
 {
     deneb_print_observation_t obs = {0};
+    deneb_print_stop_guard_t stop_guard;
 
     assert(deneb_print_req_is_print(DENEB_COMMAND_VERB_JOB));
     assert(deneb_print_req_is_print(DENEB_PRINT_REQ_PRINTING));
@@ -320,6 +321,17 @@ static void test_print_state_rules(void)
     assert(deneb_print_progress_fraction(50.0f) < 0.51f);
     assert(deneb_print_progress_fraction(-1.0f) == 0.0f);
     assert(deneb_print_progress_fraction(101.0f) == 1.0f);
+
+    deneb_print_stop_guard_init(&stop_guard, 3000);
+    assert(deneb_print_stop_guard_begin(&stop_guard, 1000));
+    assert(!deneb_print_stop_guard_begin(&stop_guard, 1500));
+    assert(deneb_print_stop_guard_inflight(&stop_guard, 2000, 0));
+    assert(deneb_print_stop_guard_inflight(&stop_guard, 5000, 1));
+    assert(!deneb_print_stop_guard_begin(&stop_guard, 5001));
+    assert(!deneb_print_stop_guard_inflight(&stop_guard, 5001, 0));
+    assert(deneb_print_stop_guard_begin(&stop_guard, 5002));
+    deneb_print_stop_guard_clear(&stop_guard);
+    assert(!deneb_print_stop_guard_inflight(&stop_guard, 5003, 1));
 }
 
 static void test_json_field_helpers(void)
@@ -371,6 +383,77 @@ static void test_json_field_helpers(void)
     }
     assert(deneb_json_get_value(json, "missing", value, sizeof(value)) != 0);
     assert(deneb_json_get_int(json, "missing", 7) == 7);
+}
+
+static void test_status_payload_filename_resolution(void)
+{
+    deneb_status_payload_t payload;
+    deneb_status_filename_context_t curr = {0};
+    deneb_status_filename_context_t prev = {0};
+    char retained[128] = "";
+    char out[128] = "";
+
+    assert(deneb_status_payload_parse(
+        "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
+        "\"Ttot\":120,\"Tleft\":90}",
+        &payload) == 0);
+    curr.req = payload.req;
+    curr.filename = "";
+    curr.uuid = payload.uuid;
+    curr.time_total = payload.time_total;
+    curr.time_left = payload.time_left;
+    curr.bed_target = payload.bed_temp_set;
+    curr.nozzle_target = payload.nozzle_temp_set;
+    curr.is_printing = payload.is_printing;
+    curr.is_paused = payload.is_paused;
+    deneb_status_payload_resolve_filename(&payload, &curr, &prev,
+                                          retained, sizeof(retained),
+                                          out, sizeof(out));
+    assert(strcmp(out, "cube.gcode") == 0);
+    assert(strcmp(retained, "cube.gcode") == 0);
+
+    assert(deneb_status_payload_parse(
+        "{\"file\":\"/home/cygnus/marlindriver/gcode/"
+        DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD
+        "\",\"req\":\"PREHEATING\",\"headTset\":200,\"bedTset\":60}",
+        &payload) == 0);
+    prev.req = DENEB_COMMAND_VERB_JOB;
+    prev.filename = "cube.gcode";
+    prev.uuid = "";
+    prev.time_total = 120;
+    prev.time_left = 90;
+    prev.is_printing = 1;
+    curr.req = payload.req;
+    curr.filename = "";
+    curr.uuid = payload.uuid;
+    curr.time_total = payload.time_total;
+    curr.time_left = payload.time_left;
+    curr.bed_target = payload.bed_temp_set;
+    curr.nozzle_target = payload.nozzle_temp_set;
+    curr.is_printing = payload.is_printing;
+    curr.is_paused = payload.is_paused;
+    deneb_status_payload_resolve_filename(&payload, &curr, &prev,
+                                          retained, sizeof(retained),
+                                          out, sizeof(out));
+    assert(strcmp(out, "cube.gcode") == 0);
+
+    assert(deneb_status_payload_parse(
+        "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"ABORT\"}",
+        &payload) == 0);
+    curr.req = payload.req;
+    curr.filename = "cube.gcode";
+    curr.uuid = "";
+    curr.time_total = 120;
+    curr.time_left = 90;
+    curr.bed_target = 0.0f;
+    curr.nozzle_target = 0.0f;
+    curr.is_printing = 0;
+    curr.is_paused = 0;
+    deneb_status_payload_resolve_filename(&payload, &curr, &prev,
+                                          retained, sizeof(retained),
+                                          out, sizeof(out));
+    assert(out[0] == '\0');
+    assert(retained[0] == '\0');
 }
 
 static void test_gcode_command_helpers(void)
@@ -1126,6 +1209,8 @@ static void test_pending_job_file_contract(void)
 {
     const char *path = "/tmp/deneb-pending-job-file-test.json";
     deneb_pending_job_file_t job;
+    deneb_pending_job_action_plan_t plan;
+    deneb_pending_job_upload_check_t upload;
     char raw[1024];
     char display[128];
     size_t raw_len = 0;
@@ -1146,7 +1231,39 @@ static void test_pending_job_file_contract(void)
     assert(strcmp(job.path, "/home/3D/cube.gcode") == 0);
     assert(strcmp(job.origin_name, "PLA") == 0);
     assert(strcmp(job.target_name, "PETG") == 0);
+    assert(deneb_pending_job_file_is_pending(&job));
+    assert(deneb_pending_job_file_has_path(&job));
     assert(deneb_pending_job_file_has_conflict(&job));
+    assert(deneb_pending_job_file_plan_action(&job, DENEB_PRINT_REQ_PREPARE,
+                                              &plan) == 0);
+    assert(plan.kind == DENEB_PENDING_JOB_ACTION_START);
+    assert(strcmp(plan.command, DENEB_COMMAND_VERB_JOB) == 0);
+    assert(strcmp(plan.path, "/home/3D/cube.gcode") == 0);
+    assert(strcmp(plan.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+    assert(strcmp(plan.uuid, DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
+    assert(plan.tracker == 42);
+    assert(plan.mark_handled_after_success);
+    assert(!plan.clear_after_success);
+    assert(deneb_pending_job_file_plan_action(&job, DENEB_COMMAND_VERB_ABORT,
+                                              &plan) == 0);
+    assert(plan.kind == DENEB_PENDING_JOB_ACTION_ABORT);
+    assert(strcmp(plan.command, DENEB_COMMAND_VERB_ABORT) == 0);
+    assert(plan.tracker == 42);
+    assert(!plan.mark_handled_after_success);
+    assert(plan.clear_after_success);
+    assert(deneb_pending_job_file_plan_action(&job, "PAUSE", &plan) != 0);
+    assert(deneb_pending_job_file_check_upload(&job, "/tmp/cube.gcode",
+                                               "fallback.gcode",
+                                               &upload) == 0);
+    assert(upload.status == DENEB_PENDING_JOB_UPLOAD_DUPLICATE);
+    assert(strcmp(upload.path, "/home/3D/cube.gcode") == 0);
+    assert(strcmp(upload.display_name, "Cube") == 0);
+    assert(upload.tracker == 42);
+    assert(deneb_pending_job_file_check_upload(&job, "/tmp/other.gcode",
+                                               "fallback.gcode",
+                                               &upload) == 0);
+    assert(upload.status == DENEB_PENDING_JOB_UPLOAD_BLOCKED);
+    assert(strcmp(upload.path, "/home/3D/cube.gcode") == 0);
     assert(deneb_pending_job_file_same_path(job.path, "/tmp/cube.gcode"));
     assert(deneb_pending_job_file_display_name(&job, display, sizeof(display)) == 0);
     assert(strcmp(display, "Cube") == 0);
@@ -1164,6 +1281,8 @@ static void test_pending_job_file_contract(void)
 
     assert(deneb_pending_job_file_mark_handled(path) == 0);
     assert(deneb_pending_job_file_load(path, &job) == 0);
+    assert(deneb_pending_job_file_is_pending(&job));
+    assert(deneb_pending_job_file_has_path(&job));
     assert(!deneb_pending_job_file_has_conflict(&job));
     assert(deneb_pending_job_file_clear(path) == 0);
     assert(deneb_pending_job_file_load(path, &job) != 0);
@@ -1177,13 +1296,23 @@ static void test_pending_job_file_contract(void)
     assert(deneb_pending_job_file_display_name(&job, display, sizeof(display)) == 0);
     assert(strcmp(display, "fallback.gcode") == 0);
 
+    job.tracker = -1;
+    assert(!deneb_pending_job_file_is_pending(&job));
+    assert(!deneb_pending_job_file_has_path(&job));
+    assert(!deneb_pending_job_file_has_conflict(&job));
+    assert(deneb_pending_job_file_check_upload(&job, "/tmp/fallback.gcode",
+                                               "fallback.gcode",
+                                               &upload) == 0);
+    assert(upload.status == DENEB_PENDING_JOB_UPLOAD_CLEAR);
+
     assert(deneb_pending_job_file_clear(path) == 0);
 }
 
 static void test_print_history_array_reader(void)
 {
     const char *path = "/tmp/deneb-print-history-test.json";
-    char buf[128];
+    char buf[2048];
+    deneb_print_history_entry_t entry;
     FILE *f;
 
     remove(path);
@@ -1210,6 +1339,36 @@ static void test_print_history_array_reader(void)
     fclose(f);
     deneb_json_file_read_array_or_empty(path, buf, 8);
     assert(strcmp(buf, "[]") == 0);
+
+    remove(path);
+    memset(&entry, 0, sizeof(entry));
+    entry.name = "cube\"one.gcode";
+    entry.uuid = "uuid\\one";
+    entry.source = "Cura";
+    entry.state = "completed";
+    entry.time_total = 120;
+    entry.time_elapsed = 115;
+    entry.progress = 99.5f;
+    entry.started_at = 1700000000LL;
+    entry.finished_at = 1700000120LL;
+    assert(deneb_print_history_append_entry(path, &entry) == 0);
+    deneb_json_file_read_array_or_empty(path, buf, sizeof(buf));
+    assert(strstr(buf, "\"name\":\"cube\\\"one.gcode\"") != NULL);
+    assert(strstr(buf, "\"uuid\":\"uuid\\\\one\"") != NULL);
+    assert(strstr(buf, "\"state\":\"completed\"") != NULL);
+    assert(strstr(buf, "\"time_total\":120") != NULL);
+    assert(strstr(buf, "\"time_elapsed\":115") != NULL);
+    assert(strstr(buf, "\"progress\":99.5") != NULL);
+    assert(strstr(buf, "\"started_at\":\"2023-11-14T22:13:20Z\"") != NULL);
+    assert(strstr(buf, "\"finished_at\":\"2023-11-14T22:15:20Z\"") != NULL);
+
+    entry.name = "second.gcode";
+    entry.uuid = "uuid-two";
+    entry.state = "stopped";
+    assert(deneb_print_history_append_entry(path, &entry) == 0);
+    deneb_json_file_read_array_or_empty(path, buf, sizeof(buf));
+    assert(strstr(buf, "\"second.gcode\"") != NULL);
+    assert(strstr(buf, "\"cube\\\"one.gcode\"") != NULL);
     remove(path);
 }
 
@@ -1221,6 +1380,7 @@ int main(void)
     test_print_control_contract();
     test_print_state_rules();
     test_json_field_helpers();
+    test_status_payload_filename_resolution();
     test_gcode_command_helpers();
     test_json_string_helpers();
     test_status_payload_helpers();

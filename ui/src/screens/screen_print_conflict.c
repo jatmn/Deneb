@@ -20,32 +20,43 @@ static lv_obj_t *message_label = NULL;
 static lv_obj_t *detail_label = NULL;
 static lv_obj_t *status_label = NULL;
 static int current_tracker = -1;
-static char pending_path[256];
 
 int print_conflict_has_pending(void)
 {
     deneb_pending_job_file_t job;
-    return deneb_pending_job_file_load_default(&job) == 0 &&
-           deneb_pending_job_file_has_conflict(&job);
+    return deneb_pending_job_file_load_conflict_default(&job) == 0;
 }
 
 static int send_pending_instruction(const char *instruction)
 {
+    deneb_pending_job_file_t job;
+    deneb_pending_job_action_plan_t plan;
+
+    if (deneb_pending_job_file_load_default(&job) != 0 ||
+        deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0)
+        return -1;
+
     fprintf(stderr, "touch-ui: send_pending_instruction action=%s tracker=%d path=%s\n",
-            instruction, current_tracker, pending_path[0] ? pending_path : "(none)");
+            instruction, plan.tracker, plan.path[0] ? plan.path : "(none)");
 
-    if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0)
-        return backend_abort_print();
-
-    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
-        if (!pending_path[0])
+    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
+        if (backend_abort_print() != 0)
             return -1;
-
-        return backend_send_job(pending_path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
-                                DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
+    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
+        if (backend_send_job(plan.path, plan.source, plan.uuid,
+                             0.0f, 0.0f) != 0)
+            return -1;
+    } else {
+        return -1;
     }
 
-    return -1;
+    if (plan.mark_handled_after_success &&
+        deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
+        deneb_pending_job_file_clear_default();
+    if (plan.clear_after_success)
+        deneb_pending_job_file_clear_default();
+
+    return 0;
 }
 
 static void finish_prompt(const char *status_key, int remove_pending)
@@ -63,8 +74,6 @@ static void continue_btn_cb(lv_event_t *e)
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
     if (send_pending_instruction(DENEB_PRINT_REQ_PREPARE) == 0) {
-        if (deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
-            deneb_pending_job_file_clear_default();
         finish_prompt("print_conflict.continuing", 0);
     } else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
@@ -76,7 +85,7 @@ static void cancel_btn_cb(lv_event_t *e)
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.cancelled"));
     if (send_pending_instruction(DENEB_COMMAND_VERB_ABORT) == 0)
-        finish_prompt("print_conflict.cancelled", 1);
+        finish_prompt("print_conflict.cancelled", 0);
     else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
 }
@@ -107,7 +116,6 @@ static void load_prompt_text(void)
     char detail[160];
 
     current_tracker = -1;
-    pending_path[0] = '\0';
     if (deneb_pending_job_file_load_default(&job_file) == 0) {
         if (job_file.name[0])
             snprintf(job, sizeof(job), "%s", job_file.name);
@@ -116,7 +124,6 @@ static void load_prompt_text(void)
         if (job_file.target_name[0])
             snprintf(wanted, sizeof(wanted), "%s", job_file.target_name);
         current_tracker = job_file.tracker;
-        snprintf(pending_path, sizeof(pending_path), "%s", job_file.path);
     }
 
     snprintf(msg, sizeof(msg), locale_get("print_conflict.message_fmt"),

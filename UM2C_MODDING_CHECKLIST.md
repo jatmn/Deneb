@@ -606,6 +606,10 @@ Completed implementation slices:
   cluster API, and backend status cache onto the same shared print-state rules
   so `"idle"`, `"offline"`, `"printing"`, `"paused"`, `"error"`, and
   `"finished"` are not reinterpreted separately by each REST surface.
+- [x] Move stop-request debounce/in-flight ownership into shared print-state
+  rules so touchscreen Stop and web/API Stop use one tested guard for duplicate
+  stop suppression, active abort tracking, and idle reset instead of separate
+  local timing rules.
 - [x] Move the stock empty print value `"none"` into shared print-state rules
   so status parsing, native status serialization, pending display fallbacks,
   command job-path extraction, diagnostics logging, and touchscreen status
@@ -619,6 +623,10 @@ Completed implementation slices:
   `common/print/json_file.*` owns safe JSON-array-or-empty loading for pending
   and history files, while `common/print/print_history.*` owns the Deneb print
   history path used by web API reads and backend print-end history writes.
+- [x] Move print-history append/write ownership into
+  `common/print/print_history.*` so web backend print-completion handling no
+  longer hand-rolls history JSON construction, escaping, array append, temp-file
+  rewrite, or timestamp formatting beside the ZMQ status loop.
 - [x] Move JSON string escaping into `common/print/json_string.*` so native
   pending-job serialization, native status serialization, and web status-cache
   filename JSON all share one escaping rule instead of carrying local copies.
@@ -647,6 +655,11 @@ Completed implementation slices:
   `common/print/status_payload.*` so LCD `backend_comm`, web `backend_zmq`,
   and native tests share one owner for temperature, position, job identity,
   topcap, fault, progress, pause, and active-print derivation from ZMQ JSON.
+- [x] Move stock/native active filename resolution into
+  `common/print/status_payload.*` so LCD `backend_comm` and web `backend_zmq`
+  share pending-job fallback, transient macro filtering, retained print-name
+  behavior, and abort cleanup instead of exposing temporary macro filenames
+  during preheat or conflict continuation.
 - [x] Move uploaded print-file metadata sniffing into
   `common/print/print_job_file.*` so Cura upload registration, conflict
   detection, and future native print-service entry points share one parser for
@@ -718,6 +731,19 @@ Completed implementation slices:
   touchscreen status labels, native pending-job metadata, and web/API printer
   responses all prefer the same pending name, path basename, and `"none"`
   filtering rules.
+- [x] Move pending-job continue/cancel action planning into
+  `common/print/pending_job_file.*` so Cura cluster actions and touchscreen
+  conflict prompts share the same native decision for `PREPARE` -> `JOB`,
+  `ABORT`, handled-state marking, and metadata cleanup while keeping only the
+  transport send in each client.
+- [x] Move pending-job presence/path/conflict predicates into
+  `common/print/pending_job_file.*` so web upload dedupe, Cura cluster pending
+  actions, and touchscreen conflict prompts use one tracker/path/conflict
+  contract instead of local `tracker >= 0` and `path[0]` checks.
+- [x] Move pending-upload dedupe/block decisions into
+  `common/print/pending_job_file.*` so the web print upload endpoint reuses the
+  same native pending-job path/display-name comparison when accepting a
+  duplicate Cura upload or rejecting a different queued job.
 - [x] Move manual-action safety gating into shared native print-state rules so
   web/API motion controls, touchscreen jog controls, temperature actions,
   material moves, and frame-light startup apply all use one connected,

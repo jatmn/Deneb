@@ -91,8 +91,7 @@ static printer_state_t previous_state = {0};
 static int preheat_targets_logged = 0;
 static int preheat_reached_logged = 0;
 static char retained_print_filename[128];
-static long long last_stop_ms = -1;
-static int print_stop_inflight = 0;
+static deneb_print_stop_guard_t stop_guard;
 
 static int configure_socket_linger(void *socket)
 {
@@ -164,31 +163,30 @@ static void set_filename_or_none(char *dst, const char *value)
         dst[0] = '\0';
 }
 
-static int is_transient_print_file(const char *file)
-{
-    return deneb_print_file_is_transient(file);
-}
-
 static void retain_print_filename(const char *filename)
 {
     deneb_pending_job_file_display_value(filename, retained_print_filename,
                                          sizeof(retained_print_filename));
 }
 
-static int should_hold_print_filename(const printer_state_t *curr, const printer_state_t *prev)
+static deneb_status_filename_context_t filename_context_from_state(
+    const printer_state_t *s)
 {
-    if (deneb_print_req_is_abort(curr->current_req))
-        return 0;
+    deneb_status_filename_context_t ctx;
 
-    return (curr->is_printing || curr->is_paused ||
-            prev->is_printing || prev->is_paused ||
-            (curr->time_total > 0 && curr->time_left >= 0) ||
-            (prev->time_total > 0 && prev->time_left >= 0) ||
-            deneb_print_has_temp_targets(curr->bed_temp_set, curr->nozzle_temp_set) ||
-            deneb_print_req_is_lifecycle(curr->current_req) ||
-            deneb_print_req_is_lifecycle(prev->current_req) ||
-            (curr->uuid[0] && prev->uuid[0] &&
-             strcmp(curr->uuid, prev->uuid) == 0));
+    memset(&ctx, 0, sizeof(ctx));
+    if (!s)
+        return ctx;
+    ctx.req = s->current_req;
+    ctx.filename = s->filename;
+    ctx.uuid = s->uuid;
+    ctx.time_total = s->time_total;
+    ctx.time_left = s->time_left;
+    ctx.bed_target = s->bed_temp_set;
+    ctx.nozzle_target = s->nozzle_temp_set;
+    ctx.is_printing = s->is_printing;
+    ctx.is_paused = s->is_paused;
+    return ctx;
 }
 
 static int have_jobs_targets(const printer_state_t *s)
@@ -265,8 +263,9 @@ static void log_status_transition(const printer_state_t *curr)
 static void parse_status(const char *json)
 {
     printer_state_t prev = state;
-    int was_printing = prev.is_printing || prev.is_paused;
     deneb_status_payload_t payload;
+    deneb_status_filename_context_t curr_ctx;
+    deneb_status_filename_context_t prev_ctx;
 
     if (deneb_status_payload_parse(json, &payload) != 0)
         return;
@@ -290,78 +289,15 @@ static void parse_status(const char *json)
     state.is_printing = payload.is_printing != 0;
     state.is_paused = payload.is_paused != 0;
 
-    char pending_name[128];
-    int has_pending_name =
-        (deneb_pending_job_file_default_display_name(pending_name,
-                                                     sizeof(pending_name)) == 0 &&
-         pending_name[0] != '\0');
-    char original_file[128];
+    curr_ctx = filename_context_from_state(&state);
+    prev_ctx = filename_context_from_state(&prev);
+    deneb_status_payload_resolve_filename(&payload, &curr_ctx, &prev_ctx,
+                                          retained_print_filename,
+                                          sizeof(retained_print_filename),
+                                          state.filename,
+                                          sizeof(state.filename));
 
-    if (payload.has_file) {
-        if (deneb_pending_job_file_display_value(payload.file, original_file,
-                                                 sizeof(original_file)) != 0)
-            original_file[0] = '\0';
-
-        if (is_transient_print_file(payload.file)) {
-            if (has_pending_name) {
-                set_filename_or_none(state.filename, pending_name);
-            } else if (retained_print_filename[0]) {
-                set_filename_or_none(state.filename, retained_print_filename);
-            } else if (prev.filename[0] && is_print_file_candidate(prev.filename)) {
-                set_filename_or_none(state.filename, prev.filename);
-            }
-            if (state.filename[0] && strcmp(state.filename, original_file) != 0)
-                fprintf(stderr, "backend: ignored transient print file \"%s\" and kept \"%s\" as active name\n",
-                        original_file, state.filename);
-        } else if (!is_print_file_candidate(payload.file)) {
-            if (retained_print_filename[0] && (!state.filename[0] || !is_print_file_candidate(state.filename))) {
-                set_filename_or_none(state.filename, retained_print_filename);
-            } else if (prev.filename[0] && is_print_file_candidate(prev.filename)) {
-                set_filename_or_none(state.filename, prev.filename);
-            }
-        } else {
-            set_filename_or_none(state.filename, payload.file);
-            retain_print_filename(payload.file);
-        }
-    } else if (should_hold_print_filename(&state, &prev) && has_pending_name) {
-        set_filename_or_none(state.filename, pending_name);
-    } else if (retained_print_filename[0]) {
-        set_filename_or_none(state.filename, retained_print_filename);
-    } else {
-        state.filename[0] = '\0';
-    }
-
-    if (should_hold_print_filename(&state, &prev)) {
-        if (!state.filename[0] && retained_print_filename[0]) {
-            set_filename_or_none(state.filename, retained_print_filename);
-            if (state.filename[0])
-                fprintf(stderr, "backend: restored retained print filename during lifecycle: \"%s\" (req=%s)\n",
-                        state.filename, state.current_req[0] ? state.current_req : "none");
-        }
-
-        if (!state.filename[0] && prev.filename[0] && is_print_file_candidate(prev.filename)) {
-            set_filename_or_none(state.filename, prev.filename);
-            if (state.filename[0])
-                fprintf(stderr, "backend: keeping previous print filename during lifecycle: \"%s\" (req=%s)\n",
-                        state.filename, state.current_req[0] ? state.current_req : "none");
-        }
-    } else if (deneb_print_req_is_abort(state.current_req) ||
-               (was_printing && !state.is_printing && !state.is_paused)) {
-        state.filename[0] = '\0';
-        retained_print_filename[0] = '\0';
-    } else if (!state.filename[0]) {
-        state.filename[0] = '\0';
-    }
-
-    if (state.filename[0] == '\0' &&
-        !payload.has_file &&
-        !should_hold_print_filename(&state, &prev) &&
-        state.bed_temp_set == 0.0f &&
-        state.nozzle_temp_set == 0.0f) {
-        retained_print_filename[0] = '\0';
-    }
-
-    if (!should_hold_print_filename(&state, &prev) &&
+    if (!deneb_status_payload_should_hold_filename(&curr_ctx, &prev_ctx) &&
         state.time_total <= 0 &&
         state.time_left <= 0 &&
         state.bed_temp_set <= 0.0f &&
@@ -371,7 +307,7 @@ static void parse_status(const char *json)
         !state.is_paused &&
         !prev.is_printing &&
         !prev.is_paused) {
-        print_stop_inflight = 0;
+        deneb_print_stop_guard_clear(&stop_guard);
     }
 
     if (state.time_total > 0 && state.time_left >= 0 && !state.is_printing && !state.is_paused) {
@@ -399,6 +335,7 @@ static void parse_status(const char *json)
 int backend_init(void)
 {
     memset(&state, 0, sizeof(state));
+    deneb_print_stop_guard_init(&stop_guard, STOP_INFLIGHT_MS);
     backend_route = deneb_print_backend_route_detect();
 
     zmq_ctx = zmq_ctx_new();
@@ -494,22 +431,14 @@ const char *backend_get_print_backend_command_url(void)
 
 int backend_is_stop_print_inflight(void)
 {
-    if (!print_stop_inflight || last_stop_ms < 0)
-        return 0;
-
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-        return print_stop_inflight;
+        return stop_guard.in_flight;
 
-    long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
-    if ((now_ms - last_stop_ms) < STOP_INFLIGHT_MS)
-        return 1;
-
-    if (state_has_print_context(&state))
-        return 1;
-
-    print_stop_inflight = 0;
-    return 0;
+    return deneb_print_stop_guard_inflight(
+        &stop_guard,
+        (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL,
+        state_has_print_context(&state));
 }
 
 static int send_rpc(const char *msg, size_t len)
@@ -642,21 +571,12 @@ int backend_stop_print(void)
         return -1;
 
     long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
-    if (print_stop_inflight && last_stop_ms >= 0 &&
-        (now_ms - last_stop_ms) < STOP_INFLIGHT_MS)
+    if (!deneb_print_stop_guard_begin(&stop_guard, now_ms))
         return 0;
-
-    if (print_stop_inflight && !backend_is_stop_print_inflight())
-        print_stop_inflight = 0;
-    if (print_stop_inflight)
-        return 0;
-
-    print_stop_inflight = 1;
-    last_stop_ms = now_ms;
 
     fprintf(stderr, "backend: stop print command requested\n");
     if (backend_send_command(DENEB_COMMAND_VERB_ABORT, "{}") != 0) {
-        print_stop_inflight = 0;
+        deneb_print_stop_guard_clear(&stop_guard);
         return -1;
     }
     deneb_pending_job_file_clear_default();

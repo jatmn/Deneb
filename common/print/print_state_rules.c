@@ -316,6 +316,57 @@ int deneb_print_manual_action_allowed(int connected, int has_error,
     return connected && !has_error && !is_paused && !is_active;
 }
 
+void deneb_print_stop_guard_init(deneb_print_stop_guard_t *guard,
+                                 int cooldown_ms)
+{
+    if (!guard)
+        return;
+    guard->last_stop_ms = -1;
+    guard->in_flight = 0;
+    guard->cooldown_ms = cooldown_ms > 0 ? cooldown_ms : 3000;
+}
+
+int deneb_print_stop_guard_begin(deneb_print_stop_guard_t *guard,
+                                 long long now_ms)
+{
+    if (!guard)
+        return 0;
+
+    if (guard->in_flight && guard->last_stop_ms >= 0 &&
+        now_ms - guard->last_stop_ms < guard->cooldown_ms)
+        return 0;
+    if (guard->in_flight)
+        return 0;
+
+    guard->in_flight = 1;
+    guard->last_stop_ms = now_ms;
+    return 1;
+}
+
+int deneb_print_stop_guard_inflight(deneb_print_stop_guard_t *guard,
+                                    long long now_ms,
+                                    int has_active_context)
+{
+    if (!guard || !guard->in_flight || guard->last_stop_ms < 0)
+        return 0;
+
+    if (now_ms - guard->last_stop_ms < guard->cooldown_ms)
+        return 1;
+    if (has_active_context)
+        return 1;
+
+    deneb_print_stop_guard_clear(guard);
+    return 0;
+}
+
+void deneb_print_stop_guard_clear(deneb_print_stop_guard_t *guard)
+{
+    if (!guard)
+        return;
+    guard->in_flight = 0;
+    guard->last_stop_ms = -1;
+}
+
 static void normalize_action_value(char *action)
 {
     char *start;

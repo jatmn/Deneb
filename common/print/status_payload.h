@@ -4,6 +4,8 @@
 
 #include "print_state_rules.h"
 
+#include <stddef.h>
+
 typedef struct {
     float nozzle_temp_cur;
     float nozzle_temp_set;
@@ -29,8 +31,31 @@ typedef struct {
     deneb_print_observation_t observation;
 } deneb_status_payload_t;
 
+typedef struct {
+    const char *req;
+    const char *filename;
+    const char *uuid;
+    int time_total;
+    int time_left;
+    float bed_target;
+    float nozzle_target;
+    int is_printing;
+    int is_paused;
+} deneb_status_filename_context_t;
+
 void deneb_status_payload_init(deneb_status_payload_t *payload);
 int deneb_status_payload_parse(const char *json,
                                deneb_status_payload_t *payload);
+int deneb_status_payload_should_hold_filename(
+    const deneb_status_filename_context_t *curr,
+    const deneb_status_filename_context_t *prev);
+void deneb_status_payload_resolve_filename(
+    const deneb_status_payload_t *payload,
+    const deneb_status_filename_context_t *curr,
+    const deneb_status_filename_context_t *prev,
+    char *retained,
+    size_t retained_sz,
+    char *out,
+    size_t out_sz);
 
 #endif

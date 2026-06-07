@@ -40,6 +40,12 @@ typedef struct {
     float nozzle_target;
 } deneb_print_observation_t;
 
+typedef struct {
+    long long last_stop_ms;
+    int in_flight;
+    int cooldown_ms;
+} deneb_print_stop_guard_t;
+
 int deneb_print_req_is_print(const char *req);
 int deneb_print_req_is_paused(const char *req);
 int deneb_print_req_is_lifecycle(const char *req);
@@ -74,6 +80,14 @@ const char *deneb_print_completion_state_label(int has_error, int time_total,
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active);
 int deneb_print_manual_action_allowed(int connected, int has_error,
                                       int is_paused, int is_active);
+void deneb_print_stop_guard_init(deneb_print_stop_guard_t *guard,
+                                 int cooldown_ms);
+int deneb_print_stop_guard_begin(deneb_print_stop_guard_t *guard,
+                                 long long now_ms);
+int deneb_print_stop_guard_inflight(deneb_print_stop_guard_t *guard,
+                                    long long now_ms,
+                                    int has_active_context);
+void deneb_print_stop_guard_clear(deneb_print_stop_guard_t *guard);
 int deneb_print_action_parse(const char *body, char *out, size_t out_sz);
 int deneb_print_action_is_pause(const char *action);
 int deneb_print_action_is_resume_or_start(const char *action);

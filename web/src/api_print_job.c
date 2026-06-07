@@ -360,19 +360,22 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     }
 
     deneb_pending_job_file_t pending;
-    if (deneb_pending_job_file_load_default(&pending) == 0 && pending.path[0]) {
-        if (deneb_pending_job_file_same_path(pending.path, dest_path)) {
-            const char *pending_name = pending.name[0] ? pending.name : filename;
-
-            fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n", pending.path);
-            write_pending_job_response(resp, pending_name, 200);
+    deneb_pending_job_upload_check_t pending_upload;
+    if (deneb_pending_job_file_load_pending_default(&pending) == 0 &&
+        deneb_pending_job_file_check_upload(&pending, dest_path, filename,
+                                            &pending_upload) == 0 &&
+        pending_upload.status != DENEB_PENDING_JOB_UPLOAD_CLEAR) {
+        if (pending_upload.status == DENEB_PENDING_JOB_UPLOAD_DUPLICATE) {
+            fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n",
+                    pending_upload.path);
+            write_pending_job_response(resp, pending_upload.display_name, 200);
             unlink(gcode_path);
             return;
         }
 
         fprintf(stderr,
                 "deneb-api: print upload rejected because another pending print exists: %s\n",
-                pending.path);
+                pending_upload.path);
         resp->status_code = 409;
         api_http_set_body_str(resp, "{\"message\":\"Another print job is already pending\"}");
         unlink(gcode_path);

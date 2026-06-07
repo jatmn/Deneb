@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job_file.h"
+#include "command_format.h"
 #include "json_field.h"
 #include "print_state_rules.h"
 
@@ -13,6 +14,24 @@ void deneb_pending_job_file_init(deneb_pending_job_file_t *job)
         return;
     memset(job, 0, sizeof(*job));
     job->tracker = -1;
+}
+
+void deneb_pending_job_action_plan_init(deneb_pending_job_action_plan_t *plan)
+{
+    if (!plan)
+        return;
+    memset(plan, 0, sizeof(*plan));
+    plan->kind = DENEB_PENDING_JOB_ACTION_NONE;
+    plan->tracker = -1;
+}
+
+void deneb_pending_job_upload_check_init(deneb_pending_job_upload_check_t *check)
+{
+    if (!check)
+        return;
+    memset(check, 0, sizeof(*check));
+    check->status = DENEB_PENDING_JOB_UPLOAD_CLEAR;
+    check->tracker = -1;
 }
 
 static int read_file(const char *path, char *buf, size_t buf_sz, size_t *out_len)
@@ -95,6 +114,85 @@ int deneb_pending_job_file_load_default(deneb_pending_job_file_t *job)
     return deneb_pending_job_file_load(DENEB_PENDING_JOB_PATH, job);
 }
 
+int deneb_pending_job_file_load_pending_default(deneb_pending_job_file_t *job)
+{
+    return deneb_pending_job_file_load_default(job) == 0 &&
+           deneb_pending_job_file_is_pending(job) ? 0 : -1;
+}
+
+int deneb_pending_job_file_load_conflict_default(deneb_pending_job_file_t *job)
+{
+    return deneb_pending_job_file_load_default(job) == 0 &&
+           deneb_pending_job_file_has_conflict(job) ? 0 : -1;
+}
+
+int deneb_pending_job_file_plan_action(const deneb_pending_job_file_t *job,
+                                       const char *instruction,
+                                       deneb_pending_job_action_plan_t *plan)
+{
+    if (!job || !instruction || !plan || !deneb_pending_job_file_is_pending(job))
+        return -1;
+
+    deneb_pending_job_action_plan_init(plan);
+    plan->tracker = job->tracker;
+
+    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
+        if (!job->path[0])
+            return -1;
+        plan->kind = DENEB_PENDING_JOB_ACTION_START;
+        snprintf(plan->command, sizeof(plan->command), "%s",
+                 DENEB_COMMAND_VERB_JOB);
+        snprintf(plan->path, sizeof(plan->path), "%s", job->path);
+        snprintf(plan->source, sizeof(plan->source), "%s",
+                 DENEB_PRINT_DEFAULT_JOB_SOURCE);
+        snprintf(plan->uuid, sizeof(plan->uuid), "%s",
+                 DENEB_PRINT_DEFAULT_JOB_UUID);
+        plan->mark_handled_after_success = 1;
+        return 0;
+    }
+
+    if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0) {
+        plan->kind = DENEB_PENDING_JOB_ACTION_ABORT;
+        snprintf(plan->command, sizeof(plan->command), "%s",
+                 DENEB_COMMAND_VERB_ABORT);
+        plan->clear_after_success = 1;
+        return 0;
+    }
+
+    return -1;
+}
+
+int deneb_pending_job_file_check_upload(const deneb_pending_job_file_t *job,
+                                        const char *candidate_path,
+                                        const char *fallback_name,
+                                        deneb_pending_job_upload_check_t *check)
+{
+    if (!check)
+        return -1;
+
+    deneb_pending_job_upload_check_init(check);
+    if (!deneb_pending_job_file_has_path(job))
+        return 0;
+
+    check->tracker = job->tracker;
+    snprintf(check->path, sizeof(check->path), "%s", job->path);
+    if (deneb_pending_job_file_display_name(job, check->display_name,
+                                            sizeof(check->display_name)) != 0 &&
+        fallback_name) {
+        snprintf(check->display_name, sizeof(check->display_name), "%s",
+                 fallback_name);
+    }
+
+    if (candidate_path &&
+        deneb_pending_job_file_same_path(job->path, candidate_path)) {
+        check->status = DENEB_PENDING_JOB_UPLOAD_DUPLICATE;
+    } else {
+        check->status = DENEB_PENDING_JOB_UPLOAD_BLOCKED;
+    }
+
+    return 0;
+}
+
 int deneb_pending_job_file_display_value(const char *value, char *out, size_t out_sz)
 {
     const char *base;
@@ -146,8 +244,19 @@ int deneb_pending_job_file_default_display_name(char *out, size_t out_sz)
 
 int deneb_pending_job_file_has_conflict(const deneb_pending_job_file_t *job)
 {
-    return job && job->tracker >= 0 && job->has_configuration_changes &&
+    return deneb_pending_job_file_is_pending(job) &&
+           job->has_configuration_changes &&
            (job->has_material_change || job->has_print_core_change);
+}
+
+int deneb_pending_job_file_is_pending(const deneb_pending_job_file_t *job)
+{
+    return job && job->tracker >= 0;
+}
+
+int deneb_pending_job_file_has_path(const deneb_pending_job_file_t *job)
+{
+    return deneb_pending_job_file_is_pending(job) && job->path[0] != '\0';
 }
 
 int deneb_pending_job_file_same_path(const char *pending_path,
