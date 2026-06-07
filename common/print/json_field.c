@@ -80,6 +80,27 @@ int deneb_json_get_float_value(const char *json, const char *key, float *out)
     return 0;
 }
 
+int deneb_json_get_int_value(const char *json, const char *key, int *out)
+{
+    char tmp[64];
+    char *end = NULL;
+    long parsed;
+
+    if (!out || deneb_json_get_value(json, key, tmp, sizeof(tmp)) != 0)
+        return -1;
+
+    parsed = strtol(tmp, &end, 10);
+    if (end == tmp)
+        return -1;
+    while (*end && is_space((unsigned char)*end))
+        end++;
+    if (*end)
+        return -1;
+
+    *out = (int)parsed;
+    return 0;
+}
+
 int deneb_json_get_bool_value(const char *json, const char *key, int *out)
 {
     char tmp[16];

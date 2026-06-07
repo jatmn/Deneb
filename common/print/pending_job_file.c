@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job_file.h"
+#include "json_field.h"
 
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 void deneb_pending_job_file_init(deneb_pending_job_file_t *job)
@@ -41,61 +41,6 @@ static int read_file(const char *path, char *buf, size_t buf_sz, size_t *out_len
     return 0;
 }
 
-static const char *find_key_value(const char *json, const char *key)
-{
-    char needle[96];
-    const char *p;
-
-    if (!json || !key)
-        return NULL;
-
-    snprintf(needle, sizeof(needle), "\"%s\"", key);
-    p = strstr(json, needle);
-    if (!p)
-        return NULL;
-    p = strchr(p + strlen(needle), ':');
-    if (!p)
-        return NULL;
-    p++;
-    while (*p && isspace((unsigned char)*p))
-        p++;
-    return p;
-}
-
-static int json_get_string(const char *json, const char *key,
-                           char *out, size_t out_sz)
-{
-    const char *p = find_key_value(json, key);
-    size_t i = 0;
-
-    if (!p || !out || out_sz == 0 || *p != '"')
-        return -1;
-    p++;
-
-    while (*p && *p != '"' && i < out_sz - 1) {
-        if (*p == '\\' && p[1])
-            p++;
-        out[i++] = *p++;
-    }
-    if (*p != '"')
-        return -1;
-    out[i] = '\0';
-    return 0;
-}
-
-static int json_get_int(const char *json, const char *key)
-{
-    const char *p = find_key_value(json, key);
-
-    if (!p)
-        return -1;
-    if (*p == '-')
-        return -1;
-    if (!isdigit((unsigned char)*p))
-        return -1;
-    return atoi(p);
-}
-
 int deneb_pending_job_file_read_raw_array(const char *path,
                                           char *out,
                                           size_t out_sz,
@@ -130,11 +75,13 @@ int deneb_pending_job_file_load(const char *path,
     if (deneb_pending_job_file_read_raw_array(path, buf, sizeof(buf), NULL) < 0)
         return -1;
 
-    json_get_string(buf, "path", job->path, sizeof(job->path));
-    json_get_string(buf, "name", job->name, sizeof(job->name));
-    json_get_string(buf, "origin_name", job->origin_name, sizeof(job->origin_name));
-    json_get_string(buf, "target_name", job->target_name, sizeof(job->target_name));
-    job->tracker = json_get_int(buf, "deneb_tracker");
+    deneb_json_get_value(buf, "path", job->path, sizeof(job->path));
+    deneb_json_get_value(buf, "name", job->name, sizeof(job->name));
+    deneb_json_get_value(buf, "origin_name", job->origin_name,
+                         sizeof(job->origin_name));
+    deneb_json_get_value(buf, "target_name", job->target_name,
+                         sizeof(job->target_name));
+    deneb_json_get_int_value(buf, "deneb_tracker", &job->tracker);
     job->has_configuration_changes =
         strstr(buf, "\"configuration_changes_required\"") != NULL;
     job->has_material_change = strstr(buf, "\"material_change\"") != NULL;

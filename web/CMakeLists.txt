@@ -69,6 +69,7 @@ set(DENEB_API_SOURCES
     src/json_writer.c
     src/md5.c
     ../common/print/command_format.c
+    ../common/print/gcode_command.c
     ../common/print/json_field.c
     ../common/print/json_file.c
     ../common/print/json_string.c

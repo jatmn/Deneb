@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "print_state_rules.h"
+#include "command_format.h"
 #include "print_macros.h"
 
 #include <stddef.h>
@@ -73,8 +74,8 @@ static int str_contains_ci(const char *haystack, const char *needle)
 int deneb_print_req_is_print(const char *req)
 {
     static const char *const print_reqs[] = {
-        "JOB", "Print", "Printing",
-        "PAUSE", "Pause", "Paused",
+        DENEB_COMMAND_VERB_JOB, "Print", "Printing",
+        DENEB_COMMAND_VERB_PAUSE, "Pause", "Paused",
         NULL
     };
 
@@ -84,7 +85,7 @@ int deneb_print_req_is_print(const char *req)
 int deneb_print_req_is_paused(const char *req)
 {
     static const char *const paused_reqs[] = {
-        "PAUSE", "Pause", "Paused",
+        DENEB_COMMAND_VERB_PAUSE, "Pause", "Paused",
         NULL
     };
 
@@ -107,7 +108,8 @@ int deneb_print_req_is_lifecycle(const char *req)
 int deneb_print_req_is_abort(const char *req)
 {
     static const char *const abort_reqs[] = {
-        "ABORT", "Abort", "Aborting", "ABORTING", "BUSY_ABORTING",
+        DENEB_COMMAND_VERB_ABORT, "Abort", "Aborting", "ABORTING",
+        "BUSY_ABORTING",
         NULL
     };
 

@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "gcode_command.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -68,8 +69,9 @@ static void set_nozzle_btn_cb(lv_event_t *e)
 
     int temp = lv_slider_get_value(nozzle_slider);
     char gcode[32];
-    snprintf(gcode, sizeof(gcode), "M104 S%d", temp);
-    backend_send_gcode(gcode);
+    if (deneb_gcode_format_nozzle_target((float)temp, gcode,
+                                         sizeof(gcode)) == 0)
+        backend_send_gcode(gcode);
 }
 
 static void set_bed_btn_cb(lv_event_t *e)
@@ -80,8 +82,9 @@ static void set_bed_btn_cb(lv_event_t *e)
 
     int temp = lv_slider_get_value(bed_slider);
     char gcode[32];
-    snprintf(gcode, sizeof(gcode), "M140 S%d", temp);
-    backend_send_gcode(gcode);
+    if (deneb_gcode_format_bed_target((float)temp, gcode,
+                                      sizeof(gcode)) == 0)
+        backend_send_gcode(gcode);
 }
 
 static void cooldown_btn_cb(lv_event_t *e)
@@ -90,9 +93,14 @@ static void cooldown_btn_cb(lv_event_t *e)
     if (!temp_actions_allowed())
         return;
 
-    backend_send_gcode("M104 S0");
-    backend_send_gcode("M140 S0");
-    backend_send_gcode("M106 S0");  /* fan off */
+    {
+        char gcode[32];
+        if (deneb_gcode_format_nozzle_target(0.0f, gcode, sizeof(gcode)) == 0)
+            backend_send_gcode(gcode);
+        if (deneb_gcode_format_bed_target(0.0f, gcode, sizeof(gcode)) == 0)
+            backend_send_gcode(gcode);
+    }
+    backend_send_gcode(DENEB_GCODE_FAN_OFF);
     lv_slider_set_value(nozzle_slider, 0, LV_ANIM_ON);
     lv_slider_set_value(bed_slider, 0, LV_ANIM_ON);
     lv_label_set_text(nozzle_target_label, "0\u00b0C");

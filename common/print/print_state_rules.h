@@ -7,6 +7,7 @@
 #define DENEB_PRINT_DEFAULT_JOB_UUID "deneb-current-job"
 #define DENEB_PRINT_DEFAULT_JOB_NAME "Current print"
 #define DENEB_PRINT_DEFAULT_JOB_SOURCE "Cura"
+#define DENEB_PRINT_USB_JOB_SOURCE "USB"
 
 typedef struct {
     const char *req;

@@ -8,6 +8,7 @@
 #include "locale.h"
 #include "lvgl.h"
 #include "backend_comm.h"
+#include "command_format.h"
 #include "pending_job_file.h"
 #include "print_state_rules.h"
 
@@ -33,7 +34,7 @@ static int send_pending_instruction(const char *instruction)
     fprintf(stderr, "touch-ui: send_pending_instruction action=%s tracker=%d path=%s\n",
             instruction, current_tracker, pending_path[0] ? pending_path : "(none)");
 
-    if (strcmp(instruction, "ABORT") == 0)
+    if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0)
         return backend_abort_print();
 
     if (strcmp(instruction, "PREPARE") == 0) {
@@ -74,7 +75,7 @@ static void cancel_btn_cb(lv_event_t *e)
     (void)e;
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.cancelled"));
-    if (send_pending_instruction("ABORT") == 0)
+    if (send_pending_instruction(DENEB_COMMAND_VERB_ABORT) == 0)
         finish_prompt("print_conflict.cancelled", 1);
     else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));

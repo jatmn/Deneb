@@ -9,8 +9,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define DENEB_PENDING_DEFAULT_OWNER "Cura"
-
 void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
 {
     char display_name[128];
@@ -25,7 +23,7 @@ void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
     snprintf(job->name, sizeof(job->name), "%s", display_name);
     snprintf(job->uuid, sizeof(job->uuid), "%s", DENEB_PRINT_DEFAULT_JOB_UUID);
     snprintf(job->source, sizeof(job->source), "%s", DENEB_PRINT_DEFAULT_JOB_SOURCE);
-    snprintf(job->owner, sizeof(job->owner), "%s", DENEB_PENDING_DEFAULT_OWNER);
+    snprintf(job->owner, sizeof(job->owner), "%s", DENEB_PRINT_DEFAULT_JOB_SOURCE);
     snprintf(job->machine_variant, sizeof(job->machine_variant), "%s", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
     snprintf(job->machine_family, sizeof(job->machine_family), "%s", DENEB_PRINT_PROFILE_MACHINE_FAMILY);
     snprintf(job->material_guid, sizeof(job->material_guid), "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID);

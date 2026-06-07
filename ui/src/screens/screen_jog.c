@@ -9,14 +9,14 @@
  *   move_buildplate_up.gcode   - Move buildplate up
  *   move_buildplate_down.gcode - Move buildplate down
  *
- * Direct GCODE for jogging:
- *   G91 (relative), G1 X10 F3000 (move), G90 (absolute)
- *   G28 X Y (home XY), G28 Z (home Z)
+ * Jogging uses shared Deneb G-code format helpers for relative moves and Z
+ * homing so web/API and touchscreen motion commands stay aligned.
  */
 
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "gcode_command.h"
 #include "print_macros.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
@@ -76,10 +76,12 @@ static void jog_btn_cb(lv_event_t *e)
     int sign = (axis_dir[1] == '+') ? 1 : -1;
 
     const char *lines[3];
-    lines[0] = "G91";
-    snprintf(gcode, sizeof(gcode), "G1 %c%d F3000", axis, step * sign);
+    lines[0] = DENEB_GCODE_RELATIVE_MODE;
+    if (deneb_gcode_format_jog(axis, (float)(step * sign), gcode,
+                               sizeof(gcode)) < 0)
+        return;
     lines[1] = gcode;
-    lines[2] = "G90";
+    lines[2] = DENEB_GCODE_ABSOLUTE_MODE;
     backend_send_gcodes(lines, 3);
 }
 
@@ -96,7 +98,7 @@ static void home_z_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_gcode("G28 Z");
+    backend_send_gcode(DENEB_GCODE_HOME_Z);
 }
 
 static void step_btn_cb(lv_event_t *e)

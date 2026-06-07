@@ -1,31 +1,31 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "config.h"
 #include "command.h"
+#include "command_format.h"
+#include "json_field.h"
 
-#include <ctype.h>
-#include <stdio.h>
 #include <string.h>
 
 static deneb_command_type_t command_type_from_verb(const char *verb)
 {
-    if (strcmp(verb, "GCODE") == 0) return DENEB_COMMAND_GCODE;
-    if (strcmp(verb, "MACRO") == 0) return DENEB_COMMAND_MACRO;
-    if (strcmp(verb, "JOB") == 0) return DENEB_COMMAND_JOB;
-    if (strcmp(verb, "ABORT") == 0) return DENEB_COMMAND_ABORT;
-    if (strcmp(verb, "PAUSE") == 0) return DENEB_COMMAND_PAUSE;
-    if (strcmp(verb, "RESUME") == 0) return DENEB_COMMAND_RESUME;
+    if (strcmp(verb, DENEB_COMMAND_VERB_GCODE) == 0) return DENEB_COMMAND_GCODE;
+    if (strcmp(verb, DENEB_COMMAND_VERB_MACRO) == 0) return DENEB_COMMAND_MACRO;
+    if (strcmp(verb, DENEB_COMMAND_VERB_JOB) == 0) return DENEB_COMMAND_JOB;
+    if (strcmp(verb, DENEB_COMMAND_VERB_ABORT) == 0) return DENEB_COMMAND_ABORT;
+    if (strcmp(verb, DENEB_COMMAND_VERB_PAUSE) == 0) return DENEB_COMMAND_PAUSE;
+    if (strcmp(verb, DENEB_COMMAND_VERB_RESUME) == 0) return DENEB_COMMAND_RESUME;
     return DENEB_COMMAND_UNKNOWN;
 }
 
 const char *deneb_command_type_name(deneb_command_type_t type)
 {
     switch (type) {
-        case DENEB_COMMAND_GCODE: return "GCODE";
-        case DENEB_COMMAND_MACRO: return "MACRO";
-        case DENEB_COMMAND_JOB: return "JOB";
-        case DENEB_COMMAND_ABORT: return "ABORT";
-        case DENEB_COMMAND_PAUSE: return "PAUSE";
-        case DENEB_COMMAND_RESUME: return "RESUME";
+        case DENEB_COMMAND_GCODE: return DENEB_COMMAND_VERB_GCODE;
+        case DENEB_COMMAND_MACRO: return DENEB_COMMAND_VERB_MACRO;
+        case DENEB_COMMAND_JOB: return DENEB_COMMAND_VERB_JOB;
+        case DENEB_COMMAND_ABORT: return DENEB_COMMAND_VERB_ABORT;
+        case DENEB_COMMAND_PAUSE: return DENEB_COMMAND_VERB_PAUSE;
+        case DENEB_COMMAND_RESUME: return DENEB_COMMAND_VERB_RESUME;
         default: return "UNKNOWN";
     }
 }
@@ -33,59 +33,10 @@ const char *deneb_command_type_name(deneb_command_type_t type)
 int deneb_command_extract_json_string(const char *json, const char *key,
                                       char *out, size_t out_sz)
 {
-    char needle[64];
-    const char *p;
-    const char *end;
-    size_t len;
-
     if (!json || !key || !out || out_sz == 0)
         return -1;
     out[0] = '\0';
-
-    snprintf(needle, sizeof(needle), "\"%s\"", key);
-    p = strstr(json, needle);
-    if (!p) return -1;
-    p = strchr(p + strlen(needle), ':');
-    if (!p) return -1;
-    p++;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (*p != '"') return -1;
-    p++;
-
-    end = p;
-    while (*end) {
-        if (*end == '"' && (end == p || end[-1] != '\\'))
-            break;
-        end++;
-    }
-    if (*end != '"') return -1;
-
-    len = (size_t)(end - p);
-    if (len >= out_sz)
-        len = out_sz - 1;
-    memcpy(out, p, len);
-    out[len] = '\0';
-    return len > 0 ? 0 : -1;
-}
-
-static int extract_json_float(const char *json, const char *key, float *out)
-{
-    char needle[64];
-    const char *p;
-
-    if (!json || !key || !out)
-        return -1;
-
-    snprintf(needle, sizeof(needle), "\"%s\"", key);
-    p = strstr(json, needle);
-    if (!p) return -1;
-    p = strchr(p + strlen(needle), ':');
-    if (!p) return -1;
-    p++;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (sscanf(p, "%f", out) == 1)
-        return 0;
-    return -1;
+    return deneb_json_get_value(json, key, out, out_sz);
 }
 
 static int parse_gcode_array(const char *payload, deneb_command_t *out)
@@ -158,12 +109,12 @@ int deneb_command_parse(const char *frame, deneb_command_t *out)
                                          sizeof(out->source));
         deneb_command_extract_json_string(out->payload, "uuid", out->uuid,
                                          sizeof(out->uuid));
-        extract_json_float(out->payload, "bedTset", &out->bed_target);
+        deneb_json_get_float_value(out->payload, "bedTset", &out->bed_target);
         if (out->bed_target <= 0.0f)
-            extract_json_float(out->payload, "bed_temperature", &out->bed_target);
-        extract_json_float(out->payload, "headTset", &out->head_target);
+            deneb_json_get_float_value(out->payload, "bed_temperature", &out->bed_target);
+        deneb_json_get_float_value(out->payload, "headTset", &out->head_target);
         if (out->head_target <= 0.0f)
-            extract_json_float(out->payload, "nozzle_temperature", &out->head_target);
+            deneb_json_get_float_value(out->payload, "nozzle_temperature", &out->head_target);
     } else if (out->type == DENEB_COMMAND_MACRO) {
         deneb_command_extract_json_string(out->payload, "macro", out->macro,
                                          sizeof(out->macro));

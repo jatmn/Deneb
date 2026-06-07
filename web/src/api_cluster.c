@@ -8,6 +8,7 @@
 #include "api_cluster_materials.h"
 #include "api_print_job.h"
 #include "backend_zmq.h"
+#include "command_format.h"
 #include "json_writer.h"
 #include "material_catalog.h"
 #include "pending_job_file.h"
@@ -84,7 +85,7 @@ static int send_pending_job_instruction(const char *instruction)
 
     fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n", instruction, job.tracker);
 
-    if (strcmp(instruction, "ABORT") == 0)
+    if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0)
         return backend_zmq_abort();
 
     if (strcmp(instruction, "PREPARE") == 0) {
@@ -319,7 +320,7 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
         }
         /* Keep pending print metadata visible during preheat / queued startup. */
     } else if (deneb_print_action_is_abort(action) && has_pending_job) {
-        if (send_pending_job_instruction("ABORT") != 0) {
+        if (send_pending_job_instruction(DENEB_COMMAND_VERB_ABORT) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
             return;

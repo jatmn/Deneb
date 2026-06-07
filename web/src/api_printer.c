@@ -6,6 +6,7 @@
 
 #include "api_printer.h"
 #include "backend_zmq.h"
+#include "gcode_command.h"
 #include "json_field.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
@@ -75,14 +76,15 @@ static int valid_position_value(char axis, float value)
 static int send_jog_command(char axis, float distance)
 {
     char move_cmd[64];
-    if (backend_zmq_send_gcode("G91") < 0)
+    if (backend_zmq_send_gcode(DENEB_GCODE_RELATIVE_MODE) < 0)
         return -1;
-    snprintf(move_cmd, sizeof(move_cmd), "G1 %c%.3g F3000", axis, distance);
+    if (deneb_gcode_format_jog(axis, distance, move_cmd, sizeof(move_cmd)) < 0)
+        return -1;
     if (backend_zmq_send_gcode(move_cmd) < 0) {
-        backend_zmq_send_gcode("G90");
+        backend_zmq_send_gcode(DENEB_GCODE_ABSOLUTE_MODE);
         return -1;
     }
-    if (backend_zmq_send_gcode("G90") < 0)
+    if (backend_zmq_send_gcode(DENEB_GCODE_ABSOLUTE_MODE) < 0)
         return -1;
     return 0;
 }
@@ -90,21 +92,13 @@ static int send_jog_command(char axis, float distance)
 static int send_absolute_position_command(int has_x, float x, int has_y, float y, int has_z, float z, float speed)
 {
     char move_cmd[96];
-    int len;
 
-    if (backend_zmq_send_gcode("G90") < 0)
+    if (backend_zmq_send_gcode(DENEB_GCODE_ABSOLUTE_MODE) < 0)
         return -1;
-
-    len = snprintf(move_cmd, sizeof(move_cmd), "G1");
-    if (has_x)
-        len += snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " X%.3g", x);
-    if (has_y)
-        len += snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " Y%.3g", y);
-    if (has_z)
-        len += snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " Z%.3g", z);
-    if (len < 0 || (size_t)len >= sizeof(move_cmd))
+    if (deneb_gcode_format_absolute_position(has_x, x, has_y, y, has_z, z,
+                                             speed, move_cmd,
+                                             sizeof(move_cmd)) < 0)
         return -1;
-    snprintf(move_cmd + len, sizeof(move_cmd) - (size_t)len, " F%.3g", speed * 60.0f);
 
     return backend_zmq_send_gcode(move_cmd);
 }
@@ -115,7 +109,7 @@ static int send_motion_action(const char *action)
         return backend_zmq_send_macro(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD);
     }
     if (strcmp(action, "z_home") == 0) {
-        return backend_zmq_send_gcode("G28 Z");
+        return backend_zmq_send_gcode(DENEB_GCODE_HOME_Z);
     }
     if (strcmp(action, "bed_up") == 0) {
         return backend_zmq_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP);
@@ -666,7 +660,11 @@ void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
     if (temp > 110) temp = 110;
     if (temp < 0) temp = 0;
     char cmd[32];
-    snprintf(cmd, sizeof(cmd), "M140 S%.0f", temp);
+    if (deneb_gcode_format_bed_target(temp, cmd, sizeof(cmd)) < 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
+        return;
+    }
     if (backend_zmq_send_gcode(cmd) < 0) {
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to set temperature\"}");
@@ -686,7 +684,11 @@ void api_printer_hotend_temp_put(const http_request_t *req, http_response_t *res
     if (temp > 260) temp = 260;
     if (temp < 0) temp = 0;
     char cmd[32];
-    snprintf(cmd, sizeof(cmd), "M104 S%.0f", temp);
+    if (deneb_gcode_format_nozzle_target(temp, cmd, sizeof(cmd)) < 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
+        return;
+    }
     if (backend_zmq_send_gcode(cmd) < 0) {
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to set temperature\"}");

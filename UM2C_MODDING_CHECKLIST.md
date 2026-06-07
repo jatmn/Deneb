@@ -632,6 +632,10 @@ Completed implementation slices:
   so LCD and web/API status readers interpret fields such as
   `topcapIsPresent` consistently across numeric, `"yes"`, `"true"`, and
   shorthand truthy payloads.
+- [x] Move strict integer JSON field parsing into `common/print/json_field.*`
+  and route native print-service command parsing plus pending-job metadata
+  loading through the shared JSON and command-verb helpers instead of keeping
+  private parsers/string literals beside the driver rewrite.
 - [x] Move stock/native status payload field parsing into
   `common/print/status_payload.*` so LCD `backend_comm`, web `backend_zmq`,
   and native tests share one owner for temperature, position, job identity,
@@ -673,6 +677,10 @@ Completed implementation slices:
   motion, material load/unload, touchscreen print start, touchscreen conflict
   continue, web motion macros, Cura upload start, and Cura pending-job continue
   no longer each hand-roll stock `COMMAND<json>` payloads.
+- [x] Move repeated touchscreen/web jog, absolute-position, Z-home, heater
+  target, cooldown, and material load/unload G-code string construction into
+  `common/print/gcode_command.*` with host tests so remaining raw G-code
+  commands used by UI/API safety gates share one Deneb-owned formatter.
 - [x] Move stock macro filenames and remaining pending-job display reads into
   shared native helpers: touchscreen jog/leveling and web motion commands now
   use common macro-name constants, the shared print-state rules own transient
@@ -729,6 +737,10 @@ Completed implementation slices:
 - [x] Move Cura/pending native job-start identity onto the shared print-state
   defaults so upload auto-start, Cura cluster continue, and touchscreen
   conflict continue no longer carry their own `"deneb-current-job"` literals.
+- [x] Move touchscreen local USB job-start identity onto the shared print-state
+  source/default UUID helpers so direct file-browser starts no longer carry
+  local `"USB"` / `"0"` command metadata literals, and native pending metadata
+  uses the same shared source default for its Cura owner field.
 - [x] Move print completion history labeling into shared native print-state
   rules so web history and future native diagnostics use the same
   `"completed"`, `"stopped"`, and `"error"` decision.

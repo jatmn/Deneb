@@ -17,6 +17,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "gcode_command.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdint.h>
@@ -150,8 +151,9 @@ static void workflow_timer_cb(lv_timer_t *timer)
 static void send_material_target(void)
 {
     char gcode[32];
-    snprintf(gcode, sizeof(gcode), "M104 S%d", workflow_target_temp);
-    if (backend_send_gcode(gcode) == 0)
+    if (deneb_gcode_format_nozzle_target((float)workflow_target_temp, gcode,
+                                         sizeof(gcode)) == 0 &&
+        backend_send_gcode(gcode) == 0)
         workflow_target_sent = workflow_target_temp > 0;
 }
 
@@ -188,9 +190,11 @@ static void workflow_load_cb(lv_event_t *e)
         return;
     }
 
-    lines[0] = "G92 E0";
-    snprintf(move, sizeof(move), "G1 E%d F%d",
-             MATERIAL_MOVE_DISTANCE, MATERIAL_LOAD_FEEDRATE);
+    lines[0] = DENEB_GCODE_RESET_EXTRUDER;
+    if (deneb_gcode_format_extrude((float)MATERIAL_MOVE_DISTANCE,
+                                   (float)MATERIAL_LOAD_FEEDRATE, move,
+                                   sizeof(move)) < 0)
+        return;
     lines[1] = move;
     if (backend_send_gcodes(lines, 2) == 0) {
         workflow_moving = 1;
@@ -214,9 +218,11 @@ static void workflow_unload_cb(lv_event_t *e)
         return;
     }
 
-    lines[0] = "G92 E0";
-    snprintf(move, sizeof(move), "G1 E-%d F%d",
-             MATERIAL_MOVE_DISTANCE, MATERIAL_UNLOAD_FEEDRATE);
+    lines[0] = DENEB_GCODE_RESET_EXTRUDER;
+    if (deneb_gcode_format_extrude((float)-MATERIAL_MOVE_DISTANCE,
+                                   (float)MATERIAL_UNLOAD_FEEDRATE, move,
+                                   sizeof(move)) < 0)
+        return;
     lines[1] = move;
     if (backend_send_gcodes(lines, 2) == 0) {
         workflow_moving = 1;
@@ -232,8 +238,12 @@ static void workflow_unload_cb(lv_event_t *e)
 static void workflow_cooldown_nozzle(int update_ui)
 {
     workflow_target_temp = 0;
-    if (backend_send_gcode("M104 S0") == 0)
-        workflow_target_sent = 0;
+    {
+        char gcode[32];
+        if (deneb_gcode_format_nozzle_target(0.0f, gcode, sizeof(gcode)) == 0 &&
+            backend_send_gcode(gcode) == 0)
+            workflow_target_sent = 0;
+    }
     if (update_ui && workflow_slider)
         lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_ON);
     if (update_ui)
@@ -243,7 +253,7 @@ static void workflow_cooldown_nozzle(int update_ui)
 static void workflow_stop_material(int update_ui)
 {
     if (workflow_moving)
-        backend_send_gcode("M401");
+        backend_send_gcode(DENEB_GCODE_STOP_MATERIAL);
     workflow_moving = 0;
     workflow_move_done_at = 0;
     workflow_cooldown_nozzle(update_ui);

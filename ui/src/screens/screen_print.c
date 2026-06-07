@@ -8,6 +8,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_state_rules.h"
 #include "lvgl.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -87,7 +88,9 @@ static void start_btn_cb(lv_event_t *e)
         return;
     }
 
-    if (backend_send_job(selected_path, "USB", "0", 0.0f, 0.0f) == 0) {
+    if (backend_send_job(selected_path, DENEB_PRINT_USB_JOB_SOURCE,
+                         deneb_print_job_uuid_or_default(NULL), 0.0f,
+                         0.0f) == 0) {
         lv_label_set_text_fmt(status_msg, locale_get("print.starting_fmt"),
                               selected_name);
         fprintf(stderr, "touch-ui: sent JOB command for %s\n", selected_path);

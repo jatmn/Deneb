@@ -5,6 +5,7 @@
 #include "macro_registry.h"
 #include "motion_policy.h"
 #include "print_control.h"
+#include "print_state_rules.h"
 #include "service.h"
 #include "status_parser.h"
 
@@ -222,7 +223,8 @@ static int handle_job(deneb_print_service_t *svc, const deneb_command_t *cmd,
     snprintf(svc->status.req, sizeof(svc->status.req), "%s",
              deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING));
     snprintf(svc->status.file, sizeof(svc->status.file), "%s", cmd->file);
-    snprintf(svc->status.source, sizeof(svc->status.source), "%s", cmd->source[0] ? cmd->source : "USB");
+    snprintf(svc->status.source, sizeof(svc->status.source), "%s",
+             cmd->source[0] ? cmd->source : DENEB_PRINT_USB_JOB_SOURCE);
     snprintf(svc->status.uuid, sizeof(svc->status.uuid), "%s", cmd->uuid);
     if (cmd->bed_target > 0.0f)
         svc->status.bed_t_set = cmd->bed_target;

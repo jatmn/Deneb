@@ -6,6 +6,7 @@
 #include "diagnostics_log.h"
 #include "error_map.h"
 #include "flow_control.h"
+#include "gcode_command.h"
 #include "heater_wait.h"
 #include "json_field.h"
 #include "json_file.h"
@@ -249,6 +250,7 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_job_uuid_or_default("job-1"), "job-1") == 0);
     assert(strcmp(deneb_print_job_source_or_default(""), DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
     assert(strcmp(deneb_print_job_source_or_default("USB"), "USB") == 0);
+    assert(strcmp(DENEB_PRINT_USB_JOB_SOURCE, "USB") == 0);
     {
         char action[16];
         assert(deneb_print_action_parse("\"Pause\"", action, sizeof(action)) == 0);
@@ -312,6 +314,11 @@ static void test_json_field_helpers(void)
         assert(deneb_json_get_float_value(json, "headTset", &parsed) == 0);
         assert(parsed > 210.4f);
         assert(deneb_json_get_float_value("{\"x\":\"bad\"}", "x", &parsed) != 0);
+        assert(deneb_json_get_int_value("{\"deneb_tracker\":42}",
+                                        "deneb_tracker", &flag) == 0);
+        assert(flag == 42);
+        assert(deneb_json_get_int_value("{\"deneb_tracker\":\"42x\"}",
+                                        "deneb_tracker", &flag) != 0);
         assert(deneb_json_get_bool_value("{\"auth_required\":true}",
                                          "auth_required", &flag) == 0);
         assert(flag == 1);
@@ -335,6 +342,43 @@ static void test_json_field_helpers(void)
     }
     assert(deneb_json_get_value(json, "missing", value, sizeof(value)) != 0);
     assert(deneb_json_get_int(json, "missing", 7) == 7);
+}
+
+static void test_gcode_command_helpers(void)
+{
+    char value[96];
+
+    assert(strcmp(DENEB_GCODE_RELATIVE_MODE, "G91") == 0);
+    assert(strcmp(DENEB_GCODE_ABSOLUTE_MODE, "G90") == 0);
+    assert(strcmp(DENEB_GCODE_HOME_Z, "G28 Z") == 0);
+    assert(strcmp(DENEB_GCODE_FAN_OFF, "M106 S0") == 0);
+    assert(strcmp(DENEB_GCODE_RESET_EXTRUDER, "G92 E0") == 0);
+    assert(strcmp(DENEB_GCODE_STOP_MATERIAL, "M401") == 0);
+
+    assert(deneb_gcode_format_jog('X', 10.0f, value, sizeof(value)) == 0);
+    assert(strcmp(value, "G1 X10 F3000") == 0);
+    assert(deneb_gcode_format_jog('Y', -1.0f, value, sizeof(value)) == 0);
+    assert(strcmp(value, "G1 Y-1 F3000") == 0);
+    assert(deneb_gcode_format_jog('E', 1.0f, value, sizeof(value)) != 0);
+    assert(deneb_gcode_format_extrude(360.0f, 60.0f, value,
+                                      sizeof(value)) == 0);
+    assert(strcmp(value, "G1 E360 F60") == 0);
+    assert(deneb_gcode_format_extrude(-360.0f, 300.0f, value,
+                                      sizeof(value)) == 0);
+    assert(strcmp(value, "G1 E-360 F300") == 0);
+
+    assert(deneb_gcode_format_absolute_position(1, 12.0f, 1, 34.5f,
+                                                0, 0.0f, 150.0f,
+                                                value, sizeof(value)) == 0);
+    assert(strcmp(value, "G1 X12 Y34.5 F9e+03") == 0);
+    assert(deneb_gcode_format_absolute_position(0, 0.0f, 0, 0.0f,
+                                                0, 0.0f, 150.0f,
+                                                value, sizeof(value)) != 0);
+
+    assert(deneb_gcode_format_nozzle_target(210.0f, value, sizeof(value)) == 0);
+    assert(strcmp(value, "M104 S210") == 0);
+    assert(deneb_gcode_format_bed_target(60.0f, value, sizeof(value)) == 0);
+    assert(strcmp(value, "M140 S60") == 0);
 }
 
 static void test_json_string_helpers(void)
@@ -492,6 +536,7 @@ static void test_pending_job_metadata(void)
     assert(strstr(json, "\"name\":\"cube.gcode\"") != NULL);
     assert(strstr(json, "\"path\":\"/home/3D/deneb-uploads/cube.gcode\"") != NULL);
     assert(strstr(json, "\"status\":\"pre_print\"") != NULL);
+    assert(strstr(json, "\"owner\":\"Cura\"") != NULL);
     assert(strstr(json, "\"deneb_tracker\":42") != NULL);
     assert(strstr(json, "\"configuration_changes_required\"") == NULL);
 
@@ -1087,6 +1132,7 @@ int main(void)
     test_print_control_contract();
     test_print_state_rules();
     test_json_field_helpers();
+    test_gcode_command_helpers();
     test_json_string_helpers();
     test_status_payload_helpers();
     test_print_profile_helpers();
