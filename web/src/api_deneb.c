@@ -314,3 +314,61 @@ void api_deneb_config_get(const http_request_t *req, http_response_t *resp)
     json_len(&w);
     api_http_set_body_str(resp, buf);
 }
+
+/* Print jobs: /api/v1/deneb/print_jobs (GET) */
+#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
+#define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
+
+void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
+{
+    (void)req;
+    static char buf[32768];
+    static char file_buf[16384];
+    json_writer_t w;
+    json_init(&w, buf, sizeof(buf));
+    json_obj_open(&w);
+
+    /* Current job */
+    const printer_state_t *s = backend_zmq_get_state();
+    if (s->is_printing || s->is_paused) {
+        int elapsed = s->time_total > 0 ? s->time_total - s->time_left : 0;
+        const char *st = s->has_error ? "error" : (s->is_paused ? "paused" : "printing");
+        json_key(&w, "current");
+        json_obj_open(&w);
+        json_str(&w, "name", s->filename);
+        json_str(&w, "uuid", s->uuid);
+        json_str(&w, "source", s->source);
+        json_str(&w, "state", st);
+        json_float(&w, "progress", s->progress);
+        json_int(&w, "time_total", s->time_total);
+        json_int(&w, "time_elapsed", elapsed);
+        json_int(&w, "time_left", s->time_left);
+        json_obj_close(&w);
+    } else {
+        json_null(&w, "current");
+    }
+
+    /* Pending jobs */
+    strcpy(file_buf, "[]");
+    FILE *pf = fopen(DENEB_CLUSTER_PENDING_JOB, "r");
+    if (pf) {
+        size_t n = fread(file_buf, 1, sizeof(file_buf) - 1, pf);
+        fclose(pf);
+        if (n > 0) file_buf[n] = '\0';
+    }
+    json_raw(&w, "pending", file_buf);
+
+    /* History */
+    strcpy(file_buf, "[]");
+    FILE *hf = fopen(DENEB_PRINT_HISTORY, "r");
+    if (hf) {
+        size_t n = fread(file_buf, 1, sizeof(file_buf) - 1, hf);
+        fclose(hf);
+        if (n > 0) file_buf[n] = '\0';
+    }
+    json_raw(&w, "history", file_buf);
+
+    json_obj_close(&w);
+    json_len(&w);
+    api_http_set_body_str(resp, buf);
+}

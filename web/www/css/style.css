@@ -474,3 +474,96 @@ label { font-size: 13px; color: var(--text-dim); display: block; margin-top: 12p
         align-self: center;
     }
 }
+
+/* Jobs page */
+.jobs-empty {
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+    padding: 12px 0;
+}
+
+.jobs-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.jobs-item:last-child {
+    border-bottom: none;
+}
+
+.jobs-item-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.jobs-item-name {
+    font-weight: 600;
+    font-size: 14px;
+    word-break: break-all;
+}
+
+.jobs-item-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+}
+
+.jobs-item-status {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--bg-input);
+    white-space: nowrap;
+    margin-left: 8px;
+}
+
+.jobs-item-status.printing {
+    background: var(--accent);
+    color: white;
+}
+
+.jobs-item-status.paused {
+    background: var(--warn);
+    color: #1a1a2e;
+}
+
+.jobs-item-status.completed {
+    background: var(--success);
+    color: #1a1a2e;
+}
+
+.jobs-item-status.error {
+    background: var(--error);
+    color: white;
+}
+
+.jobs-progress-bar {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.jobs-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.jobs-current-card .jobs-item {
+    padding: 6px 0;
+}
+
+.jobs-current-card .jobs-item-status {
+    font-size: 12px;
+    padding: 3px 10px;
+}

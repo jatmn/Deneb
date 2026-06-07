@@ -98,6 +98,7 @@ static const api_route_t routes[] = {
     {"POST", "/api/v1/deneb/setup",                                api_deneb_setup_post,      0},
     {"POST", "/api/v1/deneb/auth",                                 api_deneb_auth_post,       0},
     {"GET",  "/api/v1/deneb/config",                               api_deneb_config_get,      0},
+    {"GET",  "/api/v1/deneb/print_jobs",                           api_deneb_print_jobs_get,  0},
 
     /* Cura local cluster API endpoints */
     {"GET",  "/cluster-api/v1/materials",                           api_cluster_materials_get, 0},

@@ -93,6 +93,11 @@ int backend_send_command(const char *cmd, const char *args_json);
 int backend_abort_print(void);
 
 /**
+ * Force-stop the current print, cool down nozzle/bed, and home axes.
+ */
+int backend_stop_print(void);
+
+/**
  * Pause the current print.
  */
 int backend_pause_print(void);

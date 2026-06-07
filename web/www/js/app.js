@@ -74,6 +74,7 @@ Deneb.route = function() {
         /* Load page-specific data */
         if (page === 'about') Deneb.loadAbout();
         if (page === 'settings') Deneb.loadSettings();
+        if (page === 'jobs') Deneb.loadJobs();
     }
 };
 
@@ -93,6 +94,14 @@ Deneb.loadSettings = function() {
     });
 };
 
+Deneb.loadJobs = function() {
+    Deneb.api.get('/deneb/print_jobs').then(function(data) {
+        Deneb.ui.updateJobsPage(data);
+    }).catch(function() {
+        Deneb.ui.updateJobsPage({});
+    });
+};
+
 /* Commands */
 Deneb.cmd = function(action) {
     Deneb.api.request('PUT', '/print_job/state', action).then(function() {
@@ -109,7 +118,7 @@ Deneb.cmdAbort = function() {
 };
 
 Deneb.cmdStop = function() {
-    if (confirm('Force stop print, cooldown heaters, and home all axes?')) {
+    if (confirm(Deneb.i18n.t('web.control.confirm_stop'))) {
         Deneb.api.request('PUT', '/print_job/state', 'stop').then(function() {
             Deneb.api.pollStatus();
         }).catch(function(err) {

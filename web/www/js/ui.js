@@ -39,6 +39,7 @@ Deneb.ui = {
         /* Update status page if visible */
         this.updateStatusPage(data);
         this.updateMotionState();
+        this.updateJobsPage();
     },
 
     updateStatusPage: function(data) {
@@ -88,6 +89,96 @@ Deneb.ui = {
         if (el) {
             el.disabled = !(data && (data.is_printing || data.is_paused));
         }
+    },
+
+    updateJobsPage: function(data) {
+        data = data || {};
+        var status = this.lastStatus || {};
+        var current = data.current;
+        if (!current && (status.is_printing || status.is_paused)) {
+            current = {
+                name: status.name || status.filename,
+                state: status.has_error ? 'error' : (status.is_paused ? 'paused' : 'printing'),
+                progress: this.printProgress(status),
+                time_total: status.time_total || 0,
+                time_elapsed: status.time_total > 0 ? status.time_total - (status.time_left || 0) : 0,
+                time_left: status.time_left || 0
+            };
+        }
+
+        var container = document.getElementById('jobs-current');
+        if (container) {
+            if (current) {
+                var elapsed = this.formatTime(current.time_elapsed || 0);
+                var total = current.time_total > 0 ? this.formatTime(current.time_total) : '--:--';
+                var left = (current.time_left || 0) > 0 ? this.formatTime(current.time_left) : '--:--';
+                var progress = current.progress || 0;
+                container.innerHTML = '<div class="jobs-item">' +
+                    '<div class="jobs-item-main">' +
+                    '<div class="jobs-item-name">' + this.escapeHtml(current.name || 'Unknown') + '</div>' +
+                    '<div class="jobs-item-meta">' + elapsed + ' / ' + total + ' &middot; ' + (Deneb.i18n.t('web.jobs.left') || 'left') + ': ' + left + '</div>' +
+                    '<div class="jobs-progress-bar"><div class="jobs-progress-fill" style="width:' + progress.toFixed(0) + '%"></div></div>' +
+                    '</div>' +
+                    '<div class="jobs-item-status ' + this.escapeHtml(current.state || '') + '">' + this.escapeHtml(current.state || '') + '</div>' +
+                    '</div>';
+            } else {
+                container.innerHTML = '<div class="jobs-empty" data-i18n="web.jobs.no_current">No active print job</div>';
+            }
+        }
+
+        var pending = document.getElementById('jobs-pending');
+        if (pending) {
+            var jobs = data.pending || [];
+            if (jobs.length > 0) {
+                var html = '';
+                for (var i = 0; i < jobs.length; i++) {
+                    var job = jobs[i];
+                    html += '<div class="jobs-item">' +
+                        '<div class="jobs-item-main">' +
+                        '<div class="jobs-item-name">' + this.escapeHtml(job.name || 'Unknown') + '</div>' +
+                        '<div class="jobs-item-meta">' + this.escapeHtml(job.source || '') + '</div>' +
+                        '</div>' +
+                        '<div class="jobs-item-status">pending</div>' +
+                        '</div>';
+                }
+                pending.innerHTML = html;
+            } else {
+                pending.innerHTML = '<div class="jobs-empty" data-i18n="web.jobs.no_pending">No pending jobs</div>';
+            }
+        }
+
+        var history = document.getElementById('jobs-history');
+        if (history) {
+            var hist = data.history || [];
+            if (hist.length > 0) {
+                var html = '';
+                for (var i = hist.length - 1; i >= 0; i--) {
+                    var job = hist[i];
+                    var elapsed = this.formatTime(job.time_elapsed || 0);
+                    var total = job.time_total > 0 ? this.formatTime(job.time_total) : '--:--';
+                    var progress = (job.progress || 0).toFixed(0) + '%';
+                    html += '<div class="jobs-item">' +
+                        '<div class="jobs-item-main">' +
+                        '<div class="jobs-item-name">' + this.escapeHtml(job.name || 'Unknown') + '</div>' +
+                        '<div class="jobs-item-meta">' + elapsed + ' / ' + total + ' &middot; ' + progress + ' &middot; ' + this.escapeHtml(job.source || '') + '</div>' +
+                        '</div>' +
+                        '<div class="jobs-item-status ' + this.escapeHtml(job.state || '') + '">' + this.escapeHtml(job.state || '') + '</div>' +
+                        '</div>';
+                }
+                history.innerHTML = html;
+            } else {
+                history.innerHTML = '<div class="jobs-empty" data-i18n="web.jobs.no_history">No print history yet</div>';
+            }
+        }
+    },
+
+    escapeHtml: function(text) {
+        if (typeof text !== 'string') return '';
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     },
 
     updateMotionState: function() {
@@ -229,6 +320,24 @@ Deneb.ui = {
                 '<div class="status-item"><div class="value" id="pos-x">--</div><div class="label">X</div></div>' +
                 '<div class="status-item"><div class="value" id="pos-y">--</div><div class="label">Y</div></div>' +
                 '<div class="status-item"><div class="value" id="pos-z">--</div><div class="label">Z</div></div>' +
+                '</div></div>';
+        },
+
+        jobs: function() {
+            return '<div class="card jobs-current-card">' +
+                '<div class="card-title" data-i18n="web.jobs.current">Current Print Job</div>' +
+                '<div id="jobs-current">' +
+                '<div class="jobs-empty" data-i18n="web.jobs.no_current">No active print job</div>' +
+                '</div></div>' +
+                '<div class="card">' +
+                '<div class="card-title" data-i18n="web.jobs.pending">Pending Jobs</div>' +
+                '<div id="jobs-pending">' +
+                '<div class="jobs-empty" data-i18n="web.jobs.no_pending">No pending jobs</div>' +
+                '</div></div>' +
+                '<div class="card">' +
+                '<div class="card-title" data-i18n="web.jobs.history">Print History</div>' +
+                '<div id="jobs-history">' +
+                '<div class="jobs-empty" data-i18n="web.jobs.no_history">No print history yet</div>' +
                 '</div></div>';
         },
 

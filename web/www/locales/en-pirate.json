@@ -202,5 +202,18 @@
   "web.setup.skip": "Skip (Open Access)",
   "web.about.title": "About Deneb",
   "web.error.offline": "Printer offline",
-  "web.error.auth_required": "Authentication required"
+  "web.error.auth_required": "Authentication required",
+  "web.nav.jobs": "Jobs",
+  "web.jobs.current": "Current Print Job",
+  "web.jobs.pending": "Pending Jobs",
+  "web.jobs.history": "Print History",
+  "web.jobs.no_current": "No active print job",
+  "web.jobs.no_pending": "No pending jobs",
+  "web.jobs.no_history": "No print history yet",
+  "web.jobs.left": "left",
+  "web.jobs.name": "Name",
+  "web.jobs.status": "Status",
+  "web.jobs.progress": "Progress",
+  "web.jobs.time_elapsed": "Elapsed",
+  "web.jobs.time_total": "Total"
 }

@@ -15,5 +15,6 @@ void api_deneb_locale_get(const http_request_t *req, http_response_t *resp);
 void api_deneb_setup_post(const http_request_t *req, http_response_t *resp);
 void api_deneb_auth_post(const http_request_t *req, http_response_t *resp);
 void api_deneb_config_get(const http_request_t *req, http_response_t *resp);
+void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp);
 
 #endif

@@ -14,6 +14,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include "json_writer.h"
 
 #ifdef BACKEND_ZMQ_STUB
 
@@ -52,6 +53,7 @@ void backend_zmq_deinit(void) {}
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 4
 #define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
+#define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
 
 static void *zmq_ctx = NULL;
 static void *status_sock = NULL;
@@ -62,6 +64,7 @@ static int had_previous_status = 0;
 static printer_state_t previous_state;
 static int preheat_targets_logged = 0;
 static int preheat_reached_logged = 0;
+static time_t current_print_start_time = 0;
 
 static int is_temp_reached(float current, float target)
 {
@@ -78,6 +81,8 @@ static int have_jobs_targets(const printer_state_t *s)
     return (s->bed_temp_set > 0.0f && is_temp_reached(s->bed_temp_cur, s->bed_temp_set)) &&
            (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_temp_cur, s->nozzle_temp_set));
 }
+
+static void append_print_history(const printer_state_t *prev, const printer_state_t *curr);
 
 static void log_status_transition(const printer_state_t *curr)
 {
@@ -105,6 +110,7 @@ static void log_status_transition(const printer_state_t *curr)
         else
             fprintf(stderr, "deneb-api: print stopped before completion (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
 
+        append_print_history(&previous_state, curr);
         preheat_targets_logged = 0;
         preheat_reached_logged = 0;
         if (unlink(DENEB_CLUSTER_PENDING_JOB) == 0)
@@ -115,6 +121,7 @@ static void log_status_transition(const printer_state_t *curr)
         fprintf(stderr, "deneb-api: print started (filename=%s, req=%s)\n",
                 curr->filename[0] ? curr->filename : "(unknown)",
                 curr->current_req[0] ? curr->current_req : "unknown");
+        current_print_start_time = time(NULL);
     }
 
     if (!preheat_targets_logged && has_temp_targets(curr)) {
@@ -137,6 +144,81 @@ static void log_status_transition(const printer_state_t *curr)
     previous_state = *curr;
 }
 
+static void append_print_history(const printer_state_t *prev, const printer_state_t *curr)
+{
+    time_t now = time(NULL);
+    struct tm *tm;
+
+    char started[32] = "";
+    if (current_print_start_time > 0) {
+        time_t t = current_print_start_time;
+        tm = gmtime(&t);
+        if (tm)
+            snprintf(started, sizeof(started), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                     tm->tm_hour, tm->tm_min, tm->tm_sec);
+    }
+
+    char finished[32];
+    time_t t = now;
+    tm = gmtime(&t);
+    if (tm)
+        snprintf(finished, sizeof(finished), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                 tm->tm_hour, tm->tm_min, tm->tm_sec);
+
+    const char *state_str = "stopped";
+    if (curr->has_error)
+        state_str = "error";
+    else if (prev->time_total > 0 && prev->time_left <= 0)
+        state_str = "completed";
+
+    int elapsed = prev->time_total > 0 ? prev->time_total - prev->time_left : 0;
+
+    char entry[1024];
+    json_writer_t w;
+    json_init(&w, entry, sizeof(entry));
+    json_obj_open(&w);
+    json_str(&w, "name", prev->filename);
+    json_str(&w, "uuid", prev->uuid);
+    json_str(&w, "source", prev->source);
+    json_str(&w, "state", state_str);
+    json_int(&w, "time_total", prev->time_total);
+    json_int(&w, "time_elapsed", elapsed);
+    json_float(&w, "progress", prev->progress);
+    json_str(&w, "started_at", started);
+    json_str(&w, "finished_at", finished);
+    json_obj_close(&w);
+
+    char buf[65536] = {0};
+    FILE *f = fopen(DENEB_PRINT_HISTORY, "r");
+    if (f) {
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        if (n > 0) buf[n] = '\0';
+    }
+
+    FILE *out = fopen(DENEB_PRINT_HISTORY ".tmp", "w");
+    if (!out) return;
+
+    if (buf[0] == '\0' || buf[0] != '[') {
+        fprintf(out, "[\n%s\n]\n", entry);
+    } else {
+        char *p = strrchr(buf, ']');
+        if (p && p > buf) {
+            *p = '\0';
+            char *end = p - 1;
+            while (end > buf && (*end == '\n' || *end == '\r' || *end == ' ' || *end == '\t')) end--;
+            *(end + 1) = '\0';
+            fprintf(out, "%s,\n%s\n]\n", buf, entry);
+        } else {
+            fprintf(out, "[\n%s\n]\n", entry);
+        }
+    }
+    fclose(out);
+    rename(DENEB_PRINT_HISTORY ".tmp", DENEB_PRINT_HISTORY);
+    current_print_start_time = 0;
+}
 
 static int create_rpc_socket(void)
 {
