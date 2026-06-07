@@ -527,49 +527,102 @@ void api_cluster_print_jobs_post(const http_request_t *req, http_response_t *res
     api_print_job_post(req, resp);
 }
 
+static void normalize_action_value(char *action)
+{
+    if (!action) return;
+    char *start = action;
+    char *end;
+    while (*start && isspace((unsigned char)*start)) start++;
+    end = start + strlen(start);
+    while (end > start && isspace((unsigned char)end[-1])) end--;
+    if (end <= start) {
+        action[0] = '\0';
+        return;
+    }
+    if ((*start == '"' && end[-1] == '"') || (*start == '\'' && end[-1] == '\'')) {
+        start++;
+        end--;
+    }
+    for (size_t i = 0; start + i < end; i++) {
+        action[i] = (char)tolower((unsigned char)start[i]);
+    }
+    action[end - start] = '\0';
+}
+
 static int parse_action(const char *body, char *out, size_t out_sz)
 {
+    if (!body || !out || out_sz < 2) return -1;
+
     const char *p = strstr(body, "\"action\"");
-    if (!p) return -1;
-    p = strchr(p + 8, ':');
-    if (!p) return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p != '"') return -1;
-    p++;
-    size_t i = 0;
-    while (*p && *p != '"' && i < out_sz - 1) {
-        out[i++] = *p++;
+    if (p) {
+        p = strchr(p + 8, ':');
+        if (!p) return -1;
+        p++;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        if (*p != '"' && *p != '\'') return -1;
+        char quote = *p++;
+        size_t i = 0;
+        while (*p && *p != quote && i < out_sz - 1) {
+            out[i++] = *p++;
+        }
+        if (*p != quote) return -1;
+        out[i] = '\0';
+        normalize_action_value(out);
+        return 0;
     }
-    if (*p != '"') return -1;
+
+    /* Fallback: plain body value such as "print" or {"action":"print"} alternatives */
+    while (*body && isspace((unsigned char)*body)) body++;
+    if (!*body) return -1;
+
+    size_t i = 0;
+    while (*body && !isspace((unsigned char)*body) && *body != '{' && *body != '}' && i < out_sz - 1) {
+        out[i++] = *body++;
+    }
     out[i] = '\0';
-    return 0;
+    normalize_action_value(out);
+    return *out ? 0 : -1;
+}
+
+static int action_wants_prepare(const char *action)
+{
+    return strcmp(action, "print") == 0 || strcmp(action, "resume") == 0 ||
+           strcmp(action, "continue") == 0 || strcmp(action, "force") == 0 ||
+           strcmp(action, "start") == 0;
+}
+
+static int action_is_abort(const char *action)
+{
+    return strcmp(action, "abort") == 0 || strcmp(action, "cancel") == 0;
 }
 
 void api_cluster_print_job_action_put(const http_request_t *req, http_response_t *resp)
 {
     char action[16];
+    int has_pending_job = pending_job_tracker() >= 0;
     if (!strstr(req->path, "/action")) {
         api_cluster_print_job_put(req, resp);
         return;
     }
 
     if (parse_action(req->body, action, sizeof(action)) < 0) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}");
-        return;
+        if (has_pending_job) {
+            snprintf(action, sizeof(action), "print");
+        } else {
+            resp->status_code = 400;
+            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}");
+            return;
+        }
     }
 
-    if ((strcmp(action, "print") == 0 || strcmp(action, "resume") == 0 ||
-         strcmp(action, "continue") == 0 || strcmp(action, "force") == 0) &&
-        pending_job_tracker() >= 0) {
+    if (action_wants_prepare(action) && has_pending_job) {
         if (send_pending_job_instruction("PREPARE") != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
         }
         unlink(DENEB_CLUSTER_PENDING_JOB);
-    } else if (strcmp(action, "abort") == 0 && pending_job_tracker() >= 0) {
+    } else if (action_is_abort(action) && has_pending_job) {
         if (send_pending_job_instruction("ABORT") != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
@@ -582,13 +635,15 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
             return;
         }
-    } else if (strcmp(action, "print") == 0 || strcmp(action, "resume") == 0) {
+    } else if (strcmp(action, "print") == 0 || strcmp(action, "resume") == 0 ||
+               strcmp(action, "continue") == 0 || strcmp(action, "force") == 0 ||
+               strcmp(action, "start") == 0) {
         if (backend_zmq_resume() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to resume print\"}");
             return;
         }
-    } else if (strcmp(action, "abort") == 0) {
+    } else if (action_is_abort(action)) {
         if (backend_zmq_abort() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");

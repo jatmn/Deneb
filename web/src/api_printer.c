@@ -21,6 +21,7 @@
 #define DEFAULT_MOVE_SPEED_MM_S 150.0f
 #define MAX_MOVE_SPEED_MM_S 300.0f
 #define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
+#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 
 static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback)
 {
@@ -48,6 +49,39 @@ static void read_nozzle_id(char *out, size_t out_sz)
     char nozzle[16];
     read_nozzle_size(nozzle, sizeof(nozzle));
     snprintf(out, out_sz, "%s mm", nozzle);
+}
+
+static int read_cluster_pending_name(char *out, size_t out_sz)
+{
+    if (!out_sz) return -1;
+    out[0] = '\0';
+
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f) return -1;
+
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0) return -1;
+    buf[n] = '\0';
+
+    const char *p = strstr(buf, "\"name\"");
+    if (!p) return -1;
+
+    p = strchr(p + 6, ':');
+    if (!p) return -1;
+    p++;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (*p != '"' && *p != '\'') return -1;
+    char quote = *p++;
+
+    size_t i = 0;
+    while (*p && *p != quote && i < out_sz - 1) {
+        out[i++] = *p++;
+    }
+    if (*p != quote) return -1;
+    out[i] = '\0';
+    return 0;
 }
 
 static int motion_allowed(const printer_state_t *s)
@@ -345,7 +379,14 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
     json_float(&w, "progress", s->progress);
     json_int(&w, "time_total", s->time_total);
     json_int(&w, "time_left", s->time_left);
-    json_str(&w, "filename", s->filename);
+    {
+        const char *filename = s->filename;
+        char pending_name[128];
+        if (!filename[0] && read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 && pending_name[0]) {
+            filename = pending_name;
+        }
+        json_str(&w, "filename", filename);
+    }
 
     /* diagnostics */
     json_key(&w, "diagnostics");
