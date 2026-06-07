@@ -199,6 +199,16 @@ static int read_cluster_pending_name(char *out, size_t out_sz)
     return -1;
 }
 
+static int state_has_print_name(const printer_state_t *s)
+{
+    if (is_print_job_filename(s->filename))
+        return 1;
+
+    char pending_name[128];
+    return read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 &&
+           is_print_job_filename(pending_name);
+}
+
 static int has_active_print_context(const printer_state_t *s, int has_print_name)
 {
     return s->is_printing ||
@@ -209,6 +219,19 @@ static int has_active_print_context(const printer_state_t *s, int has_print_name
            has_print_name ||
            ((s->bed_temp_set > 0.0f || s->nozzle_temp_set > 0.0f) &&
             !is_idle_like_req(s->current_req));
+}
+
+static int has_heat_targets(const printer_state_t *s)
+{
+    return s->bed_temp_set > 0.0f || s->nozzle_temp_set > 0.0f;
+}
+
+static int has_preparing_print_context(const printer_state_t *s, int has_print_name)
+{
+    return has_print_name &&
+           (is_print_lifecycle_req(s->current_req) ||
+            has_heat_targets(s) ||
+            (!is_idle_like_req(s->current_req) && s->current_req[0] != '\0'));
 }
 
 static int has_stoppable_print_context(const printer_state_t *s, int has_print_name)
@@ -222,7 +245,9 @@ static int has_stoppable_print_context(const printer_state_t *s, int has_print_n
     if (s->is_printing || s->time_total > 0 || s->time_left > 0)
         return 1;
 
-    return is_stoppable_print_req(s->current_req);
+    return is_stoppable_print_req(s->current_req) ||
+           is_print_lifecycle_req(s->current_req) ||
+           has_heat_targets(s);
 }
 
 static void clear_active_print_context_if_idle(const printer_state_t *s, int has_print_name)
@@ -251,7 +276,7 @@ static void stop_btn_cb(lv_event_t *e)
 {
     (void)e;
     const printer_state_t *s = backend_get_state();
-    if (!has_stoppable_print_context(s, is_print_job_filename(s->filename)) ||
+    if (!has_stoppable_print_context(s, state_has_print_name(s)) ||
         backend_is_stop_print_inflight())
         return;
 
@@ -330,7 +355,7 @@ static void update_timer_cb(lv_timer_t *timer)
     /* Printer state */
     if (s->is_paused)
         lv_label_set_text(state_label, locale_get("status.paused"));
-    else if (is_print_lifecycle_req(s->current_req) && !s->time_total)
+    else if (has_preparing_print_context(s, has_print_name) && !s->time_total)
         lv_label_set_text(state_label, locale_get("status.preparing"));
     else if (s->is_printing)
         lv_label_set_text(state_label, locale_get("status.printing"));
