@@ -1,6 +1,6 @@
 # Deneb Web UI
 
-A lightweight web interface for the UltiMaker 2+ Connect running Deneb firmware. It provides local status and controls plus an initial **UltiMaker REST API v1**-shaped surface intended for future Cura LAN printing compatibility.
+A lightweight web interface for the UltiMaker 2+ Connect running Deneb firmware. It provides local status and controls plus UltiMaker REST API v1-shaped and Cura local cluster API compatibility surfaces.
 
 ## Architecture
 
@@ -17,6 +17,9 @@ Browser/Cura  --->  lighttpd (:80)  --->  deneb-api (Unix socket)
 - **deneb-api** implements the UltiMaker REST API v1, connecting to the stock coordinator via ZeroMQ
 - **deneb-mdns** advertises the printer on `_ultimaker._tcp.local.` for Cura's local discovery browser
 - **Static web UI** is vanilla HTML/CSS/JS (~25 KB), no frameworks
+
+For the Cura-specific discovery, plugin, and upload/start behavior, see
+[Cura integration](CURA_INTEGRATION.md).
 
 ## Resource Budget
 
@@ -50,10 +53,13 @@ Implemented local API surface:
 - `GET /api/v1/system` — system information
 - `POST /api/v1/print_job` — initial multipart upload and start handler
 - `PUT /api/v1/print_job/state` — pause/resume/cancel
+- `GET /cluster-api/v1/materials` and `POST /cluster-api/v1/materials` — Cura material compatibility data/import
 - `GET /cluster-api/v1/printers` — Cura local-network single-printer status
-- `GET /cluster-api/v1/print_jobs` — Cura local-network active print job status
-- `POST /cluster-api/v1/print_jobs/` — Cura local-network multipart upload/start handler; intentionally unauthenticated for stock Cura compatibility
-- `PUT /cluster-api/v1/print_jobs/{uuid}/action` — Cura pause/resume/abort bridge; intentionally unauthenticated for stock Cura compatibility
+- `GET /cluster-api/v1/print_jobs` — Cura local-network active or pending print job status
+- `POST /cluster-api/v1/print_jobs` and `POST /cluster-api/v1/print_jobs/` — Cura local-network multipart upload/start handler; intentionally unauthenticated for stock Cura compatibility
+- `PUT /cluster-api/v1/print_jobs/{uuid}/action` — Cura pause/resume/abort/print bridge; intentionally unauthenticated for stock Cura compatibility
+- `DELETE /cluster-api/v1/print_jobs/{uuid}` — Cura abort/delete bridge
+- `GET /cluster-api/v1/print_jobs/{uuid}/preview` — preview placeholder endpoint
 
 `deneb-mdns` advertises `_ultimaker._tcp.local.` with `type=printer`, the
 printer name/address, a configurable `machine` TXT value, and a Cura Connect
@@ -83,12 +89,12 @@ install flow, then restart Cura so the plugin can register its resources before
 network discovery loads machine metadata.
 
 The Cura local-network path implements the single-printer cluster endpoints that
-Cura 5.13 polls for monitor, upload, and basic print-job actions. Stock Cura
-does not send Deneb session credentials on these cluster write requests, so
-Deneb accepts cluster upload/control without Deneb auth to preserve stock Cura
-LAN behavior. The UM API v1 write endpoints and Deneb web UI remain protected by
-Open Access or Deneb auth. Validation against current Cura behavior on real
-hardware remains open.
+Cura 5.13 polls for monitor, upload, materials, and basic print-job actions.
+Stock Cura does not send Deneb session credentials on these cluster write
+requests, so Deneb accepts cluster upload/control without Deneb auth to preserve
+stock Cura LAN behavior. The UM API v1 write endpoints and Deneb web UI remain
+protected by Open Access or Deneb auth. Validation against current Cura behavior
+on real hardware remains open.
 
 ## Current Limits
 
@@ -98,6 +104,10 @@ hardware remains open.
   local cluster API, but local storage behavior, free-space checks,
   USB-removal-safe printing, and real Cura upload/start testing remain release
   blockers.
+- Conflict continue/cancel and pending preheat visibility currently use
+  compatibility shims around the stock Python coordinator. These should be
+  audited during the native `deneb-printsvc` rewrite instead of treated as final
+  architecture.
 - Cura discovery requires installing the Deneb Cura plugin until Cura exposes a
   BOM-backed UM2+ Connect local network definition.
 - Motion controls are intentionally limited to guarded X/Y/Z movement; extruder

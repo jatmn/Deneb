@@ -30,7 +30,7 @@ Deneb now exposes:
 
 | Stock area | Stock options | Deneb status |
 | --- | --- | --- |
-| Print | Select from USB, browse, preview, prepare, pause/resume/abort, conflict/error pages | Partial. USB browse, file selection, and explicit start controls exist; thumbnail preview/conflict flows are not implemented. |
+| Print | Select from USB, browse, preview, prepare, pause/resume/abort, conflict/error pages | Partial. USB browse, file selection, explicit start controls, pause/resume/abort controls, preheat Stop availability, mismatch continue handling, and abort status cleanup exist. Thumbnail preview and richer stock conflict/error pages are still incomplete. |
 | Materials | Change material, load material, unload material, set material, move material; import material appears inside Set Material as "Add a new material" | Mostly present. Load/unload/change/move shortcuts exist; Set Material writes stock Generic material GUIDs; Import Material invokes the stock USB profile importer. The deeper stock brand/type/color browser is still richer. Deneb currently also exposes Import Material as a top-level shortcut. |
 | Maintenance | Set nozzle temperature, update firmware, move build plate, level build plate, diagnostics/save logs | Mostly present. Temperature, Deneb package update from USB, move build plate, leveling macro steps, diagnostics telemetry, Air Manager fan toggle, and stock-shaped log export exist. Deneb intentionally does not install stock UltiMaker firmware updates. |
 | Settings | Set nozzle size, network configuration, Digital Factory, frame lighting, factory reset, about | Mostly present. Nozzle size, network info, USB WiFi/Ethernet config import, Digital Factory status/restart/disconnect/PIN pairing, frame lighting, factory reset, language, and about exist. |
@@ -49,7 +49,8 @@ Deneb now exposes:
 
    Stock has richer UFP/print preparation handling, including thumbnails and
    material/nozzle conflict pages. Deneb now requires selecting a file before
-   starting it, but it still does not reproduce those richer stock flows.
+   starting it and handles mismatch continue/abort state transitions, but it
+   still does not reproduce those richer stock flows.
 
 ## Implemented Native Replacements
 
@@ -90,6 +91,13 @@ Deneb now exposes:
 
    Deneb installs a small Gershwin IPC bridge and exposes Pair / Show PIN,
    restart, and disconnect controls from the native Digital Factory screen.
+
+7. Print-state controls
+
+   Deneb now gates Stop by real print lifecycle state: Stop is disabled on an
+   idle boot/home screen, enabled during preheat as well as active printing,
+   and cleared after abort completion. Status returns from mismatch/continue
+   and abort paths instead of staying stuck on stale Idle or Printing labels.
 
 ## Suggested Implementation Order
 

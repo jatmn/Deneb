@@ -10,15 +10,15 @@ Current execution order:
 2. Use the established SSH/bootstrap and `.deneb` package lanes for hardware validation.
 3. Close release-critical touchscreen parity gaps: print preparation, material/profile depth, recovery/update states, and startup readiness.
 4. Keep resource reduction measurable, especially around the remaining Python backend services.
-5. Harden web/API controls, rollback/signing, local storage printing, and Cura discovery/upload after the UI/status baseline is stable.
+5. Harden web/API controls, rollback/signing, local storage printing, Cura validation, and the native `marlindriver` replacement plan after the UI/status baseline is stable.
 
 Current open focus:
 
 - Hardware-proof the 20-screen touchscreen catalog against real idle, printing, paused, error, material, update, network, and recovery states.
 - Finish `.deneb` rollback/signature verification before treating packages as stable releases.
 - Measure print/update/upload/diagnostics resource behavior, not just idle UI memory.
-- Decide the next backend reduction target; current idle RAM is dominated by stock `coordinator.py` and `print_service.py`.
-- Validate Cura discovery against the new mDNS advertiser before moving on to upload/start compatibility.
+- Validate Cura discovery, upload/start, pause/resume/abort, and pending-job visibility against current Cura builds on real hardware.
+- Treat `marlindriver` / `print_service.py` as the next dedicated backend reduction target, while also auditing Deneb's current web/touch/API print-control shims for deduplication.
 
 ## 0. Project Identity
 
@@ -380,18 +380,22 @@ Current open focus:
 
 ### LAN Printing For Cura
 
-- [ ] Pull or inspect current UltiMaker Cura source, especially `UM3NetworkPrinting`, as source of truth.
-- [ ] Inspect S-series/local cluster API docs and compare with Cura client behavior.
-- [ ] Produce a compatibility matrix of required Cura endpoints, fields, request formats, and response formats.
-- [x] Implement mDNS/zeroconf advertisement so Cura's local network scanner can discover the printer. (`deneb-mdns`, hardware/Cura-version validation still required)
-- [ ] Validate the advertised `machine` TXT value against current Cura builds so UM2+ Connect is recognized without selecting the wrong printer profile.
-- [ ] Implement enough `/cluster-api/v1/` to support detection and status first.
-- [ ] Keep LAN API implementation lightweight and mostly idle when no Cura client is connected.
+- [x] Pull or inspect current UltiMaker Cura source, especially `UM3NetworkPrinting`, as source of truth.
+- [x] Inspect S-series/local cluster API docs and compare with Cura client behavior.
+- [x] Produce a compatibility matrix of required Cura endpoints, fields, request formats, and response formats. (Captured in docs/WEB_UI.md and docs/CURA_INTEGRATION.md; keep expanding with live Cura evidence.)
+- [x] Implement mDNS/zeroconf advertisement so Cura's local network scanner can discover the printer. (`deneb-mdns`)
+- [x] Add Deneb Cura network discovery plugin so `deneb_um2c` maps to Cura's stock `ultimaker2_plus_connect` profile.
+- [ ] Validate the advertised `machine` TXT value and Cura plugin against current Cura builds so UM2+ Connect is recognized without selecting the wrong printer profile.
+- [x] Implement enough `/cluster-api/v1/` to support detection and status first.
+- [x] Keep LAN API implementation lightweight and mostly idle when no Cura client is connected.
 - [ ] Prefer implementing LAN printing by replacing or reusing existing communication paths instead of adding a heavy always-on stack.
-- [ ] Avoid buffering full uploads in memory; stream uploads to local storage with size/free-space checks.
-- [ ] Implement receiving print jobs from Cura after detection/status is stable.
-- [ ] Map uploaded Cura jobs into the existing firmware print flow instead of bypassing validation when possible.
-- [ ] Support pause, resume, abort/cancel, job status, progress, time remaining, temperatures, and printer errors / ER codes.
+- [x] Avoid buffering full uploads in memory; stream uploads to local storage.
+- [ ] Add complete free-space and upload failure-mode checks.
+- [x] Implement receiving print jobs from Cura after detection/status is stable.
+- [x] Map uploaded Cura jobs into the existing firmware print flow instead of bypassing validation when possible, using pending-job metadata during validation/conflict/preheat.
+- [x] Support pause, resume, abort/cancel, job status, progress, time remaining, temperatures, and printer errors / ER codes.
+- [ ] Validate Cura upload/start, pause/resume, abort/cancel, and pending-job status on real hardware.
+- [ ] Audit the temporary Python/Gershwin conflict/preheat bridges during the native `deneb-printsvc` rewrite so these shims do not become permanent architecture.
 - [ ] Preserve existing UltiMaker ER code values in LAN API responses where applicable.
 - [ ] Investigate queue behavior separately. Stock backend appears single-active-job, so any queue is likely our layer.
 - [ ] Research whether camera endpoints are relevant. Do not assume camera support exists on this hardware until firmware and hardware evidence confirm it.
@@ -517,7 +521,41 @@ Current open focus:
 - [ ] Add Deneb-specific remote-control logs only for Deneb web UI/API/LAN layers, correlation to backend calls, authorization decisions, and gaps not covered by stock logs.
 - [ ] Provide a physical-touchscreen-visible indication when remote control is active.
 
-## 8. Motion Controller / Marlin Firmware
+## 8. De-Python marlindriver / Native Print Service
+
+Resource rationale and measurement guardrails live in
+[docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets);
+this section is the milestone checklist for that same work.
+
+- [ ] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
+- [ ] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
+- [ ] Preserve the stock print-service IPC contract first: raw ZMQ status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, topic `10001`, and `COMMAND<json>` request framing.
+- [ ] Keep coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory assumptions compatible during the first replacement stage.
+- [ ] Audit every Deneb integration that currently patches around the stock Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`, `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata files, direct macro calls, direct raw G-code calls, and duplicated status classification.
+- [ ] Decide for each integration whether it remains a client of the native service, moves into `deneb-printsvc`, or becomes a shared Deneb print-control library/API.
+- [ ] Avoid preserving patchwork solely for compatibility with a bad stock-driver shape; use compatibility shims only as temporary migration boundaries with removal criteria.
+- [ ] Define one Deneb-owned print-control contract for web UI, touchscreen UI, Cura LAN/API, and future services so they do not each reinterpret print state, pending jobs, abort state, preheat state, and macro safety differently.
+- [ ] Deduplicate print-control logic as part of the rewrite: status classification, print/pending job metadata, command formatting, macro lookup, safe motion policy, heat-state decisions, pause/resume/abort semantics, and error mapping should each have one owner.
+- [ ] Prefer shared native helpers or a single `deneb-printsvc` API over copy-pasted logic between LCD UI, web UI, REST API, Cura cluster API, and diagnostics.
+- [ ] Add tests around shared print-control helpers before removing duplicate callers so web/touch/API behavior stays aligned during migration.
+- [ ] Keep the native driver source tree intentionally modular; do not create a few thousand-line catch-all files.
+- [ ] Start with named source units for clear responsibilities, for example: service main/init, ZMQ IPC, print-control API, serial transport, Marlin packet framing, CRC, status parsing, command parsing, G-code stream reader, macro registry, job queue, heater waits, pause/resume state, abort/finalize motion policy, diagnostics/logging, and test fakes.
+- [ ] Require new `deneb-printsvc` files to have narrow public headers and focused tests where practical, especially for packet framing, status parsing, G-code streaming, and state-machine behavior.
+- [ ] Port the Marlin serial packet layer cleanly: `/dev/ttyS1`, 250000 baud, CRC16 packet generation, CRC8 sync parsing, sequence numbers, ACK/reject handling, resend queues, and flow-control limits.
+- [ ] Port the status parser for M105, M114, G28 home-distance, M115 version data, Marlin log messages, and Marlin fault messages.
+- [ ] Port bounded G-code streaming for `JOB`, `MACRO`, and raw `GCODE` without loading whole print jobs into RAM.
+- [ ] Preserve macro-file compatibility with `/home/cygnus/marlindriver/gcode/` while allowing safer Deneb-owned macro overrides later.
+- [ ] Re-design abort, pause, resume, and print-finish behavior deliberately instead of blindly copying stock motion sequences.
+- [ ] Fix unsafe abort cleanup as part of the native design: no duplicate homing, no unsafe XY motion into unknown print geometry, and clear status transitions after cancellation.
+- [ ] Preserve startup motion-controller firmware verification/programming behavior or document and test a safer replacement.
+- [ ] Add a lab-only init switch so stock `printserver` can be restored without reflashing if native print service fails.
+- [ ] Add side-by-side logging for stock versus native service status fields, serial ACK/reject rates, resend counts, queue depth, planner starvation indicators, and command latency.
+- [ ] Add host tests for CRC, packet framing, status parsing, G-code stream replacement, command parsing, and state transitions.
+- [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
+- [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
+- [ ] Do not disable stock `printserver` by default until the native service has rollback, diagnostics, and repeated live print validation.
+
+## 9. Motion Controller / Marlin Firmware
 
 - [ ] Inventory the bundled motion-controller firmware hex and identify its upstream base/version.
 - [ ] Locate or reconstruct the corresponding source for the current UltiMaker-modified Marlin firmware before changing it.
@@ -531,7 +569,7 @@ Current open focus:
 - [ ] Treat motion firmware changes as high risk. Validate thermals, endstops, motor directions, acceleration, jerk/junction settings, extrusion, and safety cutoffs.
 - [ ] Do not redistribute a modified binary without satisfying the license obligations for the motion firmware source.
 
-## 9. Open Research Items
+## 10. Open Research Items
 
 - [ ] Confirm exact hardware specs from device or authoritative docs: CPU, RAM, flash, local SD/eMMC/storage layout, and available free space.
 - [ ] Confirm practical resource ceilings under load: usable free RAM, CPU headroom while printing, flash write endurance concerns, and local storage throughput.
@@ -542,7 +580,7 @@ Current open focus:
 - [ ] Confirm whether adding packages is practical within flash/storage constraints.
 - [ ] Confirm whether Python 3.6 runtime is acceptable for new services or whether to ship static/native components.
 
-## 10. Milestones
+## 11. Milestones
 
 - [x] Milestone 0: public repo scaffold with legal boundary, no vendor files, `.gitignore`, and documentation.
 - [x] Milestone 1: SSH-only bootstrap `.img` plan, build, install, and login verification.
@@ -553,18 +591,19 @@ Current open focus:
 - [x] Milestone 6: status-only web UI using existing firmware status channels.
 - [x] Milestone 7: web UI controls for pause/resume/cancel/manual heat with safety gates.
 - [ ] Milestone 8: local storage print-flow verification and USB-removal-safe behavior.
-- [ ] Milestone 9: Cura discovery/status compatibility. (`deneb-mdns` exists; current Cura hardware validation and status compatibility remain pending)
-- [ ] Milestone 10: Cura LAN upload/start print compatibility.
+- [ ] Milestone 9: Cura discovery/status compatibility. (`deneb-mdns`, cluster status endpoints, and Cura plugin exist; current Cura/hardware validation remains pending)
+- [ ] Milestone 10: Cura LAN upload/start print compatibility. (Upload/start/action paths exist; free-space, storage safety, and real Cura/hardware validation remain pending)
 - [ ] Milestone 11: generic slicer G-code support with thumbnails.
 - [ ] Milestone 12: print-quality degradation root-cause fix.
-- [ ] Milestone 13: Marlin modernization feasibility branch.
-- [ ] Milestone 14: OS/service inventory, OpenWrt-specific security review, and resource-reduction plan.
-- [ ] Milestone 15: targeted OS/service updates or replacements with rollback.
-- [ ] Milestone 16: release package builder exists; signed Stable/Nightly GitHub artifact automation remains pending.
-- [ ] Milestone 17: in-device update checker pointed at our GitHub Releases.
-- [ ] Milestone 18: boot-time profiling and startup progress screen.
+- [ ] Milestone 13: de-python `marlindriver` with native `deneb-printsvc` experimental replacement. See [Section 8](#8-de-python-marlindriver--native-print-service) and [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets).
+- [ ] Milestone 14: Marlin modernization feasibility branch.
+- [ ] Milestone 15: OS/service inventory, OpenWrt-specific security review, and resource-reduction plan.
+- [ ] Milestone 16: targeted OS/service updates or replacements with rollback.
+- [ ] Milestone 17: release package builder exists; signed Stable/Nightly GitHub artifact automation remains pending.
+- [ ] Milestone 18: in-device update checker pointed at our GitHub Releases.
+- [ ] Milestone 19: boot-time profiling and startup progress screen.
 
-## 11. Do Not Do
+## 12. Do Not Do
 
 - [ ] Do not publish a full modified `omega2.bin` or full root filesystem.
 - [ ] Do not publish recovered/decompiled UltiMaker application source without a license permitting it.

@@ -158,6 +158,17 @@ with static C binaries:
 - [x] Branding assets, splash screen
 - [x] Digital Factory bridge C rewrite embedded in `deneb-ui`; `/usr/bin/deneb-df-bridge` is installed as a symlink entry point
 - [x] WiFi setup replacement: USB `wifi.txt` import, stock AP/captive portal disabled by installer
+- [x] Lightweight web runtime bundled into Deneb update releases: `lighttpd`,
+  `deneb-api`, static web UI, and `deneb-mdns`
+- [x] Web/API controls for status, current job, pause/resume/cancel/stop,
+  manual heat/cooldown, and guarded X/Y/Z motion
+- [x] Cura mDNS discovery and local cluster API compatibility surface for
+  printer status, materials, upload/start, pending-job visibility, and basic
+  job actions
+- [x] Deneb Cura network discovery plugin package for mapping `deneb_um2c` to
+  Cura's stock UM2+ Connect machine profile
+- [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop
+  availability, mismatch continue flow, and abort cleanup/status handling
 - [ ] Print service C rewrite
 - [ ] Coordinator C rewrite
 - [ ] OS/service modernization

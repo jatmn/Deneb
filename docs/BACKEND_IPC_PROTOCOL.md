@@ -2,7 +2,8 @@
 
 ## Architecture
 
-ZeroMQ (ZMQ) over localhost TCP between three Python services and the UI.
+ZeroMQ (ZMQ) over localhost TCP between the stock Python backend services and
+Deneb's native UI/API clients.
 
 ## Port Map
 
@@ -14,14 +15,14 @@ ZeroMQ (ZMQ) over localhost TCP between three Python services and the UI.
 - tcp://127.0.0.1:5565 - ZMQ PUB (republishes aggregated status)
 - tcp://127.0.0.1:5566 - ZMQ REP (receives commands from menu/UI, proxies to print service)
 
-### Menu/UI (REPLACED BY DENEB UI)
+### Deneb UI and Web/API clients
 - tcp://127.0.0.1:5565 - ZMQ SUB (status from coordinator)
 - tcp://127.0.0.1:5566 - ZMQ REQ (commands to coordinator)
 
 ## Data Flow
 
-  print_service --[PUB 5555]--> coordinator --[PUB 5565]--> deneb-ui
-  deneb-ui --[REQ 5566]--> coordinator --[REQ 5556]--> print_service
+  print_service --[PUB 5555]--> coordinator --[PUB 5565]--> deneb-ui / deneb-api
+  deneb-ui / deneb-api --[REQ 5566]--> coordinator --[REQ 5556]--> print_service
 
 ## Status Protocol (SUB on port 5565)
 
@@ -80,3 +81,25 @@ The stock menu uses TWO communication paths:
 
 For our LVGL UI, we only need path #1 (raw ZMQ commands on port 5566).
 The coordinator proxies these to the print service on port 5556.
+
+## Deneb Compatibility Layers
+
+Current Deneb clients of this coordinator IPC include:
+
+- `ui/src/backend_comm.c` for the native touchscreen UI.
+- `web/src/backend_zmq.c` for `deneb-api`.
+- `web/src/api_print_job.c` for UM API v1-shaped upload/start/state handling.
+- `web/src/api_cluster.c` for Cura local cluster API discovery, materials,
+  upload/start, pending-job visibility, and pause/resume/abort/print actions.
+
+The Cura cluster compatibility path also stores temporary pending-job metadata
+at `/tmp/deneb-cluster-print-job.json` so Cura-started jobs remain visible while
+the stock coordinator validates metadata, waits for conflict confirmation,
+prepares, and preheats.
+
+Conflict continue/cancel and some pre-start actions still bridge into the stock
+Python coordinator through Gershwin helper calls. This is compatibility
+scaffolding for the current backend, not the desired final architecture. The
+native `deneb-printsvc` milestone should decide which of these shims become
+native service behavior and which remain clients of a shared Deneb print-control
+API.
