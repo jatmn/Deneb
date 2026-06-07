@@ -10,7 +10,7 @@
 
 int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 {
-    char frame[1024];
+    char frame[1536];
     (void)svc;
     deneb_status_serialize_frame(&svc->status, frame, sizeof(frame));
     printf("%s\n", frame);
@@ -24,7 +24,7 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 
 static int publish_status(void *pub, const deneb_status_t *status)
 {
-    char frame[1024];
+    char frame[1536];
     int len = deneb_status_serialize_frame(status, frame, sizeof(frame));
     if (len < 0)
         return -1;
@@ -83,6 +83,8 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
         }
 
         deneb_print_service_poll_motion(svc);
+        deneb_print_service_poll_job(svc);
+        deneb_print_service_refresh_diagnostics(svc);
         publish_status(pub, &svc->status);
     }
 }

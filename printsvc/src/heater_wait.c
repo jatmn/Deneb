@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "heater_wait.h"
+#include "print_control.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -49,5 +50,6 @@ void deneb_heater_wait_apply_status(const deneb_heater_wait_t *wait,
     status->bed_t_set = wait->bed_target;
     status->head_t_set = wait->head_target;
     if (!status->req[0])
-        snprintf(status->req, sizeof(status->req), "PREHEAT");
+        snprintf(status->req, sizeof(status->req), "%s",
+                 deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING));
 }

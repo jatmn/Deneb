@@ -533,8 +533,9 @@ separate modules for ZMQ IPC, command parsing, status serialization, Marlin
 status parsing, serial transport, packet/CRC helpers, flow control,
 G-code streaming, heater waits, macro lookup, and service state. It is
 packaged into `.deneb` releases but remains disabled by default through
-`deneb.printsvc.enabled=0` until the remaining planner/buffer backpressure,
-finish/abort motion policy, and live-device validation items are finished.
+`deneb.printsvc.enabled=0` until full integration migration, side-by-side
+diagnostics, resource measurements, and live-device validation items are
+finished.
 
 - [ ] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
 - [ ] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
@@ -574,10 +575,36 @@ Completed implementation slices:
   macro lookup, and tests.
 - [x] Add host tests for command parsing, CRC/packet framing, macro path
   safety, flow control ACK/resend handling, status serialization, Marlin status
-  parsing, heater target readiness, and abort state cleanup.
+  parsing, G28/home-distance telemetry, heater target readiness, and abort
+  state cleanup.
 - [x] Add a native serial response pump that reads Marlin lines, updates parsed
   status fields, accounts ACK/reject/resend responses, and re-emits resend
   packets through the flow-control queue.
+- [x] Move `JOB` handling out of the blocking command-reply path so
+  `ABORT`/`PAUSE`/`RESUME` commands can still be accepted while a job is
+  queued, preheating, or streaming.
+- [x] Add a native `print_control` contract module for Deneb-owned print
+  phases, stock request strings, action command verbs, active-state decisions,
+  and stop-allowed decisions instead of baking those rules into each caller.
+- [x] Add a native pending-job metadata module that serializes the Cura-visible
+  pre-print/conflict JSON shape, including tracker and material/print-core
+  change markers, so that format can move out of temporary bridge code.
+- [x] Add a native command-formatting module for stock `GCODE`, `MACRO`,
+  `JOB`, and action frames with parser round-trip tests, so Deneb clients can
+  stop copy-pasting `COMMAND<json>` strings.
+- [x] Add native error mapping for Marlin faults and service-side storage,
+  serial, command, thermal, and motion categories, with escaped status JSON
+  fields for machine-readable Deneb error keys/details.
+- [x] Add native motion-controller firmware hash/cache verification and
+  lab-gated programming handoff without adding Python to the new driver path.
+- [x] Add deliberate native finish/abort motion-policy helpers with tests that
+  guard against duplicate or unsafe XY homing during abort cleanup.
+- [x] Add native pause/resume state-machine tests so paused jobs do not continue
+  streaming and preheat-stage pauses resume to preparing instead of pretending
+  to be actively printing.
+- [x] Publish native diagnostics for flow in-flight depth, sent/ACK/resend/reject
+  counters, queued job depth, streamed job line number, command latency, and a
+  planner-starvation indicator so lab comparisons have one service-owned source.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
   artifact without enabling it over stock `printserver` by default.
 

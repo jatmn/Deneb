@@ -8,6 +8,7 @@ typedef enum {
     DENEB_PARSE_NO_MATCH = 0,
     DENEB_PARSE_TEMPERATURE,
     DENEB_PARSE_POSITION,
+    DENEB_PARSE_HOME_DISTANCE,
     DENEB_PARSE_VERSION,
     DENEB_PARSE_FAULT
 } deneb_status_parse_result_t;

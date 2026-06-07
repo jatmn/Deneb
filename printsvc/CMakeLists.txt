@@ -52,7 +52,9 @@ option(BUILD_HOST_STUB "Build without libzmq or serial device dependencies" OFF)
 
 set(DENEB_PRINTSVC_LIB_SOURCES
     src/command.c
+    src/command_format.c
     src/crc.c
+    src/error_map.c
     src/flow_control.c
     src/gcode_stream.c
     src/heater_wait.c
@@ -60,6 +62,8 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/marlin_packet.c
     src/motion_firmware.c
     src/motion_policy.c
+    src/pending_job.c
+    src/print_control.c
     src/serial_transport.c
     src/sha256.c
     src/service.c

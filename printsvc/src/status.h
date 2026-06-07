@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "error_map.h"
+
 typedef enum {
     DENEB_PRINT_STATE_IDLE = 0,
     DENEB_PRINT_STATE_PREPARING,
@@ -29,9 +31,23 @@ typedef struct {
     float y;
     float z;
     float e;
+    float home_x;
+    float home_y;
+    float home_z;
+    bool home_distance_valid;
+    unsigned int flow_inflight;
+    unsigned int flow_sent;
+    unsigned int flow_ack;
+    unsigned int flow_resend;
+    unsigned int flow_reject;
+    unsigned int job_queue_depth;
+    unsigned int job_line_number;
+    unsigned int command_latency_ms;
+    unsigned int planner_starvation_count;
     int time_total;
     int time_left;
     bool fault;
+    deneb_error_t error;
 } deneb_status_t;
 
 void deneb_status_init(deneb_status_t *status);
