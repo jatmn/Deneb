@@ -117,7 +117,10 @@ Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. Pending-job file handling, command-frame formatting,
 print-state classification, and web/API status labels are shared native helpers
 so touchscreen, web/API, and `deneb-printsvc` clients agree on escaping,
-preheat, paused, abort, active-print, offline, and finished-job state.
+preheat, paused, abort, active-print, offline, finished-job state, and
+Cura/pending job identity defaults. UM API and Cura cluster print-job action
+bodies now share the same native parser for plain or JSON pause/resume/print,
+continue/force/start, abort/cancel, and stop requests before commands are sent.
 Touchscreen/web macro, multi-line G-code, and job-start callers now use backend
 helper functions that own stock frame formatting. The native `deneb-printsvc`
 milestone should keep collapsing remaining direct clients toward shared Deneb

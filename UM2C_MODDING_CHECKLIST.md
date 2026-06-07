@@ -594,6 +594,10 @@ Completed implementation slices:
   conflict UI, and `deneb-printsvc` tests so pending-job path, tracker,
   conflict, handled-state parsing, and cleanup path ownership have one
   Deneb-owned implementation instead of several local string scans/macros.
+- [x] Move pending-job metadata cleanup into `common/print/pending_job_file.*`
+  so LCD Stop, touchscreen conflict cancel/fallback, web stop/abort, Cura
+  cluster cancel/delete, and print-end cleanup all clear the shared pending
+  file through one native helper instead of direct path deletes.
 - [x] Add a shared native print-state rules helper used by LCD `backend_comm`,
   web `backend_zmq`, and `deneb-printsvc` tests so request-name classification,
   preheat/temperature-target activity, transient macro-file filtering, and
@@ -602,6 +606,11 @@ Completed implementation slices:
   cluster API, and backend status cache onto the same shared print-state rules
   so `"idle"`, `"offline"`, `"printing"`, `"paused"`, `"error"`, and
   `"finished"` are not reinterpreted separately by each REST surface.
+- [x] Move flat stock-status JSON field extraction into
+  `common/print/json_field.*` so LCD `backend_comm` and web `backend_zmq`
+  parse numeric and string status fields through the same native helper
+  instead of maintaining separate mini JSON readers for the Python driver's
+  status payload.
 - [x] Move the touchscreen conflict prompt's continue/cancel actions off the
   embedded Python coordinator launcher and onto native backend `JOB`/`ABORT`
   commands for the pending print path.
@@ -621,6 +630,10 @@ Completed implementation slices:
   action frames into `common/print` with parser round-trip tests, and wire LCD
   `backend_comm`, web `backend_zmq`, and `deneb-printsvc` through that shared
   owner for G-code, macro, job, and action frame escaping.
+- [x] Move stock print-service command verb names for `GCODE`, `MACRO`, `JOB`,
+  `ABORT`, `PAUSE`, and `RESUME` into `common/print/command_format.h` so
+  action-frame formatting, LCD backend commands, web backend commands, and
+  native `print_control` do not each carry separate raw driver strings.
 - [x] Move direct touchscreen/web macro, multi-line G-code, and job-start
   callers onto native backend helper functions so build-plate leveling, jog
   motion, material load/unload, touchscreen print start, touchscreen conflict
@@ -633,8 +646,9 @@ Completed implementation slices:
   through `pending_job_file` instead of local JSON scans.
 - [x] Move pending-job display-name fallback rules into
   `common/print/pending_job_file.*` so LCD backend status retention,
-  touchscreen status labels, and web/API printer responses all prefer the same
-  pending name, path basename, and `"none"` filtering rules.
+  touchscreen status labels, native pending-job metadata, and web/API printer
+  responses all prefer the same pending name, path basename, and `"none"`
+  filtering rules.
 - [x] Move manual-action safety gating into shared native print-state rules so
   web/API motion controls, touchscreen jog controls, temperature actions,
   material moves, and frame-light startup apply all use one connected,
@@ -655,6 +669,16 @@ Completed implementation slices:
   API and Deneb API current-job responses agree on `"none"`, `"printing"`,
   `"paused"`, and `"error"` behavior, including errored jobs that are no longer
   actively streaming.
+- [x] Move web and Cura print-job action parsing into shared native
+  print-state rules so plain and JSON `pause`, `print`/`resume`/`continue`,
+  `force`, `abort`/`cancel`, and `stop` actions classify the same way before
+  reaching LCD/web/backend command dispatch.
+- [x] Move current-job fallback identity into shared native print-state rules
+  so native pending metadata, Cura cluster jobs, UM API, and Deneb API use the
+  same default job UUID, display name, and source instead of local literals.
+- [x] Move Cura/pending native job-start identity onto the shared print-state
+  defaults so upload auto-start, Cura cluster continue, and touchscreen
+  conflict continue no longer carry their own `"deneb-current-job"` literals.
 - [x] Move print completion history labeling into shared native print-state
   rules so web history and future native diagnostics use the same
   `"completed"`, `"stopped"`, and `"error"` decision.

@@ -147,9 +147,10 @@ int deneb_pending_job_file_load_default(deneb_pending_job_file_t *job)
     return deneb_pending_job_file_load(DENEB_PENDING_JOB_PATH, job);
 }
 
-static int copy_display_value(const char *value, char *out, size_t out_sz)
+int deneb_pending_job_file_display_value(const char *value, char *out, size_t out_sz)
 {
     const char *base;
+    const char *backslash;
 
     if (!out || out_sz == 0)
         return -1;
@@ -159,6 +160,9 @@ static int copy_display_value(const char *value, char *out, size_t out_sz)
         return -1;
 
     base = strrchr(value, '/');
+    backslash = strrchr(value, '\\');
+    if (backslash && (!base || backslash > base))
+        base = backslash;
     base = base ? base + 1 : value;
     if (!base || !*base || strcmp(base, "none") == 0)
         return -1;
@@ -173,9 +177,9 @@ int deneb_pending_job_file_display_name(const deneb_pending_job_file_t *job,
     if (!job || !out || out_sz == 0)
         return -1;
 
-    if (copy_display_value(job->name, out, out_sz) == 0)
+    if (deneb_pending_job_file_display_value(job->name, out, out_sz) == 0)
         return 0;
-    return copy_display_value(job->path, out, out_sz);
+    return deneb_pending_job_file_display_value(job->path, out, out_sz);
 }
 
 int deneb_pending_job_file_default_display_name(char *out, size_t out_sz)
@@ -214,6 +218,18 @@ int deneb_pending_job_file_same_path(const char *pending_path,
     pp = pp ? pp + 1 : pending_path;
     cp = cp ? cp + 1 : candidate_path;
     return strcmp(pp, cp) == 0;
+}
+
+int deneb_pending_job_file_clear(const char *path)
+{
+    if (!path || !*path)
+        return -1;
+    return remove(path);
+}
+
+int deneb_pending_job_file_clear_default(void)
+{
+    return deneb_pending_job_file_clear(DENEB_PENDING_JOB_PATH);
 }
 
 static int write_replaced(FILE *f, const char **p,

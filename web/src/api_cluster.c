@@ -25,7 +25,6 @@
 
 #define DENEB_CURA_MACHINE_FAMILY "ultimaker2_plus_connect"
 #define DENEB_CURA_MACHINE_VARIANT "Ultimaker 2+ Connect"
-#define DENEB_CLUSTER_JOB_UUID "deneb-current-job"
 #define DENEB_CLUSTER_MATERIAL_DIR "/home/3D/deneb-materials"
 #define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
 #define DENEB_DEFAULT_MATERIAL_GUID "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"
@@ -145,21 +144,11 @@ static int send_pending_job_instruction(const char *instruction)
         return backend_zmq_abort();
 
     if (strcmp(instruction, "PREPARE") == 0) {
-        return backend_zmq_send_job(job.path, "Cura", "deneb-current-job",
-                                    0.0f, 0.0f);
+        return backend_zmq_send_job(job.path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
+                                    DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
     }
 
     return -1;
-}
-
-static const char *active_job_uuid(const printer_state_t *s)
-{
-    return s->uuid[0] ? s->uuid : DENEB_CLUSTER_JOB_UUID;
-}
-
-static const char *active_job_name(const printer_state_t *s)
-{
-    return s->filename[0] ? s->filename : "Current print";
 }
 
 static void write_configuration(json_writer_t *w)
@@ -449,15 +438,15 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_str(&w, "created_at", created_at);
     json_bool(&w, "force", 0);
     json_str(&w, "machine_variant", DENEB_CURA_MACHINE_VARIANT);
-    json_str(&w, "name", active_job_name(s));
+    json_str(&w, "name", deneb_print_job_name_or_default(s->filename));
     json_bool(&w, "started", s->is_printing || s->is_paused);
     json_str(&w, "status", cluster_job_status(s));
     json_int(&w, "time_total", s->time_total);
     json_int(&w, "time_elapsed",
              deneb_print_elapsed_seconds(s->time_total, s->time_left));
-    json_str(&w, "uuid", active_job_uuid(s));
+    json_str(&w, "uuid", deneb_print_job_uuid_or_default(s->uuid));
     write_configuration(&w);
-    json_str(&w, "owner", s->source[0] ? s->source : "Cura");
+    json_str(&w, "owner", deneb_print_job_source_or_default(s->source));
     json_str(&w, "printer_uuid", guid);
     json_str(&w, "assigned_to", guid);
     json_key(&w, "build_plate");
@@ -487,82 +476,13 @@ void api_cluster_print_jobs_post(const http_request_t *req, http_response_t *res
     api_print_job_post(req, resp);
 }
 
-static void normalize_action_value(char *action)
-{
-    if (!action) return;
-    char *start = action;
-    char *end;
-    while (*start && isspace((unsigned char)*start)) start++;
-    end = start + strlen(start);
-    while (end > start && isspace((unsigned char)end[-1])) end--;
-    if (end <= start) {
-        action[0] = '\0';
-        return;
-    }
-    if ((*start == '"' && end[-1] == '"') || (*start == '\'' && end[-1] == '\'')) {
-        start++;
-        end--;
-    }
-    for (size_t i = 0; start + i < end; i++) {
-        action[i] = (char)tolower((unsigned char)start[i]);
-    }
-    action[end - start] = '\0';
-}
-
-static int parse_action(const char *body, char *out, size_t out_sz)
-{
-    if (!body || !out || out_sz < 2) return -1;
-
-    const char *p = strstr(body, "\"action\"");
-    if (p) {
-        p = strchr(p + 8, ':');
-        if (!p) return -1;
-        p++;
-        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-        if (*p != '"' && *p != '\'') return -1;
-        char quote = *p++;
-        size_t i = 0;
-        while (*p && *p != quote && i < out_sz - 1) {
-            out[i++] = *p++;
-        }
-        if (*p != quote) return -1;
-        out[i] = '\0';
-        normalize_action_value(out);
-        return 0;
-    }
-
-    /* Fallback: plain body value such as "print" or {"action":"print"} alternatives */
-    while (*body && isspace((unsigned char)*body)) body++;
-    if (!*body) return -1;
-
-    size_t i = 0;
-    while (*body && !isspace((unsigned char)*body) && *body != '{' && *body != '}' && i < out_sz - 1) {
-        out[i++] = *body++;
-    }
-    out[i] = '\0';
-    normalize_action_value(out);
-    return *out ? 0 : -1;
-}
-
-static int action_wants_prepare(const char *action)
-{
-    return strcmp(action, "print") == 0 || strcmp(action, "resume") == 0 ||
-           strcmp(action, "continue") == 0 || strcmp(action, "force") == 0 ||
-           strcmp(action, "start") == 0;
-}
-
-static int action_is_abort(const char *action)
-{
-    return strcmp(action, "abort") == 0 || strcmp(action, "cancel") == 0;
-}
-
 static void log_cluster_action(const char *action, int has_pending_job, const char *path)
 {
     fprintf(stderr, "deneb-api: cluster print action=%s path=%s has_pending=%s override=%s\n",
             action ? action : "(none)",
             path ? path : "(none)",
             has_pending_job ? "true" : "false",
-            (action && strcmp(action, "force") == 0) ? "true" : "false");
+            deneb_print_action_is_force(action) ? "true" : "false");
 }
 
 void api_cluster_print_job_action_put(const http_request_t *req, http_response_t *resp)
@@ -574,7 +494,7 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
         return;
     }
 
-    if (parse_action(req->body, action, sizeof(action)) < 0) {
+    if (deneb_print_action_parse(req->body, action, sizeof(action)) < 0) {
         if (has_pending_job) {
             snprintf(action, sizeof(action), "print");
         } else {
@@ -586,48 +506,46 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
 
     log_cluster_action(action, has_pending_job, req->path);
 
-    if (action_wants_prepare(action) && has_pending_job) {
+    if (deneb_print_action_is_resume_or_start(action) && has_pending_job) {
         if (send_pending_job_instruction("PREPARE") != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
         }
         /* Keep pending print metadata visible during preheat / queued startup. */
-    } else if (action_is_abort(action) && has_pending_job) {
+    } else if (deneb_print_action_is_abort(action) && has_pending_job) {
         if (send_pending_job_instruction("ABORT") != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
             return;
         }
-        unlink(DENEB_PENDING_JOB_PATH);
-    } else if (strcmp(action, "pause") == 0) {
+        deneb_pending_job_file_clear_default();
+    } else if (deneb_print_action_is_pause(action)) {
         if (backend_zmq_pause() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
             return;
         }
-    } else if (strcmp(action, "print") == 0 || strcmp(action, "resume") == 0 ||
-               strcmp(action, "continue") == 0 || strcmp(action, "force") == 0 ||
-               strcmp(action, "start") == 0) {
+    } else if (deneb_print_action_is_resume_or_start(action)) {
         if (backend_zmq_resume() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to resume print\"}");
             return;
         }
-    } else if (action_is_abort(action)) {
+    } else if (deneb_print_action_is_abort(action)) {
         if (backend_zmq_abort() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
-        unlink(DENEB_PENDING_JOB_PATH);
-    } else if (strcmp(action, "stop") == 0) {
+        deneb_pending_job_file_clear_default();
+    } else if (deneb_print_action_is_stop(action)) {
         if (backend_zmq_stop_print() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
             return;
         }
-        unlink(DENEB_PENDING_JOB_PATH);
+        deneb_pending_job_file_clear_default();
     } else {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Unknown print job action\"}");
@@ -654,7 +572,7 @@ void api_cluster_print_job_delete(const http_request_t *req, http_response_t *re
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
     if (!has_active_job(s)) {
-        unlink(DENEB_PENDING_JOB_PATH);
+        deneb_pending_job_file_clear_default();
         resp->status_code = 204;
         return;
     }

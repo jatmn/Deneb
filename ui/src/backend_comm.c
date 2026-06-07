@@ -12,6 +12,7 @@
 
 #include "backend_comm.h"
 #include "command_format.h"
+#include "json_field.h"
 #include "pending_job_file.h"
 #include "print_backend_route.h"
 #include "print_state_rules.h"
@@ -72,7 +73,6 @@ void backend_deinit(void) { /* no-op */ }
 
 #include <zmq.h>
 #include <errno.h>
-#include <unistd.h>
 
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS_PER_POLL 4
@@ -92,7 +92,6 @@ static int preheat_reached_logged = 0;
 static char retained_print_filename[128];
 static long long last_stop_ms = -1;
 static int print_stop_inflight = 0;
-static void set_filename_or_none(char *dst, const char *value);
 
 static int configure_socket_linger(void *socket)
 {
@@ -142,50 +141,19 @@ static int open_rpc_socket(void)
 static const char *json_get_str(const char *json, const char *key)
 {
     static char buf[256];
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\":", key);
-
-    const char *p = strstr(json, search);
-    if (!p) return "";
-
-    p += strlen(search);
-    while (*p == ' ' || *p == '\t') p++;
-
-    if (*p == '"') {
-        /* String value */
-        p++;
-        const char *end = strchr(p, '"');
-        if (!end) return "";
-        size_t len = end - p;
-        if (len >= sizeof(buf)) len = sizeof(buf) - 1;
-        memcpy(buf, p, len);
-        buf[len] = '\0';
-        return buf;
-    }
-
-    /* Numeric value */
-    const char *end = p;
-    while (*end && *end != ',' && *end != '}' && *end != ' ' && *end != '\n')
-        end++;
-    size_t len = end - p;
-    if (len >= sizeof(buf)) len = sizeof(buf) - 1;
-    memcpy(buf, p, len);
-    buf[len] = '\0';
+    if (deneb_json_get_value(json, key, buf, sizeof(buf)) != 0)
+        buf[0] = '\0';
     return buf;
 }
 
 static float json_get_float(const char *json, const char *key)
 {
-    const char *val = json_get_str(json, key);
-    if (!val || !*val) return 0.0f;
-    return strtof(val, NULL);
+    return deneb_json_get_float(json, key, 0.0f);
 }
 
 static int json_get_int(const char *json, const char *key)
 {
-    const char *val = json_get_str(json, key);
-    if (!val || !*val) return 0;
-    return (int)strtol(val, NULL, 10);
+    return deneb_json_get_int(json, key, 0);
 }
 
 static int str_is_one_of(const char *value, const char *const *choices)
@@ -228,25 +196,8 @@ static int state_has_print_context(const printer_state_t *s)
 
 static void set_filename_or_none(char *dst, const char *value)
 {
-    if (!value || !*value || strcmp(value, "none") == 0) {
+    if (deneb_pending_job_file_display_value(value, dst, 128) != 0)
         dst[0] = '\0';
-        return;
-    }
-
-    const char *base = strrchr(value, '/');
-    if (base) {
-        base++;
-    } else {
-        base = value;
-    }
-
-    if (!base || !*base || strcmp(base, "none") == 0) {
-        dst[0] = '\0';
-        return;
-    }
-
-    strncpy(dst, base, 127);
-    dst[127] = '\0';
 }
 
 static int is_transient_print_file(const char *file)
@@ -256,20 +207,8 @@ static int is_transient_print_file(const char *file)
 
 static void retain_print_filename(const char *filename)
 {
-    if (!filename || !*filename || strcmp(filename, "none") == 0)
-        return;
-
-    const char *base = strrchr(filename, '/');
-    if (base) {
-        base++;
-    } else {
-        base = filename;
-    }
-
-    if (!base || !*base || strcmp(base, "none") == 0)
-        return;
-
-    strncpy(retained_print_filename, base, sizeof(retained_print_filename) - 1);
+    deneb_pending_job_file_display_value(filename, retained_print_filename,
+                                         sizeof(retained_print_filename));
 }
 
 static int should_hold_print_filename(const printer_state_t *curr, const printer_state_t *prev)
@@ -437,10 +376,9 @@ static void parse_status(const char *json)
     char original_file[128];
 
     if (has_file) {
-        const char *base_file = strrchr(file, '/');
-        base_file = base_file ? (base_file + 1) : file;
-        strncpy(original_file, base_file, sizeof(original_file) - 1);
-        original_file[sizeof(original_file) - 1] = '\0';
+        if (deneb_pending_job_file_display_value(file, original_file,
+                                                 sizeof(original_file)) != 0)
+            original_file[0] = '\0';
 
         if (is_transient_print_file(file)) {
             if (has_pending_name) {
@@ -738,7 +676,7 @@ int backend_send_command(const char *cmd, const char *args_json)
     if (!cmd || !*cmd)
         return -1;
 
-    if (cmd && strcmp(cmd, "JOB") == 0 && args_json) {
+    if (cmd && strcmp(cmd, DENEB_COMMAND_VERB_JOB) == 0 && args_json) {
         const char *path = json_get_str(args_json, "path");
         if (!path || !*path || strcmp(path, "none") == 0)
             path = json_get_str(args_json, "file");
@@ -751,7 +689,9 @@ int backend_send_command(const char *cmd, const char *args_json)
     }
 
     fprintf(stderr, "backend: command send cmd=%s args=%s\n", cmd, args_json ? args_json : "{}");
-    if ((strcmp(cmd, "ABORT") == 0 || strcmp(cmd, "PAUSE") == 0 || strcmp(cmd, "RESUME") == 0) &&
+    if ((strcmp(cmd, DENEB_COMMAND_VERB_ABORT) == 0 ||
+         strcmp(cmd, DENEB_COMMAND_VERB_PAUSE) == 0 ||
+         strcmp(cmd, DENEB_COMMAND_VERB_RESUME) == 0) &&
         (!args_json || strcmp(args_json, "{}") == 0)) {
         len = deneb_command_format_action(cmd, msg, sizeof(msg));
     } else {
@@ -762,17 +702,17 @@ int backend_send_command(const char *cmd, const char *args_json)
 
 int backend_abort_print(void)
 {
-    return backend_send_command("ABORT", "{}");
+    return backend_send_command(DENEB_COMMAND_VERB_ABORT, "{}");
 }
 
 int backend_pause_print(void)
 {
-    return backend_send_command("PAUSE", "{}");
+    return backend_send_command(DENEB_COMMAND_VERB_PAUSE, "{}");
 }
 
 int backend_resume_print(void)
 {
-    return backend_send_command("RESUME", "{}");
+    return backend_send_command(DENEB_COMMAND_VERB_RESUME, "{}");
 }
 
 int backend_stop_print(void)
@@ -795,11 +735,11 @@ int backend_stop_print(void)
     last_stop_ms = now_ms;
 
     fprintf(stderr, "backend: stop print command requested\n");
-    if (backend_send_command("ABORT", "{}") != 0) {
+    if (backend_send_command(DENEB_COMMAND_VERB_ABORT, "{}") != 0) {
         print_stop_inflight = 0;
         return -1;
     }
-    unlink(DENEB_PENDING_JOB_PATH);
+    deneb_pending_job_file_clear_default();
     return 0;
 }
 

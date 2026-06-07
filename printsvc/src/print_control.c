@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "print_control.h"
+#include "command_format.h"
 
 deneb_print_phase_t deneb_print_control_phase_from_state(deneb_print_state_t state)
 {
@@ -49,11 +50,11 @@ const char *deneb_print_control_req_for_phase(deneb_print_phase_t phase)
         case DENEB_PRINT_PHASE_PREPARING:
             return "PREPARE";
         case DENEB_PRINT_PHASE_PRINTING:
-            return "JOB";
+            return DENEB_COMMAND_VERB_JOB;
         case DENEB_PRINT_PHASE_PAUSED:
             return "Paused";
         case DENEB_PRINT_PHASE_ABORTING:
-            return "ABORT";
+            return DENEB_COMMAND_VERB_ABORT;
         case DENEB_PRINT_PHASE_COMPLETE:
             return "Complete";
         case DENEB_PRINT_PHASE_ERROR:
@@ -83,13 +84,13 @@ const char *deneb_print_control_action_command(deneb_print_action_t action)
 {
     switch (action) {
         case DENEB_PRINT_ACTION_PAUSE:
-            return "PAUSE";
+            return DENEB_COMMAND_VERB_PAUSE;
         case DENEB_PRINT_ACTION_RESUME:
-            return "RESUME";
+            return DENEB_COMMAND_VERB_RESUME;
         case DENEB_PRINT_ACTION_ABORT:
-            return "ABORT";
+            return DENEB_COMMAND_VERB_ABORT;
         case DENEB_PRINT_ACTION_START:
-            return "JOB";
+            return DENEB_COMMAND_VERB_JOB;
         case DENEB_PRINT_ACTION_NONE:
         default:
             return "";

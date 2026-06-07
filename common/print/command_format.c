@@ -52,7 +52,7 @@ int deneb_command_format_gcode(const char *const *lines, size_t count,
         return -1;
     out[0] = '\0';
 
-    if (append(out, out_sz, &pos, "GCODE<[") != 0)
+    if (append(out, out_sz, &pos, DENEB_COMMAND_VERB_GCODE "<[") != 0)
         return -1;
     for (size_t i = 0; i < count; i++) {
         if (i > 0 && append(out, out_sz, &pos, ",") != 0)
@@ -75,7 +75,7 @@ int deneb_command_format_macro(const char *macro, char *out, size_t out_sz)
         return -1;
     out[0] = '\0';
 
-    if (append(out, out_sz, &pos, "MACRO<{\"macro\":\"") != 0 ||
+    if (append(out, out_sz, &pos, DENEB_COMMAND_VERB_MACRO "<{\"macro\":\"") != 0 ||
         append_escaped(out, out_sz, &pos, macro) != 0 ||
         append(out, out_sz, &pos, "\"}") != 0)
         return -1;
@@ -93,7 +93,7 @@ int deneb_command_format_job(const char *path, const char *source,
         return -1;
     out[0] = '\0';
 
-    if (append(out, out_sz, &pos, "JOB<{\"file\":\"") != 0 ||
+    if (append(out, out_sz, &pos, DENEB_COMMAND_VERB_JOB "<{\"file\":\"") != 0 ||
         append_escaped(out, out_sz, &pos, path) != 0 ||
         append(out, out_sz, &pos, "\"") != 0)
         return -1;

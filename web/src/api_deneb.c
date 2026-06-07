@@ -382,9 +382,9 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
                                                        s->is_printing);
         json_key(&w, "current");
         json_obj_open(&w);
-        json_str(&w, "name", s->filename);
-        json_str(&w, "uuid", s->uuid);
-        json_str(&w, "source", s->source);
+        json_str(&w, "name", deneb_print_job_name_or_default(s->filename));
+        json_str(&w, "uuid", deneb_print_job_uuid_or_default(s->uuid));
+        json_str(&w, "source", deneb_print_job_source_or_default(s->source));
         json_str(&w, "state", st);
         json_float(&w, "progress", s->progress);
         json_int(&w, "time_total", s->time_total);

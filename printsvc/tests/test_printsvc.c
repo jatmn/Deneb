@@ -7,6 +7,7 @@
 #include "error_map.h"
 #include "flow_control.h"
 #include "heater_wait.h"
+#include "json_field.h"
 #include "macro_registry.h"
 #include "marlin_packet.h"
 #include "motion_firmware.h"
@@ -75,7 +76,7 @@ static void test_command_format_round_trip(void)
     assert(cmd.bed_target == 60.0f);
     assert(cmd.head_target == 210.0f);
 
-    assert(deneb_command_format_action("ABORT", frame, sizeof(frame)) > 0);
+    assert(deneb_command_format_action(DENEB_COMMAND_VERB_ABORT, frame, sizeof(frame)) > 0);
     assert(deneb_command_parse(frame, &cmd) == 0);
     assert(cmd.type == DENEB_COMMAND_ABORT);
 }
@@ -142,8 +143,8 @@ static void test_print_control_contract(void)
     assert(deneb_print_control_phase_name(DENEB_PRINT_PHASE_PREPARING) != NULL);
     assert(strcmp(deneb_print_control_phase_name(DENEB_PRINT_PHASE_PREPARING), "pre_print") == 0);
     assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING), "PREPARE") == 0);
-    assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PRINTING), "JOB") == 0);
-    assert(strcmp(deneb_print_control_action_command(DENEB_PRINT_ACTION_ABORT), "ABORT") == 0);
+    assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PRINTING), DENEB_COMMAND_VERB_JOB) == 0);
+    assert(strcmp(deneb_print_control_action_command(DENEB_PRINT_ACTION_ABORT), DENEB_COMMAND_VERB_ABORT) == 0);
     assert(deneb_print_control_phase_active(DENEB_PRINT_PHASE_PREPARING));
     assert(deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_PREPARING));
     assert(deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_PRINTING));
@@ -231,6 +232,29 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_completion_state_label(0, 120, 30), "stopped") == 0);
     assert(strcmp(deneb_print_completion_state_label(1, 120, 0), "error") == 0);
     assert(strcmp(deneb_print_completion_state_label(0, 0, 0), "stopped") == 0);
+    assert(strcmp(deneb_print_job_name_or_default(""), DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
+    assert(strcmp(deneb_print_job_name_or_default("none"), DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
+    assert(strcmp(deneb_print_job_name_or_default("cube.gcode"), "cube.gcode") == 0);
+    assert(strcmp(deneb_print_job_uuid_or_default(""), DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
+    assert(strcmp(deneb_print_job_uuid_or_default("job-1"), "job-1") == 0);
+    assert(strcmp(deneb_print_job_source_or_default(""), DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+    assert(strcmp(deneb_print_job_source_or_default("USB"), "USB") == 0);
+    {
+        char action[16];
+        assert(deneb_print_action_parse("\"Pause\"", action, sizeof(action)) == 0);
+        assert(strcmp(action, "pause") == 0);
+        assert(deneb_print_action_is_pause(action));
+        assert(deneb_print_action_parse("{\"action\":\"Force\"}", action, sizeof(action)) == 0);
+        assert(strcmp(action, "force") == 0);
+        assert(deneb_print_action_is_resume_or_start(action));
+        assert(deneb_print_action_is_force(action));
+        assert(deneb_print_action_parse(" cancel ", action, sizeof(action)) == 0);
+        assert(strcmp(action, "cancel") == 0);
+        assert(deneb_print_action_is_abort(action));
+        assert(deneb_print_action_parse("{\"action\":\"stop\"}", action, sizeof(action)) == 0);
+        assert(deneb_print_action_is_stop(action));
+        assert(deneb_print_action_parse("{}", action, sizeof(action)) != 0);
+    }
     assert(deneb_print_job_is_active(1, 0, 0));
     assert(deneb_print_job_is_active(0, 1, 0));
     assert(deneb_print_job_is_active(0, 0, 1));
@@ -255,6 +279,23 @@ static void test_print_state_rules(void)
     assert(deneb_print_progress_fraction(50.0f) < 0.51f);
     assert(deneb_print_progress_fraction(-1.0f) == 0.0f);
     assert(deneb_print_progress_fraction(101.0f) == 1.0f);
+}
+
+static void test_json_field_helpers(void)
+{
+    const char *json =
+        "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
+        "\"Ttot\":120,\"headTset\":210.5,\"escaped\":\"cube\\\"name\"}";
+    char value[64];
+
+    assert(deneb_json_get_value(json, "file", value, sizeof(value)) == 0);
+    assert(strcmp(value, "/home/3D/cube.gcode") == 0);
+    assert(deneb_json_get_value(json, "escaped", value, sizeof(value)) == 0);
+    assert(strcmp(value, "cube\"name") == 0);
+    assert(deneb_json_get_int(json, "Ttot", 0) == 120);
+    assert(deneb_json_get_float(json, "headTset", 0.0f) > 210.4f);
+    assert(deneb_json_get_value(json, "missing", value, sizeof(value)) != 0);
+    assert(deneb_json_get_int(json, "missing", 7) == 7);
 }
 
 static void test_print_backend_route_contract(void)
@@ -729,10 +770,22 @@ static void test_pending_job_file_contract(void)
     assert(deneb_pending_job_file_same_path(job.path, "/tmp/cube.gcode"));
     assert(deneb_pending_job_file_display_name(&job, display, sizeof(display)) == 0);
     assert(strcmp(display, "Cube") == 0);
+    assert(deneb_pending_job_file_display_value("/home/3D/cube.gcode",
+                                                display, sizeof(display)) == 0);
+    assert(strcmp(display, "cube.gcode") == 0);
+    assert(deneb_pending_job_file_display_value("C:\\spool\\win.gcode",
+                                                display, sizeof(display)) == 0);
+    assert(strcmp(display, "win.gcode") == 0);
+    assert(deneb_pending_job_file_display_value("none", display, sizeof(display)) != 0);
+    assert(display[0] == '\0');
+    assert(deneb_pending_job_file_display_value("", display, sizeof(display)) != 0);
+    assert(display[0] == '\0');
 
     assert(deneb_pending_job_file_mark_handled(path) == 0);
     assert(deneb_pending_job_file_load(path, &job) == 0);
     assert(!deneb_pending_job_file_has_conflict(&job));
+    assert(deneb_pending_job_file_clear(path) == 0);
+    assert(deneb_pending_job_file_load(path, &job) != 0);
 
     f = fopen(path, "wb");
     assert(f != NULL);
@@ -743,7 +796,7 @@ static void test_pending_job_file_contract(void)
     assert(deneb_pending_job_file_display_name(&job, display, sizeof(display)) == 0);
     assert(strcmp(display, "fallback.gcode") == 0);
 
-    remove(path);
+    assert(deneb_pending_job_file_clear(path) == 0);
 }
 
 int main(void)
@@ -753,6 +806,7 @@ int main(void)
     test_error_mapping();
     test_print_control_contract();
     test_print_state_rules();
+    test_json_field_helpers();
     test_print_backend_route_contract();
     test_pending_job_metadata();
     test_status_frame();

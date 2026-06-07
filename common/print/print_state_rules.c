@@ -12,6 +12,11 @@ static int ascii_tolower(int c)
     return c;
 }
 
+static int ascii_isspace(int c)
+{
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
 static int str_eq_ci(const char *a, const char *b)
 {
     if (!a || !b)
@@ -266,6 +271,27 @@ const char *deneb_print_job_state_or_none(int has_error, int is_paused,
     return deneb_print_job_status_label(has_error, is_paused, is_active);
 }
 
+const char *deneb_print_job_name_or_default(const char *name)
+{
+    if (!name || !name[0] || strcmp(name, "none") == 0)
+        return DENEB_PRINT_DEFAULT_JOB_NAME;
+    return name;
+}
+
+const char *deneb_print_job_uuid_or_default(const char *uuid)
+{
+    if (!uuid || !uuid[0] || strcmp(uuid, "none") == 0)
+        return DENEB_PRINT_DEFAULT_JOB_UUID;
+    return uuid;
+}
+
+const char *deneb_print_job_source_or_default(const char *source)
+{
+    if (!source || !source[0] || strcmp(source, "none") == 0)
+        return DENEB_PRINT_DEFAULT_JOB_SOURCE;
+    return source;
+}
+
 const char *deneb_print_completion_state_label(int has_error, int time_total,
                                                int time_left)
 {
@@ -285,6 +311,111 @@ int deneb_print_manual_action_allowed(int connected, int has_error,
                                       int is_paused, int is_active)
 {
     return connected && !has_error && !is_paused && !is_active;
+}
+
+static void normalize_action_value(char *action)
+{
+    char *start;
+    char *end;
+    size_t len;
+
+    if (!action)
+        return;
+
+    start = action;
+    while (*start && ascii_isspace((unsigned char)*start))
+        start++;
+
+    end = start + strlen(start);
+    while (end > start && ascii_isspace((unsigned char)end[-1]))
+        end--;
+
+    if (end <= start) {
+        action[0] = '\0';
+        return;
+    }
+
+    if ((*start == '"' && end[-1] == '"') ||
+        (*start == '\'' && end[-1] == '\'')) {
+        start++;
+        end--;
+    }
+
+    len = (size_t)(end - start);
+    for (size_t i = 0; i < len; i++)
+        action[i] = (char)ascii_tolower((unsigned char)start[i]);
+    action[len] = '\0';
+}
+
+int deneb_print_action_parse(const char *body, char *out, size_t out_sz)
+{
+    const char *p;
+    size_t i = 0;
+    char quote = '\0';
+
+    if (!body || !out || out_sz < 2)
+        return -1;
+    out[0] = '\0';
+
+    p = strstr(body, "\"action\"");
+    if (p) {
+        p = strchr(p + 8, ':');
+        if (!p)
+            return -1;
+        p++;
+        while (*p && ascii_isspace((unsigned char)*p))
+            p++;
+        if (*p != '"' && *p != '\'')
+            return -1;
+        quote = *p++;
+        while (*p && *p != quote && i < (size_t)out_sz - 1)
+            out[i++] = *p++;
+        if (*p != quote)
+            return -1;
+    } else {
+        p = body;
+        while (*p && (ascii_isspace((unsigned char)*p) ||
+                      *p == '"' || *p == '\''))
+            p++;
+        while (*p && !ascii_isspace((unsigned char)*p) &&
+               *p != '"' && *p != '\'' && *p != '{' && *p != '}' &&
+               i < (size_t)out_sz - 1)
+            out[i++] = *p++;
+    }
+
+    out[i] = '\0';
+    normalize_action_value(out);
+    return out[0] ? 0 : -1;
+}
+
+int deneb_print_action_is_pause(const char *action)
+{
+    return str_eq_ci(action, "pause");
+}
+
+int deneb_print_action_is_resume_or_start(const char *action)
+{
+    return str_eq_ci(action, "print") ||
+           str_eq_ci(action, "resume") ||
+           str_eq_ci(action, "continue") ||
+           str_eq_ci(action, "force") ||
+           str_eq_ci(action, "start");
+}
+
+int deneb_print_action_is_abort(const char *action)
+{
+    return str_eq_ci(action, "abort") ||
+           str_eq_ci(action, "cancel");
+}
+
+int deneb_print_action_is_stop(const char *action)
+{
+    return str_eq_ci(action, "stop");
+}
+
+int deneb_print_action_is_force(const char *action)
+{
+    return str_eq_ci(action, "force");
 }
 
 int deneb_print_elapsed_seconds(int time_total, int time_left)

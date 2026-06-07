@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job.h"
+#include "pending_job_file.h"
 #include "print_control.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#define DENEB_PENDING_DEFAULT_UUID "deneb-current-job"
 #define DENEB_PENDING_DEFAULT_SOURCE "WEB_API"
 #define DENEB_PENDING_DEFAULT_OWNER "Cura"
 #define DENEB_PENDING_DEFAULT_VARIANT "Ultimaker 2+ Connect"
@@ -15,21 +16,6 @@
 #define DENEB_PENDING_DEFAULT_TYPE "PLA"
 #define DENEB_PENDING_DEFAULT_COLOR "#ffc924"
 #define DENEB_PENDING_DEFAULT_NOZZLE "0.4 mm"
-
-static const char *base_name(const char *path)
-{
-    const char *slash;
-    const char *backslash;
-
-    if (!path || !*path)
-        return "Print job";
-
-    slash = strrchr(path, '/');
-    backslash = strrchr(path, '\\');
-    if (backslash && (!slash || backslash > slash))
-        slash = backslash;
-    return slash ? slash + 1 : path;
-}
 
 static void json_escape(const char *src, char *out, size_t out_sz)
 {
@@ -52,13 +38,17 @@ static void json_escape(const char *src, char *out, size_t out_sz)
 
 void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
 {
+    char display_name[128];
+
     if (!job)
         return;
 
     memset(job, 0, sizeof(*job));
     snprintf(job->path, sizeof(job->path), "%s", path ? path : "");
-    snprintf(job->name, sizeof(job->name), "%s", base_name(path));
-    snprintf(job->uuid, sizeof(job->uuid), "%s", DENEB_PENDING_DEFAULT_UUID);
+    if (deneb_pending_job_file_display_value(path, display_name, sizeof(display_name)) != 0)
+        snprintf(display_name, sizeof(display_name), "%s", "Print job");
+    snprintf(job->name, sizeof(job->name), "%s", display_name);
+    snprintf(job->uuid, sizeof(job->uuid), "%s", DENEB_PRINT_DEFAULT_JOB_UUID);
     snprintf(job->source, sizeof(job->source), "%s", DENEB_PENDING_DEFAULT_SOURCE);
     snprintf(job->owner, sizeof(job->owner), "%s", DENEB_PENDING_DEFAULT_OWNER);
     snprintf(job->machine_variant, sizeof(job->machine_variant), "%s", DENEB_PENDING_DEFAULT_VARIANT);

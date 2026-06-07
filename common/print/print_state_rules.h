@@ -2,6 +2,12 @@
 #ifndef DENEB_PRINT_STATE_RULES_H
 #define DENEB_PRINT_STATE_RULES_H
 
+#include <stddef.h>
+
+#define DENEB_PRINT_DEFAULT_JOB_UUID "deneb-current-job"
+#define DENEB_PRINT_DEFAULT_JOB_NAME "Current print"
+#define DENEB_PRINT_DEFAULT_JOB_SOURCE "Cura"
+
 typedef struct {
     const char *req;
     const char *file;
@@ -37,11 +43,20 @@ const char *deneb_print_job_status_label(int has_error, int is_paused,
                                          int is_active);
 const char *deneb_print_job_state_or_none(int has_error, int is_paused,
                                           int is_active);
+const char *deneb_print_job_name_or_default(const char *name);
+const char *deneb_print_job_uuid_or_default(const char *uuid);
+const char *deneb_print_job_source_or_default(const char *source);
 const char *deneb_print_completion_state_label(int has_error, int time_total,
                                                int time_left);
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active);
 int deneb_print_manual_action_allowed(int connected, int has_error,
                                       int is_paused, int is_active);
+int deneb_print_action_parse(const char *body, char *out, size_t out_sz);
+int deneb_print_action_is_pause(const char *action);
+int deneb_print_action_is_resume_or_start(const char *action);
+int deneb_print_action_is_abort(const char *action);
+int deneb_print_action_is_stop(const char *action);
+int deneb_print_action_is_force(const char *action);
 int deneb_print_elapsed_seconds(int time_total, int time_left);
 float deneb_print_progress_percent(int time_total, int time_left);
 float deneb_print_progress_fraction(float progress_percent);

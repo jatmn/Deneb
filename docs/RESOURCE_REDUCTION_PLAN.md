@@ -83,14 +83,18 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   Status classification, print/pending job metadata, command formatting, macro
   lookup, safe motion policy, heat-state decisions, pause/resume/abort
   semantics, and error mapping should each have one owner. Shared native helpers
-  now cover command formatting, pending-job files, print-state rules, shared
-  stock macro names, and web/API status labels. Web and touchscreen macro,
+  now cover command formatting and stock command verbs, flat status JSON field
+  extraction, pending-job files, print-state rules, shared stock macro names,
+  and web/API status labels. Web and touchscreen macro,
   multi-line G-code, and job-start callers now route through native backend
   helper functions instead of each hand-rolling stock command JSON. LCD/API
   job-name display also reads pending-job metadata through the shared helper
   instead of local JSON scans, and the pending display-name fallback has one
-  shared owner for name/path-basename/`"none"` handling across LCD backend
-  status retention, touchscreen labels, and web/API printer responses. LCD and web/API backends now select native
+  shared owner for name/path-basename/`"none"` handling across native
+  pending-job metadata initialization, LCD backend status retention,
+  touchscreen labels, and web/API printer responses. Pending-job metadata
+  cleanup also goes through the shared helper for LCD/web stop, abort, cancel,
+  delete, and print-end paths. LCD and web/API backends now select native
   `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
   while preserving the stock coordinator route as the default fallback. That
   route decision lives in `common/print/print_backend_route.*` so clients do not
@@ -124,16 +128,21 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   host tests for the command/status/packet/flow-control/heater-wait,
   G28/home-distance, nonblocking job streaming, motion-firmware verification,
   abort/finish policy, pause/resume state-machine behavior, shared print-control
-  contract, shared command formatting, pending-job metadata, shared pending-job file
-  parsing/cleanup for web/touch/API conflict and display flows, shared macro
+  contract, shared command formatting and stock command verbs,
+  shared flat status JSON field extraction,
+  pending-job metadata, shared pending-job file
+  parsing/display/cleanup for web/touch/API conflict and status flows, shared macro
   names/transient-file filtering, shared web/API status label mapping,
-  shared pending-job display-name fallback,
+  shared pending-job display-name fallback and native metadata naming,
   shared manual-action safety gating,
   shared temperature-target readiness,
   shared print elapsed-time calculation,
   shared print progress calculation,
   shared UM API progress fraction clamping,
   shared job state-or-none naming,
+  shared web/Cura print-job action parsing,
+  shared current-job fallback identity,
+  shared Cura/pending native job-start identity,
   shared print completion history labeling,
   shared active/preparing/stoppable print-context decisions,
   touchscreen/web macro and G-code command helper routing,

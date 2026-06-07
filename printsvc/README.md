@@ -8,7 +8,10 @@ scaffold:
 
 - `command.*` parses the stock `COMMAND<json>` request frames.
 - `common/print/command_format.*` formats stock `GCODE`, `MACRO`, `JOB`, and
-  action frames for the service, web backend, and touchscreen backend.
+  action frames and owns the stock print-service command verbs for the service,
+  web backend, and touchscreen backend.
+- `common/print/json_field.*` extracts flat stock-status JSON fields shared by
+  web and touchscreen backend status consumers.
 - `common/print/print_state_rules.*` owns shared active-print, preheat, paused,
   abort, and transient macro-file classification used by web/touch clients.
 - `ipc_zmq.*` owns the first-stage ZMQ PUB/REP compatibility boundary:
@@ -29,16 +32,18 @@ scaffold:
 - `../common/print/print_macros.h` names stock macro files used by
   printsvc, touchscreen UI, and web/API callers.
 - `../common/print/pending_job_file.*` owns pending-job file parsing,
-  conflict-state detection, handled-state updates, and display-name fallback
-  for touchscreen UI and web/API callers.
+  conflict-state detection, handled-state updates, display-name fallback, and
+  shared pending metadata cleanup for native pending-job metadata, touchscreen
+  UI, and web/API callers.
 - `../common/print/print_backend_route.*` owns the stock-coordinator versus
   native-printsvc endpoint selection used by touchscreen UI and web/API
   clients, plus the route-diagnostics JSON fields that show which backend and
   endpoint URLs a native client selected.
 - `../common/print/print_state_rules.*` owns shared print-state labels, manual
   action gates, temperature-target readiness, elapsed time, progress
-  percentage, active/preparing/stoppable context decisions, and transient
-  macro-file filtering for native service, touchscreen UI, and web/API callers.
+  percentage, current-job fallback identity, active/preparing/stoppable context
+  decisions, and transient macro-file filtering for native service,
+  touchscreen UI, and web/API callers.
 - `diagnostics_log.*` writes low-volume comparison lines that pair stock-shaped
   status fields with native counters and latency fields for lab validation.
 - `service.*` owns the print lifecycle state machine and command dispatch.

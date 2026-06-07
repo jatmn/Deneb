@@ -9,10 +9,10 @@
 #include "lvgl.h"
 #include "backend_comm.h"
 #include "pending_job_file.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 static lv_obj_t *conflict_screen = NULL;
 static lv_obj_t *message_label = NULL;
@@ -40,8 +40,8 @@ static int send_pending_instruction(const char *instruction)
         if (!pending_path[0])
             return -1;
 
-        return backend_send_job(pending_path, "Cura", "deneb-current-job",
-                                0.0f, 0.0f);
+        return backend_send_job(pending_path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
+                                DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
     }
 
     return -1;
@@ -50,7 +50,7 @@ static int send_pending_instruction(const char *instruction)
 static void finish_prompt(const char *status_key, int remove_pending)
 {
     if (remove_pending)
-        unlink(DENEB_PENDING_JOB_PATH);
+        deneb_pending_job_file_clear_default();
     if (status_label)
         lv_label_set_text(status_label, locale_get(status_key));
     screen_mgr_pop();
@@ -63,7 +63,7 @@ static void continue_btn_cb(lv_event_t *e)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
     if (send_pending_instruction("PREPARE") == 0) {
         if (deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
-            unlink(DENEB_PENDING_JOB_PATH);
+            deneb_pending_job_file_clear_default();
         finish_prompt("print_conflict.continuing", 0);
     } else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));

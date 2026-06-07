@@ -28,23 +28,6 @@ static void log_print_job_state_cmd(const char *cmd, const char *body)
             cmd ? cmd : "(none)", body ? body : "{}");
 }
 
-static const char *parse_state_cmd(const char *body, char *out, size_t out_sz)
-{
-    if (!body || !out || out_sz < 2) return NULL;
-
-    while (*body == ' ' || *body == '\n' || *body == '\r' || *body == '\t' || *body == '"' || *body == '\'')
-        body++;
-
-    size_t i = 0;
-    while (*body && *body != ' ' && *body != '"' && *body != '\'' &&
-           *body != '\n' && *body != '\r' && *body != '\t' && i < out_sz - 1) {
-        out[i++] = *body++;
-    }
-
-    out[i] = '\0';
-    return i > 0 ? out : NULL;
-}
-
 static void write_pending_job_response(http_response_t *resp, const char *job_name, int status_code)
 {
     char buf[512];
@@ -193,8 +176,8 @@ static int write_pending_job_file(const deneb_pending_job_t *job)
 
 static int send_native_job_start(const char *path)
 {
-    return backend_zmq_send_job(path, "Cura", "deneb-current-job",
-                                0.0f, 0.0f);
+    return backend_zmq_send_job(path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
+                                DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
 }
 
 static int register_native_print(const char *path)
@@ -227,7 +210,8 @@ static int register_native_print(const char *path)
 
     deneb_pending_job_init(&job, path);
     job.tracker = (int)(time(NULL) & 0x7fffffff);
-    snprintf(job.source, sizeof(job.source), "%s", "Cura");
+    snprintf(job.source, sizeof(job.source), "%s",
+             DENEB_PRINT_DEFAULT_JOB_SOURCE);
     snprintf(job.material_guid, sizeof(job.material_guid), "%s", target_guid);
     snprintf(job.origin_material_guid, sizeof(job.origin_material_guid), "%s", loaded_guid);
     snprintf(job.origin_material_name, sizeof(job.origin_material_name), "%s", loaded_name);
@@ -287,9 +271,9 @@ void api_print_job_get(const http_request_t *req, http_response_t *resp)
     json_writer_t w;
     json_init(&w, buf, sizeof(buf));
     json_obj_open(&w);
-    json_str(&w, "name", s->filename);
-    json_str(&w, "uuid", s->uuid);
-    json_str(&w, "source", s->source);
+    json_str(&w, "name", deneb_print_job_name_or_default(s->filename));
+    json_str(&w, "uuid", deneb_print_job_uuid_or_default(s->uuid));
+    json_str(&w, "source", deneb_print_job_source_or_default(s->source));
     json_str(&w, "state", get_job_state(s));
     json_float(&w, "progress", deneb_print_progress_fraction(s->progress));
     json_int(&w, "time_elapsed",
@@ -351,7 +335,7 @@ void api_print_job_name_get(const http_request_t *req, http_response_t *resp)
     char buf[196];
     json_writer_t w;
     json_init(&w, buf, sizeof(buf));
-    json_bare_str(&w, s->filename);
+    json_bare_str(&w, deneb_print_job_name_or_default(s->filename));
     json_len(&w);
     api_http_set_body_str(resp, buf);
 }
@@ -363,7 +347,7 @@ void api_print_job_uuid_get(const http_request_t *req, http_response_t *resp)
     char buf[96];
     json_writer_t w;
     json_init(&w, buf, sizeof(buf));
-    json_bare_str(&w, s->uuid);
+    json_bare_str(&w, deneb_print_job_uuid_or_default(s->uuid));
     json_len(&w);
     api_http_set_body_str(resp, buf);
 }
@@ -375,7 +359,7 @@ void api_print_job_source_get(const http_request_t *req, http_response_t *resp)
     char buf[64];
     json_writer_t w;
     json_init(&w, buf, sizeof(buf));
-    json_bare_str(&w, s->source);
+    json_bare_str(&w, deneb_print_job_source_or_default(s->source));
     json_len(&w);
     api_http_set_body_str(resp, buf);
 }
@@ -399,17 +383,18 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
     /* Body is a plain string: "pause", "resume", or "abort" */
     /* Body is a plain string: "pause", "print", or "abort" */
     char cmd[16];
-    const char *action = parse_state_cmd(req->body, cmd, sizeof(cmd));
+    const char *action =
+        deneb_print_action_parse(req->body, cmd, sizeof(cmd)) == 0 ? cmd : NULL;
     log_print_job_state_cmd(action, req->body);
 
-    if (action && strcmp(action, "pause") == 0) {
+    if (deneb_print_action_is_pause(action)) {
         if (backend_zmq_pause() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
             return;
         }
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (action && (strcmp(action, "resume") == 0 || strcmp(action, "print") == 0)) {
+    } else if (deneb_print_action_is_resume_or_start(action)) {
         /* API spec uses "print" to resume; "resume" is an alias */
         if (backend_zmq_resume() < 0) {
             resp->status_code = 503;
@@ -417,21 +402,21 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
             return;
         }
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (action && strcmp(action, "abort") == 0) {
+    } else if (deneb_print_action_is_abort(action)) {
         if (backend_zmq_abort() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
-        unlink(DENEB_PENDING_JOB_PATH);
+        deneb_pending_job_file_clear_default();
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (action && strcmp(action, "stop") == 0) {
+    } else if (deneb_print_action_is_stop(action)) {
         if (backend_zmq_stop_print() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
             return;
         }
-        unlink(DENEB_PENDING_JOB_PATH);
+        deneb_pending_job_file_clear_default();
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
     } else {
         resp->status_code = 400;

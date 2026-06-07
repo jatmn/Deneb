@@ -14,8 +14,8 @@
 #include <time.h>
 #include <math.h>
 #include <stdbool.h>
-#include <unistd.h>
 #include "command_format.h"
+#include "json_field.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
 #include "print_backend_route.h"
@@ -130,7 +130,7 @@ static void log_status_transition(const printer_state_t *curr)
         append_print_history(&previous_state, curr);
         preheat_targets_logged = 0;
         preheat_reached_logged = 0;
-        if (unlink(DENEB_PENDING_JOB_PATH) == 0)
+        if (deneb_pending_job_file_clear_default() == 0)
             fprintf(stderr, "deneb-api: removed pending job metadata after print end\n");
     }
 
@@ -264,46 +264,17 @@ static void reset_rpc_socket(void)
 /* Minimal JSON field extraction */
 static int json_get_str(const char *json, const char *key, char *out, size_t out_sz)
 {
-    char search[128];
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    const char *p = strstr(json, search);
-    if (!p) return -1;
-    p += strlen(search);
-    while (*p == ' ' || *p == ':') p++;
-    if (*p != '"') { /* numeric or bool - find value */
-        const char *end = p;
-        while (*end && *end != ',' && *end != '}' && *end != '\n') end++;
-        size_t len = (size_t)(end - p);
-        if (len >= out_sz) len = out_sz - 1;
-        memcpy(out, p, len);
-        out[len] = '\0';
-        return 0;
-    }
-    p++; /* skip opening quote */
-    const char *end = p;
-    while (*end && *end != '"') {
-        if (*end == '\\') end++; /* skip escaped char */
-        end++;
-    }
-    size_t len = (size_t)(end - p);
-    if (len >= out_sz) len = out_sz - 1;
-    memcpy(out, p, len);
-    out[len] = '\0';
-    return 0;
+    return deneb_json_get_value(json, key, out, out_sz);
 }
 
 static float json_get_float(const char *json, const char *key, float def)
 {
-    char tmp[64];
-    if (json_get_str(json, key, tmp, sizeof(tmp)) < 0) return def;
-    return strtof(tmp, NULL);
+    return deneb_json_get_float(json, key, def);
 }
 
 static int json_get_int(const char *json, const char *key, int def)
 {
-    char tmp[64];
-    if (json_get_str(json, key, tmp, sizeof(tmp)) < 0) return def;
-    return atoi(tmp);
+    return deneb_json_get_int(json, key, def);
 }
 
 static void json_escape_string(const char *src, char *dst, size_t dst_sz)
@@ -538,7 +509,9 @@ int backend_zmq_send_command(const char *cmd, const char *args)
 
     if (!rpc_sock || !cmd || !*cmd) return -1;
     if (cmd &&
-        (strcmp(cmd, "ABORT") == 0 || strcmp(cmd, "PAUSE") == 0 || strcmp(cmd, "RESUME") == 0) &&
+        (strcmp(cmd, DENEB_COMMAND_VERB_ABORT) == 0 ||
+         strcmp(cmd, DENEB_COMMAND_VERB_PAUSE) == 0 ||
+         strcmp(cmd, DENEB_COMMAND_VERB_RESUME) == 0) &&
         (!args || strcmp(args, "{}") == 0)) {
         len = deneb_command_format_action(cmd, buf, sizeof(buf));
     } else {
@@ -598,17 +571,17 @@ int backend_zmq_send_job(const char *path, const char *source,
 
 int backend_zmq_pause(void)
 {
-    return backend_zmq_send_command("PAUSE", "{}");
+    return backend_zmq_send_command(DENEB_COMMAND_VERB_PAUSE, "{}");
 }
 
 int backend_zmq_resume(void)
 {
-    return backend_zmq_send_command("RESUME", "{}");
+    return backend_zmq_send_command(DENEB_COMMAND_VERB_RESUME, "{}");
 }
 
 int backend_zmq_abort(void)
 {
-    return backend_zmq_send_command("ABORT", "{}");
+    return backend_zmq_send_command(DENEB_COMMAND_VERB_ABORT, "{}");
 }
 
 int backend_zmq_stop_print(void)
