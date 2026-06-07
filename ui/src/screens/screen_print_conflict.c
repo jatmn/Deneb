@@ -142,6 +142,43 @@ static int send_stock_instruction(const char *instruction)
     return system(cmd);
 }
 
+static int mark_conflict_handled(void)
+{
+    char buf[4096];
+    const char *old_key = "\"configuration_changes_required\"";
+    const char *new_key = "\"configuration_changes_handled\"";
+    const char *old_status = "\"status\":\"wait_user_action\"";
+    const char *new_status = "\"status\":\"pre_print\"";
+
+    if (json_read_file(buf, sizeof(buf)) < 0)
+        return -1;
+
+    if (!strstr(buf, old_key) && !strstr(buf, old_status))
+        return 0;
+
+    FILE *f = fopen(PENDING_JOB_PATH, "wb");
+    if (!f)
+        return -1;
+
+    int ok = 1;
+    const char *p = buf;
+    while (*p && ok) {
+        if (strncmp(p, old_key, strlen(old_key)) == 0) {
+            ok = fwrite(new_key, 1, strlen(new_key), f) == strlen(new_key);
+            p += strlen(old_key);
+        } else if (strncmp(p, old_status, strlen(old_status)) == 0) {
+            ok = fwrite(new_status, 1, strlen(new_status), f) ==
+                 strlen(new_status);
+            p += strlen(old_status);
+        } else {
+            ok = fputc(*p++, f) != EOF;
+        }
+    }
+    fclose(f);
+
+    return ok ? 0 : -1;
+}
+
 static void finish_prompt(const char *status_key, int remove_pending)
 {
     if (remove_pending)
@@ -156,9 +193,11 @@ static void continue_btn_cb(lv_event_t *e)
     (void)e;
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
-    if (send_stock_instruction("PREPARE") == 0)
+    if (send_stock_instruction("PREPARE") == 0) {
+        if (mark_conflict_handled() < 0)
+            unlink(PENDING_JOB_PATH);
         finish_prompt("print_conflict.continuing", 0);
-    else if (status_label)
+    } else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
 }
 

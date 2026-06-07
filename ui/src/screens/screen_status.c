@@ -90,6 +90,17 @@ static int is_print_lifecycle_req(const char *req)
     return str_is_one_of_ci(req, lifecycle_reqs);
 }
 
+static int is_stoppable_print_req(const char *req)
+{
+    static const char *const stoppable_reqs[] = {
+        "JOB", "Print", "Printing",
+        "PAUSE", "Pause", "Paused",
+        NULL
+    };
+
+    return str_is_one_of_ci(req, stoppable_reqs);
+}
+
 static int is_idle_like_req(const char *req)
 {
     static const char *const idle_reqs[] = {
@@ -200,6 +211,20 @@ static int has_active_print_context(const printer_state_t *s, int has_print_name
             !is_idle_like_req(s->current_req));
 }
 
+static int has_stoppable_print_context(const printer_state_t *s, int has_print_name)
+{
+    if (s->is_paused)
+        return 1;
+
+    if (!has_print_name)
+        return 0;
+
+    if (s->is_printing || s->time_total > 0 || s->time_left > 0)
+        return 1;
+
+    return is_stoppable_print_req(s->current_req);
+}
+
 static void clear_active_print_context_if_idle(const printer_state_t *s, int has_print_name)
 {
     if (!has_active_print_context(s, has_print_name) &&
@@ -226,7 +251,7 @@ static void stop_btn_cb(lv_event_t *e)
 {
     (void)e;
     const printer_state_t *s = backend_get_state();
-    if (!has_active_print_context(s, is_print_job_filename(s->filename)) ||
+    if (!has_stoppable_print_context(s, is_print_job_filename(s->filename)) ||
         backend_is_stop_print_inflight())
         return;
 
@@ -305,6 +330,8 @@ static void update_timer_cb(lv_timer_t *timer)
     /* Printer state */
     if (s->is_paused)
         lv_label_set_text(state_label, locale_get("status.paused"));
+    else if (is_print_lifecycle_req(s->current_req) && !s->time_total)
+        lv_label_set_text(state_label, locale_get("status.preparing"));
     else if (s->is_printing)
         lv_label_set_text(state_label, locale_get("status.printing"));
     else
@@ -334,7 +361,10 @@ static void update_timer_cb(lv_timer_t *timer)
         s->nozzle_temp_set <= 0.0f)
         clear_active_print_context_if_idle(s, has_print_name);
 
-    set_btn_enabled(stop_btn, job_active && !stop_inflight && !backend_is_stop_print_inflight());
+    set_btn_enabled(stop_btn,
+                    has_stoppable_print_context(s, has_print_name) &&
+                    !stop_inflight &&
+                    !backend_is_stop_print_inflight());
 
     /* Position */
     set_position_label(pos_label, s->pos_x, s->pos_y, s->pos_z);
