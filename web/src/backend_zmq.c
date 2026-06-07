@@ -22,6 +22,7 @@
 #include "print_backend_route.h"
 #include "print_history.h"
 #include "print_state_rules.h"
+#include "status_payload.h"
 
 #ifdef BACKEND_ZMQ_STUB
 
@@ -262,22 +263,6 @@ static void reset_rpc_socket(void)
     if (zmq_ctx) create_rpc_socket();
 }
 
-/* Minimal JSON field extraction */
-static int json_get_str(const char *json, const char *key, char *out, size_t out_sz)
-{
-    return deneb_json_get_value(json, key, out, out_sz);
-}
-
-static float json_get_float(const char *json, const char *key, float def)
-{
-    return deneb_json_get_float(json, key, def);
-}
-
-static int json_get_int(const char *json, const char *key, int def)
-{
-    return deneb_json_get_int(json, key, def);
-}
-
 static void update_status_cache(void)
 {
     /* Pre-serialize the current state to JSON for fast serving */
@@ -380,52 +365,41 @@ void backend_zmq_poll(void)
         /* Skip topic prefix "10001<" */
         const char *json = memchr(data, '<', len);
         if (json) {
+            deneb_status_payload_t payload;
+
             json++; /* skip the '<' */
+            if (deneb_status_payload_parse(json, &payload) != 0) {
+                zmq_msg_close(&msg);
+                continue;
+            }
 
-            state.nozzle_temp_cur = json_get_float(json, "headTcur", 0);
-            state.nozzle_temp_set = json_get_float(json, "headTset", 0);
-            state.bed_temp_cur = json_get_float(json, "bedTcur", 0);
-            state.bed_temp_set = json_get_float(json, "bedTset", 0);
-            state.pos_x = json_get_float(json, "X", 0);
-            state.pos_y = json_get_float(json, "Y", 0);
-            state.pos_z = json_get_float(json, "Z", 0);
-            state.pos_e = json_get_float(json, "E", 0);
-            state.time_total = json_get_int(json, "Ttot", 0);
-            state.time_left = json_get_int(json, "Tleft", 0);
-
-            state.progress = deneb_print_progress_percent(state.time_total,
-                                                          state.time_left);
-
-            state.filename[0] = '\0';
-            state.source[0] = '\0';
-            state.uuid[0] = '\0';
-            state.current_req[0] = '\0';
-            json_get_str(json, "file", state.filename, sizeof(state.filename));
-            json_get_str(json, "source", state.source, sizeof(state.source));
-            json_get_str(json, "uuid", state.uuid, sizeof(state.uuid));
-            json_get_str(json, "req", state.current_req, sizeof(state.current_req));
-
-            state.topcap_temp_cur = json_get_float(json, "topcapTemperature", 0);
-            state.topcap_present = json_get_int(json, "topcapIsPresent", 0) ? true : false;
-
-            deneb_print_observation_t obs;
-            obs.req = state.current_req;
-            obs.file = state.filename;
-            obs.time_total = state.time_total;
-            obs.time_left = state.time_left;
-            obs.bed_target = state.bed_temp_set;
-            obs.nozzle_target = state.nozzle_temp_set;
-
-            state.is_paused = deneb_print_req_is_paused(state.current_req);
+            state.nozzle_temp_cur = payload.nozzle_temp_cur;
+            state.nozzle_temp_set = payload.nozzle_temp_set;
+            state.bed_temp_cur = payload.bed_temp_cur;
+            state.bed_temp_set = payload.bed_temp_set;
+            state.pos_x = payload.pos_x;
+            state.pos_y = payload.pos_y;
+            state.pos_z = payload.pos_z;
+            state.pos_e = payload.pos_e;
+            state.time_total = payload.time_total;
+            state.time_left = payload.time_left;
+            state.progress = payload.progress;
+            snprintf(state.filename, sizeof(state.filename), "%s", payload.file);
+            snprintf(state.source, sizeof(state.source), "%s", payload.source);
+            snprintf(state.uuid, sizeof(state.uuid), "%s", payload.uuid);
+            snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
+            state.topcap_temp_cur = payload.topcap_temp_cur;
+            state.topcap_present = payload.topcap_present != 0;
+            state.is_paused = payload.is_paused != 0;
             state.is_printing =
-                deneb_print_has_active_context(&obs, 0, state.is_paused,
+                deneb_print_has_active_context(&payload.observation, 0, state.is_paused,
                                                deneb_print_file_is_candidate(state.filename));
             if (!state.is_printing) {
                 state.time_total = 0;
                 state.time_left = 0;
                 state.progress = 0;
             }
-            state.has_error = (json_get_int(json, "received_faults", 0) != 0);
+            state.has_error = payload.has_error != 0;
 
             state.connected = true;
             struct timespec ts;

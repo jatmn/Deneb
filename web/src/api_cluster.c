@@ -9,23 +9,18 @@
 #include "api_print_job.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
+#include "material_catalog.h"
 #include "pending_job_file.h"
 #include "printer_identity.h"
 #include "print_profile.h"
 #include "print_state_rules.h"
 
-#include <ctype.h>
-#include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-
-#define DENEB_CLUSTER_MATERIAL_DIR "/home/3D/deneb-materials"
 
 static int persist_uploaded_material(const http_request_t *req);
 static void write_cluster_materials_response(http_response_t *resp);
@@ -137,70 +132,6 @@ void api_cluster_materials_get(const http_request_t *req, http_response_t *resp)
     write_cluster_materials_response(resp);
 }
 
-static int copy_tag_value(const char *xml, const char *tag, char *out, size_t out_sz)
-{
-    char open_tag[32];
-    char close_tag[32];
-    snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
-    snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
-
-    const char *start = strstr(xml, open_tag);
-    if (!start) return -1;
-    start += strlen(open_tag);
-    const char *end = strstr(start, close_tag);
-    if (!end || end <= start) return -1;
-
-    size_t len = (size_t)(end - start);
-    while (len > 0 && isspace((unsigned char)*start)) {
-        start++;
-        len--;
-    }
-    while (len > 0 && isspace((unsigned char)start[len - 1])) len--;
-    if (len == 0 || len >= out_sz) return -1;
-
-    memcpy(out, start, len);
-    out[len] = '\0';
-    return 0;
-}
-
-static int is_safe_guid(const char *guid)
-{
-    size_t len = strlen(guid);
-    if (len < 32 || len >= 64) return 0;
-    for (const char *p = guid; *p; p++) {
-        if (!(isxdigit((unsigned char)*p) || *p == '-')) return 0;
-    }
-    return 1;
-}
-
-static int parse_material_file(const char *path, char *guid, size_t guid_sz, int *version)
-{
-    FILE *f = fopen(path, "rb");
-    if (!f) return -1;
-
-    char *xml = malloc(131073);
-    if (!xml) {
-        fclose(f);
-        return -1;
-    }
-
-    size_t n = fread(xml, 1, 131072, f);
-    fclose(f);
-    xml[n] = '\0';
-
-    char version_str[32];
-    int ok = copy_tag_value(xml, "GUID", guid, guid_sz) == 0 &&
-             copy_tag_value(xml, "version", version_str, sizeof(version_str)) == 0 &&
-             is_safe_guid(guid);
-    if (ok) {
-        *version = atoi(version_str);
-        ok = *version >= 0;
-    }
-
-    free(xml);
-    return ok ? 0 : -1;
-}
-
 static int persist_uploaded_material(const http_request_t *req)
 {
     char material_path[256] = "";
@@ -220,104 +151,29 @@ static int persist_uploaded_material(const http_request_t *req)
         return -1;
     }
 
-    if (parse_material_file(material_path, guid, sizeof(guid), &version) < 0) {
-        fprintf(stderr, "deneb-api: material upload rejected: failed to parse %s\n", filename);
+    if (deneb_material_catalog_store_file(material_path,
+                                          DENEB_MATERIAL_CATALOG_DIR,
+                                          guid, sizeof(guid), &version) < 0) {
+        fprintf(stderr, "deneb-api: material upload rejected: failed to store %s: %s\n",
+                filename, strerror(errno));
         unlink(material_path);
         return -1;
     }
-
-    if (mkdir(DENEB_CLUSTER_MATERIAL_DIR, 0755) < 0 && errno != EEXIST) {
-        fprintf(stderr, "deneb-api: failed to create material catalog %s: %s\n",
-                DENEB_CLUSTER_MATERIAL_DIR, strerror(errno));
-        unlink(material_path);
-        return -1;
-    }
-
-    char record_path[256];
-    snprintf(record_path, sizeof(record_path), "%s/%s.json", DENEB_CLUSTER_MATERIAL_DIR, guid);
-    FILE *out = fopen(record_path, "w");
-    if (!out) {
-        fprintf(stderr, "deneb-api: failed to write material record %s: %s\n",
-                record_path, strerror(errno));
-        unlink(material_path);
-        return -1;
-    }
-    fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, version);
-    fclose(out);
     unlink(material_path);
     fprintf(stderr, "deneb-api: accepted material %s version %d\n", guid, version);
     return 0;
 }
 
-static int append_str(char **buf, size_t *cap, size_t *pos, const char *s)
-{
-    size_t len = strlen(s);
-    while (*pos + len + 1 > *cap) {
-        size_t new_cap = *cap ? (*cap * 2) : 256;
-        while (new_cap < *pos + len + 1) new_cap *= 2;
-
-        char *new_buf = realloc(*buf, new_cap);
-        if (!new_buf)
-            return -1;
-
-        *buf = new_buf;
-        *cap = new_cap;
-    }
-
-    memcpy(*buf + *pos, s, len);
-    *pos += len;
-    (*buf)[*pos] = '\0';
-    return 0;
-}
-
 static void write_cluster_materials_response(http_response_t *resp)
 {
-    const size_t stock_len = strlen(DENEB_CLUSTER_MATERIALS_JSON);
-    size_t cap = stock_len + 1024;
-    char *body = malloc(cap);
-    if (!body) {
-        api_http_set_body_str(resp, DENEB_CLUSTER_MATERIALS_JSON);
-        return;
-    }
+    char *body = NULL;
+    size_t pos = 0;
 
-    size_t pos = stock_len > 0 ? stock_len - 1 : 0;
-    memcpy(body, DENEB_CLUSTER_MATERIALS_JSON, pos);
-    body[pos] = '\0';
-
-    DIR *dir = opendir(DENEB_CLUSTER_MATERIAL_DIR);
-    if (dir) {
-        struct dirent *ent;
-        while ((ent = readdir(dir)) != NULL) {
-            if (ent->d_name[0] == '.') continue;
-            if (!strstr(ent->d_name, ".json")) continue;
-
-            char path[256];
-            snprintf(path, sizeof(path), "%s/%s", DENEB_CLUSTER_MATERIAL_DIR, ent->d_name);
-            FILE *f = fopen(path, "r");
-            if (!f) continue;
-
-            char record[160];
-            size_t n = fread(record, 1, sizeof(record) - 1, f);
-            fclose(f);
-            record[n] = '\0';
-            if (n == 0 || record[0] != '{') continue;
-
-            if (append_str(&body, &cap, &pos, ",") < 0 ||
-                append_str(&body, &cap, &pos, record) < 0) {
-                closedir(dir);
-                resp->status_code = 500;
-                api_http_set_body_str(resp, "{\"message\":\"Material catalog response too large\"}");
-                free(body);
-                return;
-            }
-        }
-        closedir(dir);
-    }
-
-    if (append_str(&body, &cap, &pos, "]") < 0) {
+    if (deneb_material_catalog_build_response(DENEB_CLUSTER_MATERIALS_JSON,
+                                              DENEB_MATERIAL_CATALOG_DIR,
+                                              &body, &pos) < 0) {
         resp->status_code = 500;
         api_http_set_body_str(resp, "{\"message\":\"Material catalog response too large\"}");
-        free(body);
         return;
     }
     api_http_set_body(resp, body, pos);

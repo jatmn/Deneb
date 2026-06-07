@@ -15,6 +15,9 @@
 
 void deneb_print_profile_read_loaded_material_guid(char *out, size_t out_sz);
 void deneb_print_profile_read_loaded_nozzle_size(char *out, size_t out_sz);
+int deneb_print_profile_normalize_nozzle_size(const char *value,
+                                              char *out,
+                                              size_t out_sz);
 void deneb_print_profile_read_loaded_nozzle_id(char *out, size_t out_sz);
 void deneb_print_profile_normalize_nozzle_id(const char *value,
                                              char *out,

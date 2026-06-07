@@ -16,6 +16,7 @@
 #include "pending_job_file.h"
 #include "print_backend_route.h"
 #include "print_state_rules.h"
+#include "status_payload.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -144,29 +145,6 @@ static const char *json_get_str(const char *json, const char *key)
     if (deneb_json_get_value(json, key, buf, sizeof(buf)) != 0)
         buf[0] = '\0';
     return buf;
-}
-
-static float json_get_float(const char *json, const char *key)
-{
-    return deneb_json_get_float(json, key, 0.0f);
-}
-
-static int json_get_int(const char *json, const char *key)
-{
-    return deneb_json_get_int(json, key, 0);
-}
-
-static int str_is_one_of(const char *value, const char *const *choices)
-{
-    if (!value)
-        return 0;
-
-    for (int i = 0; choices[i]; i++) {
-        if (strcmp(value, choices[i]) == 0)
-            return 1;
-    }
-
-    return 0;
 }
 
 static int has_temp_targets(const printer_state_t *s)
@@ -302,71 +280,29 @@ static void parse_status(const char *json)
 {
     printer_state_t prev = state;
     int was_printing = prev.is_printing || prev.is_paused;
-    state.nozzle_temp_set = json_get_float(json, "headTset");
-    state.nozzle_temp_cur = json_get_float(json, "headTcur");
-    state.bed_temp_set = json_get_float(json, "bedTset");
-    state.bed_temp_cur = json_get_float(json, "bedTcur");
-    state.topcap_temp_cur = json_get_float(json, "topcapTemperature");
-    const char *topcap = json_get_str(json, "topcapIsPresent");
-    state.topcap_present = topcap &&
-                            str_is_one_of(topcap,
-                                          (const char *const[]){"yes", "true",
-                                                               "t", "1",
-                                                               NULL});
-    state.pos_x = json_get_float(json, "X");
-    state.pos_y = json_get_float(json, "Y");
-    state.pos_z = json_get_float(json, "Z");
-    state.pos_e = json_get_float(json, "E");
-    state.time_total = json_get_int(json, "Ttot");
-    state.time_left = json_get_int(json, "Tleft");
+    deneb_status_payload_t payload;
 
-    char file_buf[256];
-    char name_buf[256];
-    snprintf(file_buf, sizeof(file_buf), "%s", json_get_str(json, "file"));
-    snprintf(name_buf, sizeof(name_buf), "%s", json_get_str(json, "name"));
-    const char *file = file_buf;
-    const char *name = name_buf;
-    if ((!file || !*file || strcmp(file, "none") == 0) &&
-        name && strcmp(name, "none") != 0 && *name) {
-        file = name;
-    }
-    int has_file = file && *file && strcmp(file, "none") != 0;
-    const char *src = json_get_str(json, "source");
-    if (src && *src)
-        strncpy(state.source, src, sizeof(state.source) - 1);
-    else
-        state.source[0] = '\0';
+    if (deneb_status_payload_parse(json, &payload) != 0)
+        return;
 
-    const char *uuid = json_get_str(json, "uuid");
-    if (uuid && *uuid)
-        strncpy(state.uuid, uuid, sizeof(state.uuid) - 1);
-    else
-        state.uuid[0] = '\0';
-
-    const char *req = json_get_str(json, "req");
-    if (req && *req)
-        strncpy(state.current_req, req, sizeof(state.current_req) - 1);
-    else
-        state.current_req[0] = '\0';
-
-    state.progress = deneb_print_progress_percent(state.time_total,
-                                                  state.time_left);
-
-    deneb_print_observation_t obs;
-    obs.req = state.current_req;
-    obs.file = file;
-    obs.time_total = state.time_total;
-    obs.time_left = state.time_left;
-    obs.bed_target = state.bed_temp_set;
-    obs.nozzle_target = state.nozzle_temp_set;
-
-    /* Derive state flags */
-    if (deneb_print_req_is_abort(state.current_req)) {
-        state.is_printing = false;
-    } else {
-        state.is_printing = deneb_print_observation_has_context(&obs);
-    }
-    state.is_paused = deneb_print_req_is_paused(state.current_req);
+    state.nozzle_temp_set = payload.nozzle_temp_set;
+    state.nozzle_temp_cur = payload.nozzle_temp_cur;
+    state.bed_temp_set = payload.bed_temp_set;
+    state.bed_temp_cur = payload.bed_temp_cur;
+    state.topcap_temp_cur = payload.topcap_temp_cur;
+    state.topcap_present = payload.topcap_present != 0;
+    state.pos_x = payload.pos_x;
+    state.pos_y = payload.pos_y;
+    state.pos_z = payload.pos_z;
+    state.pos_e = payload.pos_e;
+    state.time_total = payload.time_total;
+    state.time_left = payload.time_left;
+    state.progress = payload.progress;
+    snprintf(state.source, sizeof(state.source), "%s", payload.source);
+    snprintf(state.uuid, sizeof(state.uuid), "%s", payload.uuid);
+    snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
+    state.is_printing = payload.is_printing != 0;
+    state.is_paused = payload.is_paused != 0;
 
     char pending_name[128];
     int has_pending_name =
@@ -375,12 +311,12 @@ static void parse_status(const char *json)
          pending_name[0] != '\0');
     char original_file[128];
 
-    if (has_file) {
-        if (deneb_pending_job_file_display_value(file, original_file,
+    if (payload.has_file) {
+        if (deneb_pending_job_file_display_value(payload.file, original_file,
                                                  sizeof(original_file)) != 0)
             original_file[0] = '\0';
 
-        if (is_transient_print_file(file)) {
+        if (is_transient_print_file(payload.file)) {
             if (has_pending_name) {
                 set_filename_or_none(state.filename, pending_name);
             } else if (retained_print_filename[0]) {
@@ -391,15 +327,15 @@ static void parse_status(const char *json)
             if (state.filename[0] && strcmp(state.filename, original_file) != 0)
                 fprintf(stderr, "backend: ignored transient print file \"%s\" and kept \"%s\" as active name\n",
                         original_file, state.filename);
-        } else if (!is_print_file_candidate(file)) {
+        } else if (!is_print_file_candidate(payload.file)) {
             if (retained_print_filename[0] && (!state.filename[0] || !is_print_file_candidate(state.filename))) {
                 set_filename_or_none(state.filename, retained_print_filename);
             } else if (prev.filename[0] && is_print_file_candidate(prev.filename)) {
                 set_filename_or_none(state.filename, prev.filename);
             }
         } else {
-            set_filename_or_none(state.filename, file);
-            retain_print_filename(file);
+            set_filename_or_none(state.filename, payload.file);
+            retain_print_filename(payload.file);
         }
     } else if (should_hold_print_filename(&state, &prev) && has_pending_name) {
         set_filename_or_none(state.filename, pending_name);
@@ -432,7 +368,7 @@ static void parse_status(const char *json)
     }
 
     if (state.filename[0] == '\0' &&
-        !has_file &&
+        !payload.has_file &&
         !should_hold_print_filename(&state, &prev) &&
         state.bed_temp_set == 0.0f &&
         state.nozzle_temp_set == 0.0f) {
@@ -463,7 +399,7 @@ static void parse_status(const char *json)
     state.progress = deneb_print_progress_percent(state.time_total,
                                                   state.time_left);
 
-    state.has_error = (json_get_int(json, "received_faults") != 0);
+    state.has_error = payload.has_error != 0;
 
     log_status_transition(&state);
 

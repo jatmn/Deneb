@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "lvgl.h"
+#include "print_profile.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,34 +20,12 @@ static const char *size_values[] = {"0.25", "0.4", "0.6", "0.8"};
 static const char *size_labels[] = {"0.25 mm", "0.40 mm", "0.60 mm", "0.80 mm"};
 static char selected_size[8] = "0.4";
 
-static void normalize_size(char *size)
-{
-    if (strcmp(size, "0.40") == 0)
-        strcpy(size, "0.4");
-    else if (strcmp(size, "0.60") == 0)
-        strcpy(size, "0.6");
-    else if (strcmp(size, "0.80") == 0)
-        strcpy(size, "0.8");
-}
-
 static void load_selected_size(void)
 {
-    FILE *f = popen("uci -q get ultimaker.option.nozzle_size 2>/dev/null", "r");
-    snprintf(selected_size, sizeof(selected_size), "0.4");
-    if (f) {
-        if (fgets(selected_size, sizeof(selected_size), f)) {
-            selected_size[strcspn(selected_size, "\r\n")] = '\0';
-            normalize_size(selected_size);
-        }
-        pclose(f);
-    }
-
-    if (strcmp(selected_size, "0.25") != 0 &&
-        strcmp(selected_size, "0.4") != 0 &&
-        strcmp(selected_size, "0.6") != 0 &&
-        strcmp(selected_size, "0.8") != 0) {
-        snprintf(selected_size, sizeof(selected_size), "0.4");
-    }
+    deneb_print_profile_read_loaded_nozzle_size(selected_size,
+                                                sizeof(selected_size));
+    deneb_print_profile_normalize_nozzle_size(selected_size, selected_size,
+                                              sizeof(selected_size));
 }
 
 static const char *display_label_for_size(const char *size)

@@ -160,3 +160,47 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
     snprintf(out + n, out_sz - (size_t)n, "}]\n");
     return (int)strlen(out);
 }
+
+int deneb_pending_job_write_file(const deneb_pending_job_t *job,
+                                 const char *path)
+{
+    char json[4096];
+    char tmp_path[320];
+    FILE *f;
+    int len;
+    int n;
+
+    if (!job || !path || !path[0])
+        return -1;
+
+    len = deneb_pending_job_serialize(job, json, sizeof(json));
+    if (len < 0)
+        return -1;
+
+    n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof(tmp_path))
+        return -1;
+
+    f = fopen(tmp_path, "wb");
+    if (!f)
+        return -1;
+    if (fwrite(json, 1, (size_t)len, f) != (size_t)len) {
+        fclose(f);
+        remove(tmp_path);
+        return -1;
+    }
+    if (fclose(f) != 0) {
+        remove(tmp_path);
+        return -1;
+    }
+    if (rename(tmp_path, path) < 0) {
+        remove(tmp_path);
+        return -1;
+    }
+    return 0;
+}
+
+int deneb_pending_job_write_default(const deneb_pending_job_t *job)
+{
+    return deneb_pending_job_write_file(job, DENEB_PENDING_JOB_PATH);
+}

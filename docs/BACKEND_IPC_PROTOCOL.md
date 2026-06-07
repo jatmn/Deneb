@@ -118,22 +118,30 @@ history file contracts used by compatibility APIs. Pending-job metadata lives at
 `/tmp/deneb-cluster-print-job.json`, print history lives at
 `/home/3D/deneb-print-history.json`, and API reads use a shared JSON-array
 fallback helper so missing, invalid, or truncated files return `[]` consistently.
+The native pending-job module owns serialization and atomic temp-write/rename
+for pending-job metadata so Cura upload registration and future print-service
+entry points persist the same JSON shape.
 `common/print/print_profile.*` owns the UM2C/Cura machine family and variant,
 default material/nozzle identity, loaded material/nozzle UCI reads, and nozzle
-ID normalization used by pending-job metadata and Cura/UM API responses.
+size/ID normalization used by pending-job metadata, touchscreen settings, and
+Cura/UM API responses.
 `common/print/print_job_file.*` owns the Deneb upload spool path
 `/home/3D/deneb-uploads` and the lightweight metadata hints read from uploaded
 G-code/UFP-expanded files, including `material_guid`, `nozzle_size`, and
 `print_core_id`.
 `common/print/printer_identity.*` owns the fallback hostname and system GUID
 reads shared by Cura cluster printer/job responses and UM system endpoints.
+`common/print/material_catalog.*` owns Cura/touchscreen material XML
+GUID/version parsing, safe catalog record storage, and dynamic
+stock-plus-uploaded material response assembly.
 
 Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. Pending-job file handling, command-frame formatting,
 print-state classification, JSON file fallback reads, JSON field parsing,
-JSON string escaping, machine/material/nozzle profile defaults, web/API
-uploaded print-file metadata parsing, printer identity reads, and web/API
-status labels are shared native helpers so touchscreen, web/API, and
+JSON string escaping, machine/material/nozzle profile defaults, stock-status
+truthy value parsing, stock/native status payload parsing, web/API uploaded
+print-file metadata parsing, printer identity reads, and web/API status labels
+are shared native helpers so touchscreen, web/API, and
 `deneb-printsvc` clients agree on escaping,
 preheat, paused, abort, active-print, offline, finished-job state, and
 Cura/pending job identity defaults. UM API and Cura cluster print-job action

@@ -7,10 +7,10 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "lvgl.h"
+#include "material_catalog.h"
+#include "print_profile.h"
 
-#include <ctype.h>
 #include <dirent.h>
-#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #define DENEB_MATERIAL_IMPORT_ROOT "/mnt/sda1"
-#define DENEB_MATERIAL_CATALOG_DIR "/home/3D/deneb-materials"
 
 typedef struct {
     const char *label;
@@ -42,28 +41,6 @@ static const material_choice_t materials[] = {
 static lv_obj_t *screen = NULL;
 static lv_obj_t *status_label = NULL;
 
-static int read_current_material_guid(char *guid, size_t guid_size)
-{
-    FILE *f;
-
-    if (!guid || guid_size == 0)
-        return -1;
-
-    guid[0] = '\0';
-    f = popen("uci -q get ultimaker.option.material_guid 2>/dev/null", "r");
-    if (!f)
-        return -1;
-
-    if (!fgets(guid, guid_size, f)) {
-        pclose(f);
-        return -1;
-    }
-    pclose(f);
-
-    guid[strcspn(guid, "\r\n")] = '\0';
-    return guid[0] ? 0 : -1;
-}
-
 static const char *find_material_label(const char *guid)
 {
     if (!guid || !*guid)
@@ -77,88 +54,6 @@ static const char *find_material_label(const char *guid)
     return NULL;
 }
 
-static int copy_tag_value(const char *xml, const char *tag,
-                          char *out, size_t out_sz)
-{
-    char open_tag[32];
-    char close_tag[32];
-    const char *start;
-    const char *end;
-    size_t len;
-
-    snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
-    snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
-
-    start = strstr(xml, open_tag);
-    if (!start)
-        return -1;
-    start += strlen(open_tag);
-    end = strstr(start, close_tag);
-    if (!end || end <= start)
-        return -1;
-
-    len = (size_t)(end - start);
-    while (len > 0 && isspace((unsigned char)*start)) {
-        start++;
-        len--;
-    }
-    while (len > 0 && isspace((unsigned char)start[len - 1]))
-        len--;
-    if (len == 0 || len >= out_sz)
-        return -1;
-
-    memcpy(out, start, len);
-    out[len] = '\0';
-    return 0;
-}
-
-static int is_safe_guid(const char *guid)
-{
-    size_t len = strlen(guid);
-
-    if (len < 32 || len >= 64)
-        return 0;
-    for (const char *p = guid; *p; p++) {
-        if (!(isxdigit((unsigned char)*p) || *p == '-'))
-            return 0;
-    }
-    return 1;
-}
-
-static int parse_material_file(const char *path, char *guid, size_t guid_sz,
-                               int *version)
-{
-    FILE *f = fopen(path, "rb");
-    char *xml;
-    size_t n;
-    char version_str[32];
-    int ok;
-
-    if (!f)
-        return -1;
-
-    xml = malloc(131073);
-    if (!xml) {
-        fclose(f);
-        return -1;
-    }
-
-    n = fread(xml, 1, 131072, f);
-    fclose(f);
-    xml[n] = '\0';
-
-    ok = copy_tag_value(xml, "GUID", guid, guid_sz) == 0 &&
-         copy_tag_value(xml, "version", version_str, sizeof(version_str)) == 0 &&
-         is_safe_guid(guid);
-    if (ok) {
-        *version = atoi(version_str);
-        ok = *version >= 0;
-    }
-
-    free(xml);
-    return ok ? 0 : -1;
-}
-
 static int has_material_extension(const char *name)
 {
     const char *dot = strrchr(name, '.');
@@ -168,24 +63,6 @@ static int has_material_extension(const char *name)
     return strcmp(dot, ".xml") == 0 ||
            strcmp(dot, ".fdm_material") == 0 ||
            strcmp(dot, ".material") == 0;
-}
-
-static int write_material_record(const char *guid, int version)
-{
-    char record_path[256];
-    FILE *out;
-
-    if (mkdir(DENEB_MATERIAL_CATALOG_DIR, 0755) < 0 && errno != EEXIST)
-        return -1;
-
-    snprintf(record_path, sizeof(record_path), "%s/%s.json",
-             DENEB_MATERIAL_CATALOG_DIR, guid);
-    out = fopen(record_path, "w");
-    if (!out)
-        return -1;
-
-    fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, version);
-    return fclose(out) == 0 ? 0 : -1;
 }
 
 static int import_material_tree(const char *root, int depth, int *imported)
@@ -217,8 +94,10 @@ static int import_material_tree(const char *root, int depth, int *imported)
             char guid[64];
             int version = 0;
 
-            if (parse_material_file(path, guid, sizeof(guid), &version) == 0 &&
-                write_material_record(guid, version) == 0) {
+            if (deneb_material_catalog_store_file(path,
+                                                  DENEB_MATERIAL_CATALOG_DIR,
+                                                  guid, sizeof(guid),
+                                                  &version) == 0) {
                 (*imported)++;
             }
         }
@@ -242,8 +121,8 @@ static void update_current_material_status(void)
     char guid[64];
     const char *label = NULL;
 
-    if (read_current_material_guid(guid, sizeof(guid)) == 0)
-        label = find_material_label(guid);
+    deneb_print_profile_read_loaded_material_guid(guid, sizeof(guid));
+    label = find_material_label(guid);
 
     lv_label_set_text_fmt(status_label, locale_get("material.current_fmt"),
                           label ? label

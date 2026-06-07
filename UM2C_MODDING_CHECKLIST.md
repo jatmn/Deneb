@@ -628,6 +628,14 @@ Completed implementation slices:
   strict numeric parsing, and boolean parsing so Deneb auth/setup and UM
   printer motion/action request bodies no longer carry separate miniature JSON
   parsers beside the stock print-status parser.
+- [x] Move stock-status truthy value parsing into `common/print/json_field.*`
+  so LCD and web/API status readers interpret fields such as
+  `topcapIsPresent` consistently across numeric, `"yes"`, `"true"`, and
+  shorthand truthy payloads.
+- [x] Move stock/native status payload field parsing into
+  `common/print/status_payload.*` so LCD `backend_comm`, web `backend_zmq`,
+  and native tests share one owner for temperature, position, job identity,
+  topcap, fault, progress, pause, and active-print derivation from ZMQ JSON.
 - [x] Move uploaded print-file metadata sniffing into
   `common/print/print_job_file.*` so Cura upload registration, conflict
   detection, and future native print-service entry points share one parser for
@@ -688,6 +696,22 @@ Completed implementation slices:
 - [x] Move print progress percentage calculation into shared native print-state
   rules so LCD and web/API backend status parsing clamp weird `Tleft` values
   the same way during preheat, printing, completion, and abort cleanup.
+- [x] Move pending-job metadata persistence into the native pending-job module
+  so Cura upload registration and future `deneb-printsvc` entry points share
+  the same serialize, temp-write, atomic-rename, and cleanup contract instead
+  of keeping the file writer inside the web print-job endpoint.
+- [x] Move Cura/touchscreen material catalog XML parsing, GUID validation,
+  record storage, and dynamic material-list response assembly into
+  `common/print/material_catalog.*` so cluster API uploads and USB material
+  imports share native material persistence rules.
+- [x] Move touchscreen loaded material/nozzle reads onto
+  `common/print/print_profile.*` so settings screens, Cura conflict detection,
+  pending metadata, and UM/Cura API responses all use the same native UCI
+  fallback defaults.
+- [x] Move supported nozzle-size normalization into
+  `common/print/print_profile.*` so the touchscreen settings screen and native
+  Cura/print metadata paths share one default/fallback rule for UM2C nozzle
+  sizes.
 - [x] Move UM API print progress fraction clamping into shared native
   print-state rules so API responses cannot drift from the backend percentage
   contract.

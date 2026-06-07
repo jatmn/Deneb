@@ -97,6 +97,26 @@ int deneb_json_get_bool_value(const char *json, const char *key, int *out)
     return -1;
 }
 
+int deneb_json_value_is_truthy(const char *value)
+{
+    if (!value)
+        return 0;
+    return strcmp(value, "true") == 0 ||
+           strcmp(value, "t") == 0 ||
+           strcmp(value, "yes") == 0 ||
+           strcmp(value, "1") == 0;
+}
+
+int deneb_json_get_truthy_value(const char *json, const char *key, int *out)
+{
+    char tmp[32];
+
+    if (!out || deneb_json_get_value(json, key, tmp, sizeof(tmp)) != 0)
+        return -1;
+    *out = deneb_json_value_is_truthy(tmp);
+    return 0;
+}
+
 float deneb_json_get_float(const char *json, const char *key, float def)
 {
     char tmp[64];

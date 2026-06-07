@@ -48,37 +48,6 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
     resp->status_code = status_code;
 }
 
-static int write_pending_job_file(const deneb_pending_job_t *job)
-{
-    char json[4096];
-    char tmp_path[256];
-    FILE *f;
-    int len;
-
-    len = deneb_pending_job_serialize(job, json, sizeof(json));
-    if (len < 0)
-        return -1;
-
-    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", DENEB_PENDING_JOB_PATH);
-    f = fopen(tmp_path, "wb");
-    if (!f)
-        return -1;
-    if (fwrite(json, 1, (size_t)len, f) != (size_t)len) {
-        fclose(f);
-        unlink(tmp_path);
-        return -1;
-    }
-    if (fclose(f) != 0) {
-        unlink(tmp_path);
-        return -1;
-    }
-    if (rename(tmp_path, DENEB_PENDING_JOB_PATH) < 0) {
-        unlink(tmp_path);
-        return -1;
-    }
-    return 0;
-}
-
 static int send_native_job_start(const char *path)
 {
     return backend_zmq_send_job(path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
@@ -132,7 +101,7 @@ static int register_native_print(const char *path)
     job.print_core_change_required =
         loaded_nozzle[0] && target_nozzle[0] && strcmp(loaded_nozzle, target_nozzle) != 0;
 
-    if (write_pending_job_file(&job) < 0) {
+    if (deneb_pending_job_write_default(&job) < 0) {
         fprintf(stderr, "deneb-api: failed to write pending print metadata for %s\n", path);
         return -1;
     }

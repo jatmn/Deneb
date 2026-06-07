@@ -72,6 +72,7 @@ set(DENEB_API_SOURCES
     ../common/print/json_field.c
     ../common/print/json_file.c
     ../common/print/json_string.c
+    ../common/print/material_catalog.c
     ../common/print/printer_identity.c
     ../common/print/print_backend_route.c
     ../common/print/pending_job_file.c
@@ -79,6 +80,7 @@ set(DENEB_API_SOURCES
     ../common/print/print_job_file.c
     ../common/print/print_profile.c
     ../common/print/print_state_rules.c
+    ../common/print/status_payload.c
     ../printsvc/src/pending_job.c
     ../printsvc/src/print_control.c
 )

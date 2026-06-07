@@ -11,6 +11,7 @@
 #include "json_file.h"
 #include "json_string.h"
 #include "macro_registry.h"
+#include "material_catalog.h"
 #include "marlin_packet.h"
 #include "motion_firmware.h"
 #include "motion_policy.h"
@@ -27,11 +28,14 @@
 #include "sha256.h"
 #include "service.h"
 #include "status.h"
+#include "status_payload.h"
 #include "status_parser.h"
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void test_command_parse(void)
 {
@@ -316,6 +320,18 @@ static void test_json_field_helpers(void)
         assert(flag == 0);
         assert(deneb_json_get_bool_value("{\"auth_required\":\"later\"}",
                                          "auth_required", &flag) != 0);
+        assert(deneb_json_get_truthy_value("{\"topcapIsPresent\":\"yes\"}",
+                                           "topcapIsPresent", &flag) == 0);
+        assert(flag == 1);
+        assert(deneb_json_get_truthy_value("{\"topcapIsPresent\":\"t\"}",
+                                           "topcapIsPresent", &flag) == 0);
+        assert(flag == 1);
+        assert(deneb_json_get_truthy_value("{\"topcapIsPresent\":1}",
+                                           "topcapIsPresent", &flag) == 0);
+        assert(flag == 1);
+        assert(deneb_json_get_truthy_value("{\"topcapIsPresent\":\"no\"}",
+                                           "topcapIsPresent", &flag) == 0);
+        assert(flag == 0);
     }
     assert(deneb_json_get_value(json, "missing", value, sizeof(value)) != 0);
     assert(deneb_json_get_int(json, "missing", 7) == 7);
@@ -335,6 +351,45 @@ static void test_json_string_helpers(void)
     assert(strcmp(value, "") == 0);
 }
 
+static void test_status_payload_helpers(void)
+{
+    deneb_status_payload_t payload;
+
+    assert(deneb_status_payload_parse(
+               "{\"name\":\"cube.gcode\",\"file\":\"none\",\"source\":\"Cura\","
+               "\"uuid\":\"job-1\",\"req\":\"JOB\",\"Ttot\":120,\"Tleft\":60,"
+               "\"headTcur\":199.5,\"headTset\":210,\"bedTcur\":58,"
+               "\"bedTset\":60,\"topcapTemperature\":32.5,"
+               "\"topcapIsPresent\":\"yes\",\"received_faults\":1}",
+               &payload) == 0);
+    assert(strcmp(payload.file, "cube.gcode") == 0);
+    assert(strcmp(payload.source, "Cura") == 0);
+    assert(strcmp(payload.uuid, "job-1") == 0);
+    assert(strcmp(payload.req, "JOB") == 0);
+    assert(payload.has_file);
+    assert(payload.is_printing);
+    assert(!payload.is_paused);
+    assert(payload.has_error);
+    assert(payload.topcap_present);
+    assert(payload.progress > 49.9f && payload.progress < 50.1f);
+    assert(payload.nozzle_temp_cur > 199.4f);
+    assert(payload.observation.file == payload.file);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"PAUSE\","
+               "\"Ttot\":120,\"Tleft\":80,\"topcapIsPresent\":\"no\"}",
+               &payload) == 0);
+    assert(payload.is_paused);
+    assert(payload.is_printing);
+    assert(!payload.topcap_present);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"ABORT\","
+               "\"Ttot\":120,\"Tleft\":80}",
+               &payload) == 0);
+    assert(!payload.is_printing);
+}
+
 static void test_print_profile_helpers(void)
 {
     char value[64];
@@ -350,6 +405,15 @@ static void test_print_profile_helpers(void)
     assert(strcmp(value, "0.8 mm") == 0);
     deneb_print_profile_normalize_nozzle_id("", value, sizeof(value));
     assert(strcmp(value, DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_ID) == 0);
+    assert(deneb_print_profile_normalize_nozzle_size("0.60", value,
+                                                     sizeof(value)) == 0);
+    assert(strcmp(value, "0.6") == 0);
+    assert(deneb_print_profile_normalize_nozzle_size(" 0.80 ", value,
+                                                     sizeof(value)) == 0);
+    assert(strcmp(value, "0.8") == 0);
+    assert(deneb_print_profile_normalize_nozzle_size("1.2", value,
+                                                     sizeof(value)) != 0);
+    assert(strcmp(value, DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_SIZE) == 0);
 
     deneb_print_profile_material_name_from_guid(
         DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID, value, sizeof(value));
@@ -452,6 +516,23 @@ static void test_pending_job_metadata(void)
     assert(strstr(json, "\"target_id\":\"0.6 mm\"") != NULL);
 }
 
+static void test_pending_job_metadata_write_file(void)
+{
+    const char *path = "/tmp/deneb-pending-job-write-test.json";
+    deneb_pending_job_t job;
+    deneb_pending_job_file_t loaded;
+
+    deneb_pending_job_init(&job, "/home/3D/deneb-uploads/write-test.gcode");
+    job.tracker = 77;
+    assert(deneb_pending_job_write_file(&job, path) == 0);
+    assert(deneb_pending_job_file_load(path, &loaded) == 0);
+    assert(loaded.tracker == 77);
+    assert(strcmp(loaded.path, "/home/3D/deneb-uploads/write-test.gcode") == 0);
+    assert(strcmp(loaded.name, "write-test.gcode") == 0);
+    assert(!deneb_pending_job_file_has_conflict(&loaded));
+    assert(deneb_pending_job_file_clear(path) == 0);
+}
+
 static void test_print_job_file_metadata(void)
 {
     const char *path = "/tmp/deneb-print-job-metadata-test.gcode";
@@ -501,6 +582,54 @@ static void test_crc_and_packet(void)
     assert(deneb_marlin_packet_encode(7, "M105", packet, sizeof(packet), &written) == 0);
     assert(written > 0);
     assert(strstr((const char *)packet, "N7 M105*") != NULL);
+}
+
+static void test_material_catalog_helpers(void)
+{
+    const char *material_path = "/tmp/deneb-material-catalog-test.xml";
+    const char *catalog_dir = "/tmp/deneb-material-catalog";
+    const char *guid = "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9";
+    char parsed_guid[64];
+    char tag_value[64];
+    char *body = NULL;
+    size_t body_len = 0;
+    int version = -1;
+    FILE *f;
+
+    assert(strcmp(DENEB_MATERIAL_CATALOG_DIR, "/home/3D/deneb-materials") == 0);
+    assert(deneb_material_catalog_copy_tag_value("<GUID> abc </GUID>",
+                                                 "GUID", tag_value,
+                                                 sizeof(tag_value)) == 0);
+    assert(strcmp(tag_value, "abc") == 0);
+    assert(deneb_material_catalog_guid_is_safe(guid));
+    assert(!deneb_material_catalog_guid_is_safe("../bad-guid"));
+
+    remove("/tmp/deneb-material-catalog/506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9.json");
+    rmdir(catalog_dir);
+    f = fopen(material_path, "wb");
+    assert(f != NULL);
+    fprintf(f, "<fdmmaterial><metadata><GUID>%s</GUID><version>7</version>"
+            "</metadata></fdmmaterial>", guid);
+    fclose(f);
+
+    assert(deneb_material_catalog_parse_file(material_path, parsed_guid,
+                                             sizeof(parsed_guid),
+                                             &version) == 0);
+    assert(strcmp(parsed_guid, guid) == 0);
+    assert(version == 7);
+    assert(deneb_material_catalog_store_file(material_path, catalog_dir,
+                                             parsed_guid, sizeof(parsed_guid),
+                                             &version) == 0);
+    assert(deneb_material_catalog_build_response("[{\"guid\":\"stock\"}]",
+                                                 catalog_dir, &body,
+                                                 &body_len) == 0);
+    assert(body_len == strlen(body));
+    assert(strstr(body, "\"guid\":\"stock\"") != NULL);
+    assert(strstr(body, guid) != NULL);
+    free(body);
+    remove("/tmp/deneb-material-catalog/506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9.json");
+    rmdir(catalog_dir);
+    remove(material_path);
 }
 
 static void test_macro_safety(void)
@@ -959,11 +1088,14 @@ int main(void)
     test_print_state_rules();
     test_json_field_helpers();
     test_json_string_helpers();
+    test_status_payload_helpers();
     test_print_profile_helpers();
     test_printer_identity_helpers();
     test_print_backend_route_contract();
     test_pending_job_metadata();
+    test_pending_job_metadata_write_file();
     test_print_job_file_metadata();
+    test_material_catalog_helpers();
     test_status_frame();
     test_crc_and_packet();
     test_macro_safety();

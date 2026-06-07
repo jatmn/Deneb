@@ -137,6 +137,8 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   shared Cura/UM2C machine-material-nozzle profile defaults and UCI reads,
   shared JSON field presence, strict numeric, and boolean parsing for API
   request bodies,
+  shared stock-status truthy value parsing,
+  shared stock/native status payload parsing,
   shared uploaded print-file metadata parsing and print spool path ownership,
   pending-job metadata, shared pending-job file
   parsing/display/cleanup for web/touch/API conflict and status flows, shared macro
@@ -146,6 +148,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   shared temperature-target readiness,
   shared print elapsed-time calculation,
   shared print progress calculation,
+  shared pending-job metadata persistence,
+  shared Cura/touchscreen material catalog parsing/storage/response assembly,
+  shared touchscreen loaded material/nozzle profile reads,
+  shared UM2C nozzle-size normalization,
   shared UM API progress fraction clamping,
   shared job state-or-none naming,
   shared web/Cura print-job action parsing,

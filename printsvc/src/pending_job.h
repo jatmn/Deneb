@@ -30,5 +30,8 @@ void deneb_pending_job_init(deneb_pending_job_t *job, const char *path);
 int deneb_pending_job_change_count(const deneb_pending_job_t *job);
 int deneb_pending_job_serialize(const deneb_pending_job_t *job,
                                 char *out, size_t out_sz);
+int deneb_pending_job_write_file(const deneb_pending_job_t *job,
+                                 const char *path);
+int deneb_pending_job_write_default(const deneb_pending_job_t *job);
 
 #endif
