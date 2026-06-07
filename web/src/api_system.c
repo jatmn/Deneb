@@ -6,48 +6,19 @@
 
 #include "api_system.h"
 #include "json_writer.h"
+#include "printer_identity.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-static void read_hostname(char *out, size_t sz)
-{
-    FILE *f = fopen("/proc/sys/kernel/hostname", "r");
-    if (f) {
-        fgets(out, sz, f);
-        fclose(f);
-        char *nl = strchr(out, '\n');
-        if (nl) *nl = '\0';
-    } else {
-        snprintf(out, sz, "%s", "deneb");
-    }
-}
-
-static void read_guid(char *out, size_t sz)
-{
-    /* Try UCI first, then generate one */
-    FILE *f = popen("uci -q get deneb.system.guid 2>/dev/null", "r");
-    if (f) {
-        if (fgets(out, sz, f) && out[0] != '\0') {
-            pclose(f);
-            char *nl = strchr(out, '\n');
-            if (nl) *nl = '\0';
-            return;
-        }
-        pclose(f);
-    }
-    /* Fallback: use a fixed ID based on MAC or hostname */
-    strncpy(out, "00000000-0000-0000-0000-000000000000", sz);
-}
-
 void api_system_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char hostname[64], guid[48];
-    read_hostname(hostname, sizeof(hostname));
-    read_guid(guid, sizeof(guid));
+    deneb_printer_identity_hostname(hostname, sizeof(hostname));
+    deneb_printer_identity_guid(guid, sizeof(guid));
 
     char buf[768];
     json_writer_t w;
@@ -107,7 +78,7 @@ void api_system_name_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char hostname[64];
-    read_hostname(hostname, sizeof(hostname));
+    deneb_printer_identity_hostname(hostname, sizeof(hostname));
     char buf[96];
     json_writer_t w;
     json_init(&w, buf, sizeof(buf));
@@ -120,7 +91,7 @@ void api_system_hostname_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char hostname[64];
-    read_hostname(hostname, sizeof(hostname));
+    deneb_printer_identity_hostname(hostname, sizeof(hostname));
     char buf[96];
     json_writer_t w;
     json_init(&w, buf, sizeof(buf));
@@ -232,7 +203,7 @@ void api_system_guid_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char guid[48];
-    read_guid(guid, sizeof(guid));
+    deneb_printer_identity_guid(guid, sizeof(guid));
     char buf[64];
     snprintf(buf, sizeof(buf), "\"%s\"", guid);
     api_http_set_body_str(resp, buf);

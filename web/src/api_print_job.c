@@ -9,9 +9,10 @@
 #include "json_writer.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
+#include "print_job_file.h"
+#include "print_profile.h"
 #include "print_state_rules.h"
 
-#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +22,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#define DENEB_PRINT_SPOOL_DIR "/home/3D/deneb-uploads"
 static void log_print_job_state_cmd(const char *cmd, const char *body)
 {
     fprintf(stderr, "deneb-api: print_job/state command=%s body=%s\n",
@@ -46,101 +46,6 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
     json_len(&w);
     api_http_set_body_str(resp, buf);
     resp->status_code = status_code;
-}
-
-static void read_line_command(const char *cmd, char *out, size_t out_sz,
-                              const char *fallback)
-{
-    FILE *f;
-
-    if (!out || out_sz == 0)
-        return;
-    out[0] = '\0';
-
-    f = popen(cmd, "r");
-    if (f) {
-        if (fgets(out, out_sz, f) && out[0]) {
-            char *nl = strchr(out, '\n');
-            if (nl) *nl = '\0';
-            pclose(f);
-            return;
-        }
-        pclose(f);
-    }
-
-    snprintf(out, out_sz, "%s", fallback ? fallback : "");
-}
-
-static void normalize_nozzle_id(const char *value, char *out, size_t out_sz)
-{
-    char tmp[24];
-    size_t len;
-
-    if (!out || out_sz == 0)
-        return;
-    out[0] = '\0';
-
-    snprintf(tmp, sizeof(tmp), "%s", value && *value ? value : "0.4");
-    len = strlen(tmp);
-    while (len > 0 && isspace((unsigned char)tmp[len - 1]))
-        tmp[--len] = '\0';
-    if (strstr(tmp, "mm"))
-        snprintf(out, out_sz, "%s", tmp);
-    else
-        snprintf(out, out_sz, "%s mm", tmp);
-}
-
-static void material_name_from_guid(const char *guid, char *out, size_t out_sz)
-{
-    if (!out || out_sz == 0)
-        return;
-    if (!guid || !*guid) {
-        snprintf(out, out_sz, "Unknown");
-    } else if (strcmp(guid, "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9") == 0) {
-        snprintf(out, out_sz, "PLA");
-    } else {
-        snprintf(out, out_sz, "%s", guid);
-    }
-}
-
-static int extract_meta_value(const char *buf, const char *key,
-                              char *out, size_t out_sz)
-{
-    const char *p = strstr(buf, key);
-    size_t i = 0;
-
-    if (!p || !out || out_sz == 0)
-        return -1;
-    p += strlen(key);
-    while (*p && (*p == ' ' || *p == '\t' || *p == ':' || *p == '=' ||
-                  *p == '"' || *p == '\''))
-        p++;
-    while (*p && *p != '"' && *p != '\'' && *p != ',' && *p != ';' &&
-           *p != '\r' && *p != '\n' && !isspace((unsigned char)*p) &&
-           i < out_sz - 1) {
-        out[i++] = *p++;
-    }
-    out[i] = '\0';
-    return i > 0 ? 0 : -1;
-}
-
-static void read_print_file_metadata(const char *path,
-                                     char *material_guid, size_t material_guid_sz,
-                                     char *nozzle_size, size_t nozzle_size_sz)
-{
-    char buf[131073];
-    FILE *f = fopen(path, "rb");
-    size_t n;
-
-    if (!f)
-        return;
-    n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    buf[n] = '\0';
-
-    extract_meta_value(buf, "material_guid", material_guid, material_guid_sz);
-    extract_meta_value(buf, "nozzle_size", nozzle_size, nozzle_size_sz);
-    extract_meta_value(buf, "print_core_id", nozzle_size, nozzle_size_sz);
 }
 
 static int write_pending_job_file(const deneb_pending_job_t *job)
@@ -190,23 +95,26 @@ static int register_native_print(const char *path)
     char target_nozzle[24];
     char loaded_name[64];
     char target_name[64];
+    deneb_print_job_file_metadata_t meta;
 
     fprintf(stderr, "deneb-api: registering print path natively: %s\n", path);
 
-    read_line_command("uci -q get ultimaker.option.material_guid 2>/dev/null",
-                      loaded_guid, sizeof(loaded_guid),
-                      "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9");
-    read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
-                      loaded_nozzle, sizeof(loaded_nozzle), "0.4");
+    deneb_print_profile_read_loaded_material_guid(loaded_guid, sizeof(loaded_guid));
+    deneb_print_profile_read_loaded_nozzle_size(loaded_nozzle, sizeof(loaded_nozzle));
 
     snprintf(target_guid, sizeof(target_guid), "%s", loaded_guid);
     snprintf(target_nozzle_raw, sizeof(target_nozzle_raw), "%s", loaded_nozzle);
-    read_print_file_metadata(path, target_guid, sizeof(target_guid),
-                             target_nozzle_raw, sizeof(target_nozzle_raw));
-    normalize_nozzle_id(loaded_nozzle, loaded_nozzle, sizeof(loaded_nozzle));
-    normalize_nozzle_id(target_nozzle_raw, target_nozzle, sizeof(target_nozzle));
-    material_name_from_guid(loaded_guid, loaded_name, sizeof(loaded_name));
-    material_name_from_guid(target_guid, target_name, sizeof(target_name));
+    deneb_print_job_file_metadata_init(&meta);
+    if (deneb_print_job_file_metadata_load(path, &meta) == 0) {
+        if (meta.material_guid[0])
+            snprintf(target_guid, sizeof(target_guid), "%s", meta.material_guid);
+        if (meta.nozzle_size[0])
+            snprintf(target_nozzle_raw, sizeof(target_nozzle_raw), "%s", meta.nozzle_size);
+    }
+    deneb_print_profile_normalize_nozzle_id(loaded_nozzle, loaded_nozzle, sizeof(loaded_nozzle));
+    deneb_print_profile_normalize_nozzle_id(target_nozzle_raw, target_nozzle, sizeof(target_nozzle));
+    deneb_print_profile_material_name_from_guid(loaded_guid, loaded_name, sizeof(loaded_name));
+    deneb_print_profile_material_name_from_guid(target_guid, target_name, sizeof(target_name));
 
     deneb_pending_job_init(&job, path);
     job.tracker = (int)(time(NULL) & 0x7fffffff);
@@ -479,9 +387,9 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         snprintf(filename, 128, "upload.gcode");
     }
 
-    if (mkdir(DENEB_PRINT_SPOOL_DIR, 0755) < 0 && errno != EEXIST) {
+    if (mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) < 0 && errno != EEXIST) {
         fprintf(stderr, "deneb-api: failed to create print spool %s: %s\n",
-                DENEB_PRINT_SPOOL_DIR, strerror(errno));
+                DENEB_PRINT_JOB_SPOOL_DIR, strerror(errno));
         unlink(gcode_path);
         resp->status_code = 500;
         api_http_set_body_str(resp, "{\"message\":\"Failed to prepare print storage\"}");
@@ -490,7 +398,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
 
     /* Move file to persistent storage where the print service can find it. */
     char dest_path[256];
-    snprintf(dest_path, sizeof(dest_path), "%s/%s", DENEB_PRINT_SPOOL_DIR, filename);
+    snprintf(dest_path, sizeof(dest_path), "%s/%s", DENEB_PRINT_JOB_SPOOL_DIR, filename);
 
     deneb_pending_job_file_t pending;
     if (deneb_pending_job_file_load_default(&pending) == 0 && pending.path[0]) {

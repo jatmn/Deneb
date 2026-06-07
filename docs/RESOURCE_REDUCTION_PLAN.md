@@ -73,8 +73,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   `api_cluster`, `api_printer`, direct macro calls, raw G-code calls, and any
   remaining status classifiers all need an ownership decision: keep as clients,
   move into `deneb-printsvc`, or replace with a shared Deneb print-control API.
-  Conflict/preheat action bridges and pending-job metadata have started moving
-  into shared native helpers instead of embedded Python/Gershwin launchers.
+  Conflict/preheat action bridges, pending-job metadata, print-profile defaults,
+  uploaded-file metadata parsing, and printer hostname/GUID identity reads have
+  started moving into shared native helpers instead of embedded
+  Python/Gershwin launchers.
 - Do not preserve awkward compatibility layers just because they match the
   current Python driver's shape. Any shim kept for migration needs explicit
   removal criteria and tests proving the final Deneb-owned contract is cleaner
@@ -130,6 +132,12 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   abort/finish policy, pause/resume state-machine behavior, shared print-control
   contract, shared command formatting and stock command verbs,
   shared flat status JSON field extraction,
+  shared JSON-array file fallback reads, shared print-history path ownership,
+  shared JSON string escaping,
+  shared Cura/UM2C machine-material-nozzle profile defaults and UCI reads,
+  shared JSON field presence, strict numeric, and boolean parsing for API
+  request bodies,
+  shared uploaded print-file metadata parsing and print spool path ownership,
   pending-job metadata, shared pending-job file
   parsing/display/cleanup for web/touch/API conflict and status flows, shared macro
   names/transient-file filtering, shared web/API status label mapping,

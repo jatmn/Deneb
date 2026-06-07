@@ -7,8 +7,11 @@
 
 #include "api_deneb.h"
 #include "backend_zmq.h"
+#include "json_file.h"
+#include "json_field.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
+#include "print_history.h"
 #include "print_state_rules.h"
 
 #include <stdio.h>
@@ -35,55 +38,6 @@ static void generate_token(char *out, size_t len)
             out[i] = "0123456789abcdef"[buf[i] & 0x0f];
     }
     out[len - 1] = '\0';
-}
-
-static int parse_json_string_field(const char *body, const char *field, char *out, size_t out_sz)
-{
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", field);
-
-    const char *p = strstr(body, search);
-    if (!p) return -1;
-
-    p = strchr(p + strlen(search), ':');
-    if (!p) return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p != '"') return -1;
-    p++;
-
-    size_t i = 0;
-    while (*p && *p != '"' && i < out_sz - 1) {
-        if (*p == '\\' && p[1]) p++;
-        out[i++] = *p++;
-    }
-    if (*p != '"') return -1;
-    out[i] = '\0';
-    return 0;
-}
-
-static int parse_json_bool_field(const char *body, const char *field, int *value)
-{
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", field);
-
-    const char *p = strstr(body, search);
-    if (!p) return -1;
-
-    p = strchr(p + strlen(search), ':');
-    if (!p) return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-
-    if (strncmp(p, "true", 4) == 0) {
-        *value = 1;
-        return 0;
-    }
-    if (strncmp(p, "false", 5) == 0) {
-        *value = 0;
-        return 0;
-    }
-    return -1;
 }
 
 /* SSE: /api/v1/deneb/events */
@@ -192,11 +146,11 @@ void api_deneb_setup_post(const http_request_t *req, http_response_t *resp)
     const char *body = req->body;
 
     char password[128];
-    int has_password = (parse_json_string_field(body, "password", password, sizeof(password)) == 0);
+    int has_password = (deneb_json_get_value(body, "password", password, sizeof(password)) == 0);
 
     /* Parse auth_required */
     int auth_required = 1; /* default: enable auth */
-    parse_json_bool_field(body, "auth_required", &auth_required);
+    deneb_json_get_bool_value(body, "auth_required", &auth_required);
 
     if (auth_required && (!has_password || password[0] == '\0') && !api_auth_has_password()) {
         resp->status_code = 400;
@@ -238,7 +192,7 @@ void api_deneb_auth_post(const http_request_t *req, http_response_t *resp)
     const char *body = req->body;
 
     char password[128];
-    if (parse_json_string_field(body, "password", password, sizeof(password)) < 0) {
+    if (deneb_json_get_value(body, "password", password, sizeof(password)) < 0) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Missing password\"}");
         return;
@@ -336,34 +290,6 @@ void api_deneb_config_get(const http_request_t *req, http_response_t *resp)
     api_http_set_body_str(resp, buf);
 }
 
-/* Print jobs: /api/v1/deneb/print_jobs (GET) */
-#define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
-
-static void read_json_array_file_or_empty(const char *path, char *out, size_t out_sz)
-{
-    if (out_sz == 0)
-        return;
-
-    snprintf(out, out_sz, "[]");
-
-    FILE *f = fopen(path, "r");
-    if (!f)
-        return;
-
-    size_t n = fread(out, 1, out_sz - 1, f);
-    int truncated = !feof(f);
-    fclose(f);
-    out[n] = '\0';
-
-    const char *start = out;
-    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n')
-        start++;
-
-    if (truncated || *start != '[' || !strrchr(start, ']')) {
-        snprintf(out, out_sz, "[]");
-    }
-}
-
 void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
@@ -396,11 +322,11 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     }
 
     /* Pending jobs */
-    read_json_array_file_or_empty(DENEB_PENDING_JOB_PATH, file_buf, sizeof(file_buf));
+    deneb_json_file_read_array_or_empty(DENEB_PENDING_JOB_PATH, file_buf, sizeof(file_buf));
     json_raw(&w, "pending", file_buf);
 
     /* History */
-    read_json_array_file_or_empty(DENEB_PRINT_HISTORY, file_buf, sizeof(file_buf));
+    deneb_print_history_read_default_array_or_empty(file_buf, sizeof(file_buf));
     json_raw(&w, "history", file_buf);
 
     json_obj_close(&w);

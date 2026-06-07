@@ -6,6 +6,9 @@
 
 int deneb_json_get_value(const char *json, const char *key,
                          char *out, size_t out_sz);
+int deneb_json_field_present(const char *json, const char *key);
+int deneb_json_get_float_value(const char *json, const char *key, float *out);
+int deneb_json_get_bool_value(const char *json, const char *key, int *out);
 float deneb_json_get_float(const char *json, const char *key, float def);
 int deneb_json_get_int(const char *json, const char *key, int def);
 

@@ -6,9 +6,11 @@
 
 #include "api_printer.h"
 #include "backend_zmq.h"
+#include "json_field.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
 #include "print_macros.h"
+#include "print_profile.h"
 #include "print_state_rules.h"
 
 #include <ctype.h>
@@ -23,36 +25,6 @@
 #define MAX_POSITION_Z_MM 205.0f
 #define DEFAULT_MOVE_SPEED_MM_S 150.0f
 #define MAX_MOVE_SPEED_MM_S 300.0f
-#define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
-
-static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback)
-{
-    FILE *f = popen(cmd, "r");
-    if (f) {
-        if (fgets(out, out_sz, f) && out[0]) {
-            char *nl = strchr(out, '\n');
-            if (nl) *nl = '\0';
-            pclose(f);
-            return;
-        }
-        pclose(f);
-    }
-    snprintf(out, out_sz, "%s", fallback);
-}
-
-static void read_nozzle_size(char *out, size_t out_sz)
-{
-    read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
-                      out, out_sz, DENEB_DEFAULT_NOZZLE_SIZE);
-}
-
-static void read_nozzle_id(char *out, size_t out_sz)
-{
-    char nozzle[16];
-    read_nozzle_size(nozzle, sizeof(nozzle));
-    snprintf(out, out_sz, "%s mm", nozzle);
-}
-
 static int motion_allowed(const printer_state_t *s)
 {
     return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
@@ -65,64 +37,10 @@ static void set_motion_blocked(http_response_t *resp)
     api_http_set_body_str(resp, "{\"message\":\"Motion unavailable while printer is disconnected, printing, paused, or in error\"}");
 }
 
-static int parse_json_string_field(const char *body, const char *field, char *out, size_t out_sz)
-{
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", field);
-
-    const char *p = strstr(body, search);
-    if (!p) return -1;
-
-    p = strchr(p + strlen(search), ':');
-    if (!p) return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p != '"') return -1;
-    p++;
-
-    size_t i = 0;
-    while (*p && *p != '"' && i < out_sz - 1) {
-        if (*p == '\\' && p[1]) p++;
-        out[i++] = *p++;
-    }
-    if (*p != '"') return -1;
-    out[i] = '\0';
-    return 0;
-}
-
-static int parse_json_float_field(const char *body, const char *field, float *value)
-{
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", field);
-
-    const char *p = strstr(body, search);
-    if (!p) return -1;
-
-    p = strchr(p + strlen(search), ':');
-    if (!p) return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-
-    char *end = NULL;
-    float parsed = strtof(p, &end);
-    if (end == p) return -1;
-    while (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n') end++;
-    if (*end && *end != ',' && *end != '}' && *end != ']') return -1;
-    *value = parsed;
-    return 0;
-}
-
-static int json_field_present(const char *body, const char *field)
-{
-    char search[64];
-    snprintf(search, sizeof(search), "\"%s\"", field);
-    return strstr(body, search) != NULL;
-}
-
 static int parse_axis_value(const char *body, char *axis)
 {
     char axis_buf[8];
-    if (parse_json_string_field(body, "axis", axis_buf, sizeof(axis_buf)) < 0 || !axis_buf[0] || axis_buf[1])
+    if (deneb_json_get_value(body, "axis", axis_buf, sizeof(axis_buf)) < 0 || !axis_buf[0] || axis_buf[1])
         return -1;
 
     char upper = (char)toupper((unsigned char)axis_buf[0]);
@@ -237,7 +155,7 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
     char buf[2048];
     json_writer_t w;
 
-    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
+    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
 
     json_obj_open(&w);
@@ -511,7 +429,7 @@ void api_printer_extruders_get(const http_request_t *req, http_response_t *resp)
     char buf[640];
     json_writer_t w;
 
-    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
+    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
     json_arr_open(&w);
     json_obj_open(&w);
@@ -551,7 +469,7 @@ void api_printer_extruder_get(const http_request_t *req, http_response_t *resp)
     char buf[512];
     json_writer_t w;
 
-    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
+    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
     json_obj_open(&w);
 
@@ -593,7 +511,7 @@ void api_printer_hotend_get(const http_request_t *req, http_response_t *resp)
     char buf[384];
     json_writer_t w;
 
-    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
+    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
     json_init(&w, buf, sizeof(buf));
     json_obj_open(&w);
     json_str(&w, "id", nozzle_id);
@@ -793,9 +711,10 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 
     char axis;
     float distance = 0;
-    if (json_field_present(req->body, "axis") || json_field_present(req->body, "distance")) {
+    if (deneb_json_field_present(req->body, "axis") ||
+        deneb_json_field_present(req->body, "distance")) {
         if (parse_axis_value(req->body, &axis) < 0 ||
-            parse_json_float_field(req->body, "distance", &distance) < 0) {
+            deneb_json_get_float_value(req->body, "distance", &distance) < 0) {
             resp->status_code = 400;
             api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}");
             return;
@@ -820,21 +739,21 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
     float y = 0;
     float z = 0;
     float speed = DEFAULT_MOVE_SPEED_MM_S;
-    int has_x = parse_json_float_field(req->body, "x", &x) == 0;
-    int has_y = parse_json_float_field(req->body, "y", &y) == 0;
-    int has_z = parse_json_float_field(req->body, "z", &z) == 0;
+    int has_x = deneb_json_get_float_value(req->body, "x", &x) == 0;
+    int has_y = deneb_json_get_float_value(req->body, "y", &y) == 0;
+    int has_z = deneb_json_get_float_value(req->body, "z", &z) == 0;
 
-    if (!has_x && json_field_present(req->body, "x")) {
+    if (!has_x && deneb_json_field_present(req->body, "x")) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid x position\"}");
         return;
     }
-    if (!has_y && json_field_present(req->body, "y")) {
+    if (!has_y && deneb_json_field_present(req->body, "y")) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid y position\"}");
         return;
     }
-    if (!has_z && json_field_present(req->body, "z")) {
+    if (!has_z && deneb_json_field_present(req->body, "z")) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid z position\"}");
         return;
@@ -851,8 +770,8 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
         api_http_set_body_str(resp, "{\"message\":\"Position is outside the printable volume\"}");
         return;
     }
-    if (json_field_present(req->body, "speed") &&
-        (parse_json_float_field(req->body, "speed", &speed) < 0 ||
+    if (deneb_json_field_present(req->body, "speed") &&
+        (deneb_json_get_float_value(req->body, "speed", &speed) < 0 ||
          !isfinite(speed) || speed <= 0.0f || speed > MAX_MOVE_SPEED_MM_S)) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid movement speed\"}");
@@ -874,7 +793,7 @@ void api_printer_position_post(const http_request_t *req, http_response_t *resp)
     }
 
     char action[32];
-    if (parse_json_string_field(req->body, "action", action, sizeof(action)) < 0) {
+    if (deneb_json_get_value(req->body, "action", action, sizeof(action)) < 0) {
         if (strstr(req->body, "\"home\"")) {
             snprintf(action, sizeof(action), "home");
         } else {

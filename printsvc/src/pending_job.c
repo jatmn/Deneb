@@ -1,40 +1,15 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job.h"
 #include "pending_job_file.h"
+#include "json_string.h"
 #include "print_control.h"
+#include "print_profile.h"
 #include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#define DENEB_PENDING_DEFAULT_SOURCE "WEB_API"
 #define DENEB_PENDING_DEFAULT_OWNER "Cura"
-#define DENEB_PENDING_DEFAULT_VARIANT "Ultimaker 2+ Connect"
-#define DENEB_PENDING_DEFAULT_FAMILY "ultimaker2_plus_connect"
-#define DENEB_PENDING_DEFAULT_GUID "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"
-#define DENEB_PENDING_DEFAULT_BRAND "Generic"
-#define DENEB_PENDING_DEFAULT_TYPE "PLA"
-#define DENEB_PENDING_DEFAULT_COLOR "#ffc924"
-#define DENEB_PENDING_DEFAULT_NOZZLE "0.4 mm"
-
-static void json_escape(const char *src, char *out, size_t out_sz)
-{
-    size_t oi = 0;
-
-    if (!out || out_sz == 0)
-        return;
-
-    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
-        unsigned char c = (unsigned char)src[i];
-        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
-            out[oi++] = '\\';
-            out[oi++] = (char)c;
-        } else if (c >= 0x20) {
-            out[oi++] = (char)c;
-        }
-    }
-    out[oi] = '\0';
-}
 
 void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
 {
@@ -49,18 +24,18 @@ void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
         snprintf(display_name, sizeof(display_name), "%s", "Print job");
     snprintf(job->name, sizeof(job->name), "%s", display_name);
     snprintf(job->uuid, sizeof(job->uuid), "%s", DENEB_PRINT_DEFAULT_JOB_UUID);
-    snprintf(job->source, sizeof(job->source), "%s", DENEB_PENDING_DEFAULT_SOURCE);
+    snprintf(job->source, sizeof(job->source), "%s", DENEB_PRINT_DEFAULT_JOB_SOURCE);
     snprintf(job->owner, sizeof(job->owner), "%s", DENEB_PENDING_DEFAULT_OWNER);
-    snprintf(job->machine_variant, sizeof(job->machine_variant), "%s", DENEB_PENDING_DEFAULT_VARIANT);
-    snprintf(job->machine_family, sizeof(job->machine_family), "%s", DENEB_PENDING_DEFAULT_FAMILY);
-    snprintf(job->material_guid, sizeof(job->material_guid), "%s", DENEB_PENDING_DEFAULT_GUID);
+    snprintf(job->machine_variant, sizeof(job->machine_variant), "%s", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
+    snprintf(job->machine_family, sizeof(job->machine_family), "%s", DENEB_PRINT_PROFILE_MACHINE_FAMILY);
+    snprintf(job->material_guid, sizeof(job->material_guid), "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID);
     snprintf(job->origin_material_guid, sizeof(job->origin_material_guid), "%s", "");
     snprintf(job->origin_material_name, sizeof(job->origin_material_name), "%s", "");
     snprintf(job->target_material_name, sizeof(job->target_material_name), "%s", "");
-    snprintf(job->material_brand, sizeof(job->material_brand), "%s", DENEB_PENDING_DEFAULT_BRAND);
-    snprintf(job->material_type, sizeof(job->material_type), "%s", DENEB_PENDING_DEFAULT_TYPE);
-    snprintf(job->material_color, sizeof(job->material_color), "%s", DENEB_PENDING_DEFAULT_COLOR);
-    snprintf(job->nozzle_id, sizeof(job->nozzle_id), "%s", DENEB_PENDING_DEFAULT_NOZZLE);
+    snprintf(job->material_brand, sizeof(job->material_brand), "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_BRAND);
+    snprintf(job->material_type, sizeof(job->material_type), "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE);
+    snprintf(job->material_color, sizeof(job->material_color), "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_COLOR);
+    snprintf(job->nozzle_id, sizeof(job->nozzle_id), "%s", DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_ID);
     snprintf(job->origin_nozzle_id, sizeof(job->origin_nozzle_id), "%s", "");
     job->tracker = -1;
 }
@@ -104,22 +79,22 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
     if (!job || !out || out_sz == 0 || !job->path[0])
         return -1;
 
-    json_escape(job->path, path, sizeof(path));
-    json_escape(job->name, name, sizeof(name));
-    json_escape(job->uuid, uuid, sizeof(uuid));
-    json_escape(job->source, source, sizeof(source));
-    json_escape(job->owner, owner, sizeof(owner));
-    json_escape(job->machine_variant, variant, sizeof(variant));
-    json_escape(job->machine_family, family, sizeof(family));
-    json_escape(job->material_guid, guid, sizeof(guid));
-    json_escape(job->origin_material_guid, origin_guid, sizeof(origin_guid));
-    json_escape(job->origin_material_name, origin_material_name, sizeof(origin_material_name));
-    json_escape(job->target_material_name, target_material_name, sizeof(target_material_name));
-    json_escape(job->material_brand, brand, sizeof(brand));
-    json_escape(job->material_type, material, sizeof(material));
-    json_escape(job->material_color, color, sizeof(color));
-    json_escape(job->nozzle_id, nozzle, sizeof(nozzle));
-    json_escape(job->origin_nozzle_id, origin_nozzle, sizeof(origin_nozzle));
+    deneb_json_escape_string(job->path, path, sizeof(path));
+    deneb_json_escape_string(job->name, name, sizeof(name));
+    deneb_json_escape_string(job->uuid, uuid, sizeof(uuid));
+    deneb_json_escape_string(job->source, source, sizeof(source));
+    deneb_json_escape_string(job->owner, owner, sizeof(owner));
+    deneb_json_escape_string(job->machine_variant, variant, sizeof(variant));
+    deneb_json_escape_string(job->machine_family, family, sizeof(family));
+    deneb_json_escape_string(job->material_guid, guid, sizeof(guid));
+    deneb_json_escape_string(job->origin_material_guid, origin_guid, sizeof(origin_guid));
+    deneb_json_escape_string(job->origin_material_name, origin_material_name, sizeof(origin_material_name));
+    deneb_json_escape_string(job->target_material_name, target_material_name, sizeof(target_material_name));
+    deneb_json_escape_string(job->material_brand, brand, sizeof(brand));
+    deneb_json_escape_string(job->material_type, material, sizeof(material));
+    deneb_json_escape_string(job->material_color, color, sizeof(color));
+    deneb_json_escape_string(job->nozzle_id, nozzle, sizeof(nozzle));
+    deneb_json_escape_string(job->origin_nozzle_id, origin_nozzle, sizeof(origin_nozzle));
 
     if (job->material_change_required) {
         snprintf(changes + strlen(changes), sizeof(changes) - strlen(changes),

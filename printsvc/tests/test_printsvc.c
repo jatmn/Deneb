@@ -8,15 +8,21 @@
 #include "flow_control.h"
 #include "heater_wait.h"
 #include "json_field.h"
+#include "json_file.h"
+#include "json_string.h"
 #include "macro_registry.h"
 #include "marlin_packet.h"
 #include "motion_firmware.h"
 #include "motion_policy.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
+#include "printer_identity.h"
+#include "print_history.h"
+#include "print_job_file.h"
 #include "print_macros.h"
 #include "print_control.h"
 #include "print_backend_route.h"
+#include "print_profile.h"
 #include "print_state_rules.h"
 #include "sha256.h"
 #include "service.h"
@@ -294,8 +300,80 @@ static void test_json_field_helpers(void)
     assert(strcmp(value, "cube\"name") == 0);
     assert(deneb_json_get_int(json, "Ttot", 0) == 120);
     assert(deneb_json_get_float(json, "headTset", 0.0f) > 210.4f);
+    assert(deneb_json_field_present(json, "req"));
+    assert(!deneb_json_field_present(json, "missing"));
+    {
+        float parsed = 0.0f;
+        int flag = 0;
+        assert(deneb_json_get_float_value(json, "headTset", &parsed) == 0);
+        assert(parsed > 210.4f);
+        assert(deneb_json_get_float_value("{\"x\":\"bad\"}", "x", &parsed) != 0);
+        assert(deneb_json_get_bool_value("{\"auth_required\":true}",
+                                         "auth_required", &flag) == 0);
+        assert(flag == 1);
+        assert(deneb_json_get_bool_value("{\"auth_required\":false}",
+                                         "auth_required", &flag) == 0);
+        assert(flag == 0);
+        assert(deneb_json_get_bool_value("{\"auth_required\":\"later\"}",
+                                         "auth_required", &flag) != 0);
+    }
     assert(deneb_json_get_value(json, "missing", value, sizeof(value)) != 0);
     assert(deneb_json_get_int(json, "missing", 7) == 7);
+}
+
+static void test_json_string_helpers(void)
+{
+    char value[64];
+
+    deneb_json_escape_string("cube\"one\\two.gcode", value, sizeof(value));
+    assert(strcmp(value, "cube\\\"one\\\\two.gcode") == 0);
+
+    deneb_json_escape_string("line\nbreak", value, sizeof(value));
+    assert(strcmp(value, "linebreak") == 0);
+
+    deneb_json_escape_string(NULL, value, sizeof(value));
+    assert(strcmp(value, "") == 0);
+}
+
+static void test_print_profile_helpers(void)
+{
+    char value[64];
+
+    assert(strcmp(DENEB_PRINT_PROFILE_MACHINE_FAMILY,
+                  "ultimaker2_plus_connect") == 0);
+    assert(strcmp(DENEB_PRINT_PROFILE_MACHINE_VARIANT,
+                  "Ultimaker 2+ Connect") == 0);
+
+    deneb_print_profile_normalize_nozzle_id("0.6", value, sizeof(value));
+    assert(strcmp(value, "0.6 mm") == 0);
+    deneb_print_profile_normalize_nozzle_id("0.8 mm", value, sizeof(value));
+    assert(strcmp(value, "0.8 mm") == 0);
+    deneb_print_profile_normalize_nozzle_id("", value, sizeof(value));
+    assert(strcmp(value, DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_ID) == 0);
+
+    deneb_print_profile_material_name_from_guid(
+        DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID, value, sizeof(value));
+    assert(strcmp(value, DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE) == 0);
+    deneb_print_profile_material_name_from_guid("custom-guid", value, sizeof(value));
+    assert(strcmp(value, "custom-guid") == 0);
+}
+
+static void test_printer_identity_helpers(void)
+{
+    char value[64];
+
+    deneb_printer_identity_copy_line_or_default("um2c-lab\n",
+                                                DENEB_PRINTER_DEFAULT_HOSTNAME,
+                                                value, sizeof(value));
+    assert(strcmp(value, "um2c-lab") == 0);
+    deneb_printer_identity_copy_line_or_default("  \t",
+                                                DENEB_PRINTER_DEFAULT_HOSTNAME,
+                                                value, sizeof(value));
+    assert(strcmp(value, DENEB_PRINTER_DEFAULT_HOSTNAME) == 0);
+    deneb_printer_identity_copy_line_or_default(NULL,
+                                                DENEB_PRINTER_DEFAULT_GUID,
+                                                value, sizeof(value));
+    assert(strcmp(value, DENEB_PRINTER_DEFAULT_GUID) == 0);
 }
 
 static void test_print_backend_route_contract(void)
@@ -372,6 +450,46 @@ static void test_pending_job_metadata(void)
     assert(strstr(json, "\"target_name\":\"Target PETG\"") != NULL);
     assert(strstr(json, "\"origin_id\":\"0.4 mm\"") != NULL);
     assert(strstr(json, "\"target_id\":\"0.6 mm\"") != NULL);
+}
+
+static void test_print_job_file_metadata(void)
+{
+    const char *path = "/tmp/deneb-print-job-metadata-test.gcode";
+    deneb_print_job_file_metadata_t meta;
+    char value[64];
+    FILE *f;
+
+    assert(strcmp(DENEB_PRINT_JOB_SPOOL_DIR, "/home/3D/deneb-uploads") == 0);
+    assert(deneb_print_job_file_metadata_extract_value(
+               "; material_guid = target-guid\n", "material_guid",
+               value, sizeof(value)) == 0);
+    assert(strcmp(value, "target-guid") == 0);
+    assert(deneb_print_job_file_metadata_extract_value(
+               "; print_core_id:\"0.6\"", "print_core_id",
+               value, sizeof(value)) == 0);
+    assert(strcmp(value, "0.6") == 0);
+    assert(deneb_print_job_file_metadata_extract_value(
+               "; material_guid='material-123'\n; nozzle_size=0.8\n",
+               "nozzle_size", value, sizeof(value)) == 0);
+    assert(strcmp(value, "0.8") == 0);
+
+    deneb_print_job_file_metadata_init(&meta);
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("; material_guid='material-123'\n; nozzle_size=0.8\n", f);
+    fclose(f);
+    assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+    assert(strcmp(meta.material_guid, "material-123") == 0);
+    assert(strcmp(meta.nozzle_size, "0.8") == 0);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("; print_core_id = 0.6\n", f);
+    fclose(f);
+    deneb_print_job_file_metadata_init(&meta);
+    assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+    assert(strcmp(meta.nozzle_size, "0.6") == 0);
+    remove(path);
 }
 
 static void test_crc_and_packet(void)
@@ -799,6 +917,39 @@ static void test_pending_job_file_contract(void)
     assert(deneb_pending_job_file_clear(path) == 0);
 }
 
+static void test_print_history_array_reader(void)
+{
+    const char *path = "/tmp/deneb-print-history-test.json";
+    char buf[128];
+    FILE *f;
+
+    remove(path);
+    deneb_json_file_read_array_or_empty(path, buf, sizeof(buf));
+    assert(strcmp(buf, "[]") == 0);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs(" \n [{\"name\":\"cube.gcode\"}]\n", f);
+    fclose(f);
+    deneb_json_file_read_array_or_empty(path, buf, sizeof(buf));
+    assert(strstr(buf, "\"cube.gcode\"") != NULL);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("{\"not\":\"array\"}", f);
+    fclose(f);
+    deneb_json_file_read_array_or_empty(path, buf, sizeof(buf));
+    assert(strcmp(buf, "[]") == 0);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("[{\"name\":\"too-long-for-buffer\"}]", f);
+    fclose(f);
+    deneb_json_file_read_array_or_empty(path, buf, 8);
+    assert(strcmp(buf, "[]") == 0);
+    remove(path);
+}
+
 int main(void)
 {
     test_command_parse();
@@ -807,8 +958,12 @@ int main(void)
     test_print_control_contract();
     test_print_state_rules();
     test_json_field_helpers();
+    test_json_string_helpers();
+    test_print_profile_helpers();
+    test_printer_identity_helpers();
     test_print_backend_route_contract();
     test_pending_job_metadata();
+    test_print_job_file_metadata();
     test_status_frame();
     test_crc_and_packet();
     test_macro_safety();
@@ -827,6 +982,7 @@ int main(void)
     test_motion_policy();
     test_motion_firmware_cache();
     test_pending_job_file_contract();
+    test_print_history_array_reader();
     puts("deneb-printsvc tests passed");
     return 0;
 }

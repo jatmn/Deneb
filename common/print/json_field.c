@@ -49,6 +49,54 @@ int deneb_json_get_value(const char *json, const char *key,
     return 0;
 }
 
+int deneb_json_field_present(const char *json, const char *key)
+{
+    char search[128];
+
+    if (!json || !key)
+        return 0;
+    snprintf(search, sizeof(search), "\"%s\"", key);
+    return strstr(json, search) != NULL;
+}
+
+int deneb_json_get_float_value(const char *json, const char *key, float *out)
+{
+    char tmp[64];
+    char *end = NULL;
+    float parsed;
+
+    if (!out || deneb_json_get_value(json, key, tmp, sizeof(tmp)) != 0)
+        return -1;
+
+    parsed = strtof(tmp, &end);
+    if (end == tmp)
+        return -1;
+    while (*end && is_space((unsigned char)*end))
+        end++;
+    if (*end)
+        return -1;
+
+    *out = parsed;
+    return 0;
+}
+
+int deneb_json_get_bool_value(const char *json, const char *key, int *out)
+{
+    char tmp[16];
+
+    if (!out || deneb_json_get_value(json, key, tmp, sizeof(tmp)) != 0)
+        return -1;
+    if (strcmp(tmp, "true") == 0) {
+        *out = 1;
+        return 0;
+    }
+    if (strcmp(tmp, "false") == 0) {
+        *out = 0;
+        return 0;
+    }
+    return -1;
+}
+
 float deneb_json_get_float(const char *json, const char *key, float def)
 {
     char tmp[64];

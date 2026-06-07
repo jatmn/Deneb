@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "config.h"
+#include "json_string.h"
 #include "print_control.h"
 #include "status.h"
 
@@ -42,25 +43,6 @@ static const char *safe_file(const char *file)
     return file && file[0] ? file : "none";
 }
 
-static void json_escape(const char *src, char *out, size_t out_sz)
-{
-    size_t oi = 0;
-
-    if (!out || out_sz == 0)
-        return;
-
-    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
-        unsigned char c = (unsigned char)src[i];
-        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
-            out[oi++] = '\\';
-            out[oi++] = (char)c;
-        } else if (c >= 0x20) {
-            out[oi++] = (char)c;
-        }
-    }
-    out[oi] = '\0';
-}
-
 int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size_t out_sz)
 {
     char file[256];
@@ -73,12 +55,12 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
     if (!status || !out || out_sz == 0)
         return -1;
 
-    json_escape(safe_file(status->file), file, sizeof(file));
-    json_escape(status->uuid, uuid, sizeof(uuid));
-    json_escape(status->source, source, sizeof(source));
-    json_escape(status->req[0] ? status->req : deneb_status_state_name(status->state),
-                req, sizeof(req));
-    json_escape(status->error.detail, error_detail, sizeof(error_detail));
+    deneb_json_escape_string(safe_file(status->file), file, sizeof(file));
+    deneb_json_escape_string(status->uuid, uuid, sizeof(uuid));
+    deneb_json_escape_string(status->source, source, sizeof(source));
+    deneb_json_escape_string(status->req[0] ? status->req : deneb_status_state_name(status->state),
+                             req, sizeof(req));
+    deneb_json_escape_string(status->error.detail, error_detail, sizeof(error_detail));
 
     n = snprintf(out, out_sz,
                  "{\"file\":\"%s\",\"name\":\"%s\",\"headTset\":%.1f,"

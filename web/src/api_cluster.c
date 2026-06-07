@@ -10,6 +10,8 @@
 #include "backend_zmq.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
+#include "printer_identity.h"
+#include "print_profile.h"
 #include "print_state_rules.h"
 
 #include <ctype.h>
@@ -23,63 +25,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#define DENEB_CURA_MACHINE_FAMILY "ultimaker2_plus_connect"
-#define DENEB_CURA_MACHINE_VARIANT "Ultimaker 2+ Connect"
 #define DENEB_CLUSTER_MATERIAL_DIR "/home/3D/deneb-materials"
-#define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
-#define DENEB_DEFAULT_MATERIAL_GUID "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"
-#define DENEB_DEFAULT_MATERIAL_BRAND "Generic"
-#define DENEB_DEFAULT_MATERIAL_TYPE "PLA"
-#define DENEB_DEFAULT_MATERIAL_COLOR "#ffc924"
 
-static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback);
 static int persist_uploaded_material(const http_request_t *req);
 static void write_cluster_materials_response(http_response_t *resp);
-
-static void read_nozzle_size(char *out, size_t out_sz)
-{
-    read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
-                      out, out_sz, DENEB_DEFAULT_NOZZLE_SIZE);
-}
-
-static void read_nozzle_id(char *out, size_t out_sz)
-{
-    char nozzle[16];
-    read_nozzle_size(nozzle, sizeof(nozzle));
-    snprintf(out, out_sz, "%s mm", nozzle);
-}
-
-static void read_material_guid(char *out, size_t out_sz)
-{
-    read_line_command("uci -q get ultimaker.option.material_guid 2>/dev/null",
-                      out, out_sz, DENEB_DEFAULT_MATERIAL_GUID);
-}
-
-static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback)
-{
-    FILE *f = popen(cmd, "r");
-    if (f) {
-        if (fgets(out, out_sz, f) && out[0]) {
-            char *nl = strchr(out, '\n');
-            if (nl) *nl = '\0';
-            pclose(f);
-            return;
-        }
-        pclose(f);
-    }
-    snprintf(out, out_sz, "%s", fallback);
-}
-
-static void read_hostname(char *out, size_t out_sz)
-{
-    read_line_command("cat /proc/sys/kernel/hostname 2>/dev/null", out, out_sz, "deneb");
-}
-
-static void read_guid(char *out, size_t out_sz)
-{
-    read_line_command("uci -q get deneb.system.guid 2>/dev/null", out, out_sz,
-        "00000000-0000-0000-0000-000000000000");
-}
 
 static const char *cluster_printer_status(const printer_state_t *s)
 {
@@ -155,8 +104,8 @@ static void write_configuration(json_writer_t *w)
 {
     char nozzle_id[24];
     char material_guid[48];
-    read_nozzle_id(nozzle_id, sizeof(nozzle_id));
-    read_material_guid(material_guid, sizeof(material_guid));
+    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
+    deneb_print_profile_read_loaded_material_guid(material_guid, sizeof(material_guid));
 
     json_key(w, "configuration");
     json_arr_open(w);
@@ -166,9 +115,9 @@ static void write_configuration(json_writer_t *w)
     json_key(w, "material");
     json_obj_open(w);
     json_str(w, "guid", material_guid);
-    json_str(w, "brand", DENEB_DEFAULT_MATERIAL_BRAND);
-    json_str(w, "material", DENEB_DEFAULT_MATERIAL_TYPE);
-    json_str(w, "color", DENEB_DEFAULT_MATERIAL_COLOR);
+    json_str(w, "brand", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_BRAND);
+    json_str(w, "material", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE);
+    json_str(w, "color", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_COLOR);
     json_obj_close(w);
     json_obj_close(w);
     json_arr_close(w);
@@ -384,15 +333,15 @@ void api_cluster_printers_get(const http_request_t *req, http_response_t *resp)
     char buf[2048];
     json_writer_t w;
 
-    read_hostname(hostname, sizeof(hostname));
-    read_guid(guid, sizeof(guid));
+    deneb_printer_identity_hostname(hostname, sizeof(hostname));
+    deneb_printer_identity_guid(guid, sizeof(guid));
 
     json_init(&w, buf, sizeof(buf));
     json_arr_open(&w);
     json_obj_open(&w);
     json_bool(&w, "enabled", 1);
     json_str(&w, "friendly_name", hostname);
-    json_str(&w, "machine_variant", DENEB_CURA_MACHINE_VARIANT);
+    json_str(&w, "machine_variant", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
     json_str(&w, "status", cluster_printer_status(s));
     json_str(&w, "unique_name", hostname);
     json_str(&w, "uuid", guid);
@@ -429,7 +378,7 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
         return;
     }
 
-    read_guid(guid, sizeof(guid));
+    deneb_printer_identity_guid(guid, sizeof(guid));
     snprintf(created_at, sizeof(created_at), "%lld", (long long)time(NULL));
 
     json_init(&w, buf, sizeof(buf));
@@ -437,7 +386,7 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_obj_open(&w);
     json_str(&w, "created_at", created_at);
     json_bool(&w, "force", 0);
-    json_str(&w, "machine_variant", DENEB_CURA_MACHINE_VARIANT);
+    json_str(&w, "machine_variant", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
     json_str(&w, "name", deneb_print_job_name_or_default(s->filename));
     json_bool(&w, "started", s->is_printing || s->is_paused);
     json_str(&w, "status", cluster_job_status(s));
@@ -455,8 +404,8 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_obj_close(&w);
     json_key(&w, "compatible_machine_families");
     json_arr_open(&w);
-    json_arr_str(&w, DENEB_CURA_MACHINE_FAMILY);
-    json_arr_str(&w, DENEB_CURA_MACHINE_VARIANT);
+    json_arr_str(&w, DENEB_PRINT_PROFILE_MACHINE_FAMILY);
+    json_arr_str(&w, DENEB_PRINT_PROFILE_MACHINE_VARIANT);
     json_arr_close(&w);
     json_key(&w, "impediments_to_printing");
     json_arr_open(&w);

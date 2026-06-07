@@ -16,9 +16,11 @@
 #include <stdbool.h>
 #include "command_format.h"
 #include "json_field.h"
+#include "json_string.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
 #include "print_backend_route.h"
+#include "print_history.h"
 #include "print_state_rules.h"
 
 #ifdef BACKEND_ZMQ_STUB
@@ -72,7 +74,6 @@ void backend_zmq_deinit(void) {}
 
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 4
-#define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
 
 static deneb_print_backend_route_t backend_route;
 
@@ -207,14 +208,14 @@ static void append_print_history(const printer_state_t *prev, const printer_stat
     json_obj_close(&w);
 
     char buf[65536] = {0};
-    FILE *f = fopen(DENEB_PRINT_HISTORY, "r");
+    FILE *f = fopen(DENEB_PRINT_HISTORY_PATH, "r");
     if (f) {
         size_t n = fread(buf, 1, sizeof(buf) - 1, f);
         fclose(f);
         if (n > 0) buf[n] = '\0';
     }
 
-    FILE *out = fopen(DENEB_PRINT_HISTORY ".tmp", "w");
+    FILE *out = fopen(DENEB_PRINT_HISTORY_PATH ".tmp", "w");
     if (!out) return;
 
     if (buf[0] == '\0' || buf[0] != '[') {
@@ -232,7 +233,7 @@ static void append_print_history(const printer_state_t *prev, const printer_stat
         }
     }
     fclose(out);
-    rename(DENEB_PRINT_HISTORY ".tmp", DENEB_PRINT_HISTORY);
+    rename(DENEB_PRINT_HISTORY_PATH ".tmp", DENEB_PRINT_HISTORY_PATH);
     current_print_start_time = 0;
 }
 
@@ -277,22 +278,6 @@ static int json_get_int(const char *json, const char *key, int def)
     return deneb_json_get_int(json, key, def);
 }
 
-static void json_escape_string(const char *src, char *dst, size_t dst_sz)
-{
-    size_t di = 0;
-    if (dst_sz == 0) return;
-    for (size_t si = 0; src && src[si] && di + 1 < dst_sz; si++) {
-        char c = src[si];
-        if ((c == '"' || c == '\\') && di + 2 < dst_sz) {
-            dst[di++] = '\\';
-            dst[di++] = c;
-        } else if (c != '"' && c != '\\') {
-            dst[di++] = c;
-        }
-    }
-    dst[di] = '\0';
-}
-
 static void update_status_cache(void)
 {
     /* Pre-serialize the current state to JSON for fast serving */
@@ -307,7 +292,7 @@ static void update_status_cache(void)
     const char *status = deneb_print_status_label(state.connected,
         state.has_error, state.is_paused, state.is_printing);
 
-    json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
+    deneb_json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
     if (deneb_print_backend_route_json_fields(&backend_route, route_fields,
                                               sizeof(route_fields)) < 0)
         snprintf(route_fields, sizeof(route_fields),

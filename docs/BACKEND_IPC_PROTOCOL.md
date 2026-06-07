@@ -113,10 +113,28 @@ expected coordinator or native service endpoint. The Deneb API also exposes
 `GET /api/v1/deneb/print_backend` for the same selected-route contract without
 requiring clients to parse the full status payload.
 
+Shared native print-file helpers also own the temporary metadata file and print
+history file contracts used by compatibility APIs. Pending-job metadata lives at
+`/tmp/deneb-cluster-print-job.json`, print history lives at
+`/home/3D/deneb-print-history.json`, and API reads use a shared JSON-array
+fallback helper so missing, invalid, or truncated files return `[]` consistently.
+`common/print/print_profile.*` owns the UM2C/Cura machine family and variant,
+default material/nozzle identity, loaded material/nozzle UCI reads, and nozzle
+ID normalization used by pending-job metadata and Cura/UM API responses.
+`common/print/print_job_file.*` owns the Deneb upload spool path
+`/home/3D/deneb-uploads` and the lightweight metadata hints read from uploaded
+G-code/UFP-expanded files, including `material_guid`, `nozzle_size`, and
+`print_core_id`.
+`common/print/printer_identity.*` owns the fallback hostname and system GUID
+reads shared by Cura cluster printer/job responses and UM system endpoints.
+
 Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. Pending-job file handling, command-frame formatting,
-print-state classification, and web/API status labels are shared native helpers
-so touchscreen, web/API, and `deneb-printsvc` clients agree on escaping,
+print-state classification, JSON file fallback reads, JSON field parsing,
+JSON string escaping, machine/material/nozzle profile defaults, web/API
+uploaded print-file metadata parsing, printer identity reads, and web/API
+status labels are shared native helpers so touchscreen, web/API, and
+`deneb-printsvc` clients agree on escaping,
 preheat, paused, abort, active-print, offline, finished-job state, and
 Cura/pending job identity defaults. UM API and Cura cluster print-job action
 bodies now share the same native parser for plain or JSON pause/resume/print,

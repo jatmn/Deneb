@@ -611,6 +611,32 @@ Completed implementation slices:
   parse numeric and string status fields through the same native helper
   instead of maintaining separate mini JSON readers for the Python driver's
   status payload.
+- [x] Move print-job list file fallback reads into shared native helpers:
+  `common/print/json_file.*` owns safe JSON-array-or-empty loading for pending
+  and history files, while `common/print/print_history.*` owns the Deneb print
+  history path used by web API reads and backend print-end history writes.
+- [x] Move JSON string escaping into `common/print/json_string.*` so native
+  pending-job serialization, native status serialization, and web status-cache
+  filename JSON all share one escaping rule instead of carrying local copies.
+- [x] Move Cura/UM2C machine, material, and nozzle profile defaults into
+  `common/print/print_profile.*` so native pending metadata, Cura cluster
+  printer/job responses, UM printer hotend responses, and upload conflict
+  detection use the same machine family/variant, default PLA GUID/color/brand,
+  loaded UCI material/nozzle reads, nozzle-id normalization, and simple
+  material-name resolution.
+- [x] Extend `common/print/json_field.*` to own API JSON field presence,
+  strict numeric parsing, and boolean parsing so Deneb auth/setup and UM
+  printer motion/action request bodies no longer carry separate miniature JSON
+  parsers beside the stock print-status parser.
+- [x] Move uploaded print-file metadata sniffing into
+  `common/print/print_job_file.*` so Cura upload registration, conflict
+  detection, and future native print-service entry points share one parser for
+  `material_guid`, `nozzle_size`, `print_core_id`, and the Deneb upload spool
+  path instead of keeping that logic inside the web print-job endpoint.
+- [x] Move printer hostname/GUID identity reads into
+  `common/print/printer_identity.*` so Cura cluster printer/job responses and
+  UM system endpoints use the same native fallback/default behavior instead of
+  each carrying a local command/file reader.
 - [x] Move the touchscreen conflict prompt's continue/cancel actions off the
   embedded Python coordinator launcher and onto native backend `JOB`/`ABORT`
   commands for the pending print path.

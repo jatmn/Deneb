@@ -70,8 +70,14 @@ set(DENEB_API_SOURCES
     src/md5.c
     ../common/print/command_format.c
     ../common/print/json_field.c
+    ../common/print/json_file.c
+    ../common/print/json_string.c
+    ../common/print/printer_identity.c
     ../common/print/print_backend_route.c
     ../common/print/pending_job_file.c
+    ../common/print/print_history.c
+    ../common/print/print_job_file.c
+    ../common/print/print_profile.c
     ../common/print/print_state_rules.c
     ../printsvc/src/pending_job.c
     ../printsvc/src/print_control.c
