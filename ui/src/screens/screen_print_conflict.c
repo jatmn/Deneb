@@ -28,25 +28,6 @@ int print_conflict_has_pending(void)
            deneb_pending_job_file_has_conflict(&job);
 }
 
-static void json_escape(const char *src, char *out, size_t out_sz)
-{
-    size_t oi = 0;
-
-    if (!out || out_sz == 0)
-        return;
-
-    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
-        char c = src[i];
-        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
-            out[oi++] = '\\';
-            out[oi++] = c;
-        } else if (c >= 0x20) {
-            out[oi++] = c;
-        }
-    }
-    out[oi] = '\0';
-}
-
 static int send_pending_instruction(const char *instruction)
 {
     fprintf(stderr, "touch-ui: send_pending_instruction action=%s tracker=%d path=%s\n",
@@ -56,18 +37,11 @@ static int send_pending_instruction(const char *instruction)
         return backend_abort_print();
 
     if (strcmp(instruction, "PREPARE") == 0) {
-        char escaped_path[512];
-        char args[640];
-
         if (!pending_path[0])
             return -1;
 
-        json_escape(pending_path, escaped_path, sizeof(escaped_path));
-        snprintf(args, sizeof(args),
-                 "{\"file\":\"%s\",\"source\":\"Cura\","
-                 "\"uuid\":\"deneb-current-job\"}",
-                 escaped_path);
-        return backend_send_command("JOB", args);
+        return backend_send_job(pending_path, "Cura", "deneb-current-job",
+                                0.0f, 0.0f);
     }
 
     return -1;

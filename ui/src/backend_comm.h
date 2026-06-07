@@ -16,6 +16,7 @@
 #define BACKEND_COMM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Printer state, updated from ZMQ SUB status stream */
@@ -79,6 +80,10 @@ const printer_state_t *backend_get_state(void);
  * Returns 0 on success, -1 on send failure.
  */
 int backend_send_gcode(const char *gcode);
+int backend_send_gcodes(const char *const *gcodes, size_t count);
+int backend_send_macro(const char *macro);
+int backend_send_job(const char *path, const char *source, const char *uuid,
+                     float bed_target, float head_target);
 
 /**
  * Send a command to the coordinator.

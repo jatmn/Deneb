@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-#ifndef DENEB_PRINTSVC_COMMAND_FORMAT_H
-#define DENEB_PRINTSVC_COMMAND_FORMAT_H
+#ifndef DENEB_COMMAND_FORMAT_H
+#define DENEB_COMMAND_FORMAT_H
 
 #include <stddef.h>
 

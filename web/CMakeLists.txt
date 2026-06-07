@@ -68,7 +68,9 @@ set(DENEB_API_SOURCES
     src/backend_zmq.c
     src/json_writer.c
     src/md5.c
+    ../common/print/command_format.c
     ../common/print/pending_job_file.c
+    ../common/print/print_state_rules.c
     ../printsvc/src/pending_job.c
     ../printsvc/src/print_control.c
 )

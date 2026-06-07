@@ -14,8 +14,10 @@
 #include <math.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include "command_format.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
+#include "print_state_rules.h"
 
 #ifdef BACKEND_ZMQ_STUB
 
@@ -38,6 +40,15 @@ const printer_state_t *backend_zmq_get_state(void) { return &state; }
 const char *backend_zmq_get_status_json(void) { return "{}"; }
 int backend_zmq_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_zmq_send_gcode(const char *gcode) { (void)gcode; return 0; }
+int backend_zmq_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
+int backend_zmq_send_macro(const char *macro) { (void)macro; return 0; }
+int backend_zmq_send_job(const char *path, const char *source,
+                         const char *uuid, float bed_target,
+                         float head_target)
+{
+    (void)path; (void)source; (void)uuid; (void)bed_target; (void)head_target;
+    return 0;
+}
 int backend_zmq_pause(void) { return 0; }
 int backend_zmq_resume(void) { return 0; }
 int backend_zmq_abort(void) { return 0; }
@@ -67,20 +78,15 @@ static int preheat_reached_logged = 0;
 static time_t current_print_start_time = 0;
 static long long last_stop_ms = -1;
 
-static int is_temp_reached(float current, float target)
-{
-    return target > 0.0f && current >= target - 1.0f;
-}
-
 static int has_temp_targets(const printer_state_t *s)
 {
-    return (s->bed_temp_set > 0.0f) || (s->nozzle_temp_set > 0.0f);
+    return deneb_print_has_temp_targets(s->bed_temp_set, s->nozzle_temp_set);
 }
 
 static int have_jobs_targets(const printer_state_t *s)
 {
-    return (s->bed_temp_set > 0.0f && is_temp_reached(s->bed_temp_cur, s->bed_temp_set)) &&
-           (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_temp_cur, s->nozzle_temp_set));
+    return deneb_print_temp_targets_ready(s->bed_temp_cur, s->bed_temp_set,
+                                          s->nozzle_temp_cur, s->nozzle_temp_set);
 }
 
 static void append_print_history(const printer_state_t *prev, const printer_state_t *curr);
@@ -291,31 +297,6 @@ static int json_get_int(const char *json, const char *key, int def)
     return atoi(tmp);
 }
 
-static int ascii_tolower(int c)
-{
-    if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
-    return c;
-}
-
-static int str_eq_ci(const char *a, const char *b)
-{
-    while (*a && *b) {
-        if (ascii_tolower((unsigned char)*a) != ascii_tolower((unsigned char)*b)) return 0;
-        a++;
-        b++;
-    }
-    return *a == '\0' && *b == '\0';
-}
-
-static int str_is_one_of_ci(const char *s, const char *const *values)
-{
-    if (!s || !*s) return 0;
-    for (int i = 0; values[i]; i++) {
-        if (str_eq_ci(s, values[i])) return 1;
-    }
-    return 0;
-}
-
 static void json_escape_string(const char *src, char *dst, size_t dst_sz)
 {
     size_t di = 0;
@@ -342,10 +323,8 @@ static void update_status_cache(void)
     int rem = 1536;
     int n;
     char escaped_filename[sizeof(state.filename) * 2 + 1];
-    const char *status = state.has_error ? "error" :
-        (state.is_paused ? "paused" :
-        (state.is_printing ? "printing" :
-        (state.connected ? "idle" : "offline")));
+    const char *status = deneb_print_status_label(state.connected,
+        state.has_error, state.is_paused, state.is_printing);
 
     json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
 
@@ -457,21 +436,16 @@ void backend_zmq_poll(void)
             state.topcap_temp_cur = json_get_float(json, "topcapTemperature", 0);
             state.topcap_present = json_get_int(json, "topcapIsPresent", 0) ? true : false;
 
-            /* Derive state flags */
-            static const char *const printing_reqs[] = {
-                "JOB", "Print", "Printing", NULL
-            };
-            static const char *const paused_reqs[] = {
-                "PAUSE", "Pause", "Paused", NULL
-            };
-            int req_printing = str_is_one_of_ci(state.current_req, printing_reqs);
-            int req_paused = str_is_one_of_ci(state.current_req, paused_reqs);
-            int active_time = state.time_total > 0 &&
-                              state.time_left > 0 &&
-                              state.time_left <= state.time_total;
+            deneb_print_observation_t obs;
+            obs.req = state.current_req;
+            obs.file = state.filename;
+            obs.time_total = state.time_total;
+            obs.time_left = state.time_left;
+            obs.bed_target = state.bed_temp_set;
+            obs.nozzle_target = state.nozzle_temp_set;
 
-            state.is_paused = req_paused;
-            state.is_printing = req_printing || req_paused || active_time;
+            state.is_paused = deneb_print_req_is_paused(state.current_req);
+            state.is_printing = deneb_print_observation_has_context(&obs);
             if (!state.is_printing) {
                 state.time_total = 0;
                 state.time_left = 0;
@@ -503,16 +477,10 @@ const char *backend_zmq_get_status_json(void)
     return "{}";
 }
 
-int backend_zmq_send_command(const char *cmd, const char *args)
+static int backend_zmq_send_frame(const char *buf, size_t len)
 {
     if (!rpc_sock) return -1;
-    char buf[4096];
-    int len = snprintf(buf, sizeof(buf), "%s<%s", cmd, args);
-    if (len < 0 || (size_t)len >= sizeof(buf)) {
-        fprintf(stderr, "backend_zmq: rpc payload too large\n");
-        return -1;
-    }
-    int rc = zmq_send(rpc_sock, buf, strlen(buf), 0);
+    int rc = zmq_send(rpc_sock, buf, len, 0);
     if (rc < 0) {
         reset_rpc_socket();
         return -1;
@@ -530,20 +498,69 @@ int backend_zmq_send_command(const char *cmd, const char *args)
     return 0;
 }
 
+int backend_zmq_send_command(const char *cmd, const char *args)
+{
+    char buf[4096];
+    int len;
+
+    if (!rpc_sock || !cmd || !*cmd) return -1;
+    if (cmd &&
+        (strcmp(cmd, "ABORT") == 0 || strcmp(cmd, "PAUSE") == 0 || strcmp(cmd, "RESUME") == 0) &&
+        (!args || strcmp(args, "{}") == 0)) {
+        len = deneb_command_format_action(cmd, buf, sizeof(buf));
+    } else {
+        len = snprintf(buf, sizeof(buf), "%s<%s", cmd ? cmd : "", args ? args : "{}");
+    }
+    if (len < 0 || (size_t)len >= sizeof(buf)) {
+        fprintf(stderr, "backend_zmq: rpc payload too large\n");
+        return -1;
+    }
+    return backend_zmq_send_frame(buf, (size_t)len);
+}
+
 int backend_zmq_send_gcode(const char *gcode)
 {
-    /* Escape gcode for JSON string interpolation */
-    char escaped[256];
-    size_t ei = 0;
-    for (size_t i = 0; gcode[i] && ei < sizeof(escaped) - 2; i++) {
-        char c = gcode[i];
-        if (c == '"' || c == '\\') { escaped[ei++] = '\\'; escaped[ei++] = c; }
-        else escaped[ei++] = c;
+    const char *lines[] = {gcode};
+    return backend_zmq_send_gcodes(lines, 1);
+}
+
+int backend_zmq_send_gcodes(const char *const *gcodes, size_t count)
+{
+    char buf[512];
+    int len;
+
+    len = deneb_command_format_gcode(gcodes, count, buf, sizeof(buf));
+    if (len < 0) {
+        fprintf(stderr, "backend_zmq: gcode payload too large\n");
+        return -1;
     }
-    escaped[ei] = '\0';
-    char args[280];
-    snprintf(args, sizeof(args), "[\"%s\"]", escaped);
-    return backend_zmq_send_command("GCODE", args);
+
+    return backend_zmq_send_frame(buf, (size_t)len);
+}
+
+int backend_zmq_send_macro(const char *macro)
+{
+    char buf[512];
+    int len = deneb_command_format_macro(macro, buf, sizeof(buf));
+    if (len < 0) {
+        fprintf(stderr, "backend_zmq: macro payload too large\n");
+        return -1;
+    }
+    return backend_zmq_send_frame(buf, (size_t)len);
+}
+
+int backend_zmq_send_job(const char *path, const char *source,
+                         const char *uuid, float bed_target,
+                         float head_target)
+{
+    char buf[4096];
+    int len = deneb_command_format_job(path, source, uuid, bed_target,
+                                       head_target, buf, sizeof(buf));
+    if (len < 0) {
+        fprintf(stderr, "backend_zmq: job payload too large\n");
+        return -1;
+    }
+    return backend_zmq_send_frame(buf, (size_t)len);
 }
 
 int backend_zmq_pause(void)

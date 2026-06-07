@@ -13,6 +13,7 @@
 #include "pending_job.h"
 #include "pending_job_file.h"
 #include "print_control.h"
+#include "print_state_rules.h"
 #include "sha256.h"
 #include "service.h"
 #include "status.h"
@@ -144,6 +145,53 @@ static void test_print_control_contract(void)
     assert(deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_PRINTING));
     assert(!deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_IDLE));
     assert(!deneb_print_control_phase_stop_allowed(DENEB_PRINT_PHASE_COMPLETE));
+}
+
+static void test_print_state_rules(void)
+{
+    deneb_print_observation_t obs = {0};
+
+    assert(deneb_print_req_is_print("JOB"));
+    assert(deneb_print_req_is_print("printing"));
+    assert(deneb_print_req_is_paused("Paused"));
+    assert(deneb_print_req_is_lifecycle("PREHEATING"));
+    assert(deneb_print_req_is_abort("BUSY_ABORTING"));
+    assert(deneb_print_file_is_candidate("/home/3D/cube.gcode"));
+    assert(deneb_print_file_is_candidate("/home/3D/job.ufp"));
+    assert(!deneb_print_file_is_candidate("/home/cygnus/marlindriver/gcode/home_and_center_head.gcode"));
+    assert(deneb_print_file_is_transient("move_buildplate_up.gcode"));
+    assert(deneb_print_active_time(120, 60));
+    assert(!deneb_print_active_time(120, 0));
+    assert(deneb_print_temp_targets_ready(59.2f, 60.0f, 199.3f, 200.0f));
+
+    obs.req = "PREHEATING";
+    obs.bed_target = 60.0f;
+    obs.nozzle_target = 210.0f;
+    assert(deneb_print_observation_has_context(&obs));
+
+    obs.req = "HOME";
+    obs.bed_target = 0.0f;
+    obs.nozzle_target = 0.0f;
+    assert(!deneb_print_observation_has_context(&obs));
+
+    obs.req = "ABORT";
+    obs.file = "/home/3D/cube.gcode";
+    obs.time_total = 120;
+    obs.time_left = 100;
+    assert(!deneb_print_observation_has_context(&obs));
+
+    assert(strcmp(deneb_print_status_label(0, 0, 0, 0), "offline") == 0);
+    assert(strcmp(deneb_print_status_label(1, 0, 0, 0), "idle") == 0);
+    assert(strcmp(deneb_print_status_label(1, 0, 0, 1), "printing") == 0);
+    assert(strcmp(deneb_print_status_label(1, 0, 1, 1), "paused") == 0);
+    assert(strcmp(deneb_print_status_label(1, 1, 1, 1), "error") == 0);
+    assert(strcmp(deneb_print_job_status_label(0, 0, 0), "finished") == 0);
+    assert(strcmp(deneb_print_job_status_label(0, 1, 1), "paused") == 0);
+    assert(strcmp(deneb_print_job_status_label(1, 1, 1), "error") == 0);
+    assert(deneb_print_job_is_active(1, 0, 0));
+    assert(deneb_print_job_is_active(0, 1, 0));
+    assert(deneb_print_job_is_active(0, 0, 1));
+    assert(!deneb_print_job_is_active(0, 0, 0));
 }
 
 static void test_pending_job_metadata(void)
@@ -525,6 +573,7 @@ int main(void)
     test_command_format_round_trip();
     test_error_mapping();
     test_print_control_contract();
+    test_print_state_rules();
     test_pending_job_metadata();
     test_status_frame();
     test_crc_and_packet();

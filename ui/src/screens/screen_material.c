@@ -178,15 +178,18 @@ static void workflow_load_cb(lv_event_t *e)
 {
     (void)e;
     const printer_state_t *s = backend_get_state();
-    char args[64];
+    char move[48];
+    const char *lines[2];
     if (!material_motion_allowed() || !material_temp_ready(s)) {
         workflow_update();
         return;
     }
 
-    snprintf(args, sizeof(args), "[\"G92 E0\",\"G1 E%d F%d\"]",
+    lines[0] = "G92 E0";
+    snprintf(move, sizeof(move), "G1 E%d F%d",
              MATERIAL_MOVE_DISTANCE, MATERIAL_LOAD_FEEDRATE);
-    if (backend_send_command("GCODE", args) == 0) {
+    lines[1] = move;
+    if (backend_send_gcodes(lines, 2) == 0) {
         workflow_moving = 1;
         workflow_move_done_at =
             lv_tick_get() +
@@ -201,15 +204,18 @@ static void workflow_unload_cb(lv_event_t *e)
 {
     (void)e;
     const printer_state_t *s = backend_get_state();
-    char args[64];
+    char move[48];
+    const char *lines[2];
     if (!material_motion_allowed() || !material_temp_ready(s)) {
         workflow_update();
         return;
     }
 
-    snprintf(args, sizeof(args), "[\"G92 E0\",\"G1 E-%d F%d\"]",
+    lines[0] = "G92 E0";
+    snprintf(move, sizeof(move), "G1 E-%d F%d",
              MATERIAL_MOVE_DISTANCE, MATERIAL_UNLOAD_FEEDRATE);
-    if (backend_send_command("GCODE", args) == 0) {
+    lines[1] = move;
+    if (backend_send_gcodes(lines, 2) == 0) {
         workflow_moving = 1;
         workflow_move_done_at =
             lv_tick_get() +

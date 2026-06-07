@@ -9,17 +9,13 @@
 #include "backend_comm.h"
 #include "lvgl.h"
 
-#include <stdio.h>
-
 static lv_obj_t *level_screen = NULL;
 static lv_obj_t *status_label = NULL;
 
 static void macro_btn_cb(lv_event_t *e)
 {
     const char *macro = (const char *)lv_event_get_user_data(e);
-    char args[80];
-    snprintf(args, sizeof(args), "{\"macro\":\"%s\"}", macro);
-    if (backend_send_command("MACRO", args) == 0)
+    if (backend_send_macro(macro) == 0)
         lv_label_set_text(status_label, macro);
 }
 

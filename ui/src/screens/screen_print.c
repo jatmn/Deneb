@@ -31,39 +31,6 @@ static char file_names[MAX_FILES][MAX_FILENAME];
 static char file_paths[MAX_FILES][MAX_FILE_PATH];
 static int file_count = 0;
 
-static void json_escape_string(const char *src, char *dst, size_t dst_size)
-{
-    static const char hex[] = "0123456789abcdef";
-    size_t out = 0;
-
-    if (dst_size == 0)
-        return;
-
-    while (*src && out + 1 < dst_size) {
-        unsigned char c = (unsigned char)*src++;
-
-        if (c == '"' || c == '\\') {
-            if (out + 2 >= dst_size)
-                break;
-            dst[out++] = '\\';
-            dst[out++] = (char)c;
-        } else if (c < 0x20) {
-            if (out + 6 >= dst_size)
-                break;
-            dst[out++] = '\\';
-            dst[out++] = 'u';
-            dst[out++] = '0';
-            dst[out++] = '0';
-            dst[out++] = hex[c >> 4];
-            dst[out++] = hex[c & 0x0f];
-        } else {
-            dst[out++] = (char)c;
-        }
-    }
-
-    dst[out] = '\0';
-}
-
 static void scan_print_files(const char *path)
 {
     file_count = 0;
@@ -120,12 +87,7 @@ static void start_btn_cb(lv_event_t *e)
         return;
     }
 
-    /* Send JOB command to coordinator with full path */
-    char escaped_path[MAX_FILE_PATH * 2 + 1];
-    char args[384];
-    json_escape_string(selected_path, escaped_path, sizeof(escaped_path));
-    snprintf(args, sizeof(args), "{\"path\":\"%s\",\"file\":\"%s\",\"source\":\"USB\",\"uuid\":\"0\"}", escaped_path, escaped_path);
-    if (backend_send_command("JOB", args) == 0) {
+    if (backend_send_job(selected_path, "USB", "0", 0.0f, 0.0f) == 0) {
         lv_label_set_text_fmt(status_msg, locale_get("print.starting_fmt"),
                               selected_name);
         fprintf(stderr, "touch-ui: sent JOB command for %s\n", selected_path);

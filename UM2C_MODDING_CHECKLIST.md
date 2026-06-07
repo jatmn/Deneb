@@ -395,7 +395,7 @@ Current open focus:
 - [x] Map uploaded Cura jobs into the existing firmware print flow instead of bypassing validation when possible, using pending-job metadata during validation/conflict/preheat.
 - [x] Support pause, resume, abort/cancel, job status, progress, time remaining, temperatures, and printer errors / ER codes.
 - [ ] Validate Cura upload/start, pause/resume, abort/cancel, and pending-job status on real hardware.
-- [ ] Audit the temporary Python/Gershwin conflict/preheat bridges during the native `deneb-printsvc` rewrite so these shims do not become permanent architecture.
+- [x] Move the temporary Python/Gershwin conflict/preheat bridges onto native Deneb helpers and backend commands so Cura/touchscreen pending-job actions no longer depend on embedded Python launchers.
 - [ ] Preserve existing UltiMaker ER code values in LAN API responses where applicable.
 - [ ] Investigate queue behavior separately. Stock backend appears single-active-job, so any queue is likely our layer.
 - [ ] Research whether camera endpoints are relevant. Do not assume camera support exists on this hardware until firmware and hardware evidence confirm it.
@@ -594,6 +594,14 @@ Completed implementation slices:
   conflict UI, and `deneb-printsvc` tests so pending-job path, tracker,
   conflict, handled-state parsing, and cleanup path ownership have one
   Deneb-owned implementation instead of several local string scans/macros.
+- [x] Add a shared native print-state rules helper used by LCD `backend_comm`,
+  web `backend_zmq`, and `deneb-printsvc` tests so request-name classification,
+  preheat/temperature-target activity, transient macro-file filtering, and
+  abort/paused detection stay aligned across touchscreen and web/API clients.
+- [x] Move web/API status labels and active-job decisions for UM API,
+  cluster API, and backend status cache onto the same shared print-state rules
+  so `"idle"`, `"offline"`, `"printing"`, `"paused"`, `"error"`, and
+  `"finished"` are not reinterpreted separately by each REST surface.
 - [x] Move the touchscreen conflict prompt's continue/cancel actions off the
   embedded Python coordinator launcher and onto native backend `JOB`/`ABORT`
   commands for the pending print path.
@@ -609,9 +617,15 @@ Completed implementation slices:
   material-profile import, and diagnostics export: frame lighting sends native
   `M142` G-code directly, material import scans USB/profile XML in C, and log
   export archives with `tar` instead of Python `shutil`.
-- [x] Add a native command-formatting module for stock `GCODE`, `MACRO`,
-  `JOB`, and action frames with parser round-trip tests, so Deneb clients can
-  stop copy-pasting `COMMAND<json>` strings.
+- [x] Move native command formatting for stock `GCODE`, `MACRO`, `JOB`, and
+  action frames into `common/print` with parser round-trip tests, and wire LCD
+  `backend_comm`, web `backend_zmq`, and `deneb-printsvc` through that shared
+  owner for G-code, macro, job, and action frame escaping.
+- [x] Move direct touchscreen/web macro, multi-line G-code, and job-start
+  callers onto native backend helper functions so build-plate leveling, jog
+  motion, material load/unload, touchscreen print start, touchscreen conflict
+  continue, web motion macros, Cura upload start, and Cura pending-job continue
+  no longer each hand-roll stock `COMMAND<json>` payloads.
 - [x] Add native error mapping for Marlin faults and service-side storage,
   serial, command, thermal, and motion categories, with escaped status JSON
   fields for machine-readable Deneb error keys/details.
@@ -619,6 +633,12 @@ Completed implementation slices:
   lab-gated programming handoff without adding Python to the new driver path.
 - [x] Add deliberate native finish/abort motion-policy helpers with tests that
   guard against duplicate or unsafe XY homing during abort cleanup.
+- [x] Add the lab-only native print-service init handoff: Deneb preserves
+  `deneb.printsvc.enabled=0` by default, preserves an existing lab flag across
+  updates, stops stock `printserver` before starting native `deneb-printsvc`,
+  and patches the stock `printserver` init script to skip `print_service.py`
+  while native printsvc is enabled so the stock path can be restored by setting
+  the flag back to `0`.
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.

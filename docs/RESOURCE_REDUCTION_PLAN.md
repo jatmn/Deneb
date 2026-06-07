@@ -70,10 +70,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   remain stable while the Marlin-facing implementation changes underneath.
 - The milestone must also unwind Deneb's current patchwork around the Python
   driver. LCD `backend_comm`, web `backend_zmq`, `api_print_job`,
-  `api_cluster`, `api_printer`, conflict/preheat action bridges, pending-job
-  metadata, direct macro calls, raw G-code calls, and duplicated status
-  classifiers all need an ownership decision: keep as clients, move into
-  `deneb-printsvc`, or replace with a shared Deneb print-control API.
+  `api_cluster`, `api_printer`, direct macro calls, raw G-code calls, and any
+  remaining status classifiers all need an ownership decision: keep as clients,
+  move into `deneb-printsvc`, or replace with a shared Deneb print-control API.
+  Conflict/preheat action bridges and pending-job metadata have started moving
+  into shared native helpers instead of embedded Python/Gershwin launchers.
 - Do not preserve awkward compatibility layers just because they match the
   current Python driver's shape. Any shim kept for migration needs explicit
   removal criteria and tests proving the final Deneb-owned contract is cleaner
@@ -81,9 +82,13 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
 - Deduplicate print-control behavior while the native service is introduced.
   Status classification, print/pending job metadata, command formatting, macro
   lookup, safe motion policy, heat-state decisions, pause/resume/abort
-  semantics, and error mapping should each have one owner. Prefer shared native
-  helpers or a single `deneb-printsvc` API over copy-pasted logic between LCD
-  UI, web UI, REST API, Cura cluster API, and diagnostics.
+  semantics, and error mapping should each have one owner. Shared native helpers
+  now cover command formatting, pending-job files, print-state rules, and
+  web/API status labels. Web and touchscreen macro, multi-line G-code, and
+  job-start callers now route through native backend helper functions instead
+  of each hand-rolling stock command JSON. Later slices should keep collapsing
+  remaining duplicate web/UI/API logic toward those helpers or a single
+  `deneb-printsvc` API.
 - Keep `deneb-printsvc` source files split by responsibility from the first
   scaffold. Expected modules include service/init, ZMQ IPC, print-control API,
   serial transport, Marlin packet framing, CRC, status parsing, command
@@ -99,14 +104,22 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   host tests for the command/status/packet/flow-control/heater-wait,
   G28/home-distance, nonblocking job streaming, motion-firmware verification,
   abort/finish policy, pause/resume state-machine behavior, shared print-control
-  contract, command formatting, pending-job metadata, shared pending-job file
-  parsing/cleanup for web/touch/API conflict flows, touchscreen conflict
-  actions and Cura cluster pending-job actions through native `JOB`/`ABORT`
-  backend commands, native Cura upload registration and no-conflict `JOB`
-  startup, native frame-light/material-import/diagnostics UI helpers, native
+  contract, shared command formatting, pending-job metadata, shared pending-job file
+  parsing/cleanup for web/touch/API conflict flows, shared web/API status label
+  mapping, touchscreen/web macro and G-code command helper routing,
+  touchscreen conflict actions and Cura cluster pending-job actions through
+  native `JOB`/`ABORT` backend commands, native Cura upload registration and
+  no-conflict `JOB` startup, reversible native-vs-stock print service init
+  gating, native
+  frame-light/material-import/diagnostics UI helpers, native
   error mapping, and native diagnostics slices. It is still disabled by default
   and does not yet satisfy the release criteria for replacing stock
   `printserver`.
+- The lab-only switch is explicit and reversible in the package scripts:
+  `deneb.printsvc.enabled` defaults to `0`, existing lab values are preserved
+  across Deneb updates, native `deneb-printsvc` stops stock `printserver` on
+  start, and the patched stock `printserver` init skips `print_service.py` only
+  while the native flag is `1`.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

@@ -73,13 +73,12 @@ static void jog_btn_cb(lv_event_t *e)
     char axis = axis_dir[0];
     int sign = (axis_dir[1] == '+') ? 1 : -1;
 
-    /* Send as single GCODE command: G91, G1, G90 */
-    snprintf(gcode, sizeof(gcode), "G91");
-    backend_send_gcode(gcode);
+    const char *lines[3];
+    lines[0] = "G91";
     snprintf(gcode, sizeof(gcode), "G1 %c%d F3000", axis, step * sign);
-    backend_send_gcode(gcode);
-    snprintf(gcode, sizeof(gcode), "G90");
-    backend_send_gcode(gcode);
+    lines[1] = gcode;
+    lines[2] = "G90";
+    backend_send_gcodes(lines, 3);
 }
 
 static void home_xy_btn_cb(lv_event_t *e)
@@ -87,7 +86,7 @@ static void home_xy_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_command("MACRO", "{\"macro\":\"home_and_center_head.gcode\"}");
+    backend_send_macro("home_and_center_head.gcode");
 }
 
 static void home_z_btn_cb(lv_event_t *e)
@@ -110,7 +109,7 @@ static void bed_up_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_command("MACRO", "{\"macro\":\"move_buildplate_up.gcode\"}");
+    backend_send_macro("move_buildplate_up.gcode");
 }
 
 static void bed_down_btn_cb(lv_event_t *e)
@@ -118,7 +117,7 @@ static void bed_down_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_command("MACRO", "{\"macro\":\"move_buildplate_down.gcode\"}");
+    backend_send_macro("move_buildplate_down.gcode");
 }
 
 static lv_obj_t *create_jog_btn(lv_obj_t *parent, const char *symbol,

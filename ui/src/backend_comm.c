@@ -10,7 +10,9 @@
  */
 
 #include "backend_comm.h"
+#include "command_format.h"
 #include "pending_job_file.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,6 +43,14 @@ void backend_poll(void) { /* no-op in stub */ }
 const printer_state_t *backend_get_state(void) { return &state; }
 int backend_is_stop_print_inflight(void) { return 0; }
 int backend_send_gcode(const char *gcode) { (void)gcode; return 0; }
+int backend_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
+int backend_send_macro(const char *macro) { (void)macro; return 0; }
+int backend_send_job(const char *path, const char *source, const char *uuid,
+                     float bed_target, float head_target)
+{
+    (void)path; (void)source; (void)uuid; (void)bed_target; (void)head_target;
+    return 0;
+}
 int backend_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_abort_print(void) { return 0; }
 int backend_stop_print(void) { return 0; }
@@ -52,7 +62,6 @@ void backend_deinit(void) { /* no-op */ }
 
 #include <zmq.h>
 #include <errno.h>
-#include <ctype.h>
 #include <unistd.h>
 
 /* Coordinator endpoints (from stock menu_settings.py) */
@@ -75,11 +84,6 @@ static char retained_print_filename[128];
 static long long last_stop_ms = -1;
 static int print_stop_inflight = 0;
 static void set_filename_or_none(char *dst, const char *value);
-static int is_transient_print_file(const char *file);
-static int is_print_request(const char *req);
-static int is_print_lifecycle_req(const char *req);
-static int is_abort_req(const char *req);
-
 static int configure_socket_linger(void *socket)
 {
     int linger = 0;
@@ -173,28 +177,6 @@ static int json_get_int(const char *json, const char *key)
     return (int)strtol(val, NULL, 10);
 }
 
-static int str_contains_ci(const char *haystack, const char *needle)
-{
-    if (!haystack || !needle) return 0;
-
-    size_t nlen = strlen(needle);
-    size_t hlen = strlen(haystack);
-    if (nlen == 0 || hlen < nlen)
-        return 0;
-
-    for (size_t i = 0; i <= hlen - nlen; i++) {
-        size_t j = 0;
-        while (j < nlen &&
-               (tolower((unsigned char)haystack[i + j]) ==
-                tolower((unsigned char)needle[j]))) {
-            j++;
-        }
-        if (j == nlen) return 1;
-    }
-
-    return 0;
-}
-
 static int str_is_one_of(const char *value, const char *const *choices)
 {
     if (!value)
@@ -208,67 +190,30 @@ static int str_is_one_of(const char *value, const char *const *choices)
     return 0;
 }
 
-static int str_is_one_of_ci(const char *value, const char *const *choices)
-{
-    if (!value)
-        return 0;
-
-    for (int i = 0; choices[i]; i++) {
-        const char *a = value;
-        const char *b = choices[i];
-        int match = 1;
-        while (*a && *b) {
-            char ca = *a >= 'A' && *a <= 'Z' ? *a + ('a' - 'A') : *a;
-            char cb = *b >= 'A' && *b <= 'Z' ? *b + ('a' - 'A') : *b;
-            if (ca != cb) {
-                match = 0;
-                break;
-            }
-            a++;
-            b++;
-        }
-        if (match && *a == '\0' && *b == '\0')
-            return 1;
-    }
-
-    return 0;
-}
-
 static int has_temp_targets(const printer_state_t *s)
 {
-    return (s->bed_temp_set > 0.0f) || (s->nozzle_temp_set > 0.0f);
+    return deneb_print_has_temp_targets(s->bed_temp_set, s->nozzle_temp_set);
 }
 
 static int is_print_file_candidate(const char *file)
 {
-    if (!file || !*file || strcmp(file, "none") == 0)
-        return 0;
-
-    return (str_contains_ci(file, ".gcode") || str_contains_ci(file, ".ufp")) &&
-           !is_transient_print_file(file);
+    return deneb_print_file_is_candidate(file);
 }
 
 static int state_has_print_context(const printer_state_t *s)
 {
-    int has_time;
-    int has_file;
+    deneb_print_observation_t obs;
 
-    if (is_abort_req(s->current_req))
-        return 0;
-
-    has_time = s->time_total > 0 || s->time_left > 0;
-    has_file = is_print_file_candidate(s->filename);
-
-    if (s->is_printing || s->is_paused || has_time || has_file)
+    if (s->is_printing || s->is_paused)
         return 1;
 
-    if (!s->current_req[0])
-        return 0;
-
-    if (is_print_lifecycle_req(s->current_req))
-        return has_file || has_time || has_temp_targets(s);
-
-    return is_print_request(s->current_req);
+    obs.req = s->current_req;
+    obs.file = s->filename;
+    obs.time_total = s->time_total;
+    obs.time_left = s->time_left;
+    obs.bed_target = s->bed_temp_set;
+    obs.nozzle_target = s->nozzle_temp_set;
+    return deneb_print_observation_has_context(&obs);
 }
 
 static int read_cluster_pending_name(char *out, size_t out_sz)
@@ -320,19 +265,7 @@ static void set_filename_or_none(char *dst, const char *value)
 
 static int is_transient_print_file(const char *file)
 {
-    if (!file || !*file) return 0;
-
-    if (strcmp(file, "none") == 0)
-        return 0;
-    if (str_contains_ci(file, "home_and_center_head"))
-        return 1;
-    if (str_contains_ci(file, "move_buildplate_up"))
-        return 1;
-    if (str_contains_ci(file, "move_buildplate_down"))
-        return 1;
-    if (str_contains_ci(file, "macro") && str_contains_ci(file, ".gcode"))
-        return 1;
-    return 0;
+    return deneb_print_file_is_transient(file);
 }
 
 static void retain_print_filename(const char *filename)
@@ -353,64 +286,26 @@ static void retain_print_filename(const char *filename)
     strncpy(retained_print_filename, base, sizeof(retained_print_filename) - 1);
 }
 
-static int is_temp_reached(float current, float target)
-{
-    return target > 0.0f && current >= target - 1.0f;
-}
-
-static int is_print_request(const char *req)
-{
-    static const char *const print_reqs[] = {
-        "JOB", "Print", "Printing",
-        "PAUSE", "Pause", "Paused",
-        NULL
-    };
-
-    return str_is_one_of_ci(req, print_reqs);
-}
-
-static int is_print_lifecycle_req(const char *req)
-{
-    static const char *const lifecycle_reqs[] = {
-        "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
-        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
-        "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
-        "EXTRACT", "EXTRACTING",
-        NULL
-    };
-
-    return str_is_one_of_ci(req, lifecycle_reqs);
-}
-
-static int is_abort_req(const char *req)
-{
-    static const char *const abort_reqs[] = {
-        "ABORT", "Abort", "Aborting", "ABORTING", "BUSY_ABORTING", NULL
-    };
-
-    return str_is_one_of_ci(req, abort_reqs);
-}
-
 static int should_hold_print_filename(const printer_state_t *curr, const printer_state_t *prev)
 {
-    if (is_abort_req(curr->current_req))
+    if (deneb_print_req_is_abort(curr->current_req))
         return 0;
 
     return (curr->is_printing || curr->is_paused ||
             prev->is_printing || prev->is_paused ||
             (curr->time_total > 0 && curr->time_left >= 0) ||
             (prev->time_total > 0 && prev->time_left >= 0) ||
-            curr->bed_temp_set > 0.0f || curr->nozzle_temp_set > 0.0f ||
-            is_print_lifecycle_req(curr->current_req) ||
-            is_print_lifecycle_req(prev->current_req) ||
+            deneb_print_has_temp_targets(curr->bed_temp_set, curr->nozzle_temp_set) ||
+            deneb_print_req_is_lifecycle(curr->current_req) ||
+            deneb_print_req_is_lifecycle(prev->current_req) ||
             (curr->uuid[0] && prev->uuid[0] &&
              strcmp(curr->uuid, prev->uuid) == 0));
 }
 
 static int have_jobs_targets(const printer_state_t *s)
 {
-    return (s->bed_temp_set > 0.0f && is_temp_reached(s->bed_temp_cur, s->bed_temp_set)) &&
-           (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_temp_cur, s->nozzle_temp_set));
+    return deneb_print_temp_targets_ready(s->bed_temp_cur, s->bed_temp_set,
+                                          s->nozzle_temp_cur, s->nozzle_temp_set);
 }
 
 static void log_status_transition(const printer_state_t *curr)
@@ -531,22 +426,21 @@ static void parse_status(const char *json)
                          / (float)state.time_total * 100.0f;
     }
 
-    static const char *const paused_reqs[] = {"PAUSE", "Pause", "Paused", NULL};
-    int active_time = state.time_total > 0 &&
-                      state.time_left > 0 &&
-                      state.time_left <= state.time_total;
-    int lifecycle_req = is_print_lifecycle_req(state.current_req);
+    deneb_print_observation_t obs;
+    obs.req = state.current_req;
+    obs.file = file;
+    obs.time_total = state.time_total;
+    obs.time_left = state.time_left;
+    obs.bed_target = state.bed_temp_set;
+    obs.nozzle_target = state.nozzle_temp_set;
 
     /* Derive state flags */
-    if (is_abort_req(state.current_req)) {
+    if (deneb_print_req_is_abort(state.current_req)) {
         state.is_printing = false;
     } else {
-        state.is_printing = is_print_request(state.current_req) ||
-                            (!lifecycle_req &&
-                             !str_is_one_of_ci(state.current_req, paused_reqs) &&
-                             active_time);
+        state.is_printing = deneb_print_observation_has_context(&obs);
     }
-    state.is_paused = str_is_one_of_ci(state.current_req, paused_reqs);
+    state.is_paused = deneb_print_req_is_paused(state.current_req);
 
     char pending_name[128];
     int has_pending_name = (read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 && pending_name[0] != '\0');
@@ -601,7 +495,7 @@ static void parse_status(const char *json)
                 fprintf(stderr, "backend: keeping previous print filename during lifecycle: \"%s\" (req=%s)\n",
                         state.filename, state.current_req[0] ? state.current_req : "none");
         }
-    } else if (is_abort_req(state.current_req) ||
+    } else if (deneb_print_req_is_abort(state.current_req) ||
                (was_printing && !state.is_printing && !state.is_paused)) {
         state.filename[0] = '\0';
         retained_print_filename[0] = '\0';
@@ -789,14 +683,50 @@ static int send_formatted_rpc(const char *msg, int len, size_t msg_size)
 
 int backend_send_gcode(const char *gcode)
 {
-    /* Format: GCODE<["M140 S60"] */
+    const char *lines[] = {gcode};
+    return backend_send_gcodes(lines, 1);
+}
+
+int backend_send_gcodes(const char *const *gcodes, size_t count)
+{
     char msg[256];
-    int len = snprintf(msg, sizeof(msg), "GCODE<[\"%s\"]", gcode);
+    int len = deneb_command_format_gcode(gcodes, count, msg, sizeof(msg));
+    return send_formatted_rpc(msg, len, sizeof(msg));
+}
+
+int backend_send_macro(const char *macro)
+{
+    char msg[256];
+    int len = deneb_command_format_macro(macro, msg, sizeof(msg));
+    return send_formatted_rpc(msg, len, sizeof(msg));
+}
+
+int backend_send_job(const char *path, const char *source, const char *uuid,
+                     float bed_target, float head_target)
+{
+    char msg[1024];
+    int len;
+
+    if (path && *path) {
+        retain_print_filename(path);
+        set_filename_or_none(state.filename, path);
+        fprintf(stderr, "backend: job command path retained as active filename=%s\n",
+                state.filename[0] ? state.filename : "(none)");
+    }
+
+    len = deneb_command_format_job(path, source, uuid, bed_target, head_target,
+                                   msg, sizeof(msg));
     return send_formatted_rpc(msg, len, sizeof(msg));
 }
 
 int backend_send_command(const char *cmd, const char *args_json)
 {
+    char msg[1024];
+    int len;
+
+    if (!cmd || !*cmd)
+        return -1;
+
     if (cmd && strcmp(cmd, "JOB") == 0 && args_json) {
         const char *path = json_get_str(args_json, "path");
         if (!path || !*path || strcmp(path, "none") == 0)
@@ -810,8 +740,12 @@ int backend_send_command(const char *cmd, const char *args_json)
     }
 
     fprintf(stderr, "backend: command send cmd=%s args=%s\n", cmd, args_json ? args_json : "{}");
-    char msg[1024];
-    int len = snprintf(msg, sizeof(msg), "%s<%s", cmd, args_json);
+    if ((strcmp(cmd, "ABORT") == 0 || strcmp(cmd, "PAUSE") == 0 || strcmp(cmd, "RESUME") == 0) &&
+        (!args_json || strcmp(args_json, "{}") == 0)) {
+        len = deneb_command_format_action(cmd, msg, sizeof(msg));
+    } else {
+        len = snprintf(msg, sizeof(msg), "%s<%s", cmd, args_json ? args_json : "{}");
+    }
     return send_formatted_rpc(msg, len, sizeof(msg));
 }
 

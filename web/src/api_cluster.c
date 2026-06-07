@@ -10,6 +10,7 @@
 #include "backend_zmq.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
+#include "print_state_rules.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -83,24 +84,20 @@ static void read_guid(char *out, size_t out_sz)
 
 static const char *cluster_printer_status(const printer_state_t *s)
 {
-    if (s->has_error) return "error";
-    if (s->is_paused) return "paused";
-    if (s->is_printing) return "printing";
-    if (!s->connected) return "offline";
-    return "idle";
+    return deneb_print_status_label(s->connected, s->has_error,
+                                    s->is_paused, s->is_printing);
 }
 
 static const char *cluster_job_status(const printer_state_t *s)
 {
-    if (s->has_error) return "error";
-    if (s->is_paused) return "paused";
-    if (s->is_printing) return "printing";
-    return "finished";
+    return deneb_print_job_status_label(s->has_error, s->is_paused,
+                                        s->is_printing);
 }
 
 static int has_active_job(const printer_state_t *s)
 {
-    return s->is_printing || s->is_paused || s->has_error;
+    return deneb_print_job_is_active(s->has_error, s->is_paused,
+                                     s->is_printing);
 }
 
 static int serve_pending_cluster_job(http_response_t *resp)
@@ -127,25 +124,6 @@ static int pending_job_tracker(void)
     return load_pending_job(&job) == 0 ? job.tracker : -1;
 }
 
-static void json_escape_arg(const char *src, char *out, size_t out_sz)
-{
-    size_t oi = 0;
-
-    if (!out || out_sz == 0)
-        return;
-
-    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
-        char c = src[i];
-        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
-            out[oi++] = '\\';
-            out[oi++] = c;
-        } else if (c >= 0x20) {
-            out[oi++] = c;
-        }
-    }
-    out[oi] = '\0';
-}
-
 static int send_pending_job_instruction(const char *instruction)
 {
     deneb_pending_job_file_t job;
@@ -167,15 +145,8 @@ static int send_pending_job_instruction(const char *instruction)
         return backend_zmq_abort();
 
     if (strcmp(instruction, "PREPARE") == 0) {
-        char escaped_path[2048];
-        char args[2300];
-
-        json_escape_arg(job.path, escaped_path, sizeof(escaped_path));
-        snprintf(args, sizeof(args),
-                 "{\"file\":\"%s\",\"source\":\"Cura\","
-                 "\"uuid\":\"deneb-current-job\"}",
-                 escaped_path);
-        return backend_zmq_send_command("JOB", args);
+        return backend_zmq_send_job(job.path, "Cura", "deneb-current-job",
+                                    0.0f, 0.0f);
     }
 
     return -1;

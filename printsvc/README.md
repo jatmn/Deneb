@@ -7,6 +7,10 @@ The service is intentionally split into focused source units from the first
 scaffold:
 
 - `command.*` parses the stock `COMMAND<json>` request frames.
+- `common/print/command_format.*` formats stock `GCODE`, `MACRO`, `JOB`, and
+  action frames for the service, web backend, and touchscreen backend.
+- `common/print/print_state_rules.*` owns shared active-print, preheat, paused,
+  abort, and transient macro-file classification used by web/touch clients.
 - `ipc_zmq.*` owns the first-stage ZMQ PUB/REP compatibility boundary:
   status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, and topic
   `10001`.
@@ -28,7 +32,12 @@ scaffold:
 
 The binary is packaged into Deneb update releases, but the init script is
 lab-gated by `deneb.printsvc.enabled=0` by default. Installing Deneb therefore
-does not disable or replace stock `printserver` yet.
+does not disable or replace stock `printserver` yet. When lab testing sets
+`deneb.printsvc.enabled=1`, `deneb-printsvc.init` stops the stock `printserver`
+before starting the native service, and Deneb's patched stock `printserver`
+init script skips `print_service.py` while that flag remains enabled. Setting
+the flag back to `0` restores the stock print-service startup path without a
+reflash.
 
 This scaffold is not complete enough to run unattended prints. It exists to
 make the de-python work buildable and testable while the remaining planner and

@@ -51,9 +51,10 @@ endif()
 option(BUILD_HOST_STUB "Build without libzmq or serial device dependencies" OFF)
 
 set(DENEB_PRINTSVC_LIB_SOURCES
+    ../common/print/command_format.c
     ../common/print/pending_job_file.c
+    ../common/print/print_state_rules.c
     src/command.c
-    src/command_format.c
     src/crc.c
     src/error_map.c
     src/flow_control.c

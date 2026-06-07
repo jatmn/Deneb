@@ -118,7 +118,9 @@ install_web_runtime() {
     uci -q set deneb.mdns=mdns 2>/dev/null || true
     uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
     uci -q set deneb.printsvc=printsvc 2>/dev/null || true
-    uci -q set deneb.printsvc.enabled='0' 2>/dev/null || true
+    if [ -z "$(uci -q get deneb.printsvc.enabled 2>/dev/null || true)" ]; then
+        uci -q set deneb.printsvc.enabled='0' 2>/dev/null || true
+    fi
     if [ -z "$(uci -q get ultimaker.option.nozzle_size 2>/dev/null || true)" ]; then
         uci -q set ultimaker.option.nozzle_size='0.4' 2>/dev/null || true
         log "defaulted nozzle size to 0.40 mm"
@@ -402,7 +404,7 @@ patch_motion_stack_boot_order() {
     fi
 
     if [ -f "${printserver_init}" ] &&
-       ! grep -q "DENEB_PRINTSERVER_START_WAIT" "${printserver_init}" 2>/dev/null; then
+       ! grep -q "DENEB_PRINTSERVER_NATIVE_GATE" "${printserver_init}" 2>/dev/null; then
         if [ ! -f "${backup_dir}/printserver.orig" ]; then
             cp "${printserver_init}" "${backup_dir}/printserver.orig"
         fi
@@ -411,6 +413,7 @@ patch_motion_stack_boot_order() {
 #!/bin/sh /etc/rc.common
 # Start the printer server
 # DENEB_PRINTSERVER_START_WAIT
+# DENEB_PRINTSERVER_NATIVE_GATE
 
 # shellcheck disable=SC2034
 START=95
@@ -419,6 +422,10 @@ STOP=15
 
 export LD_LIBRARY_PATH=/home/lib
 export PYTHONPATH=${PYTHONPATH}:/home
+
+native_printsvc_enabled() {
+    [ "$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "0")" = "1" ]
+}
 
 wait_for_printserver_socket() {
     local pid="$1"
@@ -437,6 +444,12 @@ wait_for_printserver_socket() {
 }
 
 start() {
+    if native_printsvc_enabled; then
+        logger -t deneb-printserver "native deneb-printsvc enabled; skipping stock print_service.py"
+        rm -f /var/run/printserver.pid
+        return 0
+    fi
+
     echo Starting print server
     /usr/bin/python3 /home/cygnus/marlindriver/print_service.py > /dev/null 2>&1 &
     echo $! >/var/run/printserver.pid
@@ -450,8 +463,11 @@ start() {
 
 stop() {
     echo Stopping print server
-    PID=$(cat /var/run/printserver.pid)
-    kill -9 "${PID}"
+    if [ -f /var/run/printserver.pid ]; then
+        PID=$(cat /var/run/printserver.pid)
+        kill -9 "${PID}" 2>/dev/null || true
+        rm -f /var/run/printserver.pid
+    fi
 }
 EOF
         chmod 0755 "${printserver_init}"

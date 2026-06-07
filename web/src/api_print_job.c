@@ -9,6 +9,7 @@
 #include "json_writer.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
+#include "print_state_rules.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -159,25 +160,6 @@ static void read_print_file_metadata(const char *path,
     extract_meta_value(buf, "print_core_id", nozzle_size, nozzle_size_sz);
 }
 
-static void json_escape_arg(const char *src, char *out, size_t out_sz)
-{
-    size_t oi = 0;
-
-    if (!out || out_sz == 0)
-        return;
-
-    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
-        char c = src[i];
-        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
-            out[oi++] = '\\';
-            out[oi++] = c;
-        } else if (c >= 0x20) {
-            out[oi++] = c;
-        }
-    }
-    out[oi] = '\0';
-}
-
 static int write_pending_job_file(const deneb_pending_job_t *job)
 {
     char json[4096];
@@ -211,15 +193,8 @@ static int write_pending_job_file(const deneb_pending_job_t *job)
 
 static int send_native_job_start(const char *path)
 {
-    char escaped_path[512];
-    char args[700];
-
-    json_escape_arg(path, escaped_path, sizeof(escaped_path));
-    snprintf(args, sizeof(args),
-             "{\"file\":\"%s\",\"source\":\"Cura\","
-             "\"uuid\":\"deneb-current-job\"}",
-             escaped_path);
-    return backend_zmq_send_command("JOB", args);
+    return backend_zmq_send_job(path, "Cura", "deneb-current-job",
+                                0.0f, 0.0f);
 }
 
 static int register_native_print(const char *path)
@@ -287,15 +262,16 @@ static int register_native_print(const char *path)
 
 static int is_printing(const printer_state_t *s)
 {
-    return s->is_printing || s->is_paused;
+    return deneb_print_job_is_active(s->has_error, s->is_paused,
+                                     s->is_printing);
 }
 
 static const char *get_job_state(const printer_state_t *s)
 {
-    if (s->has_error) return "error";
-    if (s->is_paused) return "paused";
-    if (s->is_printing) return "printing";
-    return "none";
+    if (!deneb_print_job_is_active(s->has_error, s->is_paused, s->is_printing))
+        return "none";
+    return deneb_print_job_status_label(s->has_error, s->is_paused,
+                                        s->is_printing);
 }
 
 void api_print_job_get(const http_request_t *req, http_response_t *resp)

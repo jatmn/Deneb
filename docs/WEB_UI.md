@@ -104,10 +104,15 @@ on real hardware remains open.
   local cluster API, but local storage behavior, free-space checks,
   USB-removal-safe printing, and real Cura upload/start testing remain release
   blockers.
-- Conflict continue/cancel and pending preheat visibility currently use
-  compatibility shims around the stock Python coordinator. These should be
-  audited during the native `deneb-printsvc` rewrite instead of treated as final
-  architecture.
+- Conflict continue/cancel and pending preheat visibility now use native Deneb
+  pending-job and print-state helpers instead of embedded Python coordinator
+  launchers. Web motion macros, Cura upload start, and pending-job continue now
+  route through native backend macro/job helpers instead of local command JSON.
+  UM API and cluster API status labels also share the native print-state helper
+  instead of each REST surface owning its own active-job mapping.
+  Remaining native-service work should keep collapsing web/API and touchscreen
+  behavior toward shared print-control helpers instead of adding new per-client
+  state rules.
 - Cura discovery requires installing the Deneb Cura plugin until Cura exposes a
   BOM-backed UM2+ Connect local network definition.
 - Motion controls are intentionally limited to guarded X/Y/Z movement; extruder

@@ -98,6 +98,11 @@ Deneb validates metadata, waits for conflict confirmation, prepares, and
 preheats.
 
 Upload registration, conflict continue/cancel, and pending-job cancel now use
-native Deneb code paths. The native `deneb-printsvc` milestone should keep
-collapsing remaining direct clients toward shared Deneb print-control helpers
-or a single native service API.
+native Deneb code paths. Pending-job file handling, command-frame formatting,
+print-state classification, and web/API status labels are shared native helpers
+so touchscreen, web/API, and `deneb-printsvc` clients agree on escaping,
+preheat, paused, abort, active-print, offline, and finished-job state.
+Touchscreen/web macro, multi-line G-code, and job-start callers now use backend
+helper functions that own stock frame formatting. The native `deneb-printsvc`
+milestone should keep collapsing remaining direct clients toward shared Deneb
+print-control helpers or a single native service API.

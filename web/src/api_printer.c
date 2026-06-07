@@ -7,6 +7,7 @@
 #include "api_printer.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
+#include "print_state_rules.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -224,16 +225,16 @@ static int send_absolute_position_command(int has_x, float x, int has_y, float y
 static int send_motion_action(const char *action)
 {
     if (strcmp(action, "home") == 0) {
-        return backend_zmq_send_command("MACRO", "{\"macro\":\"home_and_center_head.gcode\"}");
+        return backend_zmq_send_macro("home_and_center_head.gcode");
     }
     if (strcmp(action, "z_home") == 0) {
         return backend_zmq_send_gcode("G28 Z");
     }
     if (strcmp(action, "bed_up") == 0) {
-        return backend_zmq_send_command("MACRO", "{\"macro\":\"move_buildplate_up.gcode\"}");
+        return backend_zmq_send_macro("move_buildplate_up.gcode");
     }
     if (strcmp(action, "bed_down") == 0) {
-        return backend_zmq_send_command("MACRO", "{\"macro\":\"move_buildplate_down.gcode\"}");
+        return backend_zmq_send_macro("move_buildplate_down.gcode");
     }
     return -2;
 }
@@ -246,10 +247,8 @@ static void set_motion_failed(http_response_t *resp)
 
 static const char *get_status_string(const printer_state_t *s)
 {
-    if (s->has_error) return "error";
-    if (s->is_paused) return "paused";
-    if (s->is_printing) return "printing";
-    return "idle";
+    return deneb_print_status_label(s->connected, s->has_error,
+                                    s->is_paused, s->is_printing);
 }
 
 void api_printer_status_get(const http_request_t *req, http_response_t *resp)
