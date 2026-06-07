@@ -101,6 +101,15 @@ static int is_stoppable_print_req(const char *req)
     return str_is_one_of_ci(req, stoppable_reqs);
 }
 
+static int is_abort_req(const char *req)
+{
+    static const char *const abort_reqs[] = {
+        "ABORT", "Abort", "Aborting", "ABORTING", "BUSY_ABORTING", NULL
+    };
+
+    return str_is_one_of_ci(req, abort_reqs);
+}
+
 static int is_idle_like_req(const char *req)
 {
     static const char *const idle_reqs[] = {
@@ -211,6 +220,9 @@ static int state_has_print_name(const printer_state_t *s)
 
 static int has_active_print_context(const printer_state_t *s, int has_print_name)
 {
+    if (is_abort_req(s->current_req))
+        return 0;
+
     return s->is_printing ||
            s->is_paused ||
            s->time_total > 0 ||
@@ -228,6 +240,9 @@ static int has_heat_targets(const printer_state_t *s)
 
 static int has_preparing_print_context(const printer_state_t *s, int has_print_name)
 {
+    if (is_abort_req(s->current_req))
+        return 0;
+
     return has_print_name &&
            (is_print_lifecycle_req(s->current_req) ||
             has_heat_targets(s) ||
@@ -236,6 +251,9 @@ static int has_preparing_print_context(const printer_state_t *s, int has_print_n
 
 static int has_stoppable_print_context(const printer_state_t *s, int has_print_name)
 {
+    if (is_abort_req(s->current_req))
+        return 0;
+
     if (s->is_paused)
         return 1;
 
@@ -353,7 +371,9 @@ static void update_timer_cb(lv_timer_t *timer)
     }
 
     /* Printer state */
-    if (s->is_paused)
+    if (is_abort_req(s->current_req))
+        lv_label_set_text(state_label, locale_get("status.cooling"));
+    else if (s->is_paused)
         lv_label_set_text(state_label, locale_get("status.paused"));
     else if (has_preparing_print_context(s, has_print_name) && !s->time_total)
         lv_label_set_text(state_label, locale_get("status.preparing"));

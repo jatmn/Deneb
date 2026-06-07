@@ -52,6 +52,7 @@ void backend_deinit(void) { /* no-op */ }
 #include <zmq.h>
 #include <errno.h>
 #include <ctype.h>
+#include <unistd.h>
 
 /* Coordinator endpoints (from stock menu_settings.py) */
 #define STATUS_URL   "tcp://127.0.0.1:5565"
@@ -75,6 +76,9 @@ static long long last_stop_ms = -1;
 static int print_stop_inflight = 0;
 static void set_filename_or_none(char *dst, const char *value);
 static int is_transient_print_file(const char *file);
+static int is_print_request(const char *req);
+static int is_print_lifecycle_req(const char *req);
+static int is_abort_req(const char *req);
 
 static int configure_socket_linger(void *socket)
 {
@@ -244,6 +248,29 @@ static int is_print_file_candidate(const char *file)
            !is_transient_print_file(file);
 }
 
+static int state_has_print_context(const printer_state_t *s)
+{
+    int has_time;
+    int has_file;
+
+    if (is_abort_req(s->current_req))
+        return 0;
+
+    has_time = s->time_total > 0 || s->time_left > 0;
+    has_file = is_print_file_candidate(s->filename);
+
+    if (s->is_printing || s->is_paused || has_time || has_file)
+        return 1;
+
+    if (!s->current_req[0])
+        return 0;
+
+    if (is_print_lifecycle_req(s->current_req))
+        return has_file || has_time || has_temp_targets(s);
+
+    return is_print_request(s->current_req);
+}
+
 static int read_cluster_pending_field(const char *field, char *out, size_t out_sz)
 {
     if (!out_sz) return -1;
@@ -364,10 +391,6 @@ static int is_print_request(const char *req)
     static const char *const print_reqs[] = {
         "JOB", "Print", "Printing",
         "PAUSE", "Pause", "Paused",
-        "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
-        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
-        "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
-        "EXTRACT", "EXTRACTING",
         NULL
     };
 
@@ -387,8 +410,20 @@ static int is_print_lifecycle_req(const char *req)
     return str_is_one_of_ci(req, lifecycle_reqs);
 }
 
+static int is_abort_req(const char *req)
+{
+    static const char *const abort_reqs[] = {
+        "ABORT", "Abort", "Aborting", "ABORTING", "BUSY_ABORTING", NULL
+    };
+
+    return str_is_one_of_ci(req, abort_reqs);
+}
+
 static int should_hold_print_filename(const printer_state_t *curr, const printer_state_t *prev)
 {
+    if (is_abort_req(curr->current_req))
+        return 0;
+
     return (curr->is_printing || curr->is_paused ||
             prev->is_printing || prev->is_paused ||
             (curr->time_total > 0 && curr->time_left >= 0) ||
@@ -528,11 +563,17 @@ static void parse_status(const char *json)
     int active_time = state.time_total > 0 &&
                       state.time_left > 0 &&
                       state.time_left <= state.time_total;
+    int lifecycle_req = is_print_lifecycle_req(state.current_req);
 
     /* Derive state flags */
-    state.is_printing = is_print_request(state.current_req) ||
-                        (!str_is_one_of_ci(state.current_req, paused_reqs) && active_time) ||
-                        active_time;
+    if (is_abort_req(state.current_req)) {
+        state.is_printing = false;
+    } else {
+        state.is_printing = is_print_request(state.current_req) ||
+                            (!lifecycle_req &&
+                             !str_is_one_of_ci(state.current_req, paused_reqs) &&
+                             active_time);
+    }
     state.is_paused = str_is_one_of_ci(state.current_req, paused_reqs);
 
     char pending_name[128];
@@ -588,7 +629,8 @@ static void parse_status(const char *json)
                 fprintf(stderr, "backend: keeping previous print filename during lifecycle: \"%s\" (req=%s)\n",
                         state.filename, state.current_req[0] ? state.current_req : "none");
         }
-    } else if (was_printing && !state.is_printing && !state.is_paused) {
+    } else if (is_abort_req(state.current_req) ||
+               (was_printing && !state.is_printing && !state.is_paused)) {
         state.filename[0] = '\0';
         retained_print_filename[0] = '\0';
     } else if (!state.filename[0]) {
@@ -726,6 +768,9 @@ int backend_is_stop_print_inflight(void)
     if ((now_ms - last_stop_ms) < STOP_INFLIGHT_MS)
         return 1;
 
+    if (state_has_print_context(&state))
+        return 1;
+
     print_stop_inflight = 0;
     return 0;
 }
@@ -837,6 +882,7 @@ int backend_stop_print(void)
         print_stop_inflight = 0;
         return -1;
     }
+    unlink(DENEB_CLUSTER_PENDING_JOB);
     return 0;
 }
 
