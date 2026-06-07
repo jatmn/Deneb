@@ -94,6 +94,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   not line-for-line ports. The native replacement must remove unsafe abort
   cleanup behavior, avoid duplicate homing, and report clear cancellation
   status before it can replace stock `printserver` outside experimental builds.
+- The native replacement now has an initial buildable C source tree at
+  `printsvc/`, is included in release packages as a lab-gated binary, and has
+  host tests for the first command/status/packet/flow-control/heater-wait
+  slices. It is still disabled by default and does not yet satisfy the release
+  criteria for replacing stock `printserver`.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

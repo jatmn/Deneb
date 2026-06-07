@@ -527,6 +527,15 @@ Resource rationale and measurement guardrails live in
 [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets);
 this section is the milestone checklist for that same work.
 
+Current native replacement progress lives under [printsvc/](printsvc/). The
+first buildable slice now provides a lab-gated `deneb-printsvc` binary with
+separate modules for ZMQ IPC, command parsing, status serialization, Marlin
+status parsing, serial transport, packet/CRC helpers, flow control,
+G-code streaming, heater waits, macro lookup, and service state. It is
+packaged into `.deneb` releases but remains disabled by default through
+`deneb.printsvc.enabled=0` until the remaining planner/buffer backpressure,
+finish/abort motion policy, and live-device validation items are finished.
+
 - [ ] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
 - [ ] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
 - [ ] Preserve the stock print-service IPC contract first: raw ZMQ status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, topic `10001`, and `COMMAND<json>` request framing.
@@ -554,6 +563,23 @@ this section is the milestone checklist for that same work.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
 - [ ] Do not disable stock `printserver` by default until the native service has rollback, diagnostics, and repeated live print validation.
+
+Completed implementation slices:
+
+- [x] Add a dedicated native `printsvc/` source tree instead of folding the
+  rewrite into UI or web code.
+- [x] Keep first-stage source files split by responsibility: service init, ZMQ
+  IPC, command parsing, status serialization, Marlin status parsing, serial
+  transport, flow control, packet framing, CRC, G-code streaming, heater waits,
+  macro lookup, and tests.
+- [x] Add host tests for command parsing, CRC/packet framing, macro path
+  safety, flow control ACK/resend handling, status serialization, Marlin status
+  parsing, heater target readiness, and abort state cleanup.
+- [x] Add a native serial response pump that reads Marlin lines, updates parsed
+  status fields, accounts ACK/reject/resend responses, and re-emits resend
+  packets through the flow-control queue.
+- [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
+  artifact without enabling it over stock `printserver` by default.
 
 ## 9. Motion Controller / Marlin Firmware
 

@@ -105,6 +105,26 @@ if ($LASTEXITCODE -ne 0) {
     throw "release API build failed with exit code $LASTEXITCODE"
 }
 
+$buildPrintsvc = "set -euo pipefail; " +
+                 "cd '$repoWsl/printsvc'; " +
+                 "mkdir -p '$BuildDirectory'; " +
+                 "cd '$BuildDirectory'; " +
+                 "if [ -f CMakeCache.txt ]; then " +
+                 "grep -q '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc' CMakeCache.txt || " +
+                 "{ echo 'Existing printsvc build directory is not configured for mipsel musl. Use a different -BuildDirectory.' >&2; exit 1; }; " +
+                 "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
+                 "else " +
+                 "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' " +
+                 "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
+                 "fi; " +
+                 "make -j`$(nproc); " +
+                 "test -x deneb-printsvc"
+
+& wsl -d $Distro -- bash -lc $buildPrintsvc
+if ($LASTEXITCODE -ne 0) {
+    throw "release print service build failed with exit code $LASTEXITCODE"
+}
+
 $buildLighttpd = "set -euo pipefail; " +
                  "test -d '$LighttpdRoot/src' || { echo 'Missing lighttpd source at $LighttpdRoot; re-run with -RebuildLighttpd.' >&2; exit 1; }; " +
                  "cd '$LighttpdRoot/src'; " +
@@ -146,7 +166,7 @@ $buildUi = "set -euo pipefail; " +
            "fi; " +
            "make -j`$(nproc); " +
            "cd '$repoWsl'; " +
-           "bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns"
+           "bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc"
 
 & wsl -d $Distro -- bash -lc $buildUi
 if ($LASTEXITCODE -ne 0) {
