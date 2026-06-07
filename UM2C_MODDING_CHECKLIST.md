@@ -537,9 +537,9 @@ packaged into `.deneb` releases but remains disabled by default through
 diagnostics, resource measurements, and live-device validation items are
 finished.
 
-- [ ] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
+- [x] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
 - [ ] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
-- [ ] Preserve the stock print-service IPC contract first: raw ZMQ status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, topic `10001`, and `COMMAND<json>` request framing.
+- [x] Preserve the stock print-service IPC contract first: raw ZMQ status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, topic `10001`, and `COMMAND<json>` request framing.
 - [ ] Keep coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory assumptions compatible during the first replacement stage.
 - [ ] Audit every Deneb integration that currently patches around the stock Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`, `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata files, direct macro calls, direct raw G-code calls, and duplicated status classification.
 - [ ] Decide for each integration whether it remains a client of the native service, moves into `deneb-printsvc`, or becomes a shared Deneb print-control library/API.
@@ -547,23 +547,23 @@ finished.
 - [ ] Define one Deneb-owned print-control contract for web UI, touchscreen UI, Cura LAN/API, and future services so they do not each reinterpret print state, pending jobs, abort state, preheat state, and macro safety differently.
 - [ ] Deduplicate print-control logic as part of the rewrite: status classification, print/pending job metadata, command formatting, macro lookup, safe motion policy, heat-state decisions, pause/resume/abort semantics, and error mapping should each have one owner.
 - [ ] Prefer shared native helpers or a single `deneb-printsvc` API over copy-pasted logic between LCD UI, web UI, REST API, Cura cluster API, and diagnostics.
-- [ ] Add tests around shared print-control helpers before removing duplicate callers so web/touch/API behavior stays aligned during migration.
-- [ ] Keep the native driver source tree intentionally modular; do not create a few thousand-line catch-all files.
-- [ ] Start with named source units for clear responsibilities, for example: service main/init, ZMQ IPC, print-control API, serial transport, Marlin packet framing, CRC, status parsing, command parsing, G-code stream reader, macro registry, job queue, heater waits, pause/resume state, abort/finalize motion policy, diagnostics/logging, and test fakes.
-- [ ] Require new `deneb-printsvc` files to have narrow public headers and focused tests where practical, especially for packet framing, status parsing, G-code streaming, and state-machine behavior.
-- [ ] Port the Marlin serial packet layer cleanly: `/dev/ttyS1`, 250000 baud, CRC16 packet generation, CRC8 sync parsing, sequence numbers, ACK/reject handling, resend queues, and flow-control limits.
-- [ ] Port the status parser for M105, M114, G28 home-distance, M115 version data, Marlin log messages, and Marlin fault messages.
-- [ ] Port bounded G-code streaming for `JOB`, `MACRO`, and raw `GCODE` without loading whole print jobs into RAM.
-- [ ] Preserve macro-file compatibility with `/home/cygnus/marlindriver/gcode/` while allowing safer Deneb-owned macro overrides later.
-- [ ] Re-design abort, pause, resume, and print-finish behavior deliberately instead of blindly copying stock motion sequences.
-- [ ] Fix unsafe abort cleanup as part of the native design: no duplicate homing, no unsafe XY motion into unknown print geometry, and clear status transitions after cancellation.
-- [ ] Preserve startup motion-controller firmware verification/programming behavior or document and test a safer replacement.
-- [ ] Add a lab-only init switch so stock `printserver` can be restored without reflashing if native print service fails.
-- [ ] Add side-by-side logging for stock versus native service status fields, serial ACK/reject rates, resend counts, queue depth, planner starvation indicators, and command latency.
-- [ ] Add host tests for CRC, packet framing, status parsing, G-code stream replacement, command parsing, and state transitions.
+- [x] Add tests around shared print-control helpers before removing duplicate callers so web/touch/API behavior stays aligned during migration.
+- [x] Keep the native driver source tree intentionally modular; do not create a few thousand-line catch-all files.
+- [x] Start with named source units for clear responsibilities, for example: service main/init, ZMQ IPC, print-control API, serial transport, Marlin packet framing, CRC, status parsing, command parsing, G-code stream reader, macro registry, job queue, heater waits, pause/resume state, abort/finalize motion policy, diagnostics/logging, and test fakes.
+- [x] Require new `deneb-printsvc` files to have narrow public headers and focused tests where practical, especially for packet framing, status parsing, G-code streaming, and state-machine behavior.
+- [x] Port the Marlin serial packet layer cleanly: `/dev/ttyS1`, 250000 baud, CRC16 packet generation, CRC8 sync parsing, sequence numbers, ACK/reject handling, resend queues, and flow-control limits.
+- [x] Port the status parser for M105, M114, G28 home-distance, M115 version data, Marlin log messages, and Marlin fault messages.
+- [x] Port bounded G-code streaming for `JOB`, `MACRO`, and raw `GCODE` without loading whole print jobs into RAM.
+- [x] Preserve macro-file compatibility with `/home/cygnus/marlindriver/gcode/` while allowing safer Deneb-owned macro overrides later.
+- [x] Re-design abort, pause, resume, and print-finish behavior deliberately instead of blindly copying stock motion sequences.
+- [x] Fix unsafe abort cleanup as part of the native design: no duplicate homing, no unsafe XY motion into unknown print geometry, and clear status transitions after cancellation.
+- [x] Preserve startup motion-controller firmware verification/programming behavior or document and test a safer replacement.
+- [x] Add a lab-only init switch so stock `printserver` can be restored without reflashing if native print service fails.
+- [x] Add side-by-side logging for stock versus native service status fields, serial ACK/reject rates, resend counts, queue depth, planner starvation indicators, and command latency.
+- [x] Add host tests for CRC, packet framing, status parsing, G-code stream replacement, command parsing, and state transitions.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
-- [ ] Do not disable stock `printserver` by default until the native service has rollback, diagnostics, and repeated live print validation.
+- [x] Do not disable stock `printserver` by default until the native service has rollback, diagnostics, and repeated live print validation.
 
 Completed implementation slices:
 
@@ -626,6 +626,11 @@ Completed implementation slices:
   motion, material load/unload, touchscreen print start, touchscreen conflict
   continue, web motion macros, Cura upload start, and Cura pending-job continue
   no longer each hand-roll stock `COMMAND<json>` payloads.
+- [x] Move stock macro filenames and remaining pending-job display reads into
+  shared native helpers: touchscreen jog/leveling and web motion commands now
+  use common macro-name constants, the shared print-state rules own transient
+  macro-file filtering, and LCD/API job-name display reads pending-job metadata
+  through `pending_job_file` instead of local JSON scans.
 - [x] Add native error mapping for Marlin faults and service-side storage,
   serial, command, thermal, and motion categories, with escaped status JSON
   fields for machine-readable Deneb error keys/details.
@@ -645,6 +650,20 @@ Completed implementation slices:
 - [x] Publish native diagnostics for flow in-flight depth, sent/ACK/resend/reject
   counters, queued job depth, streamed job line number, command latency, and a
   planner-starvation indicator so lab comparisons have one service-owned source.
+- [x] Add a low-volume native diagnostics log module for
+  `/var/log/ultimaker/deneb-printsvc.log` with stock-shaped status fields next
+  to native phase, stop-allowed, serial ACK/reject/resend, queue depth, job
+  line, command latency, and planner-starvation fields, plus host tests for the
+  emitted comparison keys.
+- [x] Add lab-gated direct native print-service routing for touchscreen and
+  web/API clients: LCD `backend_comm` and web `backend_zmq` keep the stock
+  coordinator route by default, but select native `deneb-printsvc` status
+  `5555` and command `5556` endpoints when `deneb.printsvc.enabled=1`, with an
+  environment override for host/lab debugging.
+- [x] Move the stock-vs-native print backend route decision into
+  `common/print/print_backend_route.*` with host tests so LCD, web/API, and
+  `deneb-printsvc` tests share the same coordinator/native endpoint constants
+  and lab-gate parsing instead of duplicating UCI/env logic.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
   artifact without enabling it over stock `printserver` by default.
 

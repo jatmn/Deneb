@@ -7,6 +7,8 @@
 #include "api_printer.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
+#include "pending_job_file.h"
+#include "print_macros.h"
 #include "print_state_rules.h"
 
 #include <ctype.h>
@@ -22,7 +24,6 @@
 #define DEFAULT_MOVE_SPEED_MM_S 150.0f
 #define MAX_MOVE_SPEED_MM_S 300.0f
 #define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 
 static void read_line_command(const char *cmd, char *out, size_t out_sz, const char *fallback)
 {
@@ -54,35 +55,27 @@ static void read_nozzle_id(char *out, size_t out_sz)
 
 static int read_cluster_pending_name(char *out, size_t out_sz)
 {
-    if (!out_sz) return -1;
+    deneb_pending_job_file_t job;
+
+    if (!out || out_sz == 0)
+        return -1;
+
     out[0] = '\0';
+    if (deneb_pending_job_file_load_default(&job) != 0)
+        return -1;
 
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f) return -1;
-
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    if (n == 0) return -1;
-    buf[n] = '\0';
-
-    const char *p = strstr(buf, "\"name\"");
-    if (!p) return -1;
-
-    p = strchr(p + 6, ':');
-    if (!p) return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (*p != '"' && *p != '\'') return -1;
-    char quote = *p++;
-
-    size_t i = 0;
-    while (*p && *p != quote && i < out_sz - 1) {
-        out[i++] = *p++;
+    if (job.name[0] && strcmp(job.name, "none") != 0) {
+        snprintf(out, out_sz, "%s", job.name);
+        return 0;
     }
-    if (*p != quote) return -1;
-    out[i] = '\0';
-    return 0;
+
+    if (job.path[0] && strcmp(job.path, "none") != 0) {
+        const char *base = strrchr(job.path, '/');
+        snprintf(out, out_sz, "%s", base ? base + 1 : job.path);
+        return out[0] ? 0 : -1;
+    }
+
+    return -1;
 }
 
 static int motion_allowed(const printer_state_t *s)
@@ -225,16 +218,16 @@ static int send_absolute_position_command(int has_x, float x, int has_y, float y
 static int send_motion_action(const char *action)
 {
     if (strcmp(action, "home") == 0) {
-        return backend_zmq_send_macro("home_and_center_head.gcode");
+        return backend_zmq_send_macro(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD);
     }
     if (strcmp(action, "z_home") == 0) {
         return backend_zmq_send_gcode("G28 Z");
     }
     if (strcmp(action, "bed_up") == 0) {
-        return backend_zmq_send_macro("move_buildplate_up.gcode");
+        return backend_zmq_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP);
     }
     if (strcmp(action, "bed_down") == 0) {
-        return backend_zmq_send_macro("move_buildplate_down.gcode");
+        return backend_zmq_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_DOWN);
     }
     return -2;
 }

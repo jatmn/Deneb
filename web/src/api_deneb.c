@@ -8,6 +8,7 @@
 #include "api_deneb.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
+#include "pending_job_file.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -316,7 +317,6 @@ void api_deneb_config_get(const http_request_t *req, http_response_t *resp)
 }
 
 /* Print jobs: /api/v1/deneb/print_jobs (GET) */
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 #define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
 
 static void read_json_array_file_or_empty(const char *path, char *out, size_t out_sz)
@@ -374,7 +374,7 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     }
 
     /* Pending jobs */
-    read_json_array_file_or_empty(DENEB_CLUSTER_PENDING_JOB, file_buf, sizeof(file_buf));
+    read_json_array_file_or_empty(DENEB_PENDING_JOB_PATH, file_buf, sizeof(file_buf));
     json_raw(&w, "pending", file_buf);
 
     /* History */

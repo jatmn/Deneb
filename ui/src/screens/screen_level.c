@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_macros.h"
 #include "lvgl.h"
 
 static lv_obj_t *level_screen = NULL;
@@ -51,15 +52,15 @@ static lv_obj_t *level_create(void)
     lv_obj_remove_flag(level_screen, LV_OBJ_FLAG_SCROLL_MOMENTUM);
 
     create_macro_btn(level_screen, locale_get("level.step1"),
-                     "buildplate_level_step1.gcode");
+                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP1);
     create_macro_btn(level_screen, locale_get("level.step2"),
-                     "buildplate_level_step2.gcode");
+                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP2);
     create_macro_btn(level_screen, locale_get("level.step3"),
-                     "buildplate_level_step3.gcode");
+                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP3);
     create_macro_btn(level_screen, locale_get("level.step4"),
-                     "buildplate_level_step4.gcode");
+                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP4);
     create_macro_btn(level_screen, locale_get("level.finish"),
-                     "buildplate_level_finish.gcode");
+                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_FINISH);
 
     status_label = lv_label_create(level_screen);
     lv_label_set_text(status_label, locale_get("level.message"));

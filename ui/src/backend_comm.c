@@ -2,7 +2,8 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend communication implementation.
- * Connects to stock coordinator via ZeroMQ.
+ * Connects to stock coordinator by default, or native deneb-printsvc when
+ * the lab-gated native service is enabled.
  *
  * Build note: requires libzmq (static link for MIPS target).
  * For host testing without libzmq, define BACKEND_COMM_STUB to
@@ -12,6 +13,7 @@
 #include "backend_comm.h"
 #include "command_format.h"
 #include "pending_job_file.h"
+#include "print_backend_route.h"
 #include "print_state_rules.h"
 
 #include <stdio.h>
@@ -64,12 +66,11 @@ void backend_deinit(void) { /* no-op */ }
 #include <errno.h>
 #include <unistd.h>
 
-/* Coordinator endpoints (from stock menu_settings.py) */
-#define STATUS_URL   "tcp://127.0.0.1:5565"
-#define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS_PER_POLL 4
 #define STOP_INFLIGHT_MS 3000
+
+static deneb_print_backend_route_t backend_route;
 
 static void *zmq_ctx = NULL;
 static void *status_socket = NULL;  /* SUB - status from coordinator */
@@ -84,6 +85,7 @@ static char retained_print_filename[128];
 static long long last_stop_ms = -1;
 static int print_stop_inflight = 0;
 static void set_filename_or_none(char *dst, const char *value);
+
 static int configure_socket_linger(void *socket)
 {
     int linger = 0;
@@ -113,8 +115,9 @@ static int open_rpc_socket(void)
 
     configure_socket_linger(rpc_socket);
 
-    if (zmq_connect(rpc_socket, RPC_URL) != 0) {
-        fprintf(stderr, "backend: connect %s failed: %s\n", RPC_URL, zmq_strerror(errno));
+    if (zmq_connect(rpc_socket, backend_route.command_url) != 0) {
+        fprintf(stderr, "backend: connect %s failed: %s\n",
+                backend_route.command_url, zmq_strerror(errno));
         close_rpc_socket();
         return -1;
     }
@@ -547,6 +550,7 @@ static void parse_status(const char *json)
 int backend_init(void)
 {
     memset(&state, 0, sizeof(state));
+    backend_route = deneb_print_backend_route_detect();
 
     zmq_ctx = zmq_ctx_new();
     if (!zmq_ctx) {
@@ -560,8 +564,9 @@ int backend_init(void)
         fprintf(stderr, "backend: status socket failed\n");
         return -1;
     }
-    if (zmq_connect(status_socket, STATUS_URL) != 0) {
-        fprintf(stderr, "backend: connect %s failed: %s\n", STATUS_URL, zmq_strerror(errno));
+    if (zmq_connect(status_socket, backend_route.status_url) != 0) {
+        fprintf(stderr, "backend: connect %s failed: %s\n",
+                backend_route.status_url, zmq_strerror(errno));
         return -1;
     }
     zmq_setsockopt(status_socket, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC));
@@ -573,8 +578,9 @@ int backend_init(void)
     /* Set linger to 0 so we don't block on shutdown */
     configure_socket_linger(status_socket);
 
-    fprintf(stderr, "backend: connected to %s (status) and %s (rpc)\n",
-            STATUS_URL, RPC_URL);
+    fprintf(stderr, "backend: selected %s print backend, connected to %s (status) and %s (rpc)\n",
+            deneb_print_backend_name(backend_route.backend),
+            backend_route.status_url, backend_route.command_url);
 
     return 0;
 }

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "config.h"
+#include "diagnostics_log.h"
 #include "ipc_zmq.h"
 
 #include <stdio.h>
@@ -85,6 +86,7 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
         deneb_print_service_poll_motion(svc);
         deneb_print_service_poll_job(svc);
         deneb_print_service_refresh_diagnostics(svc);
+        deneb_diagnostics_log_status(&svc->status, 0);
         publish_status(pub, &svc->status);
     }
 }

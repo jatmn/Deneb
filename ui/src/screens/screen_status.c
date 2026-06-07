@@ -7,12 +7,11 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "pending_job_file.h"
+#include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
-
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 
 static lv_obj_t *status_screen = NULL;
 static lv_obj_t *state_label = NULL;
@@ -28,180 +27,29 @@ static char active_print_name[128];
 
 static lv_timer_t *update_timer = NULL;
 
-static int is_print_lifecycle_filename(const char *name)
-{
-    if (!name || !*name || strcmp(name, "none") == 0)
-        return 0;
-
-    if (strstr(name, "home_and_center_head") != NULL)
-        return 1;
-    if (strstr(name, "move_buildplate_up") != NULL)
-        return 1;
-    if (strstr(name, "move_buildplate_down") != NULL)
-        return 1;
-    if (strstr(name, "macro") != NULL && strstr(name, ".gcode") != NULL)
-        return 1;
-
-    return 0;
-}
-
-static int req_equals_ci(const char *a, const char *b)
-{
-    if (!a || !b)
-        return 0;
-
-    while (*a && *b) {
-        unsigned char ca = (unsigned char)*a++;
-        unsigned char cb = (unsigned char)*b++;
-        if (ca >= 'A' && ca <= 'Z')
-            ca = (unsigned char)(ca + ('a' - 'A'));
-        if (cb >= 'A' && cb <= 'Z')
-            cb = (unsigned char)(cb + ('a' - 'A'));
-        if (ca != cb)
-            return 0;
-    }
-
-    return *a == '\0' && *b == '\0';
-}
-
-static int str_is_one_of_ci(const char *value, const char *const *choices)
-{
-    if (!value || !*value)
-        return 0;
-
-    for (int i = 0; choices[i]; i++) {
-        if (req_equals_ci(value, choices[i]))
-            return 1;
-    }
-
-    return 0;
-}
-
-static int is_print_lifecycle_req(const char *req)
-{
-    static const char *const lifecycle_reqs[] = {
-        "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
-        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
-        "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
-        "EXTRACT", "EXTRACTING",
-        NULL
-    };
-
-    return str_is_one_of_ci(req, lifecycle_reqs);
-}
-
-static int is_stoppable_print_req(const char *req)
-{
-    static const char *const stoppable_reqs[] = {
-        "JOB", "Print", "Printing",
-        "PAUSE", "Pause", "Paused",
-        NULL
-    };
-
-    return str_is_one_of_ci(req, stoppable_reqs);
-}
-
-static int is_abort_req(const char *req)
-{
-    static const char *const abort_reqs[] = {
-        "ABORT", "Abort", "Aborting", "ABORTING", "BUSY_ABORTING", NULL
-    };
-
-    return str_is_one_of_ci(req, abort_reqs);
-}
-
-static int is_idle_like_req(const char *req)
-{
-    static const char *const idle_reqs[] = {
-        "", "IDLE", "READY", "Idle", "Ready", "Finished", "STOPPED", NULL
-    };
-
-    if (!req || !*req)
-        return 1;
-
-    return str_is_one_of_ci(req, idle_reqs);
-}
-
-static int is_print_job_filename(const char *name)
-{
-    if (!name || !*name || strcmp(name, "none") == 0)
-        return 0;
-
-    if (is_print_lifecycle_filename(name))
-        return 0;
-    if (strstr(name, ".gcode") == NULL && strstr(name, ".ufp") == NULL)
-        return 0;
-
-    return 1;
-}
-
-static int read_cluster_pending_field(const char *field, char *out, size_t out_sz)
-{
-    if (!out_sz)
-        return -1;
-
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f)
-        return -1;
-
-    char buf[2048];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    if (n == 0)
-        return -1;
-
-    buf[n] = '\0';
-    char needle[64];
-    snprintf(needle, sizeof(needle), "\"%s\"", field);
-
-    const char *p = strstr(buf, needle);
-    if (!p)
-        return -1;
-
-    p = strchr(p + strlen(needle), ':');
-    if (!p)
-        return -1;
-    p++;
-    while (*p && isspace((unsigned char)*p))
-        p++;
-    if (*p != '"' && *p != '\'')
-        return -1;
-
-    char quote = *p++;
-    size_t i = 0;
-    while (*p && *p != quote && i < out_sz - 1) {
-        if (*p == '\\' && p[1])
-            p++;
-        out[i++] = *p++;
-    }
-    if (*p != quote)
-        return -1;
-
-    out[i] = '\0';
-    return 0;
-}
-
 static int read_cluster_pending_name(char *out, size_t out_sz)
 {
-    char value[256];
+    deneb_pending_job_file_t job;
 
-    if (read_cluster_pending_field("name", value, sizeof(value)) == 0) {
-        if (value[0] && strcmp(value, "none") != 0) {
-            strncpy(out, value, out_sz - 1);
-            out[out_sz - 1] = '\0';
-            return 0;
-        }
+    if (!out || out_sz == 0)
+        return -1;
+
+    if (deneb_pending_job_file_load_default(&job) != 0)
+        return -1;
+
+    if (job.name[0] && strcmp(job.name, "none") != 0) {
+        strncpy(out, job.name, out_sz - 1);
+        out[out_sz - 1] = '\0';
+        return 0;
     }
 
-    if (read_cluster_pending_field("path", value, sizeof(value)) == 0) {
-        if (value[0] && strcmp(value, "none") != 0) {
-            const char *base = strrchr(value, '/');
-            base = base ? base + 1 : value;
-            if (base && *base && strcmp(base, "none") != 0) {
-                strncpy(out, base, out_sz - 1);
-                out[out_sz - 1] = '\0';
-                return 0;
-            }
+    if (job.path[0] && strcmp(job.path, "none") != 0) {
+        const char *base = strrchr(job.path, '/');
+        base = base ? base + 1 : job.path;
+        if (base && *base && strcmp(base, "none") != 0) {
+            strncpy(out, base, out_sz - 1);
+            out[out_sz - 1] = '\0';
+            return 0;
         }
     }
 
@@ -210,27 +58,32 @@ static int read_cluster_pending_name(char *out, size_t out_sz)
 
 static int state_has_print_name(const printer_state_t *s)
 {
-    if (is_print_job_filename(s->filename))
+    if (deneb_print_file_is_candidate(s->filename))
         return 1;
 
     char pending_name[128];
     return read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 &&
-           is_print_job_filename(pending_name);
+           deneb_print_file_is_candidate(pending_name);
 }
 
 static int has_active_print_context(const printer_state_t *s, int has_print_name)
 {
-    if (is_abort_req(s->current_req))
+    deneb_print_observation_t obs = {
+        .req = s->current_req,
+        .file = has_print_name ? s->filename : NULL,
+        .bed_target = s->bed_temp_set,
+        .nozzle_target = s->nozzle_temp_set,
+        .time_total = s->time_total,
+        .time_left = s->time_left,
+    };
+
+    if (deneb_print_req_is_abort(s->current_req))
         return 0;
 
     return s->is_printing ||
            s->is_paused ||
-           s->time_total > 0 ||
-           s->time_left > 0 ||
-           (!is_idle_like_req(s->current_req) && s->current_req[0] != '\0') ||
-           has_print_name ||
-           ((s->bed_temp_set > 0.0f || s->nozzle_temp_set > 0.0f) &&
-            !is_idle_like_req(s->current_req));
+           deneb_print_observation_has_context(&obs) ||
+           has_print_name;
 }
 
 static int has_heat_targets(const printer_state_t *s)
@@ -240,18 +93,19 @@ static int has_heat_targets(const printer_state_t *s)
 
 static int has_preparing_print_context(const printer_state_t *s, int has_print_name)
 {
-    if (is_abort_req(s->current_req))
+    if (deneb_print_req_is_abort(s->current_req))
         return 0;
 
     return has_print_name &&
-           (is_print_lifecycle_req(s->current_req) ||
+           (deneb_print_req_is_lifecycle(s->current_req) ||
             has_heat_targets(s) ||
-            (!is_idle_like_req(s->current_req) && s->current_req[0] != '\0'));
+            deneb_print_req_is_print(s->current_req) ||
+            deneb_print_req_is_paused(s->current_req));
 }
 
 static int has_stoppable_print_context(const printer_state_t *s, int has_print_name)
 {
-    if (is_abort_req(s->current_req))
+    if (deneb_print_req_is_abort(s->current_req))
         return 0;
 
     if (s->is_paused)
@@ -263,8 +117,9 @@ static int has_stoppable_print_context(const printer_state_t *s, int has_print_n
     if (s->is_printing || s->time_total > 0 || s->time_left > 0)
         return 1;
 
-    return is_stoppable_print_req(s->current_req) ||
-           is_print_lifecycle_req(s->current_req) ||
+    return deneb_print_req_is_print(s->current_req) ||
+           deneb_print_req_is_paused(s->current_req) ||
+           deneb_print_req_is_lifecycle(s->current_req) ||
            has_heat_targets(s);
 }
 
@@ -345,15 +200,15 @@ static void update_timer_cb(lv_timer_t *timer)
     int has_print_name = 0;
     const char *raw_name = s->filename[0] && strcmp(s->filename, "none") != 0 ? s->filename : "";
     char pending_name[128];
-    if ((!raw_name[0] || is_print_lifecycle_filename(raw_name)) &&
+    if ((!raw_name[0] || deneb_print_file_is_transient(raw_name)) &&
         read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 &&
-        !is_print_lifecycle_filename(pending_name)) {
+        !deneb_print_file_is_transient(pending_name)) {
         raw_name = pending_name;
     }
 
-    has_print_name = is_print_job_filename(raw_name);
+    has_print_name = deneb_print_file_is_candidate(raw_name);
 
-    if (raw_name[0] && !is_print_lifecycle_filename(raw_name)) {
+    if (raw_name[0] && !deneb_print_file_is_transient(raw_name)) {
         strncpy(active_print_name, raw_name, sizeof(active_print_name) - 1);
         active_print_name[sizeof(active_print_name) - 1] = '\0';
     }
@@ -366,12 +221,12 @@ static void update_timer_cb(lv_timer_t *timer)
     if (job_active) {
         if (active_print_name[0])
             display_name = active_print_name;
-        else if (raw_name[0] && !is_print_lifecycle_filename(raw_name))
+        else if (raw_name[0] && !deneb_print_file_is_transient(raw_name))
             display_name = raw_name;
     }
 
     /* Printer state */
-    if (is_abort_req(s->current_req))
+    if (deneb_print_req_is_abort(s->current_req))
         lv_label_set_text(state_label, locale_get("status.cooling"));
     else if (s->is_paused)
         lv_label_set_text(state_label, locale_get("status.paused"));

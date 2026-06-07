@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "ipc_zmq.h"
 #include "config.h"
+#include "diagnostics_log.h"
 #include "motion_firmware.h"
 #include "service.h"
 
@@ -31,6 +32,7 @@ int main(int argc, char **argv)
         allow_programming = 1;
 
     deneb_print_service_init(&svc);
+    deneb_diagnostics_log_open(NULL);
     deneb_motion_fw_result_t fw = deneb_motion_firmware_ensure(
         DENEB_MOTION_FW_HEX, DENEB_MOTION_FW_CACHE, DENEB_MOTION_FW_PROGRAMMER,
         allow_programming);

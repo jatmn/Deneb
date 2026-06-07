@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "print_state_rules.h"
+#include "print_macros.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -113,11 +114,11 @@ int deneb_print_file_is_transient(const char *file)
     if (!file || !*file || strcmp(file, "none") == 0)
         return 0;
 
-    if (str_contains_ci(file, "home_and_center_head"))
+    if (str_contains_ci(file, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD))
         return 1;
-    if (str_contains_ci(file, "move_buildplate_up"))
+    if (str_contains_ci(file, DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP))
         return 1;
-    if (str_contains_ci(file, "move_buildplate_down"))
+    if (str_contains_ci(file, DENEB_PRINT_MACRO_MOVE_BUILDPLATE_DOWN))
         return 1;
     if (str_contains_ci(file, "macro") && str_contains_ci(file, ".gcode"))
         return 1;

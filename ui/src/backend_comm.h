@@ -2,11 +2,12 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend communication module for Deneb UI.
- * Connects to the stock coordinator via ZeroMQ.
+ * Connects to the selected print backend via ZeroMQ. Stock coordinator remains
+ * the default route; native deneb-printsvc is used when the lab gate is enabled.
  *
  * Two sockets:
- *   1. SUB on tcp://127.0.0.1:5565 - receives printer status (topic "10001")
- *   2. REQ on tcp://127.0.0.1:5566 - sends commands (GCODE, JOB, PAUSE, etc.)
+ *   1. SUB receives printer status on topic "10001"
+ *   2. REQ sends commands (GCODE, JOB, PAUSE, etc.)
  *
  * Status updates are polled in the LVGL main loop and cached locally.
  * UI screens read the cached state directly (no locking needed on single thread).
@@ -62,7 +63,7 @@ typedef struct {
 int backend_init(void);
 
 /**
- * Poll for new status updates from the coordinator.
+ * Poll for new status updates from the selected backend.
  * Call this once per main loop iteration (~every 5-20ms).
  * Non-blocking -- returns immediately if no data available.
  */
@@ -86,7 +87,7 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
                      float bed_target, float head_target);
 
 /**
- * Send a command to the coordinator.
+ * Send a command to the selected backend.
  * Example: backend_send_command("PAUSE", "{}")
  * Returns 0 on success, -1 on send failure.
  */

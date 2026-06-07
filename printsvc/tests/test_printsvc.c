@@ -3,6 +3,7 @@
 #include "command_format.h"
 #include "config.h"
 #include "crc.h"
+#include "diagnostics_log.h"
 #include "error_map.h"
 #include "flow_control.h"
 #include "heater_wait.h"
@@ -12,7 +13,9 @@
 #include "motion_policy.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
+#include "print_macros.h"
 #include "print_control.h"
+#include "print_backend_route.h"
 #include "print_state_rules.h"
 #include "sha256.h"
 #include "service.h"
@@ -56,10 +59,11 @@ static void test_command_format_round_trip(void)
     assert(strcmp(cmd.gcode[0], "M105") == 0);
     assert(strcmp(cmd.gcode[1], "G1 X10 Y20") == 0);
 
-    assert(deneb_command_format_macro("home_and_center_head.gcode", frame, sizeof(frame)) > 0);
+    assert(deneb_command_format_macro(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD,
+                                      frame, sizeof(frame)) > 0);
     assert(deneb_command_parse(frame, &cmd) == 0);
     assert(cmd.type == DENEB_COMMAND_MACRO);
-    assert(strcmp(cmd.macro, "home_and_center_head.gcode") == 0);
+    assert(strcmp(cmd.macro, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) == 0);
 
     assert(deneb_command_format_job("/home/3D/cube.gcode", "Cura", "uuid-1",
                                     60.0f, 210.0f, frame, sizeof(frame)) > 0);
@@ -158,8 +162,9 @@ static void test_print_state_rules(void)
     assert(deneb_print_req_is_abort("BUSY_ABORTING"));
     assert(deneb_print_file_is_candidate("/home/3D/cube.gcode"));
     assert(deneb_print_file_is_candidate("/home/3D/job.ufp"));
-    assert(!deneb_print_file_is_candidate("/home/cygnus/marlindriver/gcode/home_and_center_head.gcode"));
-    assert(deneb_print_file_is_transient("move_buildplate_up.gcode"));
+    assert(!deneb_print_file_is_candidate("/home/cygnus/marlindriver/gcode/"
+                                          DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD));
+    assert(deneb_print_file_is_transient(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP));
     assert(deneb_print_active_time(120, 60));
     assert(!deneb_print_active_time(120, 0));
     assert(deneb_print_temp_targets_ready(59.2f, 60.0f, 199.3f, 200.0f));
@@ -192,6 +197,37 @@ static void test_print_state_rules(void)
     assert(deneb_print_job_is_active(0, 1, 0));
     assert(deneb_print_job_is_active(0, 0, 1));
     assert(!deneb_print_job_is_active(0, 0, 0));
+}
+
+static void test_print_backend_route_contract(void)
+{
+    deneb_print_backend_t backend;
+    deneb_print_backend_route_t route;
+
+    assert(deneb_print_backend_parse_override("native", &backend) == 0);
+    assert(backend == DENEB_PRINT_BACKEND_NATIVE);
+    assert(deneb_print_backend_parse_override("1", &backend) == 0);
+    assert(backend == DENEB_PRINT_BACKEND_NATIVE);
+    assert(deneb_print_backend_parse_override("coordinator", &backend) == 0);
+    assert(backend == DENEB_PRINT_BACKEND_COORDINATOR);
+    assert(deneb_print_backend_parse_override("stock", &backend) == 0);
+    assert(backend == DENEB_PRINT_BACKEND_COORDINATOR);
+    assert(deneb_print_backend_parse_override("bad", &backend) != 0);
+
+    assert(deneb_print_backend_from_flag_text("1\n") == DENEB_PRINT_BACKEND_NATIVE);
+    assert(deneb_print_backend_from_flag_text("0\n") == DENEB_PRINT_BACKEND_COORDINATOR);
+    assert(deneb_print_backend_from_flag_text(NULL) == DENEB_PRINT_BACKEND_COORDINATOR);
+
+    route = deneb_print_backend_route(DENEB_PRINT_BACKEND_COORDINATOR);
+    assert(route.backend == DENEB_PRINT_BACKEND_COORDINATOR);
+    assert(strcmp(route.status_url, DENEB_COORDINATOR_STATUS_URL) == 0);
+    assert(strcmp(route.command_url, DENEB_COORDINATOR_COMMAND_URL) == 0);
+
+    route = deneb_print_backend_route(DENEB_PRINT_BACKEND_NATIVE);
+    assert(route.backend == DENEB_PRINT_BACKEND_NATIVE);
+    assert(strcmp(route.status_url, DENEB_PRINTSVC_STATUS_URL) == 0);
+    assert(strcmp(route.command_url, DENEB_PRINTSVC_COMMAND_URL) == 0);
+    assert(strcmp(deneb_print_backend_name(route.backend), "native") == 0);
 }
 
 static void test_pending_job_metadata(void)
@@ -245,10 +281,67 @@ static void test_macro_safety(void)
 {
     char path[256];
 
+    assert(deneb_macro_resolve(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD,
+                               path, sizeof(path)) == 0);
+    assert(strstr(path, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) != NULL);
     assert(deneb_macro_resolve("init.gcode", path, sizeof(path)) == 0);
     assert(strstr(path, DENEB_PRINTSVC_MACRO_DIR) == path);
     assert(deneb_macro_resolve("../init.gcode", path, sizeof(path)) != 0);
     assert(deneb_macro_resolve("/tmp/init.gcode", path, sizeof(path)) != 0);
+}
+
+static void test_diagnostics_log_side_by_side_fields(void)
+{
+    const char *path = "/tmp/deneb-printsvc-diagnostics-test.log";
+    deneb_status_t status;
+    deneb_command_t cmd;
+    char buf[4096];
+    FILE *f;
+    size_t n;
+
+    remove(path);
+    deneb_status_init(&status);
+    status.state = DENEB_PRINT_STATE_PRINTING;
+    snprintf(status.req, sizeof(status.req), "JOB");
+    snprintf(status.file, sizeof(status.file), "cube.gcode");
+    status.head_t_cur = 201.0f;
+    status.head_t_set = 210.0f;
+    status.bed_t_cur = 59.0f;
+    status.bed_t_set = 60.0f;
+    status.flow_ack = 12;
+    status.flow_resend = 1;
+    status.flow_reject = 2;
+    status.flow_inflight = 3;
+    status.job_queue_depth = 1;
+    status.job_line_number = 42;
+    status.command_latency_ms = 7;
+    status.planner_starvation_count = 4;
+
+    assert(deneb_command_parse("PAUSE<{}", &cmd) == 0);
+    assert(deneb_diagnostics_log_open(path) == 0);
+    deneb_diagnostics_log_status(&status, 1);
+    deneb_diagnostics_log_command(&cmd, 0, 7);
+    deneb_diagnostics_log_close();
+
+    f = fopen(path, "rb");
+    assert(f != NULL);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    assert(strstr(buf, "event=status") != NULL);
+    assert(strstr(buf, "stock.req=\"JOB\"") != NULL);
+    assert(strstr(buf, "stock.file=\"cube.gcode\"") != NULL);
+    assert(strstr(buf, "native.phase=printing") != NULL);
+    assert(strstr(buf, "serial.ack=12") != NULL);
+    assert(strstr(buf, "serial.resend=1") != NULL);
+    assert(strstr(buf, "serial.reject=2") != NULL);
+    assert(strstr(buf, "native.queueDepth=1") != NULL);
+    assert(strstr(buf, "native.jobLine=42") != NULL);
+    assert(strstr(buf, "native.commandLatencyMs=7") != NULL);
+    assert(strstr(buf, "native.plannerStarvation=4") != NULL);
+    assert(strstr(buf, "event=command") != NULL);
+    assert(strstr(buf, "command.verb=\"PAUSE\"") != NULL);
+    remove(path);
 }
 
 static void test_abort_clears_status(void)
@@ -574,10 +667,12 @@ int main(void)
     test_error_mapping();
     test_print_control_contract();
     test_print_state_rules();
+    test_print_backend_route_contract();
     test_pending_job_metadata();
     test_status_frame();
     test_crc_and_packet();
     test_macro_safety();
+    test_diagnostics_log_side_by_side_fields();
     test_abort_clears_status();
     test_job_accepts_without_blocking();
     test_job_poll_streams_after_preheat();

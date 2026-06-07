@@ -83,11 +83,18 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   Status classification, print/pending job metadata, command formatting, macro
   lookup, safe motion policy, heat-state decisions, pause/resume/abort
   semantics, and error mapping should each have one owner. Shared native helpers
-  now cover command formatting, pending-job files, print-state rules, and
-  web/API status labels. Web and touchscreen macro, multi-line G-code, and
-  job-start callers now route through native backend helper functions instead
-  of each hand-rolling stock command JSON. Later slices should keep collapsing
-  remaining duplicate web/UI/API logic toward those helpers or a single
+  now cover command formatting, pending-job files, print-state rules, shared
+  stock macro names, and web/API status labels. Web and touchscreen macro,
+  multi-line G-code, and job-start callers now route through native backend
+  helper functions instead of each hand-rolling stock command JSON. LCD/API
+  job-name display also reads pending-job metadata through the shared helper
+  instead of local JSON scans. LCD and web/API backends now select native
+  `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
+  while preserving the stock coordinator route as the default fallback. That
+  route decision lives in `common/print/print_backend_route.*` so clients do not
+  each duplicate UCI/env parsing or endpoint constants. Later slices should
+  keep collapsing remaining
+  duplicate web/UI/API logic toward those helpers or a single
   `deneb-printsvc` API.
 - Keep `deneb-printsvc` source files split by responsibility from the first
   scaffold. Expected modules include service/init, ZMQ IPC, print-control API,
@@ -99,18 +106,27 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   not line-for-line ports. The native replacement must remove unsafe abort
   cleanup behavior, avoid duplicate homing, and report clear cancellation
   status before it can replace stock `printserver` outside experimental builds.
+- Native diagnostic logging now writes a low-volume comparison stream under
+  `/var/log/ultimaker/deneb-printsvc.log` when the lab-gated service is
+  running. Each status line places stock-shaped fields such as `stock.req`,
+  `stock.file`, temperatures, position, and fault state beside native phase,
+  stop-allowed state, serial ACK/reject/resend counters, queue depth, streamed
+  line number, command latency, and planner-starvation counters. This gives
+  lab runs a stable artifact for comparing native behavior against captured
+  stock `printserver` logs without adding Python.
 - The native replacement now has an initial buildable C source tree at
   `printsvc/`, is included in release packages as a lab-gated binary, and has
   host tests for the command/status/packet/flow-control/heater-wait,
   G28/home-distance, nonblocking job streaming, motion-firmware verification,
   abort/finish policy, pause/resume state-machine behavior, shared print-control
   contract, shared command formatting, pending-job metadata, shared pending-job file
-  parsing/cleanup for web/touch/API conflict flows, shared web/API status label
-  mapping, touchscreen/web macro and G-code command helper routing,
+  parsing/cleanup for web/touch/API conflict and display flows, shared macro
+  names/transient-file filtering, shared web/API status label mapping,
+  touchscreen/web macro and G-code command helper routing,
   touchscreen conflict actions and Cura cluster pending-job actions through
   native `JOB`/`ABORT` backend commands, native Cura upload registration and
   no-conflict `JOB` startup, reversible native-vs-stock print service init
-  gating, native
+  gating, low-volume side-by-side diagnostic logging, native
   frame-light/material-import/diagnostics UI helpers, native
   error mapping, and native diagnostics slices. It is still disabled by default
   and does not yet satisfy the release criteria for replacing stock

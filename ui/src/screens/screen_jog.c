@@ -17,6 +17,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_macros.h"
 #include "lvgl.h"
 #include <stdio.h>
 
@@ -86,7 +87,7 @@ static void home_xy_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_macro("home_and_center_head.gcode");
+    backend_send_macro(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD);
 }
 
 static void home_z_btn_cb(lv_event_t *e)
@@ -109,7 +110,7 @@ static void bed_up_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_macro("move_buildplate_up.gcode");
+    backend_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP);
 }
 
 static void bed_down_btn_cb(lv_event_t *e)
@@ -117,7 +118,7 @@ static void bed_down_btn_cb(lv_event_t *e)
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_macro("move_buildplate_down.gcode");
+    backend_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_DOWN);
 }
 
 static lv_obj_t *create_jog_btn(lv_obj_t *parent, const char *symbol,

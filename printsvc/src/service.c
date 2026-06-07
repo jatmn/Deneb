@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "config.h"
+#include "diagnostics_log.h"
 #include "gcode_stream.h"
 #include "macro_registry.h"
 #include "motion_policy.h"
@@ -345,6 +346,8 @@ int deneb_print_service_handle_command(deneb_print_service_t *svc,
         elapsed_ms = 60000;
     svc->status.command_latency_ms = (unsigned int)elapsed_ms;
     deneb_print_service_refresh_diagnostics(svc);
+    deneb_diagnostics_log_command(cmd, rc, svc->status.command_latency_ms);
+    deneb_diagnostics_log_status(&svc->status, 1);
     return rc;
 }
 

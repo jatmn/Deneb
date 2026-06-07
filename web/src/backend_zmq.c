@@ -2,7 +2,8 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend ZMQ communication. Adapted from ui/src/backend_comm.c.
- * Connects to stock coordinator for printer status and commands.
+ * Connects to stock coordinator by default, or native deneb-printsvc when
+ * the lab-gated native service is enabled.
  */
 
 #include "backend_zmq.h"
@@ -17,6 +18,7 @@
 #include "command_format.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
+#include "print_backend_route.h"
 #include "print_state_rules.h"
 
 #ifdef BACKEND_ZMQ_STUB
@@ -60,11 +62,11 @@ void backend_zmq_deinit(void) {}
 #include <zmq.h>
 #include <errno.h>
 
-#define STATUS_URL   "tcp://127.0.0.1:5565"
-#define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 4
 #define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
+
+static deneb_print_backend_route_t backend_route;
 
 static void *zmq_ctx = NULL;
 static void *status_sock = NULL;
@@ -231,7 +233,7 @@ static int create_rpc_socket(void)
 {
     rpc_sock = zmq_socket(zmq_ctx, ZMQ_REQ);
     if (!rpc_sock) return -1;
-    if (zmq_connect(rpc_sock, RPC_URL) < 0) {
+    if (zmq_connect(rpc_sock, backend_route.command_url) < 0) {
         zmq_close(rpc_sock);
         rpc_sock = NULL;
         return -1;
@@ -355,6 +357,7 @@ static void update_status_cache(void)
 int backend_zmq_init(void)
 {
     memset(&state, 0, sizeof(state));
+    backend_route = deneb_print_backend_route_detect();
 
     zmq_ctx = zmq_ctx_new();
     if (!zmq_ctx) return -1;
@@ -362,13 +365,15 @@ int backend_zmq_init(void)
     /* Status SUB socket */
     status_sock = zmq_socket(zmq_ctx, ZMQ_SUB);
     if (!status_sock) goto fail;
-    if (zmq_connect(status_sock, STATUS_URL) < 0) goto fail;
+    if (zmq_connect(status_sock, backend_route.status_url) < 0) goto fail;
     if (zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) < 0) goto fail;
 
     /* RPC REQ socket */
     if (create_rpc_socket() < 0) goto fail;
 
-    fprintf(stderr, "backend_zmq: connected to %s (status) and %s (rpc)\n", STATUS_URL, RPC_URL);
+    fprintf(stderr, "backend_zmq: selected %s print backend, connected to %s (status) and %s (rpc)\n",
+            deneb_print_backend_name(backend_route.backend),
+            backend_route.status_url, backend_route.command_url);
     state.connected = true;
     update_status_cache();
     return 0;

@@ -15,5 +15,7 @@
 #define DENEB_MOTION_FW_HEX "/home/atmel_programmer/cygnus-marlin.hex"
 #define DENEB_MOTION_FW_CACHE "/etc/deneb/motion-controller-firmware.sha256"
 #define DENEB_MOTION_FW_PROGRAMMER "/home/atmel_programmer/prog.sh"
+#define DENEB_PRINTSVC_DIAGNOSTIC_LOG "/var/log/ultimaker/deneb-printsvc.log"
+#define DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK "/tmp/deneb-printsvc.log"
 
 #endif

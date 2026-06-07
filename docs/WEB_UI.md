@@ -108,6 +108,13 @@ on real hardware remains open.
   pending-job and print-state helpers instead of embedded Python coordinator
   launchers. Web motion macros, Cura upload start, and pending-job continue now
   route through native backend macro/job helpers instead of local command JSON.
+  When `deneb.printsvc.enabled=1`, `deneb-api` selects native `deneb-printsvc`
+  status/command ports directly instead of routing print-service traffic
+  through the Python coordinator; the coordinator route remains the default
+  fallback while the native service is lab-gated.
+  Web motion macro names and pending-job display reads are shared with the
+  native print-control helpers instead of being hard-coded/parsing JSON in this
+  layer.
   UM API and cluster API status labels also share the native print-state helper
   instead of each REST surface owning its own active-job mapping.
   Remaining native-service work should keep collapsing web/API and touchscreen

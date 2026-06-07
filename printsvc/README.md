@@ -26,7 +26,25 @@ scaffold:
 - `gcode_stream.*` streams G-code line by line without loading whole files.
 - `macro_registry.*` resolves stock macro names under
   `/home/cygnus/marlindriver/gcode/`.
+- `../common/print/print_macros.h` names stock macro files used by
+  printsvc, touchscreen UI, and web/API callers.
+- `../common/print/print_backend_route.*` owns the stock-coordinator versus
+  native-printsvc endpoint selection used by touchscreen UI and web/API
+  clients.
+- `diagnostics_log.*` writes low-volume comparison lines that pair stock-shaped
+  status fields with native counters and latency fields for lab validation.
 - `service.*` owns the print lifecycle state machine and command dispatch.
+
+## Diagnostics Log
+
+When the lab-gated service starts, it appends to
+`/var/log/ultimaker/deneb-printsvc.log` and falls back to `/tmp` if that path
+is unavailable. Status lines intentionally keep stock-shaped keys beside native
+fields: `stock.req`, `stock.file`, heater temperatures, position, and fault
+state are logged with `native.phase`, `native.stopAllowed`, serial
+ACK/reject/resend counters, queue depth, streamed job line, command latency,
+and planner-starvation count. Command lines record the accepted verb, target
+file or macro, result, and latency.
 
 ## Safety State
 

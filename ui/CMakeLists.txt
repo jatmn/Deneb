@@ -186,6 +186,7 @@ set(DENEB_SOURCES
     src/fonts/deneb_font_i18n_14.c
     src/fonts/deneb_font_i18n_16.c
     ../common/print/command_format.c
+    ../common/print/print_backend_route.c
     ../common/print/pending_job_file.c
     ../common/print/print_state_rules.c
     ${DRIVER_SOURCES}

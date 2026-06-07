@@ -97,6 +97,15 @@ at `/tmp/deneb-cluster-print-job.json` so Cura-started jobs remain visible while
 Deneb validates metadata, waits for conflict confirmation, prepares, and
 preheats.
 
+When `deneb.printsvc.enabled=1`, `ui/src/backend_comm.c` and
+`web/src/backend_zmq.c` select native `deneb-printsvc` directly on status
+`5555` and command `5556` for print-service traffic. The stock coordinator
+route remains the default when the lab gate is `0`, preserving coordinator,
+Digital Factory, and rollback assumptions during the first replacement stage.
+`common/print/print_backend_route.*` owns this route decision and endpoint
+mapping for Deneb clients. `DENEB_PRINTSVC_BACKEND=native` or `coordinator` can
+override the route for host/lab debugging.
+
 Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. Pending-job file handling, command-frame formatting,
 print-state classification, and web/API status labels are shared native helpers
