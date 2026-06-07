@@ -18,5 +18,9 @@ int deneb_command_format_job(const char *path, const char *source,
                              const char *uuid, float bed_target,
                              float head_target, char *out, size_t out_sz);
 int deneb_command_format_action(const char *verb, char *out, size_t out_sz);
+int deneb_command_format_raw(const char *verb, const char *payload,
+                             char *out, size_t out_sz);
+int deneb_command_extract_job_path(const char *args_json, char *out,
+                                   size_t out_sz);
 
 #endif

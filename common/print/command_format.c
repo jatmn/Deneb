@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "command_format.h"
+#include "json_field.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -131,12 +133,42 @@ int deneb_command_format_job(const char *path, const char *source,
 
 int deneb_command_format_action(const char *verb, char *out, size_t out_sz)
 {
+    return deneb_command_format_raw(verb, "{}", out, out_sz);
+}
+
+int deneb_command_format_raw(const char *verb, const char *payload,
+                             char *out, size_t out_sz)
+{
     int n;
 
     if (!verb || !*verb || !out || out_sz == 0)
         return -1;
-    n = snprintf(out, out_sz, "%s<{}", verb);
+    n = snprintf(out, out_sz, "%s<%s", verb, payload ? payload : "{}");
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
     return n;
+}
+
+int deneb_command_extract_job_path(const char *args_json, char *out,
+                                   size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+
+    if (!args_json)
+        return -1;
+
+    if (deneb_json_get_value(args_json, "path", out, out_sz) != 0 ||
+        !out[0] || strcmp(out, DENEB_PRINT_NONE_VALUE) == 0) {
+        if (deneb_json_get_value(args_json, "file", out, out_sz) != 0)
+            return -1;
+    }
+
+    if (!out[0] || strcmp(out, DENEB_PRINT_NONE_VALUE) == 0) {
+        out[0] = '\0';
+        return -1;
+    }
+
+    return 0;
 }

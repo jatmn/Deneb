@@ -64,6 +64,24 @@ int deneb_material_catalog_guid_is_safe(const char *guid)
     return 1;
 }
 
+static int parse_nonnegative_int(const char *value, int *out)
+{
+    long parsed;
+    char *end;
+
+    if (!value || !*value || !out)
+        return -1;
+
+    errno = 0;
+    parsed = strtol(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0' ||
+        parsed < 0 || parsed > 2147483647L)
+        return -1;
+
+    *out = (int)parsed;
+    return 0;
+}
+
 int deneb_material_catalog_parse_file(const char *path,
                                       char *guid, size_t guid_sz,
                                       int *version)
@@ -96,8 +114,7 @@ int deneb_material_catalog_parse_file(const char *path,
                                                sizeof(version_str)) == 0 &&
          deneb_material_catalog_guid_is_safe(guid);
     if (ok) {
-        *version = atoi(version_str);
-        ok = *version >= 0;
+        ok = parse_nonnegative_int(version_str, version) == 0;
     }
 
     free(xml);

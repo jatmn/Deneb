@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "motion_policy.h"
+#include "gcode_command.h"
 
 #include <string.h>
 
@@ -19,22 +20,32 @@ static void policy_add(deneb_motion_policy_t *policy, const char *command)
 
 void deneb_motion_policy_abort(deneb_motion_policy_t *policy)
 {
+    char nozzle_off[32] = "";
+    char bed_off[32] = "";
+
     policy_clear(policy);
-    policy_add(policy, "M400");
-    policy_add(policy, "M104 S0");
-    policy_add(policy, "M140 S0");
-    policy_add(policy, "M106 S0");
-    policy_add(policy, "M84 E");
+    deneb_gcode_format_nozzle_off(nozzle_off, sizeof(nozzle_off));
+    deneb_gcode_format_bed_off(bed_off, sizeof(bed_off));
+    policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
+    policy_add(policy, nozzle_off);
+    policy_add(policy, bed_off);
+    policy_add(policy, DENEB_GCODE_FAN_OFF);
+    policy_add(policy, DENEB_GCODE_DISABLE_EXTRUDER_STEPPER);
 }
 
 void deneb_motion_policy_finish(deneb_motion_policy_t *policy)
 {
+    char nozzle_off[32] = "";
+    char bed_off[32] = "";
+
     policy_clear(policy);
-    policy_add(policy, "M400");
-    policy_add(policy, "M104 S0");
-    policy_add(policy, "M140 S0");
-    policy_add(policy, "M106 S0");
-    policy_add(policy, "M84");
+    deneb_gcode_format_nozzle_off(nozzle_off, sizeof(nozzle_off));
+    deneb_gcode_format_bed_off(bed_off, sizeof(bed_off));
+    policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
+    policy_add(policy, nozzle_off);
+    policy_add(policy, bed_off);
+    policy_add(policy, DENEB_GCODE_FAN_OFF);
+    policy_add(policy, DENEB_GCODE_DISABLE_ALL_STEPPERS);
 }
 
 int deneb_motion_policy_contains_xy_home(const deneb_motion_policy_t *policy)

@@ -23,5 +23,7 @@ void api_print_job_datetime_finished_get(const http_request_t *req, http_respons
 /* M7 write endpoints */
 void api_print_job_state_put(const http_request_t *req, http_response_t *resp);
 void api_print_job_post(const http_request_t *req, http_response_t *resp);
+int api_print_job_dispatch_action(const char *action, http_response_t *resp,
+                                  const char *unknown_message);
 
 #endif

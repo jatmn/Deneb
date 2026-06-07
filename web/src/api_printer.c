@@ -14,18 +14,10 @@
 #include "print_profile.h"
 #include "print_state_rules.h"
 
-#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#define MAX_JOG_DISTANCE_MM 50.0f
-#define MAX_POSITION_X_MM 223.0f
-#define MAX_POSITION_Y_MM 220.0f
-#define MAX_POSITION_Z_MM 205.0f
-#define DEFAULT_MOVE_SPEED_MM_S 150.0f
-#define MAX_MOVE_SPEED_MM_S 300.0f
 static int motion_allowed(const printer_state_t *s)
 {
     return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
@@ -44,33 +36,35 @@ static int parse_axis_value(const char *body, char *axis)
     if (deneb_json_get_value(body, "axis", axis_buf, sizeof(axis_buf)) < 0 || !axis_buf[0] || axis_buf[1])
         return -1;
 
-    char upper = (char)toupper((unsigned char)axis_buf[0]);
-    if (upper != 'X' && upper != 'Y' && upper != 'Z')
+    char upper = deneb_gcode_normalize_motion_axis(axis_buf[0]);
+    if (!deneb_gcode_axis_is_motion_axis(upper))
         return -1;
 
     *axis = upper;
     return 0;
 }
 
-static int valid_jog_distance(float distance)
+static int parse_temperature_target(const char *body, float max_temp,
+                                    float *out)
 {
-    float mag = fabsf(distance);
-    float whole = floorf(mag);
-    return isfinite(distance) &&
-        mag >= 1.0f &&
-        mag <= MAX_JOG_DISTANCE_MM &&
-        mag == whole;
-}
+    float temp = 0.0f;
 
-static int valid_position_value(char axis, float value)
-{
-    float max_value = 0.0f;
-    if (axis == 'X') max_value = MAX_POSITION_X_MM;
-    else if (axis == 'Y') max_value = MAX_POSITION_Y_MM;
-    else if (axis == 'Z') max_value = MAX_POSITION_Z_MM;
-    else return 0;
+    if (!out)
+        return -1;
 
-    return isfinite(value) && value >= 0.0f && value <= max_value;
+    if (deneb_json_field_present(body, "temperature") &&
+        (deneb_json_get_float_value(body, "temperature", &temp) < 0 ||
+         !isfinite(temp))) {
+        return -1;
+    }
+
+    if (temp > max_temp)
+        temp = max_temp;
+    if (temp < 0.0f)
+        temp = 0.0f;
+
+    *out = temp;
+    return 0;
 }
 
 static int send_jog_command(char axis, float distance)
@@ -650,15 +644,12 @@ void api_printer_airmanager_get(const http_request_t *req, http_response_t *resp
 
 void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 {
-    /* Parse temperature from body: {"temperature": N} or form data */
     float temp = 0;
-    const char *p = strstr(req->body, "\"temperature\"");
-    if (p) {
-        p = strchr(p + 13, ':');
-        if (p) temp = strtof(p + 1, NULL);
+    if (parse_temperature_target(req->body, 110.0f, &temp) < 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
+        return;
     }
-    if (temp > 110) temp = 110;
-    if (temp < 0) temp = 0;
     char cmd[32];
     if (deneb_gcode_format_bed_target(temp, cmd, sizeof(cmd)) < 0) {
         resp->status_code = 400;
@@ -676,13 +667,11 @@ void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 void api_printer_hotend_temp_put(const http_request_t *req, http_response_t *resp)
 {
     float temp = 0;
-    const char *p = strstr(req->body, "\"temperature\"");
-    if (p) {
-        p = strchr(p + 13, ':');
-        if (p) temp = strtof(p + 1, NULL);
+    if (parse_temperature_target(req->body, 260.0f, &temp) < 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
+        return;
     }
-    if (temp > 260) temp = 260;
-    if (temp < 0) temp = 0;
     char cmd[32];
     if (deneb_gcode_format_nozzle_target(temp, cmd, sizeof(cmd)) < 0) {
         resp->status_code = 400;
@@ -722,7 +711,7 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
             return;
         }
 
-        if (!valid_jog_distance(distance)) {
+        if (!deneb_gcode_valid_jog_distance(distance)) {
             resp->status_code = 400;
             api_http_set_body_str(resp, "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}");
             return;
@@ -740,7 +729,7 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
     float x = 0;
     float y = 0;
     float z = 0;
-    float speed = DEFAULT_MOVE_SPEED_MM_S;
+    float speed = DENEB_GCODE_DEFAULT_MOVE_SPEED_MM_S;
     int has_x = deneb_json_get_float_value(req->body, "x", &x) == 0;
     int has_y = deneb_json_get_float_value(req->body, "y", &y) == 0;
     int has_z = deneb_json_get_float_value(req->body, "z", &z) == 0;
@@ -765,16 +754,16 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
         api_http_set_body_str(resp, "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}");
         return;
     }
-    if ((has_x && !valid_position_value('X', x)) ||
-        (has_y && !valid_position_value('Y', y)) ||
-        (has_z && !valid_position_value('Z', z))) {
+    if ((has_x && !deneb_gcode_valid_position_value('X', x)) ||
+        (has_y && !deneb_gcode_valid_position_value('Y', y)) ||
+        (has_z && !deneb_gcode_valid_position_value('Z', z))) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Position is outside the printable volume\"}");
         return;
     }
     if (deneb_json_field_present(req->body, "speed") &&
         (deneb_json_get_float_value(req->body, "speed", &speed) < 0 ||
-         !isfinite(speed) || speed <= 0.0f || speed > MAX_MOVE_SPEED_MM_S)) {
+         !deneb_gcode_valid_move_speed(speed))) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid movement speed\"}");
         return;

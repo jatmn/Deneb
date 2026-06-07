@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job_file.h"
 #include "json_field.h"
+#include "print_state_rules.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -103,7 +104,7 @@ int deneb_pending_job_file_display_value(const char *value, char *out, size_t ou
         return -1;
     out[0] = '\0';
 
-    if (!value || !*value || strcmp(value, "none") == 0)
+    if (!value || !*value || strcmp(value, DENEB_PRINT_NONE_VALUE) == 0)
         return -1;
 
     base = strrchr(value, '/');
@@ -111,7 +112,7 @@ int deneb_pending_job_file_display_value(const char *value, char *out, size_t ou
     if (backslash && (!base || backslash > base))
         base = backslash;
     base = base ? base + 1 : value;
-    if (!base || !*base || strcmp(base, "none") == 0)
+    if (!base || !*base || strcmp(base, DENEB_PRINT_NONE_VALUE) == 0)
         return -1;
 
     snprintf(out, out_sz, "%s", base);
@@ -227,7 +228,7 @@ int deneb_pending_job_file_mark_handled(const char *path)
 
         r = write_replaced(f, &p,
             "\"status\":\"wait_user_action\"",
-            "\"status\":\"pre_print\"");
+            "\"status\":\"" DENEB_PRINT_PHASE_NAME_PRE_PRINT "\"");
         if (r < 0) {
             fclose(f);
             return -1;

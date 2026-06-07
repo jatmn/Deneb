@@ -2,6 +2,7 @@
 #include "config.h"
 #include "json_string.h"
 #include "print_control.h"
+#include "print_state_rules.h"
 #include "status.h"
 
 #include <stdio.h>
@@ -11,21 +12,21 @@ void deneb_status_init(deneb_status_t *status)
 {
     memset(status, 0, sizeof(*status));
     status->state = DENEB_PRINT_STATE_IDLE;
-    strcpy(status->file, "none");
+    strcpy(status->file, DENEB_PRINT_NONE_VALUE);
     deneb_error_clear(&status->error);
 }
 
 const char *deneb_status_state_name(deneb_print_state_t state)
 {
     switch (state) {
-        case DENEB_PRINT_STATE_PREPARING: return "Preparing";
-        case DENEB_PRINT_STATE_PRINTING: return "Printing";
-        case DENEB_PRINT_STATE_PAUSED: return "Paused";
-        case DENEB_PRINT_STATE_ABORTING: return "Aborting";
-        case DENEB_PRINT_STATE_COMPLETE: return "Complete";
-        case DENEB_PRINT_STATE_ERROR: return "Error";
+        case DENEB_PRINT_STATE_PREPARING: return DENEB_PRINT_REQ_PREPARE;
+        case DENEB_PRINT_STATE_PRINTING: return DENEB_PRINT_REQ_PRINTING;
+        case DENEB_PRINT_STATE_PAUSED: return DENEB_PRINT_REQ_PAUSED;
+        case DENEB_PRINT_STATE_ABORTING: return DENEB_PRINT_REQ_ABORTING;
+        case DENEB_PRINT_STATE_COMPLETE: return DENEB_PRINT_REQ_COMPLETE;
+        case DENEB_PRINT_STATE_ERROR: return DENEB_PRINT_REQ_ERROR;
         case DENEB_PRINT_STATE_IDLE:
-        default: return "Idle";
+        default: return DENEB_PRINT_REQ_IDLE;
     }
 }
 
@@ -40,7 +41,7 @@ int deneb_status_has_active_print(const deneb_status_t *status)
 
 static const char *safe_file(const char *file)
 {
-    return file && file[0] ? file : "none";
+    return file && file[0] ? file : DENEB_PRINT_NONE_VALUE;
 }
 
 int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size_t out_sz)
@@ -93,8 +94,8 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
                  deneb_status_has_active_print(status) ? "true" : "false",
                  deneb_print_control_phase_stop_allowed(
                      deneb_print_control_phase_from_state(status->state)) ? "true" : "false",
-                 status->error.key ? status->error.key : "none",
-                 status->error.category ? status->error.category : "none",
+                 status->error.key ? status->error.key : DENEB_PRINT_NONE_VALUE,
+                 status->error.category ? status->error.category : DENEB_PRINT_NONE_VALUE,
                  error_detail,
                  uuid, source,
                  status->time_total, status->time_left,

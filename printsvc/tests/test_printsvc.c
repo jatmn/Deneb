@@ -61,6 +61,7 @@ static void test_command_format_round_trip(void)
 {
     deneb_command_t cmd;
     char frame[1024];
+    char path[256];
     const char *gcodes[] = {"M105", "G1 X10 Y20"};
 
     assert(deneb_command_format_gcode(gcodes, 2, frame, sizeof(frame)) > 0);
@@ -86,7 +87,27 @@ static void test_command_format_round_trip(void)
     assert(strcmp(cmd.uuid, "uuid-1") == 0);
     assert(cmd.bed_target == 60.0f);
     assert(cmd.head_target == 210.0f);
+    assert(deneb_command_extract_job_path("{\"path\":\"/home/3D/path.gcode\"}",
+                                          path, sizeof(path)) == 0);
+    assert(strcmp(path, "/home/3D/path.gcode") == 0);
+    assert(deneb_command_extract_job_path("{\"path\":\"none\",\"file\":\"/home/3D/file.gcode\"}",
+                                          path, sizeof(path)) == 0);
+    assert(strcmp(path, "/home/3D/file.gcode") == 0);
+    assert(deneb_command_extract_job_path("{\"file\":\"none\"}",
+                                          path, sizeof(path)) != 0);
 
+    assert(deneb_command_format_action(DENEB_COMMAND_VERB_ABORT, frame, sizeof(frame)) > 0);
+    assert(strcmp(frame, "ABORT<{}") == 0);
+    assert(deneb_command_format_raw(DENEB_COMMAND_VERB_PAUSE, NULL,
+                                    frame, sizeof(frame)) > 0);
+    assert(strcmp(frame, "PAUSE<{}") == 0);
+    assert(deneb_command_format_raw(DENEB_COMMAND_VERB_JOB,
+                                    "{\"file\":\"cube.gcode\"}",
+                                    frame, sizeof(frame)) > 0);
+    assert(strcmp(frame, "JOB<{\"file\":\"cube.gcode\"}") == 0);
+    assert(deneb_command_parse(frame, &cmd) == 0);
+    assert(cmd.type == DENEB_COMMAND_JOB);
+    assert(strcmp(cmd.file, "cube.gcode") == 0);
     assert(deneb_command_format_action(DENEB_COMMAND_VERB_ABORT, frame, sizeof(frame)) > 0);
     assert(deneb_command_parse(frame, &cmd) == 0);
     assert(cmd.type == DENEB_COMMAND_ABORT);
@@ -152,8 +173,8 @@ static void test_error_mapping(void)
 static void test_print_control_contract(void)
 {
     assert(deneb_print_control_phase_name(DENEB_PRINT_PHASE_PREPARING) != NULL);
-    assert(strcmp(deneb_print_control_phase_name(DENEB_PRINT_PHASE_PREPARING), "pre_print") == 0);
-    assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING), "PREPARE") == 0);
+    assert(strcmp(deneb_print_control_phase_name(DENEB_PRINT_PHASE_PREPARING), DENEB_PRINT_PHASE_NAME_PRE_PRINT) == 0);
+    assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PREPARING), DENEB_PRINT_REQ_PREPARE) == 0);
     assert(strcmp(deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_PRINTING), DENEB_COMMAND_VERB_JOB) == 0);
     assert(strcmp(deneb_print_control_action_command(DENEB_PRINT_ACTION_ABORT), DENEB_COMMAND_VERB_ABORT) == 0);
     assert(deneb_print_control_phase_active(DENEB_PRINT_PHASE_PREPARING));
@@ -167,10 +188,10 @@ static void test_print_state_rules(void)
 {
     deneb_print_observation_t obs = {0};
 
-    assert(deneb_print_req_is_print("JOB"));
-    assert(deneb_print_req_is_print("printing"));
-    assert(deneb_print_req_is_paused("Paused"));
-    assert(deneb_print_req_is_lifecycle("PREHEATING"));
+    assert(deneb_print_req_is_print(DENEB_COMMAND_VERB_JOB));
+    assert(deneb_print_req_is_print(DENEB_PRINT_REQ_PRINTING));
+    assert(deneb_print_req_is_paused(DENEB_PRINT_REQ_PAUSED));
+    assert(deneb_print_req_is_lifecycle(DENEB_PRINT_REQ_PREHEATING));
     assert(deneb_print_req_is_abort("BUSY_ABORTING"));
     assert(deneb_print_file_is_candidate("/home/3D/cube.gcode"));
     assert(deneb_print_file_is_candidate("/home/3D/job.ufp"));
@@ -188,7 +209,7 @@ static void test_print_state_rules(void)
     assert(!deneb_print_temp_targets_ready(0.0f, 0.0f, 0.0f, 0.0f));
     assert(!deneb_print_temp_targets_ready(59.2f, 60.0f, 190.0f, 200.0f));
 
-    obs.req = "PREHEATING";
+    obs.req = DENEB_PRINT_REQ_PREHEATING;
     obs.bed_target = 60.0f;
     obs.nozzle_target = 210.0f;
     assert(deneb_print_observation_has_context(&obs));
@@ -211,7 +232,7 @@ static void test_print_state_rules(void)
     assert(deneb_print_has_active_context(&obs, 0, 0, 1));
     assert(!deneb_print_has_preparing_context(&obs, 0));
 
-    obs.req = "ABORT";
+    obs.req = DENEB_COMMAND_VERB_ABORT;
     obs.file = "/home/3D/cube.gcode";
     obs.time_total = 120;
     obs.time_left = 100;
@@ -220,7 +241,7 @@ static void test_print_state_rules(void)
     assert(!deneb_print_has_preparing_context(&obs, 1));
     assert(!deneb_print_has_stoppable_context(&obs, 1, 1, 1));
 
-    obs.req = "JOB";
+    obs.req = DENEB_COMMAND_VERB_JOB;
     obs.time_total = 120;
     obs.time_left = 80;
     assert(deneb_print_has_stoppable_context(&obs, 1, 0, 1));
@@ -234,7 +255,8 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_job_status_label(0, 0, 0), "finished") == 0);
     assert(strcmp(deneb_print_job_status_label(0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_job_status_label(1, 1, 1), "error") == 0);
-    assert(strcmp(deneb_print_job_state_or_none(0, 0, 0), "none") == 0);
+    assert(strcmp(deneb_print_job_state_or_none(0, 0, 0),
+                  DENEB_PRINT_NONE_VALUE) == 0);
     assert(strcmp(deneb_print_job_state_or_none(0, 0, 1), "printing") == 0);
     assert(strcmp(deneb_print_job_state_or_none(0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_job_state_or_none(1, 1, 1), "error") == 0);
@@ -244,7 +266,8 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_completion_state_label(1, 120, 0), "error") == 0);
     assert(strcmp(deneb_print_completion_state_label(0, 0, 0), "stopped") == 0);
     assert(strcmp(deneb_print_job_name_or_default(""), DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
-    assert(strcmp(deneb_print_job_name_or_default("none"), DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
+    assert(strcmp(deneb_print_job_name_or_default(DENEB_PRINT_NONE_VALUE),
+                  DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
     assert(strcmp(deneb_print_job_name_or_default("cube.gcode"), "cube.gcode") == 0);
     assert(strcmp(deneb_print_job_uuid_or_default(""), DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
     assert(strcmp(deneb_print_job_uuid_or_default("job-1"), "job-1") == 0);
@@ -254,17 +277,23 @@ static void test_print_state_rules(void)
     {
         char action[16];
         assert(deneb_print_action_parse("\"Pause\"", action, sizeof(action)) == 0);
-        assert(strcmp(action, "pause") == 0);
+        assert(strcmp(action, DENEB_PRINT_ACTION_PAUSE_TEXT) == 0);
         assert(deneb_print_action_is_pause(action));
         assert(deneb_print_action_parse("{\"action\":\"Force\"}", action, sizeof(action)) == 0);
-        assert(strcmp(action, "force") == 0);
+        assert(strcmp(action, DENEB_PRINT_ACTION_FORCE_TEXT) == 0);
         assert(deneb_print_action_is_resume_or_start(action));
         assert(deneb_print_action_is_force(action));
         assert(deneb_print_action_parse(" cancel ", action, sizeof(action)) == 0);
-        assert(strcmp(action, "cancel") == 0);
+        assert(strcmp(action, DENEB_PRINT_ACTION_CANCEL_TEXT) == 0);
         assert(deneb_print_action_is_abort(action));
         assert(deneb_print_action_parse("{\"action\":\"stop\"}", action, sizeof(action)) == 0);
+        assert(strcmp(action, DENEB_PRINT_ACTION_STOP_TEXT) == 0);
         assert(deneb_print_action_is_stop(action));
+        assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_PRINT_TEXT));
+        assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_RESUME_TEXT));
+        assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_CONTINUE_TEXT));
+        assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_START_TEXT));
+        assert(deneb_print_action_is_abort(DENEB_PRINT_ACTION_ABORT_TEXT));
         assert(deneb_print_action_parse("{}", action, sizeof(action)) != 0);
     }
     assert(deneb_print_job_is_active(1, 0, 0));
@@ -354,6 +383,23 @@ static void test_gcode_command_helpers(void)
     assert(strcmp(DENEB_GCODE_FAN_OFF, "M106 S0") == 0);
     assert(strcmp(DENEB_GCODE_RESET_EXTRUDER, "G92 E0") == 0);
     assert(strcmp(DENEB_GCODE_STOP_MATERIAL, "M401") == 0);
+    assert(DENEB_GCODE_MAX_JOG_DISTANCE_MM == 50.0f);
+    assert(deneb_gcode_normalize_motion_axis('x') == 'X');
+    assert(deneb_gcode_axis_is_motion_axis('z'));
+    assert(!deneb_gcode_axis_is_motion_axis('e'));
+    assert(deneb_gcode_valid_jog_distance(1.0f));
+    assert(deneb_gcode_valid_jog_distance(-50.0f));
+    assert(!deneb_gcode_valid_jog_distance(0.5f));
+    assert(!deneb_gcode_valid_jog_distance(51.0f));
+    assert(!deneb_gcode_valid_jog_distance(1.5f));
+    assert(deneb_gcode_valid_position_value('x', DENEB_GCODE_MAX_POSITION_X_MM));
+    assert(!deneb_gcode_valid_position_value('X', DENEB_GCODE_MAX_POSITION_X_MM + 1.0f));
+    assert(deneb_gcode_valid_position_value('Y', DENEB_GCODE_MAX_POSITION_Y_MM));
+    assert(deneb_gcode_valid_position_value('Z', DENEB_GCODE_MAX_POSITION_Z_MM));
+    assert(!deneb_gcode_valid_position_value('E', 1.0f));
+    assert(deneb_gcode_valid_move_speed(DENEB_GCODE_DEFAULT_MOVE_SPEED_MM_S));
+    assert(!deneb_gcode_valid_move_speed(0.0f));
+    assert(!deneb_gcode_valid_move_speed(DENEB_GCODE_MAX_MOVE_SPEED_MM_S + 1.0f));
 
     assert(deneb_gcode_format_jog('X', 10.0f, value, sizeof(value)) == 0);
     assert(strcmp(value, "G1 X10 F3000") == 0);
@@ -379,6 +425,17 @@ static void test_gcode_command_helpers(void)
     assert(strcmp(value, "M104 S210") == 0);
     assert(deneb_gcode_format_bed_target(60.0f, value, sizeof(value)) == 0);
     assert(strcmp(value, "M140 S60") == 0);
+    assert(deneb_gcode_format_nozzle_off(value, sizeof(value)) == 0);
+    assert(strcmp(value, "M104 S0") == 0);
+    assert(deneb_gcode_format_bed_off(value, sizeof(value)) == 0);
+    assert(strcmp(value, "M140 S0") == 0);
+    assert(deneb_gcode_frame_light_brightness_to_pwm(-5) == 0);
+    assert(deneb_gcode_frame_light_brightness_to_pwm(100) == 255);
+    assert(deneb_gcode_frame_light_brightness_to_pwm(50) == 128);
+    assert(deneb_gcode_format_frame_light(50, value, sizeof(value)) == 0);
+    assert(strcmp(value, "M142 w128") == 0);
+    assert(deneb_gcode_format_frame_light(150, value, sizeof(value)) == 0);
+    assert(strcmp(value, "M142 w255") == 0);
 }
 
 static void test_json_string_helpers(void)
@@ -409,7 +466,7 @@ static void test_status_payload_helpers(void)
     assert(strcmp(payload.file, "cube.gcode") == 0);
     assert(strcmp(payload.source, "Cura") == 0);
     assert(strcmp(payload.uuid, "job-1") == 0);
-    assert(strcmp(payload.req, "JOB") == 0);
+    assert(strcmp(payload.req, DENEB_COMMAND_VERB_JOB) == 0);
     assert(payload.has_file);
     assert(payload.is_printing);
     assert(!payload.is_paused);
@@ -583,9 +640,22 @@ static void test_print_job_file_metadata(void)
     const char *path = "/tmp/deneb-print-job-metadata-test.gcode";
     deneb_print_job_file_metadata_t meta;
     char value[64];
+    char safe[128];
+    char spool_path[256];
     FILE *f;
 
     assert(strcmp(DENEB_PRINT_JOB_SPOOL_DIR, "/home/3D/deneb-uploads") == 0);
+    assert(deneb_print_job_file_sanitize_name("../../cube.gcode",
+                                              safe, sizeof(safe)) == 0);
+    assert(strcmp(safe, "cube.gcode") == 0);
+    assert(deneb_print_job_file_sanitize_name("..", safe, sizeof(safe)) == 0);
+    assert(strcmp(safe, "upload.gcode") == 0);
+    snprintf(safe, sizeof(safe), "\\usb\\job.gcode");
+    assert(deneb_print_job_file_sanitize_name(safe, safe, sizeof(safe)) == 0);
+    assert(strcmp(safe, "job.gcode") == 0);
+    assert(deneb_print_job_file_spool_path("../cube.gcode", spool_path,
+                                           sizeof(spool_path)) == 0);
+    assert(strcmp(spool_path, DENEB_PRINT_JOB_SPOOL_DIR "/cube.gcode") == 0);
     assert(deneb_print_job_file_metadata_extract_value(
                "; material_guid = target-guid\n", "material_guid",
                value, sizeof(value)) == 0);
@@ -672,6 +742,14 @@ static void test_material_catalog_helpers(void)
     assert(strstr(body, "\"guid\":\"stock\"") != NULL);
     assert(strstr(body, guid) != NULL);
     free(body);
+    f = fopen(material_path, "wb");
+    assert(f != NULL);
+    fprintf(f, "<fdmmaterial><metadata><GUID>%s</GUID><version>7x</version>"
+            "</metadata></fdmmaterial>", guid);
+    fclose(f);
+    assert(deneb_material_catalog_parse_file(material_path, parsed_guid,
+                                             sizeof(parsed_guid),
+                                             &version) != 0);
     remove("/tmp/deneb-material-catalog/506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9.json");
     rmdir(catalog_dir);
     remove(material_path);
@@ -702,7 +780,7 @@ static void test_diagnostics_log_side_by_side_fields(void)
     remove(path);
     deneb_status_init(&status);
     status.state = DENEB_PRINT_STATE_PRINTING;
-    snprintf(status.req, sizeof(status.req), "JOB");
+    snprintf(status.req, sizeof(status.req), "%s", DENEB_COMMAND_VERB_JOB);
     snprintf(status.file, sizeof(status.file), "cube.gcode");
     status.head_t_cur = 201.0f;
     status.head_t_set = 210.0f;
@@ -756,7 +834,7 @@ static void test_abort_clears_status(void)
     assert(deneb_command_parse("ABORT<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
-    assert(strcmp(svc.status.file, "none") == 0);
+    assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
 }
 
 static void test_job_accepts_without_blocking(void)
@@ -1003,11 +1081,21 @@ static void test_motion_policy(void)
     deneb_motion_policy_t policy;
 
     deneb_motion_policy_abort(&policy);
-    assert(policy.count > 0);
+    assert(policy.count == 5);
+    assert(strcmp(policy.commands[0], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
+    assert(strcmp(policy.commands[1], "M104 S0") == 0);
+    assert(strcmp(policy.commands[2], "M140 S0") == 0);
+    assert(strcmp(policy.commands[3], DENEB_GCODE_FAN_OFF) == 0);
+    assert(strcmp(policy.commands[4], DENEB_GCODE_DISABLE_EXTRUDER_STEPPER) == 0);
     assert(!deneb_motion_policy_contains_xy_home(&policy));
 
     deneb_motion_policy_finish(&policy);
-    assert(policy.count > 0);
+    assert(policy.count == 5);
+    assert(strcmp(policy.commands[0], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
+    assert(strcmp(policy.commands[1], "M104 S0") == 0);
+    assert(strcmp(policy.commands[2], "M140 S0") == 0);
+    assert(strcmp(policy.commands[3], DENEB_GCODE_FAN_OFF) == 0);
+    assert(strcmp(policy.commands[4], DENEB_GCODE_DISABLE_ALL_STEPPERS) == 0);
     assert(!deneb_motion_policy_contains_xy_home(&policy));
 }
 
@@ -1068,7 +1156,8 @@ static void test_pending_job_file_contract(void)
     assert(deneb_pending_job_file_display_value("C:\\spool\\win.gcode",
                                                 display, sizeof(display)) == 0);
     assert(strcmp(display, "win.gcode") == 0);
-    assert(deneb_pending_job_file_display_value("none", display, sizeof(display)) != 0);
+    assert(deneb_pending_job_file_display_value(DENEB_PRINT_NONE_VALUE,
+                                                display, sizeof(display)) != 0);
     assert(display[0] == '\0');
     assert(deneb_pending_job_file_display_value("", display, sizeof(display)) != 0);
     assert(display[0] == '\0');

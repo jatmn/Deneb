@@ -18,5 +18,11 @@ int deneb_print_job_file_metadata_extract_value(const char *buf,
                                                 size_t out_sz);
 int deneb_print_job_file_metadata_load(const char *path,
                                        deneb_print_job_file_metadata_t *meta);
+int deneb_print_job_file_sanitize_name(const char *name, char *out,
+                                       size_t out_sz);
+int deneb_print_job_file_spool_path(const char *name, char *out,
+                                    size_t out_sz);
+int deneb_print_job_file_store_upload(const char *src_path,
+                                      const char *dest_path);
 
 #endif

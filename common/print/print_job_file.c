@@ -2,8 +2,12 @@
 #include "print_job_file.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta)
 {
@@ -73,4 +77,114 @@ int deneb_print_job_file_metadata_load(const char *path,
         found = 1;
 
     return found ? 0 : -1;
+}
+
+int deneb_print_job_file_sanitize_name(const char *name, char *out,
+                                       size_t out_sz)
+{
+    const char *base;
+    const char *slash;
+    const char *backslash;
+
+    if (!out || out_sz == 0)
+        return -1;
+
+    base = name && *name ? name : "upload.gcode";
+    slash = strrchr(base, '/');
+    backslash = strrchr(base, '\\');
+    if (slash && (!backslash || slash > backslash))
+        base = slash + 1;
+    else if (backslash)
+        base = backslash + 1;
+
+    if (!*base || strcmp(base, ".") == 0 || strcmp(base, "..") == 0)
+        base = "upload.gcode";
+
+    if (strlen(base) >= out_sz) {
+        errno = ENAMETOOLONG;
+        out[0] = '\0';
+        return -1;
+    }
+    memmove(out, base, strlen(base) + 1);
+
+    return 0;
+}
+
+int deneb_print_job_file_spool_path(const char *name, char *out,
+                                    size_t out_sz)
+{
+    char safe[128];
+
+    if (!out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+
+    if (deneb_print_job_file_sanitize_name(name, safe, sizeof(safe)) < 0)
+        return -1;
+
+    if (snprintf(out, out_sz, "%s/%s", DENEB_PRINT_JOB_SPOOL_DIR,
+                 safe) >= (int)out_sz) {
+        errno = ENAMETOOLONG;
+        out[0] = '\0';
+        return -1;
+    }
+
+    return 0;
+}
+
+static int copy_file(const char *src_path, const char *dest_path)
+{
+    int src_fd;
+    int dst_fd;
+    char buf[65536];
+    ssize_t nr;
+    int copy_ok = 1;
+
+    src_fd = open(src_path, O_RDONLY);
+    dst_fd = open(dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (src_fd < 0 || dst_fd < 0) {
+        if (src_fd >= 0)
+            close(src_fd);
+        if (dst_fd >= 0)
+            close(dst_fd);
+        return -1;
+    }
+
+    while ((nr = read(src_fd, buf, sizeof(buf))) >= 0) {
+        if (nr == 0)
+            break;
+        if (write(dst_fd, buf, (size_t)nr) != nr) {
+            copy_ok = 0;
+            break;
+        }
+    }
+    if (nr < 0)
+        copy_ok = 0;
+
+    close(src_fd);
+    close(dst_fd);
+    return copy_ok ? 0 : -1;
+}
+
+int deneb_print_job_file_store_upload(const char *src_path,
+                                      const char *dest_path)
+{
+    if (!src_path || !*src_path || !dest_path || !*dest_path) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) < 0 && errno != EEXIST)
+        return -1;
+
+    if (rename(src_path, dest_path) == 0)
+        return 0;
+
+    if (copy_file(src_path, dest_path) < 0) {
+        unlink(dest_path);
+        return -1;
+    }
+
+    unlink(src_path);
+    return 0;
 }

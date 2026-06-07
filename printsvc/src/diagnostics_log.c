@@ -2,6 +2,7 @@
 #include "config.h"
 #include "diagnostics_log.h"
 #include "print_control.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -150,7 +151,8 @@ void deneb_diagnostics_log_status(const deneb_status_t *status, int force)
             status->flow_resend, status->flow_reject,
             status->job_queue_depth, status->job_line_number,
             status->command_latency_ms, status->planner_starvation_count);
-    write_quoted(diag_file, "native.errorKey", status->error.key ? status->error.key : "none");
+    write_quoted(diag_file, "native.errorKey", status->error.key ?
+                 status->error.key : DENEB_PRINT_NONE_VALUE);
     fputc('\n', diag_file);
 
     last_snapshot = next;

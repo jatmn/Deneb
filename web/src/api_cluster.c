@@ -74,11 +74,11 @@ static int send_pending_job_instruction(const char *instruction)
     if (load_pending_job(&job) < 0)
         return -1;
 
-    if (strcmp(instruction, "PREPARE") == 0 && !job.path[0]) {
+    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0 && !job.path[0]) {
         fprintf(stderr, "deneb-api: failed to read pending job path for PREPARE\n");
         return -1;
     }
-    if (strcmp(instruction, "PREPARE") == 0) {
+    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
         fprintf(stderr, "deneb-api: pending print path resolved to %s\n",
                 job.path[0] ? job.path : "(none)");
     }
@@ -88,7 +88,7 @@ static int send_pending_job_instruction(const char *instruction)
     if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0)
         return backend_zmq_abort();
 
-    if (strcmp(instruction, "PREPARE") == 0) {
+    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
         return backend_zmq_send_job(job.path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
                                     DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
     }
@@ -302,7 +302,8 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
 
     if (deneb_print_action_parse(req->body, action, sizeof(action)) < 0) {
         if (has_pending_job) {
-            snprintf(action, sizeof(action), "print");
+            snprintf(action, sizeof(action), "%s",
+                     DENEB_PRINT_ACTION_PRINT_TEXT);
         } else {
             resp->status_code = 400;
             api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}");
@@ -313,7 +314,7 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
     log_cluster_action(action, has_pending_job, req->path);
 
     if (deneb_print_action_is_resume_or_start(action) && has_pending_job) {
-        if (send_pending_job_instruction("PREPARE") != 0) {
+        if (send_pending_job_instruction(DENEB_PRINT_REQ_PREPARE) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
@@ -326,35 +327,9 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             return;
         }
         deneb_pending_job_file_clear_default();
-    } else if (deneb_print_action_is_pause(action)) {
-        if (backend_zmq_pause() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
-            return;
-        }
-    } else if (deneb_print_action_is_resume_or_start(action)) {
-        if (backend_zmq_resume() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to resume print\"}");
-            return;
-        }
-    } else if (deneb_print_action_is_abort(action)) {
-        if (backend_zmq_abort() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
-            return;
-        }
-        deneb_pending_job_file_clear_default();
-    } else if (deneb_print_action_is_stop(action)) {
-        if (backend_zmq_stop_print() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
-            return;
-        }
-        deneb_pending_job_file_clear_default();
     } else {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Unknown print job action\"}");
+        api_print_job_dispatch_action(action, resp,
+                                      "{\"message\":\"Unknown print job action\"}");
         return;
     }
 

@@ -52,11 +52,12 @@ int deneb_status_payload_parse(const char *json,
 
     copy_json_value(json, "file", payload->file, sizeof(payload->file));
     copy_json_value(json, "name", name, sizeof(name));
-    if ((!payload->file[0] || strcmp(payload->file, "none") == 0) &&
-        name[0] && strcmp(name, "none") != 0) {
+    if ((!payload->file[0] || strcmp(payload->file, DENEB_PRINT_NONE_VALUE) == 0) &&
+        name[0] && strcmp(name, DENEB_PRINT_NONE_VALUE) != 0) {
         snprintf(payload->file, sizeof(payload->file), "%s", name);
     }
-    payload->has_file = payload->file[0] && strcmp(payload->file, "none") != 0;
+    payload->has_file = payload->file[0] &&
+        strcmp(payload->file, DENEB_PRINT_NONE_VALUE) != 0;
 
     copy_json_value(json, "source", payload->source, sizeof(payload->source));
     copy_json_value(json, "uuid", payload->uuid, sizeof(payload->uuid));

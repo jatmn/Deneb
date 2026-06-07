@@ -606,6 +606,10 @@ Completed implementation slices:
   cluster API, and backend status cache onto the same shared print-state rules
   so `"idle"`, `"offline"`, `"printing"`, `"paused"`, `"error"`, and
   `"finished"` are not reinterpreted separately by each REST surface.
+- [x] Move the stock empty print value `"none"` into shared print-state rules
+  so status parsing, native status serialization, pending display fallbacks,
+  command job-path extraction, diagnostics logging, and touchscreen status
+  display agree on empty file/job semantics.
 - [x] Move flat stock-status JSON field extraction into
   `common/print/json_field.*` so LCD `backend_comm` and web `backend_zmq`
   parse numeric and string status fields through the same native helper
@@ -628,6 +632,9 @@ Completed implementation slices:
   strict numeric parsing, and boolean parsing so Deneb auth/setup and UM
   printer motion/action request bodies no longer carry separate miniature JSON
   parsers beside the stock print-status parser.
+- [x] Move UM printer temperature request parsing onto
+  `common/print/json_field.*` so bed/nozzle heat APIs use the same strict
+  native float parser as motion controls before formatting shared G-code.
 - [x] Move stock-status truthy value parsing into `common/print/json_field.*`
   so LCD and web/API status readers interpret fields such as
   `topcapIsPresent` consistently across numeric, `"yes"`, `"true"`, and
@@ -645,6 +652,10 @@ Completed implementation slices:
   detection, and future native print-service entry points share one parser for
   `material_guid`, `nozzle_size`, `print_core_id`, and the Deneb upload spool
   path instead of keeping that logic inside the web print-job endpoint.
+- [x] Move uploaded print-file spool ownership into
+  `common/print/print_job_file.*`: filename sanitizing, Deneb spool-path
+  construction, spool directory creation, and rename/copy fallback are shared
+  native helpers instead of web-only Cura upload code.
 - [x] Move printer hostname/GUID identity reads into
   `common/print/printer_identity.*` so Cura cluster printer/job responses and
   UM system endpoints use the same native fallback/default behavior instead of
@@ -668,6 +679,12 @@ Completed implementation slices:
   action frames into `common/print` with parser round-trip tests, and wire LCD
   `backend_comm`, web `backend_zmq`, and `deneb-printsvc` through that shared
   owner for G-code, macro, job, and action frame escaping.
+- [x] Move generic stock `COMMAND<payload` frame construction into
+  `common/print/command_format.*` so LCD and web backend clients no longer
+  each hand-format raw command frames for non-action verbs.
+- [x] Move generic `JOB` argument path/file fallback extraction into the shared
+  native command-format helper so LCD `backend_comm` no longer keeps a local
+  JSON field helper just to retain active job filenames.
 - [x] Move stock print-service command verb names for `GCODE`, `MACRO`, `JOB`,
   `ABORT`, `PAUSE`, and `RESUME` into `common/print/command_format.h` so
   action-frame formatting, LCD backend commands, web backend commands, and
@@ -681,6 +698,16 @@ Completed implementation slices:
   target, cooldown, and material load/unload G-code string construction into
   `common/print/gcode_command.*` with host tests so remaining raw G-code
   commands used by UI/API safety gates share one Deneb-owned formatter.
+- [x] Move web/API manual motion bounds into `common/print/gcode_command.*`
+  so jog distance, axis normalization, build-volume limits, and move-speed
+  validation are owned beside the G-code formatter instead of inside the REST
+  endpoint.
+- [x] Move touchscreen frame-lighting `M142` command construction and
+  brightness-to-PWM clamping into `common/print/gcode_command.*` so another
+  UI-only stock-driver G-code formatter is owned by the shared native layer.
+- [x] Move native abort/finish motion-policy heater/fan/stepper cleanup onto
+  shared G-code constants and heater-off helpers so print-service safety
+  cleanup uses the same cooldown command owner as touchscreen/web controls.
 - [x] Move stock macro filenames and remaining pending-job display reads into
   shared native helpers: touchscreen jog/leveling and web motion commands now
   use common macro-name constants, the shared print-state rules own transient
@@ -712,6 +739,9 @@ Completed implementation slices:
   record storage, and dynamic material-list response assembly into
   `common/print/material_catalog.*` so cluster API uploads and USB material
   imports share native material persistence rules.
+- [x] Tighten native material catalog version parsing so malformed Cura
+  material XML versions are rejected by `common/print/material_catalog.*`
+  instead of being silently coerced by local `atoi` behavior.
 - [x] Move touchscreen loaded material/nozzle reads onto
   `common/print/print_profile.*` so settings screens, Cura conflict detection,
   pending metadata, and UM/Cura API responses all use the same native UCI
@@ -731,6 +761,14 @@ Completed implementation slices:
   print-state rules so plain and JSON `pause`, `print`/`resume`/`continue`,
   `force`, `abort`/`cancel`, and `stop` actions classify the same way before
   reaching LCD/web/backend command dispatch.
+- [x] Move the web/Cura action vocabulary itself into shared native
+  print-state rules so `pause`, `print`, `resume`, `continue`, `force`,
+  `start`, `abort`, `cancel`, and `stop` are not duplicated between the parser,
+  cluster pending fallback, and host tests.
+- [x] Move web and Cura print-job action dispatch onto one native web helper
+  so UM API state changes and cluster API actions share pause/resume/abort/stop
+  backend calls, pending-job cleanup, success bodies, and failure messages,
+  with only pending-job continue/cancel left as Cura-specific branches.
 - [x] Move current-job fallback identity into shared native print-state rules
   so native pending metadata, Cura cluster jobs, UM API, and Deneb API use the
   same default job UUID, display name, and source instead of local literals.
@@ -748,6 +786,15 @@ Completed implementation slices:
   native print-state rules so the touchscreen Stop button, preheat status, and
   abort cleanup use the same tested contract instead of local screen/backend
   predicates.
+- [x] Move stock print-service request/status vocabulary for `PREPARE`,
+  preheat/preheating, idle, printing, paused, aborting, complete, and error
+  into shared native print-state rules so native status serialization,
+  print-control phase mapping, Cura pending-job continue, and touchscreen
+  conflict continue use one contract.
+- [x] Move stock UM API compatibility identity/state literals for queued web
+  uploads into shared native print-state rules so `WEB_API`, stock response
+  UUID `0`, and `pre_print` are not separately owned by web print-job
+  responses, pending metadata, and print-control phase names.
 - [x] Add native error mapping for Marlin faults and service-side storage,
   serial, command, thermal, and motion categories, with escaped status JSON
   fields for machine-readable Deneb error keys/details.

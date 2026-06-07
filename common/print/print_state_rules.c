@@ -74,8 +74,8 @@ static int str_contains_ci(const char *haystack, const char *needle)
 int deneb_print_req_is_print(const char *req)
 {
     static const char *const print_reqs[] = {
-        DENEB_COMMAND_VERB_JOB, "Print", "Printing",
-        DENEB_COMMAND_VERB_PAUSE, "Pause", "Paused",
+        DENEB_COMMAND_VERB_JOB, "Print", DENEB_PRINT_REQ_PRINTING,
+        DENEB_COMMAND_VERB_PAUSE, "Pause", DENEB_PRINT_REQ_PAUSED,
         NULL
     };
 
@@ -85,7 +85,7 @@ int deneb_print_req_is_print(const char *req)
 int deneb_print_req_is_paused(const char *req)
 {
     static const char *const paused_reqs[] = {
-        DENEB_COMMAND_VERB_PAUSE, "Pause", "Paused",
+        DENEB_COMMAND_VERB_PAUSE, "Pause", DENEB_PRINT_REQ_PAUSED,
         NULL
     };
 
@@ -96,7 +96,8 @@ int deneb_print_req_is_lifecycle(const char *req)
 {
     static const char *const lifecycle_reqs[] = {
         "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
-        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
+        "RESOLVE_CONFLICTS", DENEB_PRINT_REQ_PREPARE,
+        DENEB_PRINT_REQ_PREHEAT, DENEB_PRINT_REQ_PREHEATING,
         "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
         "EXTRACT", "EXTRACTING",
         NULL
@@ -108,7 +109,7 @@ int deneb_print_req_is_lifecycle(const char *req)
 int deneb_print_req_is_abort(const char *req)
 {
     static const char *const abort_reqs[] = {
-        DENEB_COMMAND_VERB_ABORT, "Abort", "Aborting", "ABORTING",
+        DENEB_COMMAND_VERB_ABORT, "Abort", DENEB_PRINT_REQ_ABORTING, "ABORTING",
         "BUSY_ABORTING",
         NULL
     };
@@ -118,7 +119,7 @@ int deneb_print_req_is_abort(const char *req)
 
 int deneb_print_file_is_transient(const char *file)
 {
-    if (!file || !*file || strcmp(file, "none") == 0)
+    if (!file || !*file || strcmp(file, DENEB_PRINT_NONE_VALUE) == 0)
         return 0;
 
     if (str_contains_ci(file, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD))
@@ -135,7 +136,7 @@ int deneb_print_file_is_transient(const char *file)
 
 int deneb_print_file_is_candidate(const char *file)
 {
-    if (!file || !*file || strcmp(file, "none") == 0)
+    if (!file || !*file || strcmp(file, DENEB_PRINT_NONE_VALUE) == 0)
         return 0;
 
     return (str_contains_ci(file, ".gcode") || str_contains_ci(file, ".ufp")) &&
@@ -269,27 +270,27 @@ const char *deneb_print_job_state_or_none(int has_error, int is_paused,
                                           int is_active)
 {
     if (!deneb_print_job_is_active(has_error, is_paused, is_active))
-        return "none";
+        return DENEB_PRINT_NONE_VALUE;
     return deneb_print_job_status_label(has_error, is_paused, is_active);
 }
 
 const char *deneb_print_job_name_or_default(const char *name)
 {
-    if (!name || !name[0] || strcmp(name, "none") == 0)
+    if (!name || !name[0] || strcmp(name, DENEB_PRINT_NONE_VALUE) == 0)
         return DENEB_PRINT_DEFAULT_JOB_NAME;
     return name;
 }
 
 const char *deneb_print_job_uuid_or_default(const char *uuid)
 {
-    if (!uuid || !uuid[0] || strcmp(uuid, "none") == 0)
+    if (!uuid || !uuid[0] || strcmp(uuid, DENEB_PRINT_NONE_VALUE) == 0)
         return DENEB_PRINT_DEFAULT_JOB_UUID;
     return uuid;
 }
 
 const char *deneb_print_job_source_or_default(const char *source)
 {
-    if (!source || !source[0] || strcmp(source, "none") == 0)
+    if (!source || !source[0] || strcmp(source, DENEB_PRINT_NONE_VALUE) == 0)
         return DENEB_PRINT_DEFAULT_JOB_SOURCE;
     return source;
 }
@@ -392,32 +393,32 @@ int deneb_print_action_parse(const char *body, char *out, size_t out_sz)
 
 int deneb_print_action_is_pause(const char *action)
 {
-    return str_eq_ci(action, "pause");
+    return str_eq_ci(action, DENEB_PRINT_ACTION_PAUSE_TEXT);
 }
 
 int deneb_print_action_is_resume_or_start(const char *action)
 {
-    return str_eq_ci(action, "print") ||
-           str_eq_ci(action, "resume") ||
-           str_eq_ci(action, "continue") ||
-           str_eq_ci(action, "force") ||
-           str_eq_ci(action, "start");
+    return str_eq_ci(action, DENEB_PRINT_ACTION_PRINT_TEXT) ||
+           str_eq_ci(action, DENEB_PRINT_ACTION_RESUME_TEXT) ||
+           str_eq_ci(action, DENEB_PRINT_ACTION_CONTINUE_TEXT) ||
+           str_eq_ci(action, DENEB_PRINT_ACTION_FORCE_TEXT) ||
+           str_eq_ci(action, DENEB_PRINT_ACTION_START_TEXT);
 }
 
 int deneb_print_action_is_abort(const char *action)
 {
-    return str_eq_ci(action, "abort") ||
-           str_eq_ci(action, "cancel");
+    return str_eq_ci(action, DENEB_PRINT_ACTION_ABORT_TEXT) ||
+           str_eq_ci(action, DENEB_PRINT_ACTION_CANCEL_TEXT);
 }
 
 int deneb_print_action_is_stop(const char *action)
 {
-    return str_eq_ci(action, "stop");
+    return str_eq_ci(action, DENEB_PRINT_ACTION_STOP_TEXT);
 }
 
 int deneb_print_action_is_force(const char *action)
 {
-    return str_eq_ci(action, "force");
+    return str_eq_ci(action, DENEB_PRINT_ACTION_FORCE_TEXT);
 }
 
 int deneb_print_elapsed_seconds(int time_total, int time_left)

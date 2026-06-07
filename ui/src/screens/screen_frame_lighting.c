@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "gcode_command.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
 
@@ -16,7 +17,6 @@
 #include <string.h>
 
 #define FRAME_LIGHT_DEFAULT_BRIGHTNESS 100
-#define FRAME_LIGHT_MAX_PWM 255
 
 static lv_obj_t *frame_screen = NULL;
 static lv_obj_t *status_label = NULL;
@@ -38,12 +38,6 @@ static int clamp_brightness(int value)
     if (value > 100)
         return 100;
     return value;
-}
-
-static int brightness_to_pwm(int value)
-{
-    value = clamp_brightness(value);
-    return (value * FRAME_LIGHT_MAX_PWM + 50) / 100;
 }
 
 static int read_uci_int(const char *key, int fallback)
@@ -100,7 +94,8 @@ static int apply_light_pwm(int brightness)
 {
     char gcode[32];
 
-    snprintf(gcode, sizeof(gcode), "M142 w%d", brightness_to_pwm(brightness));
+    if (deneb_gcode_format_frame_light(brightness, gcode, sizeof(gcode)) < 0)
+        return -1;
     return backend_send_gcode(gcode);
 }
 

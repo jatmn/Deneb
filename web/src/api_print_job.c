@@ -17,8 +17,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -36,9 +34,9 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
     json_obj_open(&w);
     json_str(&w, "message", "Print job already queued");
     json_str(&w, "name", job_name[0] ? job_name : "Print job");
-    json_str(&w, "uuid", "0");
-    json_str(&w, "source", "WEB_API");
-    json_str(&w, "state", "pre_print");
+    json_str(&w, "uuid", DENEB_PRINT_STOCK_API_JOB_UUID);
+    json_str(&w, "source", DENEB_PRINT_WEB_API_JOB_SOURCE);
+    json_str(&w, "state", DENEB_PRINT_PHASE_NAME_PRE_PRINT);
     json_float(&w, "progress", 0.0);
     json_int(&w, "time_elapsed", 0);
     json_int(&w, "time_total", 0);
@@ -255,50 +253,56 @@ void api_print_job_datetime_finished_get(const http_request_t *req, http_respons
 
 /* ========== M7 Write Endpoints ========== */
 
+int api_print_job_dispatch_action(const char *action, http_response_t *resp,
+                                  const char *unknown_message)
+{
+    if (deneb_print_action_is_pause(action)) {
+        if (backend_zmq_pause() < 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
+            return -1;
+        }
+    } else if (deneb_print_action_is_resume_or_start(action)) {
+        if (backend_zmq_resume() < 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to resume print\"}");
+            return -1;
+        }
+    } else if (deneb_print_action_is_abort(action)) {
+        if (backend_zmq_abort() < 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
+            return -1;
+        }
+        deneb_pending_job_file_clear_default();
+    } else if (deneb_print_action_is_stop(action)) {
+        if (backend_zmq_stop_print() < 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
+            return -1;
+        }
+        deneb_pending_job_file_clear_default();
+    } else {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, unknown_message ?
+                              unknown_message :
+                              "{\"message\":\"Unknown print job action\"}");
+        return -1;
+    }
+
+    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+    return 0;
+}
+
 void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
 {
-    /* Body is a plain string: "pause", "resume", or "abort" */
     /* Body is a plain string: "pause", "print", or "abort" */
     char cmd[16];
     const char *action =
         deneb_print_action_parse(req->body, cmd, sizeof(cmd)) == 0 ? cmd : NULL;
     log_print_job_state_cmd(action, req->body);
 
-    if (deneb_print_action_is_pause(action)) {
-        if (backend_zmq_pause() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
-            return;
-        }
-        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (deneb_print_action_is_resume_or_start(action)) {
-        /* API spec uses "print" to resume; "resume" is an alias */
-        if (backend_zmq_resume() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to resume print\"}");
-            return;
-        }
-        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (deneb_print_action_is_abort(action)) {
-        if (backend_zmq_abort() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
-            return;
-        }
-        deneb_pending_job_file_clear_default();
-        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (deneb_print_action_is_stop(action)) {
-        if (backend_zmq_stop_print() < 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
-            return;
-        }
-        deneb_pending_job_file_clear_default();
-        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Unknown state\"}");
-    }
+    api_print_job_dispatch_action(action, resp, "{\"message\":\"Unknown state\"}");
 }
 
 void api_print_job_post(const http_request_t *req, http_response_t *resp)
@@ -324,6 +328,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     /* Extract file from multipart body */
     char gcode_path[256] = "";
     char filename[128] = "upload.gcode";
+    char dest_path[256];
 
     if (req->multipart_boundary[0] &&
         extract_multipart_file(req->multipart_boundary, req->upload_path,
@@ -342,32 +347,17 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         return;
     }
 
-    /* Sanitize filename: strip path components to prevent traversal */
-    char *slash = strrchr(filename, '/');
-    if (!slash) slash = strrchr(filename, '\\');
-    if (slash) {
-        /* Move past the last path separator */
-        char safe[128];
-        snprintf(safe, sizeof(safe), "%s", slash + 1);
-        snprintf(filename, sizeof(filename), "%s", safe);
-    }
-    /* Reject empty or dot-only filenames */
-    if (filename[0] == '\0' || strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
-        snprintf(filename, 128, "upload.gcode");
-    }
-
-    if (mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) < 0 && errno != EEXIST) {
-        fprintf(stderr, "deneb-api: failed to create print spool %s: %s\n",
-                DENEB_PRINT_JOB_SPOOL_DIR, strerror(errno));
+    if (deneb_print_job_file_sanitize_name(filename, filename,
+                                           sizeof(filename)) < 0 ||
+        deneb_print_job_file_spool_path(filename, dest_path,
+                                        sizeof(dest_path)) < 0) {
+        fprintf(stderr, "deneb-api: failed to prepare print spool path for %s: %s\n",
+                filename, strerror(errno));
         unlink(gcode_path);
         resp->status_code = 500;
         api_http_set_body_str(resp, "{\"message\":\"Failed to prepare print storage\"}");
         return;
     }
-
-    /* Move file to persistent storage where the print service can find it. */
-    char dest_path[256];
-    snprintf(dest_path, sizeof(dest_path), "%s/%s", DENEB_PRINT_JOB_SPOOL_DIR, filename);
 
     deneb_pending_job_file_t pending;
     if (deneb_pending_job_file_load_default(&pending) == 0 && pending.path[0]) {
@@ -389,48 +379,13 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         return;
     }
 
-    if (rename(gcode_path, dest_path) < 0) {
-        int rename_errno = errno;
-        /* If rename fails (cross-device), copy instead */
-        int src_fd = open(gcode_path, O_RDONLY);
-        int dst_fd = open(dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (src_fd < 0 || dst_fd < 0) {
-            fprintf(stderr,
-                    "deneb-api: failed to save print file to %s after rename error %s: src=%s dst=%s\n",
-                    dest_path, strerror(rename_errno),
-                    src_fd < 0 ? strerror(errno) : "ok",
-                    dst_fd < 0 ? strerror(errno) : "ok");
-            if (src_fd >= 0) close(src_fd);
-            if (dst_fd >= 0) close(dst_fd);
-            unlink(gcode_path);
-            resp->status_code = 500;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to save file\"}");
-            return;
-        }
-        char buf[65536];
-        ssize_t nr;
-        int copy_ok = 1;
-        while ((nr = read(src_fd, buf, sizeof(buf))) >= 0) {
-            if (nr == 0) break;
-            if (write(dst_fd, buf, (size_t)nr) != nr) {
-                copy_ok = 0;
-                break;
-            }
-        }
-        if (nr < 0) {
-            copy_ok = 0;
-        }
-        close(src_fd);
-        close(dst_fd);
-        if (!copy_ok) {
-            fprintf(stderr, "deneb-api: failed while copying print file to %s\n", dest_path);
-            unlink(dest_path);
-            unlink(gcode_path);
-            resp->status_code = 500;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to save file\"}");
-            return;
-        }
+    if (deneb_print_job_file_store_upload(gcode_path, dest_path) < 0) {
+        fprintf(stderr, "deneb-api: failed to save print file to %s: %s\n",
+                dest_path, strerror(errno));
         unlink(gcode_path);
+        resp->status_code = 500;
+        api_http_set_body_str(resp, "{\"message\":\"Failed to save file\"}");
+        return;
     }
 
     fprintf(stderr, "deneb-api: print file saved to %s\n", dest_path);
@@ -452,9 +407,9 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     json_obj_open(&w);
     json_str(&w, "message", "Print job accepted");
     json_str(&w, "name", filename);
-    json_str(&w, "uuid", "0");
-    json_str(&w, "source", "WEB_API");
-    json_str(&w, "state", "pre_print");
+    json_str(&w, "uuid", DENEB_PRINT_STOCK_API_JOB_UUID);
+    json_str(&w, "source", DENEB_PRINT_WEB_API_JOB_SOURCE);
+    json_str(&w, "state", DENEB_PRINT_PHASE_NAME_PRE_PRINT);
     json_float(&w, "progress", 0.0);
     json_int(&w, "time_elapsed", 0);
     json_int(&w, "time_total", 0);

@@ -474,7 +474,7 @@ int backend_zmq_send_command(const char *cmd, const char *args)
         (!args || strcmp(args, "{}") == 0)) {
         len = deneb_command_format_action(cmd, buf, sizeof(buf));
     } else {
-        len = snprintf(buf, sizeof(buf), "%s<%s", cmd ? cmd : "", args ? args : "{}");
+        len = deneb_command_format_raw(cmd, args, buf, sizeof(buf));
     }
     if (len < 0 || (size_t)len >= sizeof(buf)) {
         fprintf(stderr, "backend_zmq: rpc payload too large\n");

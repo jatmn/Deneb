@@ -37,7 +37,7 @@ static int send_pending_instruction(const char *instruction)
     if (strcmp(instruction, DENEB_COMMAND_VERB_ABORT) == 0)
         return backend_abort_print();
 
-    if (strcmp(instruction, "PREPARE") == 0) {
+    if (strcmp(instruction, DENEB_PRINT_REQ_PREPARE) == 0) {
         if (!pending_path[0])
             return -1;
 
@@ -62,7 +62,7 @@ static void continue_btn_cb(lv_event_t *e)
     (void)e;
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
-    if (send_pending_instruction("PREPARE") == 0) {
+    if (send_pending_instruction(DENEB_PRINT_REQ_PREPARE) == 0) {
         if (deneb_pending_job_file_mark_handled(DENEB_PENDING_JOB_PATH) < 0)
             deneb_pending_job_file_clear_default();
         finish_prompt("print_conflict.continuing", 0);

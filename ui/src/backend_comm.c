@@ -133,20 +133,6 @@ static int open_rpc_socket(void)
     return 0;
 }
 
-/**
- * Minimal JSON value extractor for flat objects.
- * Looks for "key": value pairs in a JSON string.
- * Handles string values (with quotes) and numeric values.
- * Returns pointer to static buffer -- not thread safe (fine for single-thread UI).
- */
-static const char *json_get_str(const char *json, const char *key)
-{
-    static char buf[256];
-    if (deneb_json_get_value(json, key, buf, sizeof(buf)) != 0)
-        buf[0] = '\0';
-    return buf;
-}
-
 static int has_temp_targets(const printer_state_t *s)
 {
     return deneb_print_has_temp_targets(s->bed_temp_set, s->nozzle_temp_set);
@@ -613,10 +599,8 @@ int backend_send_command(const char *cmd, const char *args_json)
         return -1;
 
     if (cmd && strcmp(cmd, DENEB_COMMAND_VERB_JOB) == 0 && args_json) {
-        const char *path = json_get_str(args_json, "path");
-        if (!path || !*path || strcmp(path, "none") == 0)
-            path = json_get_str(args_json, "file");
-        if (path && *path && strcmp(path, "none") != 0) {
+        char path[256];
+        if (deneb_command_extract_job_path(args_json, path, sizeof(path)) == 0) {
             retain_print_filename(path);
             set_filename_or_none(state.filename, path);
             fprintf(stderr, "backend: job command path retained as active filename=%s\n",
@@ -631,7 +615,7 @@ int backend_send_command(const char *cmd, const char *args_json)
         (!args_json || strcmp(args_json, "{}") == 0)) {
         len = deneb_command_format_action(cmd, msg, sizeof(msg));
     } else {
-        len = snprintf(msg, sizeof(msg), "%s<%s", cmd, args_json ? args_json : "{}");
+        len = deneb_command_format_raw(cmd, args_json, msg, sizeof(msg));
     }
     return send_formatted_rpc(msg, len, sizeof(msg));
 }

@@ -291,7 +291,8 @@ static int service_handle_command_inner(deneb_print_service_t *svc,
             service_apply_motion_policy(svc, &abort_policy);
             svc->abort_requested = 1;
             svc->status.state = DENEB_PRINT_STATE_IDLE;
-            snprintf(svc->status.file, sizeof(svc->status.file), "none");
+            snprintf(svc->status.file, sizeof(svc->status.file), "%s",
+                     DENEB_PRINT_NONE_VALUE);
             snprintf(svc->status.req, sizeof(svc->status.req), "%s",
                      deneb_print_control_req_for_phase(DENEB_PRINT_PHASE_IDLE));
             svc->status.time_total = 0;

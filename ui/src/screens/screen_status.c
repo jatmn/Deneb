@@ -148,7 +148,9 @@ static void update_timer_cb(lv_timer_t *timer)
     }
 
     int has_print_name = 0;
-    const char *raw_name = s->filename[0] && strcmp(s->filename, "none") != 0 ? s->filename : "";
+    const char *raw_name = s->filename[0] &&
+                           strcmp(s->filename, DENEB_PRINT_NONE_VALUE) != 0 ?
+                           s->filename : "";
     char pending_name[128];
     if ((!raw_name[0] || deneb_print_file_is_transient(raw_name)) &&
         deneb_pending_job_file_default_display_name(pending_name,
