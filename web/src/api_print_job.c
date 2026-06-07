@@ -7,19 +7,20 @@
 #include "api_print_job.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
+#include "pending_job.h"
+#include "pending_job_file.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #define DENEB_PRINT_SPOOL_DIR "/home/3D/deneb-uploads"
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
-
 static void log_print_job_state_cmd(const char *cmd, const char *body)
 {
     fprintf(stderr, "deneb-api: print_job/state command=%s body=%s\n",
@@ -43,58 +44,6 @@ static const char *parse_state_cmd(const char *body, char *out, size_t out_sz)
     return i > 0 ? out : NULL;
 }
 
-static int read_pending_job_field(const char *field, char *out, size_t out_sz)
-{
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f) return -1;
-
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    if (n == 0) return -1;
-    buf[n] = '\0';
-
-    char needle[80];
-    snprintf(needle, sizeof(needle), "\"%s\"", field);
-    const char *p = strstr(buf, needle);
-    if (!p) return -1;
-
-    p = strchr(p + strlen(needle), ':');
-    if (!p) return -1;
-    p++;
-    while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
-    if (*p != '"' && *p != '\'') return -1;
-
-    char quote = *p++;
-    const char *start = p;
-    const char *end = strchr(start, quote);
-    if (!end) return -1;
-
-    size_t len = (size_t)(end - start);
-    if (len == 0 || len >= out_sz) return -1;
-    memcpy(out, start, len);
-    out[len] = '\0';
-    return 0;
-}
-
-static int is_same_print_path(const char *pending_path, const char *candidate_path)
-{
-    if (!pending_path || !candidate_path) return 0;
-    if (strcmp(pending_path, candidate_path) == 0) return 1;
-
-    const char *pp = strrchr(pending_path, '/');
-    const char *cp = strrchr(candidate_path, '/');
-    pp = pp ? pp + 1 : pending_path;
-    cp = cp ? cp + 1 : candidate_path;
-
-    return strcmp(pp, cp) == 0;
-}
-
-static int read_pending_print_path(char *path, size_t path_sz)
-{
-    return read_pending_job_field("path", path, path_sz);
-}
-
 static void write_pending_job_response(http_response_t *resp, const char *job_name, int status_code)
 {
     char buf[512];
@@ -115,123 +64,225 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
     resp->status_code = status_code;
 }
 
-static int register_coordinator_print(const char *path)
+static void read_line_command(const char *cmd, char *out, size_t out_sz,
+                              const char *fallback)
 {
-    static const char script[] =
-        "import datetime, json, os, sys\n"
-        "sys.path.insert(0, '/home')\n"
-        "sys.path.insert(0, '/home/lib')\n"
-        "from sponge.spinner import spinner\n"
-        "from sponge.ipc import zmqipc\n"
-        "import gershwin.constructs as gershwin\n"
-        "import gershwin.node as node\n"
-        "from gershwin.manager import Manager\n"
-        "from cygnus.util import configuration, ufp_format\n"
-        "from cygnus.marshal.types.printing import PrintHandlingRequest, PrintHandlingInstruction\n"
-        "try:\n"
-        "    from cygnus_materials.material_db import get_material_string\n"
-        "except Exception:\n"
-        "    get_material_string = None\n"
-        "PENDING = '" DENEB_CLUSTER_PENDING_JOB "'\n"
-        "def mat_name(guid):\n"
-        "    if get_material_string:\n"
-        "        try: return get_material_string(guid)\n"
-        "        except Exception: pass\n"
-        "    return guid or 'Unknown'\n"
-        "def material_type(name):\n"
-        "    return 'PLA' if 'PLA' in name else (name or 'Unknown')\n"
-        "def write_pending(path, tracker=None):\n"
-        "    loaded_guid = configuration.get_option('material_guid', '')\n"
-        "    loaded_name = mat_name(loaded_guid)\n"
-        "    nozzle = configuration.get_option('nozzle_size', '0.4')\n"
-        "    meta = {}\n"
-        "    try: meta = ufp_format.get_meta_data(path)\n"
-        "    except Exception: pass\n"
-        "    target_guid = meta.get('material_guid') or loaded_guid\n"
-        "    target_name = mat_name(target_guid)\n"
-        "    target_nozzle = str(meta.get('nozzle_size') or nozzle)\n"
-        "    changes = []\n"
-        "    if loaded_guid and target_guid and loaded_guid != target_guid:\n"
-        "        changes.append({'type_of_change':'material_change','index':0,'origin_id':loaded_guid,'origin_name':loaded_name,'target_id':target_guid,'target_name':target_name})\n"
-        "    if nozzle and target_nozzle and nozzle != target_nozzle:\n"
-        "        changes.append({'type_of_change':'print_core_change','index':0,'origin_id':nozzle + ' mm','origin_name':nozzle + ' mm','target_id':target_nozzle + ' mm','target_name':target_nozzle + ' mm'})\n"
-        "    job = {'uuid':'deneb-current-job','created_at':datetime.datetime.utcnow().isoformat(timespec='milliseconds') + 'Z','name':os.path.basename(path),'path':path,'status':'wait_user_action' if changes else 'pre_print','time_total':0,'time_elapsed':0,'started':True,'force':False,'machine_variant':'Ultimaker 2+ Connect','owner':'Cura','assigned_to':'00000000-0000-0000-0000-000000000000','build_plate':{'type':'glass'},'configuration':[{'extruder_index':0,'print_core_id':target_nozzle + ' mm','material':{'guid':target_guid,'brand':'Generic','material':material_type(target_name),'color':'#ffc924'}}],'compatible_machine_families':['ultimaker2_plus_connect','Ultimaker 2+ Connect'],'impediments_to_printing':[]}\n"
-        "    if tracker is not None: job['deneb_tracker'] = tracker\n"
-        "    if changes: job['configuration_changes_required'] = changes\n"
-        "    with open(PENDING, 'w') as f: json.dump([job], f, separators=(',', ':'))\n"
-        "    return len(changes)\n"
-        "print('registering print with stock coordinator: %s' % sys.argv[1])\n"
-        "result = {'done': False, 'reply': None, 'change_count': -1, 'prepare_reply': None}\n"
-        "@gershwin.node('client')\n"
-        "class ClientNode(node.Node):\n"
-        "    def plan(self):\n"
-        "        self.doOption(gershwin.DO_OPTIONS.DO_IMMEDIATELY)\n"
-        "        self.addStep(goal='register print', func=self._run)\n"
-        "    def _run(self):\n"
-        "        req = PrintHandlingRequest.create(tracker=0, instruction=PrintHandlingInstruction.REGISTER, options={'path': sys.argv[1]})\n"
-        "        result['reply'] = yield from self.call('coordinator::print::handling', req)\n"
-        "        reply = result['reply'] or {}\n"
-        "        print_tracker = reply.get('tracker')\n"
-        "        if reply.get('accepted') and print_tracker is not None:\n"
-        "            result['change_count'] = write_pending(sys.argv[1], print_tracker)\n"
-        "            if result['change_count'] == 0:\n"
-        "                req = PrintHandlingRequest.create(tracker=print_tracker, instruction=PrintHandlingInstruction.PREPARE, options={'path': sys.argv[1]})\n"
-        "                result['prepare_reply'] = yield from self.call('coordinator::print::handling', req)\n"
-        "        result['done'] = True\n"
-        "m = Manager('deneb-api-register', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3)\n"
-        "m.addNode(ClientNode.id, ClientNode)\n"
-        "for _ in range(30):\n"
-        "    m.spinner.spin(100)\n"
-        "    m.run_time = m.spinner.getElapsed()\n"
-        "    m.spin()\n"
-        "    if result['done']:\n"
-        "        break\n"
-        "if not result['done']:\n"
-        "    print('timed out waiting for coordinator tracker')\n"
-        "    sys.exit(2)\n"
-        "reply = result['reply'] or {}\n"
-        "print('coordinator reply: %r' % (reply,))\n"
-        "if not reply.get('accepted'):\n"
-        "    sys.exit(3)\n"
-        "print_tracker = reply.get('tracker')\n"
-        "print('coordinator tracker=%s' % print_tracker)\n"
-        "if print_tracker is None:\n"
-        "    sys.exit(4)\n"
-        "change_count = result.get('change_count', -1)\n"
-        "print('configuration change_count=%s' % change_count)\n"
-        "if change_count < 0:\n"
-        "    sys.exit(5)\n"
-        "if change_count == 0:\n"
-        "    prepare_reply = result.get('prepare_reply') or {}\n"
-        "    print('prepare reply: %r' % (prepare_reply,))\n"
-        "    if not prepare_reply.get('accepted'):\n"
-        "        sys.exit(6)\n"
-        "sys.exit(0)\n";
+    FILE *f;
 
-    fprintf(stderr, "deneb-api: registering print path with coordinator: %s\n", path);
+    if (!out || out_sz == 0)
+        return;
+    out[0] = '\0';
 
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        int log_fd = open("/tmp/deneb-register-print.log",
-                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (log_fd >= 0) {
-            dup2(log_fd, STDOUT_FILENO);
-            dup2(log_fd, STDERR_FILENO);
-            close(log_fd);
+    f = popen(cmd, "r");
+    if (f) {
+        if (fgets(out, out_sz, f) && out[0]) {
+            char *nl = strchr(out, '\n');
+            if (nl) *nl = '\0';
+            pclose(f);
+            return;
         }
-        setenv("PYTHONPATH", "/home", 1);
-        execlp("python3", "python3", "-c", script, path, (char *)NULL);
-        _exit(127);
+        pclose(f);
     }
 
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0)
+    snprintf(out, out_sz, "%s", fallback ? fallback : "");
+}
+
+static void normalize_nozzle_id(const char *value, char *out, size_t out_sz)
+{
+    char tmp[24];
+    size_t len;
+
+    if (!out || out_sz == 0)
+        return;
+    out[0] = '\0';
+
+    snprintf(tmp, sizeof(tmp), "%s", value && *value ? value : "0.4");
+    len = strlen(tmp);
+    while (len > 0 && isspace((unsigned char)tmp[len - 1]))
+        tmp[--len] = '\0';
+    if (strstr(tmp, "mm"))
+        snprintf(out, out_sz, "%s", tmp);
+    else
+        snprintf(out, out_sz, "%s mm", tmp);
+}
+
+static void material_name_from_guid(const char *guid, char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return;
+    if (!guid || !*guid) {
+        snprintf(out, out_sz, "Unknown");
+    } else if (strcmp(guid, "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9") == 0) {
+        snprintf(out, out_sz, "PLA");
+    } else {
+        snprintf(out, out_sz, "%s", guid);
+    }
+}
+
+static int extract_meta_value(const char *buf, const char *key,
+                              char *out, size_t out_sz)
+{
+    const char *p = strstr(buf, key);
+    size_t i = 0;
+
+    if (!p || !out || out_sz == 0)
         return -1;
-    int ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    fprintf(stderr, "deneb-api: register_coordinator_print result for %s = %s\n",
-            path, ok ? "accepted" : "rejected");
-    return ok ? 0 : -1;
+    p += strlen(key);
+    while (*p && (*p == ' ' || *p == '\t' || *p == ':' || *p == '=' ||
+                  *p == '"' || *p == '\''))
+        p++;
+    while (*p && *p != '"' && *p != '\'' && *p != ',' && *p != ';' &&
+           *p != '\r' && *p != '\n' && !isspace((unsigned char)*p) &&
+           i < out_sz - 1) {
+        out[i++] = *p++;
+    }
+    out[i] = '\0';
+    return i > 0 ? 0 : -1;
+}
+
+static void read_print_file_metadata(const char *path,
+                                     char *material_guid, size_t material_guid_sz,
+                                     char *nozzle_size, size_t nozzle_size_sz)
+{
+    char buf[131073];
+    FILE *f = fopen(path, "rb");
+    size_t n;
+
+    if (!f)
+        return;
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    extract_meta_value(buf, "material_guid", material_guid, material_guid_sz);
+    extract_meta_value(buf, "nozzle_size", nozzle_size, nozzle_size_sz);
+    extract_meta_value(buf, "print_core_id", nozzle_size, nozzle_size_sz);
+}
+
+static void json_escape_arg(const char *src, char *out, size_t out_sz)
+{
+    size_t oi = 0;
+
+    if (!out || out_sz == 0)
+        return;
+
+    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
+        char c = src[i];
+        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
+            out[oi++] = '\\';
+            out[oi++] = c;
+        } else if (c >= 0x20) {
+            out[oi++] = c;
+        }
+    }
+    out[oi] = '\0';
+}
+
+static int write_pending_job_file(const deneb_pending_job_t *job)
+{
+    char json[4096];
+    char tmp_path[256];
+    FILE *f;
+    int len;
+
+    len = deneb_pending_job_serialize(job, json, sizeof(json));
+    if (len < 0)
+        return -1;
+
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", DENEB_PENDING_JOB_PATH);
+    f = fopen(tmp_path, "wb");
+    if (!f)
+        return -1;
+    if (fwrite(json, 1, (size_t)len, f) != (size_t)len) {
+        fclose(f);
+        unlink(tmp_path);
+        return -1;
+    }
+    if (fclose(f) != 0) {
+        unlink(tmp_path);
+        return -1;
+    }
+    if (rename(tmp_path, DENEB_PENDING_JOB_PATH) < 0) {
+        unlink(tmp_path);
+        return -1;
+    }
+    return 0;
+}
+
+static int send_native_job_start(const char *path)
+{
+    char escaped_path[512];
+    char args[700];
+
+    json_escape_arg(path, escaped_path, sizeof(escaped_path));
+    snprintf(args, sizeof(args),
+             "{\"file\":\"%s\",\"source\":\"Cura\","
+             "\"uuid\":\"deneb-current-job\"}",
+             escaped_path);
+    return backend_zmq_send_command("JOB", args);
+}
+
+static int register_native_print(const char *path)
+{
+    deneb_pending_job_t job;
+    char loaded_guid[64];
+    char loaded_nozzle[24];
+    char target_guid[64];
+    char target_nozzle_raw[24];
+    char target_nozzle[24];
+    char loaded_name[64];
+    char target_name[64];
+
+    fprintf(stderr, "deneb-api: registering print path natively: %s\n", path);
+
+    read_line_command("uci -q get ultimaker.option.material_guid 2>/dev/null",
+                      loaded_guid, sizeof(loaded_guid),
+                      "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9");
+    read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
+                      loaded_nozzle, sizeof(loaded_nozzle), "0.4");
+
+    snprintf(target_guid, sizeof(target_guid), "%s", loaded_guid);
+    snprintf(target_nozzle_raw, sizeof(target_nozzle_raw), "%s", loaded_nozzle);
+    read_print_file_metadata(path, target_guid, sizeof(target_guid),
+                             target_nozzle_raw, sizeof(target_nozzle_raw));
+    normalize_nozzle_id(loaded_nozzle, loaded_nozzle, sizeof(loaded_nozzle));
+    normalize_nozzle_id(target_nozzle_raw, target_nozzle, sizeof(target_nozzle));
+    material_name_from_guid(loaded_guid, loaded_name, sizeof(loaded_name));
+    material_name_from_guid(target_guid, target_name, sizeof(target_name));
+
+    deneb_pending_job_init(&job, path);
+    job.tracker = (int)(time(NULL) & 0x7fffffff);
+    snprintf(job.source, sizeof(job.source), "%s", "Cura");
+    snprintf(job.material_guid, sizeof(job.material_guid), "%s", target_guid);
+    snprintf(job.origin_material_guid, sizeof(job.origin_material_guid), "%s", loaded_guid);
+    snprintf(job.origin_material_name, sizeof(job.origin_material_name), "%s", loaded_name);
+    snprintf(job.target_material_name, sizeof(job.target_material_name), "%s", target_name);
+    snprintf(job.material_type, sizeof(job.material_type), "%s", target_name);
+    snprintf(job.nozzle_id, sizeof(job.nozzle_id), "%s", target_nozzle);
+    snprintf(job.origin_nozzle_id, sizeof(job.origin_nozzle_id), "%s", loaded_nozzle);
+    job.material_change_required =
+        loaded_guid[0] && target_guid[0] && strcmp(loaded_guid, target_guid) != 0;
+    job.print_core_change_required =
+        loaded_nozzle[0] && target_nozzle[0] && strcmp(loaded_nozzle, target_nozzle) != 0;
+
+    if (write_pending_job_file(&job) < 0) {
+        fprintf(stderr, "deneb-api: failed to write pending print metadata for %s\n", path);
+        return -1;
+    }
+
+    if (deneb_pending_job_change_count(&job) > 0) {
+        fprintf(stderr, "deneb-api: pending print waits for user action changes=%d\n",
+                deneb_pending_job_change_count(&job));
+        return 0;
+    }
+
+    if (send_native_job_start(path) < 0) {
+        fprintf(stderr, "deneb-api: failed to send native JOB for %s\n", path);
+        return -1;
+    }
+
+    fprintf(stderr, "deneb-api: native print registration accepted for %s\n", path);
+    return 0;
 }
 
 static int is_printing(const printer_state_t *s)
@@ -397,7 +448,7 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        unlink(DENEB_PENDING_JOB_PATH);
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
     } else if (action && strcmp(action, "stop") == 0) {
         if (backend_zmq_stop_print() < 0) {
@@ -405,7 +456,7 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
             api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
             return;
         }
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        unlink(DENEB_PENDING_JOB_PATH);
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
     } else {
         resp->status_code = 400;
@@ -481,16 +532,12 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     char dest_path[256];
     snprintf(dest_path, sizeof(dest_path), "%s/%s", DENEB_PRINT_SPOOL_DIR, filename);
 
-    char pending_path[1024];
-    if (read_pending_print_path(pending_path, sizeof(pending_path)) == 0) {
-        if (is_same_print_path(pending_path, dest_path)) {
-            char pending_name[128];
-            if (read_pending_job_field("name", pending_name, sizeof(pending_name)) != 0) {
-                strncpy(pending_name, filename, sizeof(pending_name) - 1);
-                pending_name[sizeof(pending_name) - 1] = '\0';
-            }
+    deneb_pending_job_file_t pending;
+    if (deneb_pending_job_file_load_default(&pending) == 0 && pending.path[0]) {
+        if (deneb_pending_job_file_same_path(pending.path, dest_path)) {
+            const char *pending_name = pending.name[0] ? pending.name : filename;
 
-            fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n", pending_path);
+            fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n", pending.path);
             write_pending_job_response(resp, pending_name, 200);
             unlink(gcode_path);
             return;
@@ -498,7 +545,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
 
         fprintf(stderr,
                 "deneb-api: print upload rejected because another pending print exists: %s\n",
-                pending_path);
+                pending.path);
         resp->status_code = 409;
         api_http_set_body_str(resp, "{\"message\":\"Another print job is already pending\"}");
         unlink(gcode_path);
@@ -553,13 +600,13 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
 
     fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n", filename, dest_path);
 
-    if (register_coordinator_print(dest_path) < 0) {
-        fprintf(stderr, "deneb-api: failed to register print with coordinator for %s\n", dest_path);
+    if (register_native_print(dest_path) < 0) {
+        fprintf(stderr, "deneb-api: failed to register print natively for %s\n", dest_path);
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to start print\"}");
         return;
     }
-    fprintf(stderr, "deneb-api: registration accepted and print metadata prepared for %s\n", filename);
+    fprintf(stderr, "deneb-api: native registration accepted and print metadata prepared for %s\n", filename);
 
     /* Return print job info */
     char buf[512];

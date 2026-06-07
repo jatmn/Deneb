@@ -94,12 +94,10 @@ Current Deneb clients of this coordinator IPC include:
 
 The Cura cluster compatibility path also stores temporary pending-job metadata
 at `/tmp/deneb-cluster-print-job.json` so Cura-started jobs remain visible while
-the stock coordinator validates metadata, waits for conflict confirmation,
-prepares, and preheats.
+Deneb validates metadata, waits for conflict confirmation, prepares, and
+preheats.
 
-Conflict continue/cancel and some pre-start actions still bridge into the stock
-Python coordinator through Gershwin helper calls. This is compatibility
-scaffolding for the current backend, not the desired final architecture. The
-native `deneb-printsvc` milestone should decide which of these shims become
-native service behavior and which remain clients of a shared Deneb print-control
-API.
+Upload registration, conflict continue/cancel, and pending-job cancel now use
+native Deneb code paths. The native `deneb-printsvc` milestone should keep
+collapsing remaining direct clients toward shared Deneb print-control helpers
+or a single native service API.

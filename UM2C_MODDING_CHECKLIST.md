@@ -436,11 +436,11 @@ Current open focus:
 - [ ] Check for slow sleeps, retries, network timeouts, filesystem scans, QR generation, material/profile loading, and Python import/startup costs.
 - [ ] Add boot-time logging that survives reboot using the existing persistent log location where practical.
 - [ ] Integrate Deneb logs into the existing touchscreen "Export log files" support flow instead of inventing a separate diagnostics export.
-- [ ] Rename Deneb-generated support export archives so the `.zip` filename is clearly prepended with `Deneb`, avoiding confusion with official UltiMaker support bundles.
-- [ ] Add a root-level `README` or `NOTICE` file inside the exported `.zip` explaining that the printer is running the Deneb community mod, this is not an official UltiMaker firmware state, and Deneb support should be handled through the Deneb GitHub project.
+- [ ] Rename Deneb-generated support export archives so the filename is clearly prepended with `Deneb`, avoiding confusion with official UltiMaker support bundles.
+- [ ] Add a root-level `README` or `NOTICE` file inside the exported support archive explaining that the printer is running the Deneb community mod, this is not an official UltiMaker firmware state, and Deneb support should be handled through the Deneb GitHub project.
 - [ ] Include Deneb GitHub/support URL in the support-export `README`/`NOTICE`.
 - [ ] Make the notice polite and clear for UltiMaker support so users are redirected appropriately instead of confusing official support channels.
-- [ ] Add a Deneb-specific subfolder inside the exported support `.zip` for Deneb logs, manifests, boot timing, update history, and service diagnostics where applicable.
+- [ ] Add a Deneb-specific subfolder inside the exported support archive for Deneb logs, manifests, boot timing, update history, and service diagnostics where applicable.
 - [ ] Reuse or mirror the firmware's existing log rotation behavior where practical. The current Python logging helper uses timed daily rotation and `backupCount=7` under `/var/log/ultimaker`.
 - [ ] Keep Deneb diagnostic exports free of private keys, signing secrets, network passwords, access tokens, and device-unique sensitive data unless explicitly required and redacted.
 - [ ] Add a user-visible startup/loading screen with progress or staged status messages.
@@ -589,6 +589,26 @@ Completed implementation slices:
 - [x] Add a native pending-job metadata module that serializes the Cura-visible
   pre-print/conflict JSON shape, including tracker and material/print-core
   change markers, so that format can move out of temporary bridge code.
+- [x] Add a shared native pending-job file helper used by LCD `backend_comm`,
+  web `backend_zmq`, web `api_print_job`, web `api_cluster`, touchscreen
+  conflict UI, and `deneb-printsvc` tests so pending-job path, tracker,
+  conflict, handled-state parsing, and cleanup path ownership have one
+  Deneb-owned implementation instead of several local string scans/macros.
+- [x] Move the touchscreen conflict prompt's continue/cancel actions off the
+  embedded Python coordinator launcher and onto native backend `JOB`/`ABORT`
+  commands for the pending print path.
+- [x] Move the Cura cluster API pending-job continue/cancel actions off the
+  embedded Python coordinator launcher and onto native web backend `JOB`/`ABORT`
+  commands for the pending print path.
+- [x] Move Cura upload registration out of the embedded Python/Gershwin
+  coordinator launcher: `deneb-api` now assigns a native tracker, writes
+  native pending-job metadata from UCI/file hints, leaves conflict jobs waiting
+  for user confirmation, and starts no-conflict jobs with a native `JOB`
+  command.
+- [x] Remove remaining native UI Python launchers from frame lighting, USB
+  material-profile import, and diagnostics export: frame lighting sends native
+  `M142` G-code directly, material import scans USB/profile XML in C, and log
+  export archives with `tar` instead of Python `shutil`.
 - [x] Add a native command-formatting module for stock `GCODE`, `MACRO`,
   `JOB`, and action frames with parser round-trip tests, so Deneb clients can
   stop copy-pasting `COMMAND<json>` strings.

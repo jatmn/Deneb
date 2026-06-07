@@ -77,8 +77,8 @@ Deneb now exposes:
 
    Deneb now shows Air Manager presence, build-volume temperature, and an Air
    Manager fan toggle. Log export writes a stock-shaped
-   `UM2C_<printer>_v<version>_<UTC>.zip` containing log files plus a redacted
-   `uci_dump`.
+   `UM2C_<printer>_v<version>_<UTC>.tar.gz` containing log files plus a
+   redacted `uci_dump`.
 
 5. Material workflows
 

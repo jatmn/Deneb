@@ -10,6 +10,7 @@
  */
 
 #include "backend_comm.h"
+#include "pending_job_file.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,7 +60,6 @@ void backend_deinit(void) { /* no-op */ }
 #define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS_PER_POLL 4
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 #define STOP_INFLIGHT_MS 3000
 
 static void *zmq_ctx = NULL;
@@ -271,52 +271,24 @@ static int state_has_print_context(const printer_state_t *s)
     return is_print_request(s->current_req);
 }
 
-static int read_cluster_pending_field(const char *field, char *out, size_t out_sz)
-{
-    if (!out_sz) return -1;
-    out[0] = '\0';
-
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f) return -1;
-
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    if (n == 0) return -1;
-    buf[n] = '\0';
-
-    char needle[80];
-    snprintf(needle, sizeof(needle), "\"%s\"", field);
-
-    const char *p = strstr(buf, needle);
-    if (!p) return -1;
-    p = strchr(p + strlen(needle), ':');
-    if (!p) return -1;
-    p++;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (*p != '"' && *p != '\'') return -1;
-    char quote = *p++;
-    const char *start = p;
-    const char *end = strchr(start, quote);
-    if (!end) return -1;
-
-    size_t len = (size_t)(end - start);
-    if (len == 0 || len >= out_sz) return -1;
-    memcpy(out, start, len);
-    out[len] = '\0';
-    return 0;
-}
-
 static int read_cluster_pending_name(char *out, size_t out_sz)
 {
-    char value[192];
-    if (read_cluster_pending_field("name", value, sizeof(value)) == 0) {
-        set_filename_or_none(out, value);
+    deneb_pending_job_file_t job;
+
+    if (!out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+
+    if (deneb_pending_job_file_load_default(&job) != 0)
+        return -1;
+
+    if (job.name[0]) {
+        set_filename_or_none(out, job.name);
         return 0;
     }
 
-    if (read_cluster_pending_field("path", value, sizeof(value)) == 0) {
-        set_filename_or_none(out, value);
+    if (job.path[0]) {
+        set_filename_or_none(out, job.path);
         return 0;
     }
 
@@ -838,7 +810,7 @@ int backend_send_command(const char *cmd, const char *args_json)
     }
 
     fprintf(stderr, "backend: command send cmd=%s args=%s\n", cmd, args_json ? args_json : "{}");
-    char msg[256];
+    char msg[1024];
     int len = snprintf(msg, sizeof(msg), "%s<%s", cmd, args_json);
     return send_formatted_rpc(msg, len, sizeof(msg));
 }
@@ -882,7 +854,7 @@ int backend_stop_print(void)
         print_stop_inflight = 0;
         return -1;
     }
-    unlink(DENEB_CLUSTER_PENDING_JOB);
+    unlink(DENEB_PENDING_JOB_PATH);
     return 0;
 }
 

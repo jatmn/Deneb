@@ -11,6 +11,7 @@
 #include "motion_firmware.h"
 #include "motion_policy.h"
 #include "pending_job.h"
+#include "pending_job_file.h"
 #include "print_control.h"
 #include "sha256.h"
 #include "service.h"
@@ -162,11 +163,23 @@ static void test_pending_job_metadata(void)
 
     job.material_change_required = 1;
     job.print_core_change_required = 1;
+    snprintf(job.origin_material_guid, sizeof(job.origin_material_guid), "loaded-guid");
+    snprintf(job.origin_material_name, sizeof(job.origin_material_name), "Loaded PLA");
+    snprintf(job.target_material_name, sizeof(job.target_material_name), "Target PETG");
+    snprintf(job.material_guid, sizeof(job.material_guid), "target-guid");
+    snprintf(job.origin_nozzle_id, sizeof(job.origin_nozzle_id), "0.4 mm");
+    snprintf(job.nozzle_id, sizeof(job.nozzle_id), "0.6 mm");
     assert(deneb_pending_job_change_count(&job) == 2);
     assert(deneb_pending_job_serialize(&job, json, sizeof(json)) > 0);
     assert(strstr(json, "\"status\":\"wait_user_action\"") != NULL);
     assert(strstr(json, "\"material_change\"") != NULL);
     assert(strstr(json, "\"print_core_change\"") != NULL);
+    assert(strstr(json, "\"origin_id\":\"loaded-guid\"") != NULL);
+    assert(strstr(json, "\"origin_name\":\"Loaded PLA\"") != NULL);
+    assert(strstr(json, "\"target_id\":\"target-guid\"") != NULL);
+    assert(strstr(json, "\"target_name\":\"Target PETG\"") != NULL);
+    assert(strstr(json, "\"origin_id\":\"0.4 mm\"") != NULL);
+    assert(strstr(json, "\"target_id\":\"0.6 mm\"") != NULL);
 }
 
 static void test_crc_and_packet(void)
@@ -473,6 +486,39 @@ static void test_motion_firmware_cache(void)
     remove(cache_path);
 }
 
+static void test_pending_job_file_contract(void)
+{
+    const char *path = "/tmp/deneb-pending-job-file-test.json";
+    deneb_pending_job_file_t job;
+    char raw[1024];
+    size_t raw_len = 0;
+    FILE *f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("[{\"name\":\"Cube\",\"path\":\"/home/3D/cube.gcode\","
+          "\"status\":\"wait_user_action\",\"deneb_tracker\":42,"
+          "\"configuration_changes_required\":["
+          "{\"type_of_change\":\"material_change\","
+          "\"origin_name\":\"PLA\",\"target_name\":\"PETG\"}]}]\n", f);
+    fclose(f);
+
+    assert(deneb_pending_job_file_read_raw_array(path, raw, sizeof(raw), &raw_len) == 0);
+    assert(raw_len > 0);
+    assert(deneb_pending_job_file_load(path, &job) == 0);
+    assert(job.tracker == 42);
+    assert(strcmp(job.name, "Cube") == 0);
+    assert(strcmp(job.path, "/home/3D/cube.gcode") == 0);
+    assert(strcmp(job.origin_name, "PLA") == 0);
+    assert(strcmp(job.target_name, "PETG") == 0);
+    assert(deneb_pending_job_file_has_conflict(&job));
+    assert(deneb_pending_job_file_same_path(job.path, "/tmp/cube.gcode"));
+
+    assert(deneb_pending_job_file_mark_handled(path) == 0);
+    assert(deneb_pending_job_file_load(path, &job) == 0);
+    assert(!deneb_pending_job_file_has_conflict(&job));
+
+    remove(path);
+}
+
 int main(void)
 {
     test_command_parse();
@@ -496,6 +542,7 @@ int main(void)
     test_sha256();
     test_motion_policy();
     test_motion_firmware_cache();
+    test_pending_job_file_contract();
     puts("deneb-printsvc tests passed");
     return 0;
 }

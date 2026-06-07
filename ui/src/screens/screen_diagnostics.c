@@ -92,9 +92,7 @@ static void export_logs_cb(lv_event_t *e)
            "cp /tmp/deneb-df-status \"$TMP/\" 2>/dev/null || true; "
            "uci show | grep -v ssid | grep -v key | grep -v encryption "
            "> \"$TMP/uci_dump\" 2>/dev/null || true; "
-           "python3 -c \"import os, shutil; "
-           "shutil.make_archive(os.environ['OUT'], 'zip', "
-           "os.environ['TMP'])\") "
+           "tar -czf \"$OUT.tar.gz\" -C \"$TMP\" .) "
            ">/tmp/deneb-log-export.log 2>&1 &");
     lv_label_set_text(status_label, locale_get("diagnostics.export_started"));
 }

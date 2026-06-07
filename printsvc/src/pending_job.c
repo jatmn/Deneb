@@ -64,10 +64,14 @@ void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
     snprintf(job->machine_variant, sizeof(job->machine_variant), "%s", DENEB_PENDING_DEFAULT_VARIANT);
     snprintf(job->machine_family, sizeof(job->machine_family), "%s", DENEB_PENDING_DEFAULT_FAMILY);
     snprintf(job->material_guid, sizeof(job->material_guid), "%s", DENEB_PENDING_DEFAULT_GUID);
+    snprintf(job->origin_material_guid, sizeof(job->origin_material_guid), "%s", "");
+    snprintf(job->origin_material_name, sizeof(job->origin_material_name), "%s", "");
+    snprintf(job->target_material_name, sizeof(job->target_material_name), "%s", "");
     snprintf(job->material_brand, sizeof(job->material_brand), "%s", DENEB_PENDING_DEFAULT_BRAND);
     snprintf(job->material_type, sizeof(job->material_type), "%s", DENEB_PENDING_DEFAULT_TYPE);
     snprintf(job->material_color, sizeof(job->material_color), "%s", DENEB_PENDING_DEFAULT_COLOR);
     snprintf(job->nozzle_id, sizeof(job->nozzle_id), "%s", DENEB_PENDING_DEFAULT_NOZZLE);
+    snprintf(job->origin_nozzle_id, sizeof(job->origin_nozzle_id), "%s", "");
     job->tracker = -1;
 }
 
@@ -95,10 +99,14 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
     char variant[128];
     char family[128];
     char guid[128];
+    char origin_guid[128];
+    char origin_material_name[128];
+    char target_material_name[128];
     char brand[80];
     char material[80];
     char color[40];
     char nozzle[48];
+    char origin_nozzle[48];
     char changes[1024] = "";
     const char *status;
     int n;
@@ -114,23 +122,35 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
     json_escape(job->machine_variant, variant, sizeof(variant));
     json_escape(job->machine_family, family, sizeof(family));
     json_escape(job->material_guid, guid, sizeof(guid));
+    json_escape(job->origin_material_guid, origin_guid, sizeof(origin_guid));
+    json_escape(job->origin_material_name, origin_material_name, sizeof(origin_material_name));
+    json_escape(job->target_material_name, target_material_name, sizeof(target_material_name));
     json_escape(job->material_brand, brand, sizeof(brand));
     json_escape(job->material_type, material, sizeof(material));
     json_escape(job->material_color, color, sizeof(color));
     json_escape(job->nozzle_id, nozzle, sizeof(nozzle));
+    json_escape(job->origin_nozzle_id, origin_nozzle, sizeof(origin_nozzle));
 
     if (job->material_change_required) {
         snprintf(changes + strlen(changes), sizeof(changes) - strlen(changes),
                  "{\"type_of_change\":\"material_change\",\"index\":0,"
-                 "\"origin_id\":\"\",\"origin_name\":\"\",\"target_id\":\"%s\","
-                 "\"target_name\":\"%s\"}", guid, material);
+                 "\"origin_id\":\"%s\",\"origin_name\":\"%s\",\"target_id\":\"%s\","
+                 "\"target_name\":\"%s\"}",
+                 origin_guid,
+                 origin_material_name[0] ? origin_material_name : origin_guid,
+                 guid,
+                 target_material_name[0] ? target_material_name : material);
     }
     if (job->print_core_change_required) {
         snprintf(changes + strlen(changes), sizeof(changes) - strlen(changes),
                  "%s{\"type_of_change\":\"print_core_change\",\"index\":0,"
-                 "\"origin_id\":\"\",\"origin_name\":\"\",\"target_id\":\"%s\","
+                 "\"origin_id\":\"%s\",\"origin_name\":\"%s\",\"target_id\":\"%s\","
                  "\"target_name\":\"%s\"}",
-                 changes[0] ? "," : "", nozzle, nozzle);
+                 changes[0] ? "," : "",
+                 origin_nozzle[0] ? origin_nozzle : "",
+                 origin_nozzle[0] ? origin_nozzle : "",
+                 nozzle,
+                 nozzle);
     }
 
     status = deneb_pending_job_change_count(job) > 0 ?

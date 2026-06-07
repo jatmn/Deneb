@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include "json_writer.h"
+#include "pending_job_file.h"
 
 #ifdef BACKEND_ZMQ_STUB
 
@@ -52,7 +53,6 @@ void backend_zmq_deinit(void) {}
 #define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 4
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 #define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
 
 static void *zmq_ctx = NULL;
@@ -114,7 +114,7 @@ static void log_status_transition(const printer_state_t *curr)
         append_print_history(&previous_state, curr);
         preheat_targets_logged = 0;
         preheat_reached_logged = 0;
-        if (unlink(DENEB_CLUSTER_PENDING_JOB) == 0)
+        if (unlink(DENEB_PENDING_JOB_PATH) == 0)
             fprintf(stderr, "deneb-api: removed pending job metadata after print end\n");
     }
 
@@ -506,8 +506,12 @@ const char *backend_zmq_get_status_json(void)
 int backend_zmq_send_command(const char *cmd, const char *args)
 {
     if (!rpc_sock) return -1;
-    char buf[512];
-    snprintf(buf, sizeof(buf), "%s<%s", cmd, args);
+    char buf[4096];
+    int len = snprintf(buf, sizeof(buf), "%s<%s", cmd, args);
+    if (len < 0 || (size_t)len >= sizeof(buf)) {
+        fprintf(stderr, "backend_zmq: rpc payload too large\n");
+        return -1;
+    }
     int rc = zmq_send(rpc_sock, buf, strlen(buf), 0);
     if (rc < 0) {
         reset_rpc_socket();

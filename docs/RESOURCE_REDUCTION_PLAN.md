@@ -99,9 +99,14 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   host tests for the command/status/packet/flow-control/heater-wait,
   G28/home-distance, nonblocking job streaming, motion-firmware verification,
   abort/finish policy, pause/resume state-machine behavior, shared print-control
-  contract, command formatting, pending-job metadata, native error mapping, and
-  native diagnostics slices. It is still disabled by default and does not yet
-  satisfy the release criteria for replacing stock `printserver`.
+  contract, command formatting, pending-job metadata, shared pending-job file
+  parsing/cleanup for web/touch/API conflict flows, touchscreen conflict
+  actions and Cura cluster pending-job actions through native `JOB`/`ABORT`
+  backend commands, native Cura upload registration and no-conflict `JOB`
+  startup, native frame-light/material-import/diagnostics UI helpers, native
+  error mapping, and native diagnostics slices. It is still disabled by default
+  and does not yet satisfy the release criteria for replacing stock
+  `printserver`.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

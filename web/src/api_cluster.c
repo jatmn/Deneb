@@ -9,6 +9,7 @@
 #include "api_print_job.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
+#include "pending_job_file.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -18,14 +19,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #define DENEB_CURA_MACHINE_FAMILY "ultimaker2_plus_connect"
 #define DENEB_CURA_MACHINE_VARIANT "Ultimaker 2+ Connect"
 #define DENEB_CLUSTER_JOB_UUID "deneb-current-job"
-#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 #define DENEB_CLUSTER_MATERIAL_DIR "/home/3D/deneb-materials"
 #define DENEB_DEFAULT_NOZZLE_SIZE "0.4"
 #define DENEB_DEFAULT_MATERIAL_GUID "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"
@@ -106,152 +105,80 @@ static int has_active_job(const printer_state_t *s)
 
 static int serve_pending_cluster_job(http_response_t *resp)
 {
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f) return 0;
-
     char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    int truncated = !feof(f);
-    fclose(f);
+    size_t n = 0;
 
-    if (n == 0 || truncated) return 0;
-    buf[n] = '\0';
-
-    const char *p = buf;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (*p != '[') return 0;
-
+    if (deneb_pending_job_file_read_raw_array(DENEB_PENDING_JOB_PATH,
+                                              buf, sizeof(buf), &n) < 0)
+        return 0;
     api_http_set_body(resp, buf, n);
     return 1;
 }
 
-static int pending_job_tracker(void)
+static int load_pending_job(deneb_pending_job_file_t *job)
 {
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f) return -1;
-
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    buf[n] = '\0';
-
-    const char *p = strstr(buf, "\"deneb_tracker\"");
-    if (!p) return -1;
-    p = strchr(p, ':');
-    if (!p) return -1;
-    p++;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (!isdigit((unsigned char)*p)) return -1;
-    return atoi(p);
+    return deneb_pending_job_file_load_default(job) == 0 &&
+           job->tracker >= 0 ? 0 : -1;
 }
 
-static int pending_job_path(char *out, size_t out_sz)
+static int pending_job_tracker(void)
 {
-    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
-    if (!f) return -1;
+    deneb_pending_job_file_t job;
+    return load_pending_job(&job) == 0 ? job.tracker : -1;
+}
 
-    char buf[8192];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    buf[n] = '\0';
+static void json_escape_arg(const char *src, char *out, size_t out_sz)
+{
+    size_t oi = 0;
 
-    const char *p = strstr(buf, "\"path\"");
-    if (!p) return -1;
-    p = strchr(p, ':');
-    if (!p) return -1;
-    p++;
-    while (*p && isspace((unsigned char)*p)) p++;
-    if (*p != '"' && *p != '\'') return -1;
-    char quote = *p++;
-    const char *start = p;
-    const char *end = strchr(start, quote);
-    if (!end) return -1;
+    if (!out || out_sz == 0)
+        return;
 
-    size_t len = (size_t)(end - start);
-    if (len == 0 || len >= out_sz) return -1;
-    memcpy(out, start, len);
-    out[len] = '\0';
-    return 0;
+    for (size_t i = 0; src && src[i] && oi + 1 < out_sz; i++) {
+        char c = src[i];
+        if ((c == '"' || c == '\\') && oi + 2 < out_sz) {
+            out[oi++] = '\\';
+            out[oi++] = c;
+        } else if (c >= 0x20) {
+            out[oi++] = c;
+        }
+    }
+    out[oi] = '\0';
 }
 
 static int send_pending_job_instruction(const char *instruction)
 {
-    int tracker = pending_job_tracker();
-    if (tracker < 0) return -1;
+    deneb_pending_job_file_t job;
+    if (load_pending_job(&job) < 0)
+        return -1;
 
-    char path[1024] = { 0 };
-    if (strcmp(instruction, "PREPARE") == 0 && pending_job_path(path, sizeof(path)) < 0) {
+    if (strcmp(instruction, "PREPARE") == 0 && !job.path[0]) {
         fprintf(stderr, "deneb-api: failed to read pending job path for PREPARE\n");
         return -1;
     }
     if (strcmp(instruction, "PREPARE") == 0) {
         fprintf(stderr, "deneb-api: pending print path resolved to %s\n",
-                path[0] ? path : "(none)");
+                job.path[0] ? job.path : "(none)");
     }
 
-    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n", instruction, tracker);
+    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n", instruction, job.tracker);
 
-    static const char script[] =
-        "import sys\n"
-        "from sponge.spinner import spinner\n"
-        "from sponge.ipc import zmqipc\n"
-        "import gershwin.constructs as gershwin\n"
-        "import gershwin.node as node\n"
-        "from gershwin.manager import Manager\n"
-        "from cygnus.marshal.types.printing import PrintHandlingRequest, PrintHandlingInstruction\n"
-        "instruction = getattr(PrintHandlingInstruction, sys.argv[1])\n"
-        "tracker = int(sys.argv[2])\n"
-        "path = sys.argv[3] if len(sys.argv) > 3 else ''\n"
-        "result = {'done': False, 'reply': None}\n"
-        "@gershwin.node('client')\n"
-        "class ClientNode(node.Node):\n"
-        "    def plan(self):\n"
-        "        self.doOption(gershwin.DO_OPTIONS.DO_IMMEDIATELY)\n"
-        "        self.addStep(goal='pending print action', func=self._run)\n"
-        "    def _run(self):\n"
-        "        options = {}\n"
-        "        if instruction == PrintHandlingInstruction.PREPARE:\n"
-        "            options = {'path': path}\n"
-        "        req = PrintHandlingRequest.create(tracker=tracker, instruction=instruction, options=options)\n"
-        "        result['reply'] = yield from self.call('coordinator::print::handling', req)\n"
-        "        result['done'] = True\n"
-        "m = Manager('deneb-api-print-action', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3)\n"
-        "m.addNode(ClientNode.id, ClientNode)\n"
-        "for _ in range(30):\n"
-        "    m.spinner.spin(100)\n"
-        "    m.run_time = m.spinner.getElapsed()\n"
-        "    m.spin()\n"
-        "    if result['done']:\n"
-        "        break\n"
-        "reply = result.get('reply') or {}\n"
-        "sys.exit(0 if result['done'] and reply.get('accepted') else 1)\n";
+    if (strcmp(instruction, "ABORT") == 0)
+        return backend_zmq_abort();
 
-    char tracker_arg[32];
-    snprintf(tracker_arg, sizeof(tracker_arg), "%d", tracker);
+    if (strcmp(instruction, "PREPARE") == 0) {
+        char escaped_path[2048];
+        char args[2300];
 
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        int log_fd = open("/tmp/deneb-print-action.log",
-                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (log_fd >= 0) {
-            dup2(log_fd, STDOUT_FILENO);
-            dup2(log_fd, STDERR_FILENO);
-            close(log_fd);
-        }
-        setenv("PYTHONPATH", "/home:/home/lib", 1);
-        execlp("python3", "python3", "-c", script, instruction, tracker_arg, path, (char *)NULL);
-        _exit(127);
+        json_escape_arg(job.path, escaped_path, sizeof(escaped_path));
+        snprintf(args, sizeof(args),
+                 "{\"file\":\"%s\",\"source\":\"Cura\","
+                 "\"uuid\":\"deneb-current-job\"}",
+                 escaped_path);
+        return backend_zmq_send_command("JOB", args);
     }
 
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0)
-        return -1;
-
-    int ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    fprintf(stderr, "deneb-api: coordinator print instruction=%s returned %s\n",
-            instruction, ok ? "accepted" : "rejected");
-    return ok ? 0 : -1;
+    return -1;
 }
 
 static int elapsed_seconds(const printer_state_t *s)
@@ -708,7 +635,7 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
             return;
         }
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        unlink(DENEB_PENDING_JOB_PATH);
     } else if (strcmp(action, "pause") == 0) {
         if (backend_zmq_pause() < 0) {
             resp->status_code = 503;
@@ -729,14 +656,14 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        unlink(DENEB_PENDING_JOB_PATH);
     } else if (strcmp(action, "stop") == 0) {
         if (backend_zmq_stop_print() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
             return;
         }
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        unlink(DENEB_PENDING_JOB_PATH);
     } else {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Unknown print job action\"}");
@@ -763,7 +690,7 @@ void api_cluster_print_job_delete(const http_request_t *req, http_response_t *re
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
     if (!has_active_job(s)) {
-        unlink(DENEB_CLUSTER_PENDING_JOB);
+        unlink(DENEB_PENDING_JOB_PATH);
         resp->status_code = 204;
         return;
     }

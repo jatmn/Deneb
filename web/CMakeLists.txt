@@ -68,10 +68,13 @@ set(DENEB_API_SOURCES
     src/backend_zmq.c
     src/json_writer.c
     src/md5.c
+    ../common/print/pending_job_file.c
+    ../printsvc/src/pending_job.c
+    ../printsvc/src/print_control.c
 )
 
 add_executable(deneb-api ${DENEB_API_SOURCES})
-target_include_directories(deneb-api PRIVATE src)
+target_include_directories(deneb-api PRIVATE src ../common/print ../printsvc/src)
 
 add_executable(deneb-mdns src/mdns_advertiser.c)
 target_compile_definitions(deneb-mdns PRIVATE DENEB_VERSION="${GIT_VERSION}")

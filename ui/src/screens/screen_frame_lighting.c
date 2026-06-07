@@ -97,26 +97,10 @@ static void save_light_state(void)
 
 static int apply_light_pwm(int brightness)
 {
-    char cmd[512];
+    char gcode[32];
 
-    snprintf(cmd, sizeof(cmd),
-             "printf 'M142 w%d\\n' "
-             "> /home/cygnus/marlindriver/gcode/deneb_framelight.gcode",
-             brightness_to_pwm(brightness));
-    if (system(cmd) != 0)
-        return -1;
-
-    snprintf(cmd, sizeof(cmd),
-             "python3 -c \"import sys, time, zmq; "
-             "ctx=zmq.Context(); "
-             "s=ctx.socket(zmq.REQ); "
-             "s.setsockopt(zmq.LINGER, 0); "
-             "s.connect('tcp://127.0.0.1:5566'); "
-             "s.send_string('MACRO<{\\\"macro\\\":"
-             "\\\"deneb_framelight.gcode\\\"}'); "
-             "sys.exit(0 if s.poll(3000) and s.recv() else 1); "
-             "time.sleep(0.05)\" >/dev/null 2>&1");
-    return system(cmd);
+    snprintf(gcode, sizeof(gcode), "M142 w%d", brightness_to_pwm(brightness));
+    return backend_send_gcode(gcode);
 }
 
 static void update_brightness_label(void)

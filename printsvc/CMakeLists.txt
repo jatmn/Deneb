@@ -51,6 +51,7 @@ endif()
 option(BUILD_HOST_STUB "Build without libzmq or serial device dependencies" OFF)
 
 set(DENEB_PRINTSVC_LIB_SOURCES
+    ../common/print/pending_job_file.c
     src/command.c
     src/command_format.c
     src/crc.c
@@ -72,7 +73,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
 )
 
 add_library(deneb-printsvc-core STATIC ${DENEB_PRINTSVC_LIB_SOURCES})
-target_include_directories(deneb-printsvc-core PUBLIC src)
+target_include_directories(deneb-printsvc-core PUBLIC src ../common/print)
 target_compile_definitions(deneb-printsvc-core PUBLIC DENEB_VERSION="${GIT_VERSION}")
 
 add_executable(deneb-printsvc

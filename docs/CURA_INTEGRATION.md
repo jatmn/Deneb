@@ -65,15 +65,15 @@ remain protected by Open Access or Deneb auth.
 
 For Cura cluster uploads, Deneb streams the multipart upload through `deneb-api`
 instead of buffering whole jobs in RAM. A pending-job metadata file at
-`/tmp/deneb-cluster-print-job.json` keeps the job visible while the stock
-coordinator validates metadata, waits for conflict confirmation, prepares, and
-preheats.
+`/tmp/deneb-cluster-print-job.json` keeps the job visible while Deneb validates
+metadata, waits for conflict confirmation, prepares, and preheats.
 
-Current conflict/preheat flow still bridges into the stock Python coordinator
-for `PREPARE` and `ABORT` using a temporary Gershwin client path. This is a
-known compatibility shim and is called out in the native `deneb-printsvc`
-milestone because it should be absorbed or replaced rather than preserved as
-permanent architecture.
+Upload registration, conflict continue/cancel, and pending-job cancel now use
+native Deneb code paths. `deneb-api` assigns a native pending-job tracker,
+writes Cura-visible pending metadata from UCI/file hints, leaves material/nozzle
+conflicts waiting for user confirmation, and starts no-conflict jobs with a
+native `JOB` command. The native `deneb-printsvc` milestone still owns the final
+driver-side replacement and live validation of this flow.
 
 ## Cura Plugin Build
 

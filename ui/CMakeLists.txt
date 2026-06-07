@@ -185,6 +185,7 @@ set(DENEB_SOURCES
     src/fonts/deneb_font_i18n_12.c
     src/fonts/deneb_font_i18n_14.c
     src/fonts/deneb_font_i18n_16.c
+    ../common/print/pending_job_file.c
     ${DRIVER_SOURCES}
     ${DF_BRIDGE_SOURCES}
 )
@@ -196,6 +197,7 @@ target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING)
 target_include_directories(deneb-ui PRIVATE
     ${CMAKE_SOURCE_DIR}/config       # lv_conf.h
     ${CMAKE_SOURCE_DIR}/src          # project headers
+    ${CMAKE_SOURCE_DIR}/../common/print
     ${LVGL_DIR}/src                  # LVGL internal headers
     ${LVGL_DIR}/include              # LVGL v9 public headers
     ${LVGL_DIR}                      # lvgl.h

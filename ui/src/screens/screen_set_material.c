@@ -8,10 +8,18 @@
 #include "locale.h"
 #include "lvgl.h"
 
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define DENEB_MATERIAL_IMPORT_ROOT "/mnt/sda1"
+#define DENEB_MATERIAL_CATALOG_DIR "/home/3D/deneb-materials"
 
 typedef struct {
     const char *label;
@@ -69,6 +77,166 @@ static const char *find_material_label(const char *guid)
     return NULL;
 }
 
+static int copy_tag_value(const char *xml, const char *tag,
+                          char *out, size_t out_sz)
+{
+    char open_tag[32];
+    char close_tag[32];
+    const char *start;
+    const char *end;
+    size_t len;
+
+    snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
+    snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
+
+    start = strstr(xml, open_tag);
+    if (!start)
+        return -1;
+    start += strlen(open_tag);
+    end = strstr(start, close_tag);
+    if (!end || end <= start)
+        return -1;
+
+    len = (size_t)(end - start);
+    while (len > 0 && isspace((unsigned char)*start)) {
+        start++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)start[len - 1]))
+        len--;
+    if (len == 0 || len >= out_sz)
+        return -1;
+
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 0;
+}
+
+static int is_safe_guid(const char *guid)
+{
+    size_t len = strlen(guid);
+
+    if (len < 32 || len >= 64)
+        return 0;
+    for (const char *p = guid; *p; p++) {
+        if (!(isxdigit((unsigned char)*p) || *p == '-'))
+            return 0;
+    }
+    return 1;
+}
+
+static int parse_material_file(const char *path, char *guid, size_t guid_sz,
+                               int *version)
+{
+    FILE *f = fopen(path, "rb");
+    char *xml;
+    size_t n;
+    char version_str[32];
+    int ok;
+
+    if (!f)
+        return -1;
+
+    xml = malloc(131073);
+    if (!xml) {
+        fclose(f);
+        return -1;
+    }
+
+    n = fread(xml, 1, 131072, f);
+    fclose(f);
+    xml[n] = '\0';
+
+    ok = copy_tag_value(xml, "GUID", guid, guid_sz) == 0 &&
+         copy_tag_value(xml, "version", version_str, sizeof(version_str)) == 0 &&
+         is_safe_guid(guid);
+    if (ok) {
+        *version = atoi(version_str);
+        ok = *version >= 0;
+    }
+
+    free(xml);
+    return ok ? 0 : -1;
+}
+
+static int has_material_extension(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+
+    if (!dot)
+        return 0;
+    return strcmp(dot, ".xml") == 0 ||
+           strcmp(dot, ".fdm_material") == 0 ||
+           strcmp(dot, ".material") == 0;
+}
+
+static int write_material_record(const char *guid, int version)
+{
+    char record_path[256];
+    FILE *out;
+
+    if (mkdir(DENEB_MATERIAL_CATALOG_DIR, 0755) < 0 && errno != EEXIST)
+        return -1;
+
+    snprintf(record_path, sizeof(record_path), "%s/%s.json",
+             DENEB_MATERIAL_CATALOG_DIR, guid);
+    out = fopen(record_path, "w");
+    if (!out)
+        return -1;
+
+    fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, version);
+    return fclose(out) == 0 ? 0 : -1;
+}
+
+static int import_material_tree(const char *root, int depth, int *imported)
+{
+    DIR *dir;
+    struct dirent *ent;
+
+    if (depth > 4)
+        return 0;
+
+    dir = opendir(root);
+    if (!dir)
+        return -1;
+
+    while ((ent = readdir(dir)) != NULL) {
+        char path[512];
+        struct stat st;
+
+        if (ent->d_name[0] == '.')
+            continue;
+
+        snprintf(path, sizeof(path), "%s/%s", root, ent->d_name);
+        if (stat(path, &st) < 0)
+            continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            import_material_tree(path, depth + 1, imported);
+        } else if (S_ISREG(st.st_mode) && has_material_extension(ent->d_name)) {
+            char guid[64];
+            int version = 0;
+
+            if (parse_material_file(path, guid, sizeof(guid), &version) == 0 &&
+                write_material_record(guid, version) == 0) {
+                (*imported)++;
+            }
+        }
+    }
+
+    closedir(dir);
+    return 0;
+}
+
+static int import_usb_material_profiles(void)
+{
+    int imported = 0;
+
+    if (import_material_tree(DENEB_MATERIAL_IMPORT_ROOT, 0, &imported) < 0)
+        return -1;
+    return imported;
+}
+
 static void update_current_material_status(void)
 {
     char guid[64];
@@ -103,12 +271,17 @@ static void set_material_cb(lv_event_t *e)
 
 static void import_material_cb(lv_event_t *e)
 {
+    int imported;
+
     (void)e;
     lv_label_set_text(status_label, locale_get("material.importing"));
-    system("PYTHONPATH=/home python3 -c \"from pathlib import Path; "
-           "from cygnus.util import materials; "
-           "materials.install_usb_profiles(Path('/mnt/sda1'))\" "
-           ">/tmp/deneb-material-import.log 2>&1 &");
+    imported = import_usb_material_profiles();
+    if (imported >= 0) {
+        lv_label_set_text_fmt(status_label, "Imported %d material profile%s",
+                              imported, imported == 1 ? "" : "s");
+    } else {
+        lv_label_set_text(status_label, locale_get("settings.save_failed"));
+    }
 }
 
 static lv_obj_t *create_btn(lv_obj_t *parent, const char *label,

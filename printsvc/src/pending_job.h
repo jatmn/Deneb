@@ -13,10 +13,14 @@ typedef struct {
     char machine_variant[64];
     char machine_family[64];
     char material_guid[64];
+    char origin_material_guid[64];
+    char origin_material_name[64];
+    char target_material_name[64];
     char material_brand[32];
     char material_type[32];
     char material_color[16];
     char nozzle_id[24];
+    char origin_nozzle_id[24];
     int tracker;
     int material_change_required;
     int print_core_change_required;
