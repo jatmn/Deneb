@@ -10,6 +10,9 @@
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+
+#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 
 static lv_obj_t *status_screen = NULL;
 static lv_obj_t *state_label = NULL;
@@ -20,8 +23,193 @@ static lv_obj_t *progress_label = NULL;
 static lv_obj_t *file_label = NULL;
 static lv_obj_t *pos_label = NULL;
 static lv_obj_t *stop_btn = NULL;
+static int stop_inflight = 0;
+static char active_print_name[128];
 
 static lv_timer_t *update_timer = NULL;
+
+static int is_print_lifecycle_filename(const char *name)
+{
+    if (!name || !*name || strcmp(name, "none") == 0)
+        return 0;
+
+    if (strstr(name, "home_and_center_head") != NULL)
+        return 1;
+    if (strstr(name, "move_buildplate_up") != NULL)
+        return 1;
+    if (strstr(name, "move_buildplate_down") != NULL)
+        return 1;
+    if (strstr(name, "macro") != NULL && strstr(name, ".gcode") != NULL)
+        return 1;
+
+    return 0;
+}
+
+static int req_equals_ci(const char *a, const char *b)
+{
+    if (!a || !b)
+        return 0;
+
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if (ca >= 'A' && ca <= 'Z')
+            ca = (unsigned char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z')
+            cb = (unsigned char)(cb + ('a' - 'A'));
+        if (ca != cb)
+            return 0;
+    }
+
+    return *a == '\0' && *b == '\0';
+}
+
+static int str_is_one_of_ci(const char *value, const char *const *choices)
+{
+    if (!value || !*value)
+        return 0;
+
+    for (int i = 0; choices[i]; i++) {
+        if (req_equals_ci(value, choices[i]))
+            return 1;
+    }
+
+    return 0;
+}
+
+static int is_print_lifecycle_req(const char *req)
+{
+    static const char *const lifecycle_reqs[] = {
+        "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
+        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
+        "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
+        "EXTRACT", "EXTRACTING",
+        NULL
+    };
+
+    return str_is_one_of_ci(req, lifecycle_reqs);
+}
+
+static int is_idle_like_req(const char *req)
+{
+    static const char *const idle_reqs[] = {
+        "", "IDLE", "READY", "Idle", "Ready", "Finished", "STOPPED", NULL
+    };
+
+    if (!req || !*req)
+        return 1;
+
+    return str_is_one_of_ci(req, idle_reqs);
+}
+
+static int is_print_job_filename(const char *name)
+{
+    if (!name || !*name || strcmp(name, "none") == 0)
+        return 0;
+
+    if (is_print_lifecycle_filename(name))
+        return 0;
+    if (strstr(name, ".gcode") == NULL && strstr(name, ".ufp") == NULL)
+        return 0;
+
+    return 1;
+}
+
+static int read_cluster_pending_field(const char *field, char *out, size_t out_sz)
+{
+    if (!out_sz)
+        return -1;
+
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f)
+        return -1;
+
+    char buf[2048];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0)
+        return -1;
+
+    buf[n] = '\0';
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\"", field);
+
+    const char *p = strstr(buf, needle);
+    if (!p)
+        return -1;
+
+    p = strchr(p + strlen(needle), ':');
+    if (!p)
+        return -1;
+    p++;
+    while (*p && isspace((unsigned char)*p))
+        p++;
+    if (*p != '"' && *p != '\'')
+        return -1;
+
+    char quote = *p++;
+    size_t i = 0;
+    while (*p && *p != quote && i < out_sz - 1) {
+        if (*p == '\\' && p[1])
+            p++;
+        out[i++] = *p++;
+    }
+    if (*p != quote)
+        return -1;
+
+    out[i] = '\0';
+    return 0;
+}
+
+static int read_cluster_pending_name(char *out, size_t out_sz)
+{
+    char value[256];
+
+    if (read_cluster_pending_field("name", value, sizeof(value)) == 0) {
+        if (value[0] && strcmp(value, "none") != 0) {
+            strncpy(out, value, out_sz - 1);
+            out[out_sz - 1] = '\0';
+            return 0;
+        }
+    }
+
+    if (read_cluster_pending_field("path", value, sizeof(value)) == 0) {
+        if (value[0] && strcmp(value, "none") != 0) {
+            const char *base = strrchr(value, '/');
+            base = base ? base + 1 : value;
+            if (base && *base && strcmp(base, "none") != 0) {
+                strncpy(out, base, out_sz - 1);
+                out[out_sz - 1] = '\0';
+                return 0;
+            }
+        }
+    }
+
+    return -1;
+}
+
+static int has_active_print_context(const printer_state_t *s, int has_print_name)
+{
+    return s->is_printing ||
+           s->is_paused ||
+           s->time_total > 0 ||
+           s->time_left > 0 ||
+           (!is_idle_like_req(s->current_req) && s->current_req[0] != '\0') ||
+           has_print_name ||
+           ((s->bed_temp_set > 0.0f || s->nozzle_temp_set > 0.0f) &&
+            !is_idle_like_req(s->current_req));
+}
+
+static void clear_active_print_context_if_idle(const printer_state_t *s, int has_print_name)
+{
+    if (!has_active_print_context(s, has_print_name) &&
+        s->time_total <= 0 &&
+        s->time_left <= 0 &&
+        s->bed_temp_set == 0.0f &&
+        s->nozzle_temp_set == 0.0f) {
+        active_print_name[0] = '\0';
+    }
+}
 
 static void set_btn_enabled(lv_obj_t *btn, int enabled)
 {
@@ -37,8 +225,21 @@ static void set_btn_enabled(lv_obj_t *btn, int enabled)
 static void stop_btn_cb(lv_event_t *e)
 {
     (void)e;
+    const printer_state_t *s = backend_get_state();
+    if (!has_active_print_context(s, is_print_job_filename(s->filename)) ||
+        backend_is_stop_print_inflight())
+        return;
+
+    if (stop_inflight)
+        return;
+    stop_inflight = 1;
+    set_btn_enabled(stop_btn, 0);
     if (backend_stop_print() == 0)
         lv_label_set_text(state_label, locale_get("status.cooling"));
+    else {
+        stop_inflight = 0;
+        set_btn_enabled(stop_btn, 1);
+    }
 }
 
 static void set_temp_label(lv_obj_t *label, float cur, float target)
@@ -61,6 +262,45 @@ static void update_timer_cb(lv_timer_t *timer)
     if (!status_screen) return;
 
     const printer_state_t *s = backend_get_state();
+    if (!s->connected) {
+        lv_label_set_text(state_label, locale_get("status.preparing"));
+        lv_label_set_text(nozzle_temp_label, "--- / --- \u00b0C");
+        lv_label_set_text(bed_temp_label, "--- / --- \u00b0C");
+        lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+        lv_label_set_text(progress_label, "0%");
+        lv_label_set_text(file_label, locale_get("status.no_file"));
+        lv_label_set_text(pos_label, "X:-- Y:-- Z:--");
+        set_btn_enabled(stop_btn, 0);
+        return;
+    }
+
+    int has_print_name = 0;
+    const char *raw_name = s->filename[0] && strcmp(s->filename, "none") != 0 ? s->filename : "";
+    char pending_name[128];
+    if ((!raw_name[0] || is_print_lifecycle_filename(raw_name)) &&
+        read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 &&
+        !is_print_lifecycle_filename(pending_name)) {
+        raw_name = pending_name;
+    }
+
+    has_print_name = is_print_job_filename(raw_name);
+
+    if (raw_name[0] && !is_print_lifecycle_filename(raw_name)) {
+        strncpy(active_print_name, raw_name, sizeof(active_print_name) - 1);
+        active_print_name[sizeof(active_print_name) - 1] = '\0';
+    }
+    int job_active = has_active_print_context(s, has_print_name);
+
+    if (!job_active && !has_print_name)
+        clear_active_print_context_if_idle(s, has_print_name);
+
+    const char *display_name = locale_get("status.no_file");
+    if (job_active) {
+        if (active_print_name[0])
+            display_name = active_print_name;
+        else if (raw_name[0] && !is_print_lifecycle_filename(raw_name))
+            display_name = raw_name;
+    }
 
     /* Printer state */
     if (s->is_paused)
@@ -82,20 +322,23 @@ static void update_timer_cb(lv_timer_t *timer)
     lv_label_set_text_fmt(progress_label, "%d%%", pct);
 
     /* File */
-    if (s->filename[0] && strcmp(s->filename, "none") != 0)
-        lv_label_set_text(file_label, s->filename);
-    else
-        lv_label_set_text(file_label, locale_get("status.no_file"));
+    lv_label_set_text(file_label, display_name);
 
-    set_btn_enabled(stop_btn, s->is_printing || s->is_paused);
+    if (!backend_is_stop_print_inflight())
+        stop_inflight = 0;
+
+    if (!job_active && !has_print_name &&
+        s->time_total <= 0 &&
+        s->time_left <= 0 &&
+        s->bed_temp_set <= 0.0f &&
+        s->nozzle_temp_set <= 0.0f)
+        clear_active_print_context_if_idle(s, has_print_name);
+
+    set_btn_enabled(stop_btn, job_active && !stop_inflight && !backend_is_stop_print_inflight());
 
     /* Position */
     set_position_label(pos_label, s->pos_x, s->pos_y, s->pos_z);
 
-    /* Connection indicator */
-    if (!s->connected) {
-        lv_label_set_text(state_label, "---");
-    }
 }
 
 static lv_obj_t *create_temp_row(lv_obj_t *parent, const char *icon,
@@ -203,6 +446,7 @@ static lv_obj_t *status_create(void)
     lv_obj_set_style_text_font(stop_lbl, &deneb_font_12, 0);
     lv_obj_center(stop_lbl);
     set_btn_enabled(stop_btn, 0);
+    active_print_name[0] = '\0';
 
     /* Position */
     pos_label = lv_label_create(status_screen);
@@ -231,6 +475,7 @@ static void status_destroy(void)
     file_label = NULL;
     pos_label = NULL;
     stop_btn = NULL;
+    active_print_name[0] = '\0';
 }
 
 const screen_ops_t screen_status = {

@@ -113,16 +113,8 @@ Deneb.cmdAbort = function() {
     if (confirm(Deneb.i18n.t('web.control.confirm_abort') || 'Cancel the print?')) {
         Deneb.api.request('PUT', '/print_job/state', 'abort').then(function() {
             Deneb.api.pollStatus();
-        });
-    }
-};
-
-Deneb.cmdStop = function() {
-    if (confirm(Deneb.i18n.t('web.control.confirm_stop'))) {
-        Deneb.api.request('PUT', '/print_job/state', 'stop').then(function() {
-            Deneb.api.pollStatus();
         }).catch(function(err) {
-            Deneb.ui.showError(err.message || 'Failed to stop print');
+            Deneb.ui.showError(err.message || 'Failed to abort print');
         });
     }
 };

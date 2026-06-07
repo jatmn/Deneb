@@ -38,6 +38,7 @@ int backend_init(void) {
 
 void backend_poll(void) { /* no-op in stub */ }
 const printer_state_t *backend_get_state(void) { return &state; }
+int backend_is_stop_print_inflight(void) { return 0; }
 int backend_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_abort_print(void) { return 0; }
@@ -50,12 +51,15 @@ void backend_deinit(void) { /* no-op */ }
 
 #include <zmq.h>
 #include <errno.h>
+#include <ctype.h>
 
 /* Coordinator endpoints (from stock menu_settings.py) */
 #define STATUS_URL   "tcp://127.0.0.1:5565"
 #define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS_PER_POLL 4
+#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
+#define STOP_INFLIGHT_MS 3000
 
 static void *zmq_ctx = NULL;
 static void *status_socket = NULL;  /* SUB - status from coordinator */
@@ -66,6 +70,11 @@ static int had_previous_status = 0;
 static printer_state_t previous_state = {0};
 static int preheat_targets_logged = 0;
 static int preheat_reached_logged = 0;
+static char retained_print_filename[128];
+static long long last_stop_ms = -1;
+static int print_stop_inflight = 0;
+static void set_filename_or_none(char *dst, const char *value);
+static int is_transient_print_file(const char *file);
 
 static int configure_socket_linger(void *socket)
 {
@@ -160,6 +169,28 @@ static int json_get_int(const char *json, const char *key)
     return (int)strtol(val, NULL, 10);
 }
 
+static int str_contains_ci(const char *haystack, const char *needle)
+{
+    if (!haystack || !needle) return 0;
+
+    size_t nlen = strlen(needle);
+    size_t hlen = strlen(haystack);
+    if (nlen == 0 || hlen < nlen)
+        return 0;
+
+    for (size_t i = 0; i <= hlen - nlen; i++) {
+        size_t j = 0;
+        while (j < nlen &&
+               (tolower((unsigned char)haystack[i + j]) ==
+                tolower((unsigned char)needle[j]))) {
+            j++;
+        }
+        if (j == nlen) return 1;
+    }
+
+    return 0;
+}
+
 static int str_is_one_of(const char *value, const char *const *choices)
 {
     if (!value)
@@ -204,15 +235,175 @@ static int has_temp_targets(const printer_state_t *s)
     return (s->bed_temp_set > 0.0f) || (s->nozzle_temp_set > 0.0f);
 }
 
+static int is_print_file_candidate(const char *file)
+{
+    if (!file || !*file || strcmp(file, "none") == 0)
+        return 0;
+
+    return (str_contains_ci(file, ".gcode") || str_contains_ci(file, ".ufp")) &&
+           !is_transient_print_file(file);
+}
+
+static int read_cluster_pending_field(const char *field, char *out, size_t out_sz)
+{
+    if (!out_sz) return -1;
+    out[0] = '\0';
+
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f) return -1;
+
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0) return -1;
+    buf[n] = '\0';
+
+    char needle[80];
+    snprintf(needle, sizeof(needle), "\"%s\"", field);
+
+    const char *p = strstr(buf, needle);
+    if (!p) return -1;
+    p = strchr(p + strlen(needle), ':');
+    if (!p) return -1;
+    p++;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p != '"' && *p != '\'') return -1;
+    char quote = *p++;
+    const char *start = p;
+    const char *end = strchr(start, quote);
+    if (!end) return -1;
+
+    size_t len = (size_t)(end - start);
+    if (len == 0 || len >= out_sz) return -1;
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 0;
+}
+
+static int read_cluster_pending_name(char *out, size_t out_sz)
+{
+    char value[192];
+    if (read_cluster_pending_field("name", value, sizeof(value)) == 0) {
+        set_filename_or_none(out, value);
+        return 0;
+    }
+
+    if (read_cluster_pending_field("path", value, sizeof(value)) == 0) {
+        set_filename_or_none(out, value);
+        return 0;
+    }
+
+    return -1;
+}
+
+static void set_filename_or_none(char *dst, const char *value)
+{
+    if (!value || !*value || strcmp(value, "none") == 0) {
+        dst[0] = '\0';
+        return;
+    }
+
+    const char *base = strrchr(value, '/');
+    if (base) {
+        base++;
+    } else {
+        base = value;
+    }
+
+    if (!base || !*base || strcmp(base, "none") == 0) {
+        dst[0] = '\0';
+        return;
+    }
+
+    strncpy(dst, base, 127);
+    dst[127] = '\0';
+}
+
+static int is_transient_print_file(const char *file)
+{
+    if (!file || !*file) return 0;
+
+    if (strcmp(file, "none") == 0)
+        return 0;
+    if (str_contains_ci(file, "home_and_center_head"))
+        return 1;
+    if (str_contains_ci(file, "move_buildplate_up"))
+        return 1;
+    if (str_contains_ci(file, "move_buildplate_down"))
+        return 1;
+    if (str_contains_ci(file, "macro") && str_contains_ci(file, ".gcode"))
+        return 1;
+    return 0;
+}
+
+static void retain_print_filename(const char *filename)
+{
+    if (!filename || !*filename || strcmp(filename, "none") == 0)
+        return;
+
+    const char *base = strrchr(filename, '/');
+    if (base) {
+        base++;
+    } else {
+        base = filename;
+    }
+
+    if (!base || !*base || strcmp(base, "none") == 0)
+        return;
+
+    strncpy(retained_print_filename, base, sizeof(retained_print_filename) - 1);
+}
+
 static int is_temp_reached(float current, float target)
 {
     return target > 0.0f && current >= target - 1.0f;
 }
 
+static int is_print_request(const char *req)
+{
+    static const char *const print_reqs[] = {
+        "JOB", "Print", "Printing",
+        "PAUSE", "Pause", "Paused",
+        "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
+        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
+        "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
+        "EXTRACT", "EXTRACTING",
+        NULL
+    };
+
+    return str_is_one_of_ci(req, print_reqs);
+}
+
+static int is_print_lifecycle_req(const char *req)
+{
+    static const char *const lifecycle_reqs[] = {
+        "HOME", "HOMING", "HOME_AND_CENTER_HEAD",
+        "RESOLVE_CONFLICTS", "PREPARE", "PREHEAT", "PREHEATING",
+        "BED_PREHEATING", "HEAT_BED", "BED_AND_NOZZLE_PREHEATING",
+        "EXTRACT", "EXTRACTING",
+        NULL
+    };
+
+    return str_is_one_of_ci(req, lifecycle_reqs);
+}
+
+static int should_hold_print_filename(const printer_state_t *curr, const printer_state_t *prev)
+{
+    return (curr->is_printing || curr->is_paused ||
+            prev->is_printing || prev->is_paused ||
+            (curr->time_total > 0 && curr->time_left >= 0) ||
+            (prev->time_total > 0 && prev->time_left >= 0) ||
+            curr->bed_temp_set > 0.0f || curr->nozzle_temp_set > 0.0f ||
+            is_print_lifecycle_req(curr->current_req) ||
+            is_print_lifecycle_req(prev->current_req) ||
+            (curr->uuid[0] && prev->uuid[0] &&
+             strcmp(curr->uuid, prev->uuid) == 0));
+}
+
 static int have_jobs_targets(const printer_state_t *s)
 {
     return (s->bed_temp_set > 0.0f && is_temp_reached(s->bed_temp_cur, s->bed_temp_set)) &&
-           (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_cur, s->nozzle_temp_set));
+           (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_temp_cur, s->nozzle_temp_set));
 }
 
 static void log_status_transition(const printer_state_t *curr)
@@ -243,6 +434,7 @@ static void log_status_transition(const printer_state_t *curr)
         else
             fprintf(stderr, "backend: print stopped before completion (filename=%s)\n",
                     previous_state.filename[0] ? previous_state.filename : "(unknown)");
+        retained_print_filename[0] = '\0';
     }
 
     if (!previous_state.is_printing && curr->is_printing)
@@ -297,21 +489,28 @@ static void parse_status(const char *json)
     state.time_total = json_get_int(json, "Ttot");
     state.time_left = json_get_int(json, "Tleft");
 
-    const char *file = json_get_str(json, "file");
-    int has_file = file && *file && strcmp(file, "none") != 0;
-    if (has_file) {
-        strncpy(state.filename, file, sizeof(state.filename) - 1);
-    } else {
-        state.filename[0] = '\0';
+    char file_buf[256];
+    char name_buf[256];
+    snprintf(file_buf, sizeof(file_buf), "%s", json_get_str(json, "file"));
+    snprintf(name_buf, sizeof(name_buf), "%s", json_get_str(json, "name"));
+    const char *file = file_buf;
+    const char *name = name_buf;
+    if ((!file || !*file || strcmp(file, "none") == 0) &&
+        name && strcmp(name, "none") != 0 && *name) {
+        file = name;
     }
-
+    int has_file = file && *file && strcmp(file, "none") != 0;
     const char *src = json_get_str(json, "source");
     if (src && *src)
         strncpy(state.source, src, sizeof(state.source) - 1);
+    else
+        state.source[0] = '\0';
 
     const char *uuid = json_get_str(json, "uuid");
     if (uuid && *uuid)
         strncpy(state.uuid, uuid, sizeof(state.uuid) - 1);
+    else
+        state.uuid[0] = '\0';
 
     const char *req = json_get_str(json, "req");
     if (req && *req)
@@ -325,29 +524,96 @@ static void parse_status(const char *json)
                          / (float)state.time_total * 100.0f;
     }
 
-    static const char *const printing_reqs[] = {"JOB", "Print", "Printing", NULL};
     static const char *const paused_reqs[] = {"PAUSE", "Pause", "Paused", NULL};
     int active_time = state.time_total > 0 &&
                       state.time_left > 0 &&
                       state.time_left <= state.time_total;
 
     /* Derive state flags */
-    state.is_printing = str_is_one_of_ci(state.current_req, printing_reqs) ||
-                        str_is_one_of_ci(state.current_req, paused_reqs) ||
+    state.is_printing = is_print_request(state.current_req) ||
+                        (!str_is_one_of_ci(state.current_req, paused_reqs) && active_time) ||
                         active_time;
     state.is_paused = str_is_one_of_ci(state.current_req, paused_reqs);
 
-    if (!has_file) {
-        if (was_printing || (prev.uuid[0] && state.uuid[0] &&
-                             strcmp(prev.uuid, state.uuid) == 0) ||
-            state.is_printing || state.is_paused)
-            strncpy(state.filename, prev.filename, sizeof(state.filename) - 1);
+    char pending_name[128];
+    int has_pending_name = (read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 && pending_name[0] != '\0');
+    char original_file[128];
+
+    if (has_file) {
+        const char *base_file = strrchr(file, '/');
+        base_file = base_file ? (base_file + 1) : file;
+        strncpy(original_file, base_file, sizeof(original_file) - 1);
+        original_file[sizeof(original_file) - 1] = '\0';
+
+        if (is_transient_print_file(file)) {
+            if (has_pending_name) {
+                set_filename_or_none(state.filename, pending_name);
+            } else if (retained_print_filename[0]) {
+                set_filename_or_none(state.filename, retained_print_filename);
+            } else if (prev.filename[0] && is_print_file_candidate(prev.filename)) {
+                set_filename_or_none(state.filename, prev.filename);
+            }
+            if (state.filename[0] && strcmp(state.filename, original_file) != 0)
+                fprintf(stderr, "backend: ignored transient print file \"%s\" and kept \"%s\" as active name\n",
+                        original_file, state.filename);
+        } else if (!is_print_file_candidate(file)) {
+            if (retained_print_filename[0] && (!state.filename[0] || !is_print_file_candidate(state.filename))) {
+                set_filename_or_none(state.filename, retained_print_filename);
+            } else if (prev.filename[0] && is_print_file_candidate(prev.filename)) {
+                set_filename_or_none(state.filename, prev.filename);
+            }
+        } else {
+            set_filename_or_none(state.filename, file);
+            retain_print_filename(file);
+        }
+    } else if (should_hold_print_filename(&state, &prev) && has_pending_name) {
+        set_filename_or_none(state.filename, pending_name);
+    } else if (retained_print_filename[0]) {
+        set_filename_or_none(state.filename, retained_print_filename);
+    } else {
+        state.filename[0] = '\0';
+    }
+
+    if (should_hold_print_filename(&state, &prev)) {
+        if (!state.filename[0] && retained_print_filename[0]) {
+            set_filename_or_none(state.filename, retained_print_filename);
+            if (state.filename[0])
+                fprintf(stderr, "backend: restored retained print filename during lifecycle: \"%s\" (req=%s)\n",
+                        state.filename, state.current_req[0] ? state.current_req : "none");
+        }
+
+        if (!state.filename[0] && prev.filename[0] && is_print_file_candidate(prev.filename)) {
+            set_filename_or_none(state.filename, prev.filename);
+            if (state.filename[0])
+                fprintf(stderr, "backend: keeping previous print filename during lifecycle: \"%s\" (req=%s)\n",
+                        state.filename, state.current_req[0] ? state.current_req : "none");
+        }
+    } else if (was_printing && !state.is_printing && !state.is_paused) {
+        state.filename[0] = '\0';
+        retained_print_filename[0] = '\0';
     } else if (!state.filename[0]) {
         state.filename[0] = '\0';
     }
 
-    if (was_printing && !state.is_printing && !state.is_paused && !has_file) {
-        state.filename[0] = '\0';
+    if (state.filename[0] == '\0' &&
+        !has_file &&
+        !should_hold_print_filename(&state, &prev) &&
+        state.bed_temp_set == 0.0f &&
+        state.nozzle_temp_set == 0.0f) {
+        retained_print_filename[0] = '\0';
+    }
+
+    if (!should_hold_print_filename(&state, &prev) &&
+        state.time_total <= 0 &&
+        state.time_left <= 0 &&
+        state.bed_temp_set <= 0.0f &&
+        state.nozzle_temp_set <= 0.0f &&
+        state.current_req[0] == '\0' &&
+        !state.is_printing &&
+        !state.is_paused &&
+        !prev.is_printing &&
+        !prev.is_paused) {
+        print_stop_inflight = 0;
     }
 
     if (state.time_total > 0 && state.time_left >= 0 && !state.is_printing && !state.is_paused) {
@@ -447,6 +713,22 @@ const printer_state_t *backend_get_state(void)
 {
     return &state;
 }
+int backend_is_stop_print_inflight(void)
+{
+    if (!print_stop_inflight || last_stop_ms < 0)
+        return 0;
+
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return print_stop_inflight;
+
+    long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+    if ((now_ms - last_stop_ms) < STOP_INFLIGHT_MS)
+        return 1;
+
+    print_stop_inflight = 0;
+    return 0;
+}
 
 static int send_rpc(const char *msg, size_t len)
 {
@@ -498,6 +780,18 @@ int backend_send_gcode(const char *gcode)
 
 int backend_send_command(const char *cmd, const char *args_json)
 {
+    if (cmd && strcmp(cmd, "JOB") == 0 && args_json) {
+        const char *path = json_get_str(args_json, "path");
+        if (!path || !*path || strcmp(path, "none") == 0)
+            path = json_get_str(args_json, "file");
+        if (path && *path && strcmp(path, "none") != 0) {
+            retain_print_filename(path);
+            set_filename_or_none(state.filename, path);
+            fprintf(stderr, "backend: job command path retained as active filename=%s\n",
+                    state.filename[0] ? state.filename : "(none)");
+        }
+    }
+
     fprintf(stderr, "backend: command send cmd=%s args=%s\n", cmd, args_json ? args_json : "{}");
     char msg[256];
     int len = snprintf(msg, sizeof(msg), "%s<%s", cmd, args_json);
@@ -521,13 +815,29 @@ int backend_resume_print(void)
 
 int backend_stop_print(void)
 {
-    if (backend_send_command("ABORT", "{}") != 0)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
         return -1;
-    if (backend_send_gcode("M140 S0") != 0)
+
+    long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+    if (print_stop_inflight && last_stop_ms >= 0 &&
+        (now_ms - last_stop_ms) < STOP_INFLIGHT_MS)
+        return 0;
+
+    if (print_stop_inflight && !backend_is_stop_print_inflight())
+        print_stop_inflight = 0;
+    if (print_stop_inflight)
+        return 0;
+
+    print_stop_inflight = 1;
+    last_stop_ms = now_ms;
+
+    fprintf(stderr, "backend: stop print command requested\n");
+    if (backend_send_command("ABORT", "{}") != 0) {
+        print_stop_inflight = 0;
         return -1;
-    if (backend_send_gcode("M104 S0") != 0)
-        return -1;
-    return backend_send_gcode("G28");
+    }
+    return 0;
 }
 
 void backend_deinit(void)

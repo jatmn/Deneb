@@ -285,6 +285,230 @@ prune_stock_menu_ui() {
     log "pruned stock Python touchscreen UI; retained shared menu_settings"
 }
 
+install_motion_firmware_verify_cache() {
+    local programmer_dir="/home/atmel_programmer"
+    local prog="${programmer_dir}/prog.sh"
+    local stock_prog="${programmer_dir}/prog.sh.stock"
+    local hex="${programmer_dir}/cygnus-marlin.hex"
+    local cache_dir="/etc/deneb"
+    local cache_file="${cache_dir}/motion-controller-firmware.sha256"
+
+    if [ ! -f "${prog}" ] || [ ! -f "${hex}" ]; then
+        log "motion firmware programmer not found; skipping verify cache"
+        return
+    fi
+
+    if ! grep -q "DENEB_MOTION_FW_CACHE" "${prog}" 2>/dev/null ||
+       ! grep -q "reset_motion_controller" "${prog}" 2>/dev/null; then
+        if [ ! -f "${stock_prog}" ]; then
+            cp "${prog}" "${stock_prog}"
+            chmod 0755 "${stock_prog}"
+            log "backed up stock motion firmware programmer"
+        fi
+
+        cat > "${prog}" <<'EOF'
+#!/bin/sh
+# DENEB_MOTION_FW_CACHE
+set -u
+
+HERE=$(dirname "$(readlink -f "$0")")/
+ORIG="${HERE}prog.sh.stock"
+CACHE_DIR="/etc/deneb"
+CACHE_FILE="${CACHE_DIR}/motion-controller-firmware.sha256"
+HEX="${1:-}"
+
+log() {
+    logger -t deneb-motion-fw "$*" 2>/dev/null || true
+    echo "deneb-motion-fw: $*" >&2
+}
+
+reset_motion_controller() {
+    if [ -e /dev/gpio/avr_reset ]; then
+        printf '0' > /dev/gpio/avr_reset
+        sleep 0.02
+        printf '1' > /dev/gpio/avr_reset
+        sleep 0.15
+        log "reset motion controller after cached firmware check"
+    else
+        log "avr_reset gpio unavailable; continuing without reset"
+    fi
+}
+
+hash_file() {
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+if [ "$#" -ge 1 ] && [ -f "${HEX}" ] && [ -x "${ORIG}" ]; then
+    current_hash=$(hash_file "${HEX}" || true)
+    cached_hash=""
+    if [ -f "${CACHE_FILE}" ]; then
+        cached_hash=$(cat "${CACHE_FILE}" 2>/dev/null || true)
+    fi
+
+    if [ -n "${current_hash}" ] && [ "${current_hash}" = "${cached_hash}" ]; then
+        log "motion controller firmware hash already verified; skipping programmer"
+        reset_motion_controller
+        exit 0
+    fi
+
+    "${ORIG}" "$@"
+    rc=$?
+    if [ "${rc}" -eq 0 ] && [ -n "${current_hash}" ]; then
+        mkdir -p "${CACHE_DIR}"
+        printf '%s\n' "${current_hash}" > "${CACHE_FILE}"
+        chmod 0644 "${CACHE_FILE}"
+        log "cached verified firmware hash ${current_hash}"
+    fi
+    exit "${rc}"
+fi
+
+exec "${ORIG}" "$@"
+EOF
+        chmod 0755 "${prog}"
+        log "installed motion firmware verify cache wrapper"
+    else
+        log "motion firmware verify cache wrapper already installed"
+    fi
+
+    mkdir -p "${cache_dir}"
+}
+
+patch_motion_stack_boot_order() {
+    local gpio_init="/etc/init.d/marlin-gpio"
+    local printserver_init="/etc/init.d/printserver"
+    local coordinator_init="/etc/init.d/coordinator"
+    local backup_dir="${DENEB_BACKUP_DIR}/init"
+
+    mkdir -p "${backup_dir}"
+
+    if [ -f "${gpio_init}" ]; then
+        if [ ! -f "${backup_dir}/marlin-gpio.orig" ]; then
+            cp "${gpio_init}" "${backup_dir}/marlin-gpio.orig"
+        fi
+        if grep -q '^START=99$' "${gpio_init}"; then
+            sed -i 's/^START=99$/START=60/' "${gpio_init}"
+            /etc/init.d/marlin-gpio enable 2>/dev/null || true
+            log "moved marlin-gpio before printserver"
+        fi
+        rm -f /etc/rc.d/S99marlin-gpio
+    fi
+
+    if [ -f "${printserver_init}" ] &&
+       ! grep -q "DENEB_PRINTSERVER_START_WAIT" "${printserver_init}" 2>/dev/null; then
+        if [ ! -f "${backup_dir}/printserver.orig" ]; then
+            cp "${printserver_init}" "${backup_dir}/printserver.orig"
+        fi
+
+        cat > "${printserver_init}" <<'EOF'
+#!/bin/sh /etc/rc.common
+# Start the printer server
+# DENEB_PRINTSERVER_START_WAIT
+
+# shellcheck disable=SC2034
+START=95
+# shellcheck disable=SC2034
+STOP=15
+
+export LD_LIBRARY_PATH=/home/lib
+export PYTHONPATH=${PYTHONPATH}:/home
+
+wait_for_printserver_socket() {
+    local pid="$1"
+    local waited=0
+
+    while [ "${waited}" -lt 35 ]; do
+        kill -0 "${pid}" 2>/dev/null || return 1
+        if netstat -ln 2>/dev/null | grep -q '127.0.0.1:5556'; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    return 1
+}
+
+start() {
+    echo Starting print server
+    /usr/bin/python3 /home/cygnus/marlindriver/print_service.py > /dev/null 2>&1 &
+    echo $! >/var/run/printserver.pid
+
+    if wait_for_printserver_socket "$(cat /var/run/printserver.pid)"; then
+        logger -t deneb-printserver "print service command socket is ready"
+    else
+        logger -t deneb-printserver "print service command socket was not ready before timeout"
+    fi
+}
+
+stop() {
+    echo Stopping print server
+    PID=$(cat /var/run/printserver.pid)
+    kill -9 "${PID}"
+}
+EOF
+        chmod 0755 "${printserver_init}"
+        log "patched printserver boot wait"
+    fi
+
+    if [ -f "${coordinator_init}" ] &&
+       ! grep -q "DENEB_COORDINATOR_START_WAIT" "${coordinator_init}" 2>/dev/null; then
+        if [ ! -f "${backup_dir}/coordinator.orig" ]; then
+            cp "${coordinator_init}" "${backup_dir}/coordinator.orig"
+        fi
+
+        cat > "${coordinator_init}" <<'EOF'
+#!/bin/sh /etc/rc.common
+# Start the Coordinator node group
+# DENEB_COORDINATOR_START_WAIT
+
+# shellcheck disable=SC2034
+START=96
+# shellcheck disable=SC2034
+STOP=14
+
+export LD_LIBRARY_PATH=/home/lib
+export PYTHONPATH=${PYTHONPATH}:/home/lib:/home
+
+wait_for_coordinator_socket() {
+    local pid="$1"
+    local waited=0
+
+    while [ "${waited}" -lt 35 ]; do
+        kill -0 "${pid}" 2>/dev/null || return 1
+        if netstat -ln 2>/dev/null | grep -q '127.0.0.1:5566'; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    return 1
+}
+
+start() {
+    echo Starting coordinator
+    cd /home/cygnus/coordinator || exit 1
+    /usr/bin/python3 /home/cygnus/coordinator/coordinator.py > /dev/null 2>&1 &
+    echo $! >/var/run/coordinator.pid
+
+    if wait_for_coordinator_socket "$(cat /var/run/coordinator.pid)"; then
+        logger -t deneb-coordinator "coordinator command socket is ready"
+    else
+        logger -t deneb-coordinator "coordinator command socket was not ready before timeout"
+    fi
+}
+
+stop() {
+    echo Stopping coordinator
+    PID=$(cat /var/run/coordinator.pid)
+    kill -9 "${PID}"
+}
+EOF
+        chmod 0755 "${coordinator_init}"
+        log "patched coordinator boot wait"
+    fi
+}
+
 rollback_to_stock_menu() {
     log "rolling back to stock menu service"
     /etc/init.d/deneb-ui stop 2>/dev/null || true
@@ -359,6 +583,8 @@ backup_stock
 install_binary
 install_web_runtime
 patch_stock_coordinator
+install_motion_firmware_verify_cache
+patch_motion_stack_boot_order
 smoke_test_binary
 install_config
 prune_stock_wifi_portal

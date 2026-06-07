@@ -65,6 +65,7 @@ static printer_state_t previous_state;
 static int preheat_targets_logged = 0;
 static int preheat_reached_logged = 0;
 static time_t current_print_start_time = 0;
+static long long last_stop_ms = -1;
 
 static int is_temp_reached(float current, float target)
 {
@@ -558,16 +559,21 @@ int backend_zmq_abort(void)
 
 int backend_zmq_stop_print(void)
 {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return -1;
+
+    long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+    if (last_stop_ms >= 0 && (now_ms - last_stop_ms) < 3000)
+        return 0;
+
+    fprintf(stderr, "deneb-api: stop print command requested\n");
     int rc = 0;
 
     if (backend_zmq_abort() < 0)
         rc = -1;
-    if (backend_zmq_send_gcode("M140 S0") < 0)
-        rc = -1;
-    if (backend_zmq_send_gcode("M104 S0") < 0)
-        rc = -1;
-    if (backend_zmq_send_gcode("G28") < 0)
-        rc = -1;
+    else
+        last_stop_ms = now_ms;
 
     if (rc == 0)
         fprintf(stderr, "deneb-api: stop print command sent successfully\n");

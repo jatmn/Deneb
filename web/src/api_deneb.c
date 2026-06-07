@@ -319,6 +319,31 @@ void api_deneb_config_get(const http_request_t *req, http_response_t *resp)
 #define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 #define DENEB_PRINT_HISTORY "/home/3D/deneb-print-history.json"
 
+static void read_json_array_file_or_empty(const char *path, char *out, size_t out_sz)
+{
+    if (out_sz == 0)
+        return;
+
+    snprintf(out, out_sz, "[]");
+
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return;
+
+    size_t n = fread(out, 1, out_sz - 1, f);
+    int truncated = !feof(f);
+    fclose(f);
+    out[n] = '\0';
+
+    const char *start = out;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n')
+        start++;
+
+    if (truncated || *start != '[' || !strrchr(start, ']')) {
+        snprintf(out, out_sz, "[]");
+    }
+}
+
 void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
@@ -349,23 +374,11 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     }
 
     /* Pending jobs */
-    strcpy(file_buf, "[]");
-    FILE *pf = fopen(DENEB_CLUSTER_PENDING_JOB, "r");
-    if (pf) {
-        size_t n = fread(file_buf, 1, sizeof(file_buf) - 1, pf);
-        fclose(pf);
-        if (n > 0) file_buf[n] = '\0';
-    }
+    read_json_array_file_or_empty(DENEB_CLUSTER_PENDING_JOB, file_buf, sizeof(file_buf));
     json_raw(&w, "pending", file_buf);
 
     /* History */
-    strcpy(file_buf, "[]");
-    FILE *hf = fopen(DENEB_PRINT_HISTORY, "r");
-    if (hf) {
-        size_t n = fread(file_buf, 1, sizeof(file_buf) - 1, hf);
-        fclose(hf);
-        if (n > 0) file_buf[n] = '\0';
-    }
+    read_json_array_file_or_empty(DENEB_PRINT_HISTORY, file_buf, sizeof(file_buf));
     json_raw(&w, "history", file_buf);
 
     json_obj_close(&w);

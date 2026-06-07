@@ -26,14 +26,15 @@ New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 if (Test-Path -LiteralPath $stageDir) {
     Remove-Item -LiteralPath $stageDir -Recurse -Force
 }
-New-Item -ItemType Directory -Force -Path (Join-Path $stageDir "files\plugins") | Out-Null
+$stagedPluginDir = Join-Path $stageDir "files\plugins\$pluginId"
+New-Item -ItemType Directory -Force -Path $stagedPluginDir | Out-Null
 
 Copy-Item -LiteralPath $packageJson -Destination (Join-Path $stageDir "package.json")
 Get-ChildItem -LiteralPath $pluginSource -Force |
     Where-Object { $_.Name -ne "package.json" -and $_.Name -ne "__pycache__" } |
-    Copy-Item -Destination (Join-Path $stageDir "files\plugins") -Recurse
+    Copy-Item -Destination $stagedPluginDir -Recurse
 
-$stagedPackageJson = Join-Path $stageDir "files\plugins\package.json"
+$stagedPackageJson = Join-Path $stagedPluginDir "package.json"
 if (Test-Path -LiteralPath $stagedPackageJson) {
     Remove-Item -LiteralPath $stagedPackageJson -Force
 }

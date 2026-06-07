@@ -13,10 +13,12 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -143,48 +145,113 @@ static int pending_job_tracker(void)
     return atoi(p);
 }
 
+static int pending_job_path(char *out, size_t out_sz)
+{
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f) return -1;
+
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    const char *p = strstr(buf, "\"path\"");
+    if (!p) return -1;
+    p = strchr(p, ':');
+    if (!p) return -1;
+    p++;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p != '"' && *p != '\'') return -1;
+    char quote = *p++;
+    const char *start = p;
+    const char *end = strchr(start, quote);
+    if (!end) return -1;
+
+    size_t len = (size_t)(end - start);
+    if (len == 0 || len >= out_sz) return -1;
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 0;
+}
+
 static int send_pending_job_instruction(const char *instruction)
 {
     int tracker = pending_job_tracker();
     if (tracker < 0) return -1;
 
+    char path[1024] = { 0 };
+    if (strcmp(instruction, "PREPARE") == 0 && pending_job_path(path, sizeof(path)) < 0) {
+        fprintf(stderr, "deneb-api: failed to read pending job path for PREPARE\n");
+        return -1;
+    }
+    if (strcmp(instruction, "PREPARE") == 0) {
+        fprintf(stderr, "deneb-api: pending print path resolved to %s\n",
+                path[0] ? path : "(none)");
+    }
+
     fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n", instruction, tracker);
 
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-             "PYTHONPATH=/home:/home/lib python3 -c \""
-             "import sys;"
-             "from sponge.spinner import spinner;"
-             "from sponge.ipc import zmqipc;"
-             "import gershwin.constructs as gershwin;"
-             "import gershwin.node as node;"
-             "from gershwin.manager import Manager;"
-             "from cygnus.marshal.types.printing import PrintHandlingRequest,PrintHandlingInstruction;"
-             "result={'done':False,'reply':None}\n"
-             "@gershwin.node('client')\n"
-             "class ClientNode(node.Node):\n"
-             " def plan(self):\n"
-             "  self.doOption(gershwin.DO_OPTIONS.DO_IMMEDIATELY)\n"
-             "  self.addStep(goal='pending print action', func=self._run)\n"
-             " def _run(self):\n"
-             "  i=PrintHandlingInstruction.%s\n"
-             "  r=PrintHandlingRequest.create(tracker=int(sys.argv[1]), instruction=i, options={})\n"
-             "  result['reply']=yield from self.call('coordinator::print::handling', r)\n"
-             "  result['done']=True\n"
-             "m=Manager('deneb-api-print-action', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3);"
-             "m.addNode(ClientNode.id, ClientNode);"
-             "\nfor _ in range(30):\n"
-             " m.spinner.spin(100)\n"
-             " m.run_time=m.spinner.getElapsed()\n"
-             " m.spin()\n"
-             " if result['done']:\n"
-             "  break\n"
-             "reply=result.get('reply') or {}\n"
-             "sys.exit(0 if result['done'] and reply.get('accepted') else 1)\n"
-             "\" %d >/tmp/deneb-print-action.log 2>&1",
-             instruction, tracker);
+    static const char script[] =
+        "import sys\n"
+        "from sponge.spinner import spinner\n"
+        "from sponge.ipc import zmqipc\n"
+        "import gershwin.constructs as gershwin\n"
+        "import gershwin.node as node\n"
+        "from gershwin.manager import Manager\n"
+        "from cygnus.marshal.types.printing import PrintHandlingRequest, PrintHandlingInstruction\n"
+        "instruction = getattr(PrintHandlingInstruction, sys.argv[1])\n"
+        "tracker = int(sys.argv[2])\n"
+        "path = sys.argv[3] if len(sys.argv) > 3 else ''\n"
+        "result = {'done': False, 'reply': None}\n"
+        "@gershwin.node('client')\n"
+        "class ClientNode(node.Node):\n"
+        "    def plan(self):\n"
+        "        self.doOption(gershwin.DO_OPTIONS.DO_IMMEDIATELY)\n"
+        "        self.addStep(goal='pending print action', func=self._run)\n"
+        "    def _run(self):\n"
+        "        options = {}\n"
+        "        if instruction == PrintHandlingInstruction.PREPARE:\n"
+        "            options = {'path': path}\n"
+        "        req = PrintHandlingRequest.create(tracker=tracker, instruction=instruction, options=options)\n"
+        "        result['reply'] = yield from self.call('coordinator::print::handling', req)\n"
+        "        result['done'] = True\n"
+        "m = Manager('deneb-api-print-action', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3)\n"
+        "m.addNode(ClientNode.id, ClientNode)\n"
+        "for _ in range(30):\n"
+        "    m.spinner.spin(100)\n"
+        "    m.run_time = m.spinner.getElapsed()\n"
+        "    m.spin()\n"
+        "    if result['done']:\n"
+        "        break\n"
+        "reply = result.get('reply') or {}\n"
+        "sys.exit(0 if result['done'] and reply.get('accepted') else 1)\n";
 
-    return system(cmd);
+    char tracker_arg[32];
+    snprintf(tracker_arg, sizeof(tracker_arg), "%d", tracker);
+
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        int log_fd = open("/tmp/deneb-print-action.log",
+                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (log_fd >= 0) {
+            dup2(log_fd, STDOUT_FILENO);
+            dup2(log_fd, STDERR_FILENO);
+            close(log_fd);
+        }
+        setenv("PYTHONPATH", "/home:/home/lib", 1);
+        execlp("python3", "python3", "-c", script, instruction, tracker_arg, path, (char *)NULL);
+        _exit(127);
+    }
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0)
+        return -1;
+
+    int ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    fprintf(stderr, "deneb-api: coordinator print instruction=%s returned %s\n",
+            instruction, ok ? "accepted" : "rejected");
+    return ok ? 0 : -1;
 }
 
 static int elapsed_seconds(const printer_state_t *s)

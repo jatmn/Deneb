@@ -85,13 +85,14 @@ Deneb.ui = {
             var tl = data.time_left || data.time_total || 0;
             el.textContent = tl > 0 ? this.formatTime(tl) : '--:--';
         }
-        el = document.getElementById('stop-print-btn');
+        el = document.getElementById('abort-print-btn');
         if (el) {
             el.disabled = !(data && (data.is_printing || data.is_paused));
         }
     },
 
     updateJobsPage: function(data) {
+        var hasJobsData = !!data;
         data = data || {};
         var status = this.lastStatus || {};
         var current = data.current;
@@ -127,7 +128,7 @@ Deneb.ui = {
         }
 
         var pending = document.getElementById('jobs-pending');
-        if (pending) {
+        if (pending && hasJobsData) {
             var jobs = data.pending || [];
             if (jobs.length > 0) {
                 var html = '';
@@ -148,7 +149,7 @@ Deneb.ui = {
         }
 
         var history = document.getElementById('jobs-history');
-        if (history) {
+        if (history && hasJobsData) {
             var hist = data.history || [];
             if (hist.length > 0) {
                 var html = '';
@@ -312,7 +313,7 @@ Deneb.ui = {
                 '</div>' +
                 '<div class="card">' +
                 '<div class="card-title">Print Control</div>' +
-                '<div class="control-group"><button class="btn btn-warn" id="stop-print-btn" onclick="Deneb.cmdStop()">Stop</button></div>' +
+                '<div class="control-group"><button class="btn btn-warn" id="abort-print-btn" onclick="Deneb.cmdAbort()">Abort</button></div>' +
                 '</div>' +
                 '<div class="card">' +
                 '<div class="card-title" data-i18n="web.status.position">Position</div>' +
@@ -348,7 +349,6 @@ Deneb.ui = {
                 '<button class="btn btn-secondary" onclick="Deneb.cmd(\'pause\')" data-i18n="web.control.pause">Pause</button>' +
                 '<button class="btn btn-secondary" onclick="Deneb.cmd(\'resume\')" data-i18n="web.control.resume">Resume</button>' +
                 '<button class="btn btn-warn" onclick="Deneb.cmdAbort()" data-i18n="web.control.cancel">Cancel</button>' +
-                '<button class="btn btn-warn" onclick="Deneb.cmdStop()">Stop</button>' +
                 '</div></div>' +
                 '<div class="card">' +
                 '<div class="card-title" data-i18n="web.control.temperature">Temperature</div>' +

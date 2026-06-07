@@ -107,6 +107,7 @@ static const api_route_t routes[] = {
     {"POST", "/cluster-api/v1/materials/",                          api_cluster_materials_get, 0},
     {"GET",  "/cluster-api/v1/printers",                            api_cluster_printers_get,  0},
     {"GET",  "/cluster-api/v1/print_jobs",                          api_cluster_print_jobs_get, 0},
+    {"POST", "/cluster-api/v1/print_jobs",                          api_cluster_print_jobs_post, 0},
     {"GET",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_preview_get, 0},
     {"POST", "/cluster-api/v1/print_jobs/",                         api_cluster_print_jobs_post, 0},
     {"PUT",  "/cluster-api/v1/print_jobs/",                         api_cluster_print_job_action_put, 0},

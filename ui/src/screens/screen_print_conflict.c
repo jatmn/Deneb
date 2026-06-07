@@ -21,6 +21,7 @@ static lv_obj_t *message_label = NULL;
 static lv_obj_t *detail_label = NULL;
 static lv_obj_t *status_label = NULL;
 static int current_tracker = -1;
+static char pending_path[256];
 
 static int json_read_file(char *buf, size_t buf_sz)
 {
@@ -94,6 +95,7 @@ static int send_stock_instruction(const char *instruction)
     snprintf(cmd, sizeof(cmd),
              "PYTHONPATH=/home:/home/lib python3 -c \""
              "import sys,time;"
+             "import json;"
              "from sponge.spinner import spinner;"
              "from sponge.ipc import zmqipc;"
              "import gershwin.constructs as gershwin;"
@@ -108,7 +110,18 @@ static int send_stock_instruction(const char *instruction)
              "  self.addStep(goal='pending print action', func=self._run)\n"
              " def _run(self):\n"
              "  i=PrintHandlingInstruction.%s\n"
-             "  r=PrintHandlingRequest.create(tracker=int(sys.argv[1]), instruction=i, options={})\n"
+             "  path=''\n"
+             "  try:\n"
+             "   with open('/tmp/deneb-cluster-print-job.json', 'r') as f:\n"
+             "    job=json.load(f)\n"
+             "   if isinstance(job, list) and job:\n"
+             "    path=job[0].get('path', '') or ''\n"
+             "  except Exception:\n"
+             "   path=''\n"
+             "  options={}\n"
+             "  if i==PrintHandlingInstruction.PREPARE and path:\n"
+             "   options={'path': path}\n"
+             "  r=PrintHandlingRequest.create(tracker=int(sys.argv[1]), instruction=i, options=options)\n"
              "  result['reply']=yield from self.call('coordinator::print::handling', r)\n"
              "  result['done']=True\n"
              "m=Manager('deneb-ui-print-action', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3);"
@@ -124,12 +137,15 @@ static int send_stock_instruction(const char *instruction)
              "\" %d >/tmp/deneb-print-action.log 2>&1",
              instruction, current_tracker);
 
+    fprintf(stderr, "touch-ui: send_stock_instruction action=%s tracker=%d path=%s\n",
+            instruction, current_tracker, pending_path[0] ? pending_path : "(none)");
     return system(cmd);
 }
 
-static void finish_prompt(const char *status_key)
+static void finish_prompt(const char *status_key, int remove_pending)
 {
-    unlink(PENDING_JOB_PATH);
+    if (remove_pending)
+        unlink(PENDING_JOB_PATH);
     if (status_label)
         lv_label_set_text(status_label, locale_get(status_key));
     screen_mgr_pop();
@@ -141,7 +157,7 @@ static void continue_btn_cb(lv_event_t *e)
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
     if (send_stock_instruction("PREPARE") == 0)
-        finish_prompt("print_conflict.continuing");
+        finish_prompt("print_conflict.continuing", 0);
     else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
 }
@@ -152,7 +168,7 @@ static void cancel_btn_cb(lv_event_t *e)
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.cancelled"));
     if (send_stock_instruction("ABORT") == 0)
-        finish_prompt("print_conflict.cancelled");
+        finish_prompt("print_conflict.cancelled", 1);
     else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
 }
@@ -188,6 +204,7 @@ static void load_prompt_text(void)
         json_get_string(buf, "origin_name", loaded, sizeof(loaded));
         json_get_string(buf, "target_name", wanted, sizeof(wanted));
         current_tracker = json_get_int(buf, "deneb_tracker");
+        json_get_string(buf, "path", pending_path, sizeof(pending_path));
     }
 
     snprintf(msg, sizeof(msg), locale_get("print_conflict.message_fmt"),

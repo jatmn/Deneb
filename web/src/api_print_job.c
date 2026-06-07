@@ -43,6 +43,78 @@ static const char *parse_state_cmd(const char *body, char *out, size_t out_sz)
     return i > 0 ? out : NULL;
 }
 
+static int read_pending_job_field(const char *field, char *out, size_t out_sz)
+{
+    FILE *f = fopen(DENEB_CLUSTER_PENDING_JOB, "rb");
+    if (!f) return -1;
+
+    char buf[8192];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0) return -1;
+    buf[n] = '\0';
+
+    char needle[80];
+    snprintf(needle, sizeof(needle), "\"%s\"", field);
+    const char *p = strstr(buf, needle);
+    if (!p) return -1;
+
+    p = strchr(p + strlen(needle), ':');
+    if (!p) return -1;
+    p++;
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+    if (*p != '"' && *p != '\'') return -1;
+
+    char quote = *p++;
+    const char *start = p;
+    const char *end = strchr(start, quote);
+    if (!end) return -1;
+
+    size_t len = (size_t)(end - start);
+    if (len == 0 || len >= out_sz) return -1;
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 0;
+}
+
+static int is_same_print_path(const char *pending_path, const char *candidate_path)
+{
+    if (!pending_path || !candidate_path) return 0;
+    if (strcmp(pending_path, candidate_path) == 0) return 1;
+
+    const char *pp = strrchr(pending_path, '/');
+    const char *cp = strrchr(candidate_path, '/');
+    pp = pp ? pp + 1 : pending_path;
+    cp = cp ? cp + 1 : candidate_path;
+
+    return strcmp(pp, cp) == 0;
+}
+
+static int read_pending_print_path(char *path, size_t path_sz)
+{
+    return read_pending_job_field("path", path, path_sz);
+}
+
+static void write_pending_job_response(http_response_t *resp, const char *job_name, int status_code)
+{
+    char buf[512];
+    json_writer_t w;
+    json_init(&w, buf, sizeof(buf));
+    json_obj_open(&w);
+    json_str(&w, "message", "Print job already queued");
+    json_str(&w, "name", job_name[0] ? job_name : "Print job");
+    json_str(&w, "uuid", "0");
+    json_str(&w, "source", "WEB_API");
+    json_str(&w, "state", "pre_print");
+    json_float(&w, "progress", 0.0);
+    json_int(&w, "time_elapsed", 0);
+    json_int(&w, "time_total", 0);
+    json_obj_close(&w);
+    json_len(&w);
+    api_http_set_body_str(resp, buf);
+    resp->status_code = status_code;
+}
+
 static int register_coordinator_print(const char *path)
 {
     static const char script[] =
@@ -83,7 +155,7 @@ static int register_coordinator_print(const char *path)
         "        changes.append({'type_of_change':'material_change','index':0,'origin_id':loaded_guid,'origin_name':loaded_name,'target_id':target_guid,'target_name':target_name})\n"
         "    if nozzle and target_nozzle and nozzle != target_nozzle:\n"
         "        changes.append({'type_of_change':'print_core_change','index':0,'origin_id':nozzle + ' mm','origin_name':nozzle + ' mm','target_id':target_nozzle + ' mm','target_name':target_nozzle + ' mm'})\n"
-        "    job = {'uuid':'deneb-current-job','created_at':datetime.datetime.utcnow().isoformat(timespec='milliseconds') + 'Z','name':os.path.basename(path),'status':'wait_user_action' if changes else 'pre_print','time_total':0,'time_elapsed':0,'started':True,'force':False,'machine_variant':'Ultimaker 2+ Connect','owner':'Cura','assigned_to':'00000000-0000-0000-0000-000000000000','build_plate':{'type':'glass'},'configuration':[{'extruder_index':0,'print_core_id':target_nozzle + ' mm','material':{'guid':target_guid,'brand':'Generic','material':material_type(target_name),'color':'#ffc924'}}],'compatible_machine_families':['ultimaker2_plus_connect','Ultimaker 2+ Connect'],'impediments_to_printing':[]}\n"
+        "    job = {'uuid':'deneb-current-job','created_at':datetime.datetime.utcnow().isoformat(timespec='milliseconds') + 'Z','name':os.path.basename(path),'path':path,'status':'wait_user_action' if changes else 'pre_print','time_total':0,'time_elapsed':0,'started':True,'force':False,'machine_variant':'Ultimaker 2+ Connect','owner':'Cura','assigned_to':'00000000-0000-0000-0000-000000000000','build_plate':{'type':'glass'},'configuration':[{'extruder_index':0,'print_core_id':target_nozzle + ' mm','material':{'guid':target_guid,'brand':'Generic','material':material_type(target_name),'color':'#ffc924'}}],'compatible_machine_families':['ultimaker2_plus_connect','Ultimaker 2+ Connect'],'impediments_to_printing':[]}\n"
         "    if tracker is not None: job['deneb_tracker'] = tracker\n"
         "    if changes: job['configuration_changes_required'] = changes\n"
         "    with open(PENDING, 'w') as f: json.dump([job], f, separators=(',', ':'))\n"
@@ -103,7 +175,7 @@ static int register_coordinator_print(const char *path)
         "        if reply.get('accepted') and print_tracker is not None:\n"
         "            result['change_count'] = write_pending(sys.argv[1], print_tracker)\n"
         "            if result['change_count'] == 0:\n"
-        "                req = PrintHandlingRequest.create(tracker=print_tracker, instruction=PrintHandlingInstruction.PREPARE, options={})\n"
+        "                req = PrintHandlingRequest.create(tracker=print_tracker, instruction=PrintHandlingInstruction.PREPARE, options={'path': sys.argv[1]})\n"
         "                result['prepare_reply'] = yield from self.call('coordinator::print::handling', req)\n"
         "        result['done'] = True\n"
         "m = Manager('deneb-api-register', spinner.Spinner, zmqipc.ZMQIPC, ip='tcp://127.0.0.1:', pubbase=5546, pubinstance=3)\n"
@@ -325,6 +397,7 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
+        unlink(DENEB_CLUSTER_PENDING_JOB);
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
     } else if (action && strcmp(action, "stop") == 0) {
         if (backend_zmq_stop_print() < 0) {
@@ -407,6 +480,30 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     /* Move file to persistent storage where the print service can find it. */
     char dest_path[256];
     snprintf(dest_path, sizeof(dest_path), "%s/%s", DENEB_PRINT_SPOOL_DIR, filename);
+
+    char pending_path[1024];
+    if (read_pending_print_path(pending_path, sizeof(pending_path)) == 0) {
+        if (is_same_print_path(pending_path, dest_path)) {
+            char pending_name[128];
+            if (read_pending_job_field("name", pending_name, sizeof(pending_name)) != 0) {
+                strncpy(pending_name, filename, sizeof(pending_name) - 1);
+                pending_name[sizeof(pending_name) - 1] = '\0';
+            }
+
+            fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n", pending_path);
+            write_pending_job_response(resp, pending_name, 200);
+            unlink(gcode_path);
+            return;
+        }
+
+        fprintf(stderr,
+                "deneb-api: print upload rejected because another pending print exists: %s\n",
+                pending_path);
+        resp->status_code = 409;
+        api_http_set_body_str(resp, "{\"message\":\"Another print job is already pending\"}");
+        unlink(gcode_path);
+        return;
+    }
 
     if (rename(gcode_path, dest_path) < 0) {
         int rename_errno = errno;

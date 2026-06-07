@@ -98,6 +98,11 @@ int backend_abort_print(void);
 int backend_stop_print(void);
 
 /**
+ * Whether a stop request is currently in-flight.
+ */
+int backend_is_stop_print_inflight(void);
+
+/**
  * Pause the current print.
  */
 int backend_pause_print(void);

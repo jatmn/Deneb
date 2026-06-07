@@ -100,7 +100,10 @@ static void file_click_cb(lv_event_t *e)
     lv_label_set_text_fmt(preview_label,
                           locale_get("print.selected_fmt"),
                           selected_name);
-    lv_label_set_text(status_msg, locale_get("print.ready"));
+    const printer_state_t *s = backend_get_state();
+    lv_label_set_text(status_msg,
+                      s && s->connected ? locale_get("print.ready")
+                                        : locale_get("material.busy"));
     fprintf(stderr, "touch-ui: file selected for print: %s (%s)\n", selected_name, selected_path);
 }
 
@@ -111,12 +114,17 @@ static void start_btn_cb(lv_event_t *e)
         lv_label_set_text(status_msg, locale_get("print.select_first"));
         return;
     }
+    const printer_state_t *s = backend_get_state();
+    if (!s || !s->connected || s->has_error) {
+        lv_label_set_text(status_msg, locale_get("material.busy"));
+        return;
+    }
 
     /* Send JOB command to coordinator with full path */
     char escaped_path[MAX_FILE_PATH * 2 + 1];
     char args[384];
     json_escape_string(selected_path, escaped_path, sizeof(escaped_path));
-    snprintf(args, sizeof(args), "{\"file\":\"%s\",\"source\":\"USB\",\"uuid\":\"0\"}", escaped_path);
+    snprintf(args, sizeof(args), "{\"path\":\"%s\",\"file\":\"%s\",\"source\":\"USB\",\"uuid\":\"0\"}", escaped_path, escaped_path);
     if (backend_send_command("JOB", args) == 0) {
         lv_label_set_text_fmt(status_msg, locale_get("print.starting_fmt"),
                               selected_name);
@@ -150,6 +158,9 @@ static void resume_btn_cb(lv_event_t *e)
 static void stop_btn_cb(lv_event_t *e)
 {
     (void)e;
+    if (backend_is_stop_print_inflight())
+        return;
+
     fprintf(stderr, "touch-ui: stop requested\n");
     if (backend_stop_print() == 0)
         lv_label_set_text(status_msg, locale_get("print.stopping"));
