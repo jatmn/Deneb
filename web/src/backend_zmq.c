@@ -34,12 +34,20 @@ static printer_state_t state = {
     .is_printing = false, .is_paused = false, .has_error = false,
     .current_req = "", .connected = false, .last_update_ms = 0,
 };
+static deneb_print_backend_route_t backend_route = {
+    DENEB_PRINT_BACKEND_COORDINATOR,
+    DENEB_COORDINATOR_STATUS_URL,
+    DENEB_COORDINATOR_COMMAND_URL
+};
 
 int backend_zmq_init(void) { fprintf(stderr, "backend_zmq: stub mode\n"); state.connected = true; return 0; }
 int backend_zmq_get_fd(void) { return -1; }
 void backend_zmq_poll(void) {}
 const printer_state_t *backend_zmq_get_state(void) { return &state; }
 const char *backend_zmq_get_status_json(void) { return "{}"; }
+const char *backend_zmq_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
+const char *backend_zmq_get_print_backend_status_url(void) { return backend_route.status_url; }
+const char *backend_zmq_get_print_backend_command_url(void) { return backend_route.command_url; }
 int backend_zmq_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_zmq_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_zmq_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
@@ -325,10 +333,15 @@ static void update_status_cache(void)
     int rem = 1536;
     int n;
     char escaped_filename[sizeof(state.filename) * 2 + 1];
+    char route_fields[256];
     const char *status = deneb_print_status_label(state.connected,
         state.has_error, state.is_paused, state.is_printing);
 
     json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
+    if (deneb_print_backend_route_json_fields(&backend_route, route_fields,
+                                              sizeof(route_fields)) < 0)
+        snprintf(route_fields, sizeof(route_fields),
+                 "\"print_backend\":\"unknown\"");
 
     n = snprintf(p, rem,
         "{\"nozzle_temp_cur\":%.1f,\"nozzle_temp_set\":%.1f,"
@@ -337,7 +350,7 @@ static void update_status_cache(void)
         "\"progress\":%.1f,\"time_total\":%d,\"time_left\":%d,"
         "\"filename\":\"%s\",\"status\":\"%s\","
         "\"is_printing\":%s,\"is_paused\":%s,\"has_error\":%s,"
-        "\"connected\":%s}",
+        "\"connected\":%s,%s}",
         state.nozzle_temp_cur, state.nozzle_temp_set,
         state.bed_temp_cur, state.bed_temp_set,
         state.pos_x, state.pos_y, state.pos_z,
@@ -347,7 +360,8 @@ static void update_status_cache(void)
         state.is_printing ? "true" : "false",
         state.is_paused ? "true" : "false",
         state.has_error ? "true" : "false",
-        state.connected ? "true" : "false");
+        state.connected ? "true" : "false",
+        route_fields);
 
     p += n; rem -= n;
 
@@ -480,6 +494,21 @@ const char *backend_zmq_get_status_json(void)
 {
     if (status_json_cache) return status_json_cache;
     return "{}";
+}
+
+const char *backend_zmq_get_print_backend_name(void)
+{
+    return deneb_print_backend_name(backend_route.backend);
+}
+
+const char *backend_zmq_get_print_backend_status_url(void)
+{
+    return backend_route.status_url;
+}
+
+const char *backend_zmq_get_print_backend_command_url(void)
+{
+    return backend_route.command_url;
 }
 
 static int backend_zmq_send_frame(const char *buf, size_t len)

@@ -79,6 +79,9 @@ int backend_zmq_stop_print(void);
 
 /* Get pre-serialized status JSON string. */
 const char *backend_zmq_get_status_json(void);
+const char *backend_zmq_get_print_backend_name(void);
+const char *backend_zmq_get_print_backend_status_url(void);
+const char *backend_zmq_get_print_backend_command_url(void);
 
 /* Cleanup. */
 void backend_zmq_deinit(void);

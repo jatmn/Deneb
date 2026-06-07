@@ -268,10 +268,8 @@ static int is_printing(const printer_state_t *s)
 
 static const char *get_job_state(const printer_state_t *s)
 {
-    if (!deneb_print_job_is_active(s->has_error, s->is_paused, s->is_printing))
-        return "none";
-    return deneb_print_job_status_label(s->has_error, s->is_paused,
-                                        s->is_printing);
+    return deneb_print_job_state_or_none(s->has_error, s->is_paused,
+                                         s->is_printing);
 }
 
 void api_print_job_get(const http_request_t *req, http_response_t *resp)
@@ -294,7 +292,8 @@ void api_print_job_get(const http_request_t *req, http_response_t *resp)
     json_str(&w, "source", s->source);
     json_str(&w, "state", get_job_state(s));
     json_float(&w, "progress", s->progress / 100.0f);
-    json_int(&w, "time_elapsed", s->time_total > 0 ? s->time_total - s->time_left : 0);
+    json_int(&w, "time_elapsed",
+             deneb_print_elapsed_seconds(s->time_total, s->time_left));
     json_int(&w, "time_total", s->time_total);
     json_str(&w, "datetime_started", "");
     json_str(&w, "datetime_finished", "");
@@ -330,7 +329,7 @@ void api_print_job_time_elapsed_get(const http_request_t *req, http_response_t *
 {
     (void)req;
     const printer_state_t *s = backend_zmq_get_state();
-    int elapsed = s->time_total > 0 ? s->time_total - s->time_left : 0;
+    int elapsed = deneb_print_elapsed_seconds(s->time_total, s->time_left);
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", elapsed);
     api_http_set_body_str(resp, buf);

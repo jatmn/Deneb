@@ -34,6 +34,11 @@ static printer_state_t state = {
     .is_printing = false, .is_paused = false, .has_error = false,
     .current_req = "", .connected = false, .last_update_ms = 0,
 };
+static deneb_print_backend_route_t backend_route = {
+    DENEB_PRINT_BACKEND_COORDINATOR,
+    DENEB_COORDINATOR_STATUS_URL,
+    DENEB_COORDINATOR_COMMAND_URL
+};
 
 int backend_init(void) {
     fprintf(stderr, "backend: stub mode (no ZMQ)\n");
@@ -43,6 +48,9 @@ int backend_init(void) {
 
 void backend_poll(void) { /* no-op in stub */ }
 const printer_state_t *backend_get_state(void) { return &state; }
+const char *backend_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
+const char *backend_get_print_backend_status_url(void) { return backend_route.status_url; }
+const char *backend_get_print_backend_command_url(void) { return backend_route.command_url; }
 int backend_is_stop_print_inflight(void) { return 0; }
 int backend_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
@@ -217,30 +225,6 @@ static int state_has_print_context(const printer_state_t *s)
     obs.bed_target = s->bed_temp_set;
     obs.nozzle_target = s->nozzle_temp_set;
     return deneb_print_observation_has_context(&obs);
-}
-
-static int read_cluster_pending_name(char *out, size_t out_sz)
-{
-    deneb_pending_job_file_t job;
-
-    if (!out || out_sz == 0)
-        return -1;
-    out[0] = '\0';
-
-    if (deneb_pending_job_file_load_default(&job) != 0)
-        return -1;
-
-    if (job.name[0]) {
-        set_filename_or_none(out, job.name);
-        return 0;
-    }
-
-    if (job.path[0]) {
-        set_filename_or_none(out, job.path);
-        return 0;
-    }
-
-    return -1;
 }
 
 static void set_filename_or_none(char *dst, const char *value)
@@ -446,7 +430,10 @@ static void parse_status(const char *json)
     state.is_paused = deneb_print_req_is_paused(state.current_req);
 
     char pending_name[128];
-    int has_pending_name = (read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 && pending_name[0] != '\0');
+    int has_pending_name =
+        (deneb_pending_job_file_default_display_name(pending_name,
+                                                     sizeof(pending_name)) == 0 &&
+         pending_name[0] != '\0');
     char original_file[128];
 
     if (has_file) {
@@ -627,6 +614,22 @@ const printer_state_t *backend_get_state(void)
 {
     return &state;
 }
+
+const char *backend_get_print_backend_name(void)
+{
+    return deneb_print_backend_name(backend_route.backend);
+}
+
+const char *backend_get_print_backend_status_url(void)
+{
+    return backend_route.status_url;
+}
+
+const char *backend_get_print_backend_command_url(void)
+{
+    return backend_route.command_url;
+}
+
 int backend_is_stop_print_inflight(void)
 {
     if (!print_stop_inflight || last_stop_ms < 0)

@@ -53,34 +53,10 @@ static void read_nozzle_id(char *out, size_t out_sz)
     snprintf(out, out_sz, "%s mm", nozzle);
 }
 
-static int read_cluster_pending_name(char *out, size_t out_sz)
-{
-    deneb_pending_job_file_t job;
-
-    if (!out || out_sz == 0)
-        return -1;
-
-    out[0] = '\0';
-    if (deneb_pending_job_file_load_default(&job) != 0)
-        return -1;
-
-    if (job.name[0] && strcmp(job.name, "none") != 0) {
-        snprintf(out, out_sz, "%s", job.name);
-        return 0;
-    }
-
-    if (job.path[0] && strcmp(job.path, "none") != 0) {
-        const char *base = strrchr(job.path, '/');
-        snprintf(out, out_sz, "%s", base ? base + 1 : job.path);
-        return out[0] ? 0 : -1;
-    }
-
-    return -1;
-}
-
 static int motion_allowed(const printer_state_t *s)
 {
-    return s && s->connected && !s->is_printing && !s->is_paused && !s->has_error;
+    return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
+                                                  s->is_paused, s->is_printing);
 }
 
 static void set_motion_blocked(http_response_t *resp)
@@ -374,7 +350,10 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
     {
         const char *filename = s->filename;
         char pending_name[128];
-        if (!filename[0] && read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 && pending_name[0]) {
+        if (!filename[0] &&
+            deneb_pending_job_file_default_display_name(pending_name,
+                                                        sizeof(pending_name)) == 0 &&
+            pending_name[0]) {
             filename = pending_name;
         }
         json_str(&w, "filename", filename);

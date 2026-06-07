@@ -193,16 +193,31 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_job_status_label(0, 0, 0), "finished") == 0);
     assert(strcmp(deneb_print_job_status_label(0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_job_status_label(1, 1, 1), "error") == 0);
+    assert(strcmp(deneb_print_job_state_or_none(0, 0, 0), "none") == 0);
+    assert(strcmp(deneb_print_job_state_or_none(0, 0, 1), "printing") == 0);
+    assert(strcmp(deneb_print_job_state_or_none(0, 1, 1), "paused") == 0);
+    assert(strcmp(deneb_print_job_state_or_none(1, 1, 1), "error") == 0);
     assert(deneb_print_job_is_active(1, 0, 0));
     assert(deneb_print_job_is_active(0, 1, 0));
     assert(deneb_print_job_is_active(0, 0, 1));
     assert(!deneb_print_job_is_active(0, 0, 0));
+    assert(deneb_print_manual_action_allowed(1, 0, 0, 0));
+    assert(!deneb_print_manual_action_allowed(0, 0, 0, 0));
+    assert(!deneb_print_manual_action_allowed(1, 1, 0, 0));
+    assert(!deneb_print_manual_action_allowed(1, 0, 1, 0));
+    assert(!deneb_print_manual_action_allowed(1, 0, 0, 1));
+    assert(deneb_print_elapsed_seconds(120, 60) == 60);
+    assert(deneb_print_elapsed_seconds(120, 0) == 120);
+    assert(deneb_print_elapsed_seconds(120, -1) == 120);
+    assert(deneb_print_elapsed_seconds(120, 121) == 0);
+    assert(deneb_print_elapsed_seconds(0, 10) == 0);
 }
 
 static void test_print_backend_route_contract(void)
 {
     deneb_print_backend_t backend;
     deneb_print_backend_route_t route;
+    char fields[256];
 
     assert(deneb_print_backend_parse_override("native", &backend) == 0);
     assert(backend == DENEB_PRINT_BACKEND_NATIVE);
@@ -222,12 +237,20 @@ static void test_print_backend_route_contract(void)
     assert(route.backend == DENEB_PRINT_BACKEND_COORDINATOR);
     assert(strcmp(route.status_url, DENEB_COORDINATOR_STATUS_URL) == 0);
     assert(strcmp(route.command_url, DENEB_COORDINATOR_COMMAND_URL) == 0);
+    assert(deneb_print_backend_route_json_fields(&route, fields, sizeof(fields)) > 0);
+    assert(strstr(fields, "\"print_backend\":\"coordinator\"") != NULL);
+    assert(strstr(fields, DENEB_COORDINATOR_STATUS_URL) != NULL);
+    assert(strstr(fields, DENEB_COORDINATOR_COMMAND_URL) != NULL);
 
     route = deneb_print_backend_route(DENEB_PRINT_BACKEND_NATIVE);
     assert(route.backend == DENEB_PRINT_BACKEND_NATIVE);
     assert(strcmp(route.status_url, DENEB_PRINTSVC_STATUS_URL) == 0);
     assert(strcmp(route.command_url, DENEB_PRINTSVC_COMMAND_URL) == 0);
     assert(strcmp(deneb_print_backend_name(route.backend), "native") == 0);
+    assert(deneb_print_backend_route_json_fields(&route, fields, sizeof(fields)) > 0);
+    assert(strstr(fields, "\"print_backend\":\"native\"") != NULL);
+    assert(strstr(fields, DENEB_PRINTSVC_STATUS_URL) != NULL);
+    assert(strstr(fields, DENEB_PRINTSVC_COMMAND_URL) != NULL);
 }
 
 static void test_pending_job_metadata(void)
@@ -632,6 +655,7 @@ static void test_pending_job_file_contract(void)
     const char *path = "/tmp/deneb-pending-job-file-test.json";
     deneb_pending_job_file_t job;
     char raw[1024];
+    char display[128];
     size_t raw_len = 0;
     FILE *f = fopen(path, "wb");
     assert(f != NULL);
@@ -652,10 +676,21 @@ static void test_pending_job_file_contract(void)
     assert(strcmp(job.target_name, "PETG") == 0);
     assert(deneb_pending_job_file_has_conflict(&job));
     assert(deneb_pending_job_file_same_path(job.path, "/tmp/cube.gcode"));
+    assert(deneb_pending_job_file_display_name(&job, display, sizeof(display)) == 0);
+    assert(strcmp(display, "Cube") == 0);
 
     assert(deneb_pending_job_file_mark_handled(path) == 0);
     assert(deneb_pending_job_file_load(path, &job) == 0);
     assert(!deneb_pending_job_file_has_conflict(&job));
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("[{\"name\":\"none\",\"path\":\"/home/3D/fallback.gcode\","
+          "\"status\":\"pre_print\",\"deneb_tracker\":77}]\n", f);
+    fclose(f);
+    assert(deneb_pending_job_file_load(path, &job) == 0);
+    assert(deneb_pending_job_file_display_name(&job, display, sizeof(display)) == 0);
+    assert(strcmp(display, "fallback.gcode") == 0);
 
     remove(path);
 }

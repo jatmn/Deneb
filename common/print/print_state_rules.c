@@ -201,7 +201,32 @@ const char *deneb_print_job_status_label(int has_error, int is_paused,
     return "finished";
 }
 
+const char *deneb_print_job_state_or_none(int has_error, int is_paused,
+                                          int is_active)
+{
+    if (!deneb_print_job_is_active(has_error, is_paused, is_active))
+        return "none";
+    return deneb_print_job_status_label(has_error, is_paused, is_active);
+}
+
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active)
 {
     return has_error || is_paused || is_active;
+}
+
+int deneb_print_manual_action_allowed(int connected, int has_error,
+                                      int is_paused, int is_active)
+{
+    return connected && !has_error && !is_paused && !is_active;
+}
+
+int deneb_print_elapsed_seconds(int time_total, int time_left)
+{
+    if (time_total <= 0)
+        return 0;
+    if (time_left <= 0)
+        return time_total;
+    if (time_left >= time_total)
+        return 0;
+    return time_total - time_left;
 }

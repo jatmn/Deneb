@@ -67,6 +67,9 @@ compatibility `firmware_version`. Cura rejects local-network devices whose
 advertised firmware version is older than `4.0.0`, so Deneb defaults the mDNS
 `firmware_version` to `4.0.0` instead of the Deneb git build version. The real
 Deneb build version remains available from `/api/v1/deneb/version`.
+The selected print backend route is available from
+`/api/v1/deneb/print_backend`; it returns the shared native route helper's
+backend name plus status and command endpoint URLs for lab validation.
 
 Current Cura derives the displayed network printer model by matching the mDNS
 `machine` value against BOM numbers in its bundled machine definitions. The
@@ -111,7 +114,10 @@ on real hardware remains open.
   When `deneb.printsvc.enabled=1`, `deneb-api` selects native `deneb-printsvc`
   status/command ports directly instead of routing print-service traffic
   through the Python coordinator; the coordinator route remains the default
-  fallback while the native service is lab-gated.
+  fallback while the native service is lab-gated. The cached Deneb status JSON
+  exposes `print_backend`, `print_backend_status_url`, and
+  `print_backend_command_url` from the shared native route helper so lab checks
+  can confirm which backend the API selected.
   Web motion macro names and pending-job display reads are shared with the
   native print-control helpers instead of being hard-coded/parsing JSON in this
   layer.

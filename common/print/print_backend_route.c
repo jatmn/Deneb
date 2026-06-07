@@ -81,3 +81,25 @@ const char *deneb_print_backend_name(deneb_print_backend_t backend)
 {
     return backend == DENEB_PRINT_BACKEND_NATIVE ? "native" : "coordinator";
 }
+
+int deneb_print_backend_route_json_fields(const deneb_print_backend_route_t *route,
+                                          char *out, size_t out_sz)
+{
+    deneb_print_backend_route_t fallback;
+
+    if (!out || out_sz == 0)
+        return -1;
+
+    if (!route) {
+        fallback = deneb_print_backend_route(DENEB_PRINT_BACKEND_COORDINATOR);
+        route = &fallback;
+    }
+
+    return snprintf(out, out_sz,
+                    "\"print_backend\":\"%s\","
+                    "\"print_backend_status_url\":\"%s\","
+                    "\"print_backend_command_url\":\"%s\"",
+                    deneb_print_backend_name(route->backend),
+                    route->status_url ? route->status_url : "",
+                    route->command_url ? route->command_url : "");
+}

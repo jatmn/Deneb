@@ -9,6 +9,7 @@
 #include "backend_zmq.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -147,6 +148,25 @@ void api_deneb_version_get(const http_request_t *req, http_response_t *resp)
     json_str(&w, "api_version", "1.0.0");
     json_str(&w, "printer_type", "Ultimaker 2+ Connect");
     json_bool(&w, "setup_complete", api_auth_is_setup_complete());
+    json_obj_close(&w);
+    json_len(&w);
+    api_http_set_body_str(resp, buf);
+}
+
+void api_deneb_print_backend_get(const http_request_t *req, http_response_t *resp)
+{
+    (void)req;
+    char buf[512];
+    const char *backend = backend_zmq_get_print_backend_name();
+    json_writer_t w;
+
+    json_init(&w, buf, sizeof(buf));
+    json_obj_open(&w);
+    json_str(&w, "print_backend", backend);
+    json_str(&w, "status_url", backend_zmq_get_print_backend_status_url());
+    json_str(&w, "command_url", backend_zmq_get_print_backend_command_url());
+    json_bool(&w, "native_printsvc", strcmp(backend, "native") == 0);
+    json_bool(&w, "stock_coordinator_route", strcmp(backend, "coordinator") == 0);
     json_obj_close(&w);
     json_len(&w);
     api_http_set_body_str(resp, buf);
@@ -355,9 +375,11 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
 
     /* Current job */
     const printer_state_t *s = backend_zmq_get_state();
-    if (s->is_printing || s->is_paused) {
-        int elapsed = s->time_total > 0 ? s->time_total - s->time_left : 0;
-        const char *st = s->has_error ? "error" : (s->is_paused ? "paused" : "printing");
+    if (deneb_print_job_is_active(s->has_error, s->is_paused, s->is_printing)) {
+        int elapsed = deneb_print_elapsed_seconds(s->time_total, s->time_left);
+        const char *st = deneb_print_job_state_or_none(s->has_error,
+                                                       s->is_paused,
+                                                       s->is_printing);
         json_key(&w, "current");
         json_obj_open(&w);
         json_str(&w, "name", s->filename);

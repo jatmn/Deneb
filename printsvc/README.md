@@ -28,9 +28,13 @@ scaffold:
   `/home/cygnus/marlindriver/gcode/`.
 - `../common/print/print_macros.h` names stock macro files used by
   printsvc, touchscreen UI, and web/API callers.
+- `../common/print/pending_job_file.*` owns pending-job file parsing,
+  conflict-state detection, handled-state updates, and display-name fallback
+  for touchscreen UI and web/API callers.
 - `../common/print/print_backend_route.*` owns the stock-coordinator versus
   native-printsvc endpoint selection used by touchscreen UI and web/API
-  clients.
+  clients, plus the route-diagnostics JSON fields that show which backend and
+  endpoint URLs a native client selected.
 - `diagnostics_log.*` writes low-volume comparison lines that pair stock-shaped
   status fields with native counters and latency fields for lab validation.
 - `service.*` owns the print lifecycle state machine and command dispatch.

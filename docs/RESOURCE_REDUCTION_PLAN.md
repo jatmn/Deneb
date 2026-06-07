@@ -88,11 +88,16 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   multi-line G-code, and job-start callers now route through native backend
   helper functions instead of each hand-rolling stock command JSON. LCD/API
   job-name display also reads pending-job metadata through the shared helper
-  instead of local JSON scans. LCD and web/API backends now select native
+  instead of local JSON scans, and the pending display-name fallback has one
+  shared owner for name/path-basename/`"none"` handling across LCD backend
+  status retention, touchscreen labels, and web/API printer responses. LCD and web/API backends now select native
   `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
   while preserving the stock coordinator route as the default fallback. That
   route decision lives in `common/print/print_backend_route.*` so clients do not
-  each duplicate UCI/env parsing or endpoint constants. Later slices should
+  each duplicate UCI/env parsing or endpoint constants. The same helper now
+  formats route diagnostics exposed by web status JSON and LCD/web backend
+  accessors, giving lab runs a native way to prove whether a process selected
+  stock coordinator or native `deneb-printsvc`. Later slices should
   keep collapsing remaining
   duplicate web/UI/API logic toward those helpers or a single
   `deneb-printsvc` API.
@@ -122,7 +127,12 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   contract, shared command formatting, pending-job metadata, shared pending-job file
   parsing/cleanup for web/touch/API conflict and display flows, shared macro
   names/transient-file filtering, shared web/API status label mapping,
+  shared pending-job display-name fallback,
+  shared manual-action safety gating,
+  shared print elapsed-time calculation,
+  shared job state-or-none naming,
   touchscreen/web macro and G-code command helper routing,
+  shared backend route diagnostics,
   touchscreen conflict actions and Cura cluster pending-job actions through
   native `JOB`/`ABORT` backend commands, native Cura upload registration and
   no-conflict `JOB` startup, reversible native-vs-stock print service init

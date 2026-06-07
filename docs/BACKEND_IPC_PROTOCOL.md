@@ -105,6 +105,13 @@ Digital Factory, and rollback assumptions during the first replacement stage.
 `common/print/print_backend_route.*` owns this route decision and endpoint
 mapping for Deneb clients. `DENEB_PRINTSVC_BACKEND=native` or `coordinator` can
 override the route for host/lab debugging.
+The same helper publishes route diagnostics for native clients: web status JSON
+includes `print_backend`, `print_backend_status_url`, and
+`print_backend_command_url`, and both LCD and web/API backends expose accessors
+for the selected route so lab checks can confirm the process is talking to the
+expected coordinator or native service endpoint. The Deneb API also exposes
+`GET /api/v1/deneb/print_backend` for the same selected-route contract without
+requiring clients to parse the full status payload.
 
 Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. Pending-job file handling, command-frame formatting,

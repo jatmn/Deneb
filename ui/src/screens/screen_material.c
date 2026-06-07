@@ -17,6 +17,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -57,7 +58,8 @@ static int material_backend_ready(void)
 static int material_motion_allowed(void)
 {
     const printer_state_t *s = backend_get_state();
-    return material_backend_ready() && !s->is_printing && !s->is_paused;
+    return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
+                                                  s->is_paused, s->is_printing);
 }
 
 static int material_temp_ready(const printer_state_t *s)

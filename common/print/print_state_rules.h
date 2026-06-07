@@ -26,6 +26,11 @@ const char *deneb_print_status_label(int connected, int has_error,
                                      int is_paused, int is_active);
 const char *deneb_print_job_status_label(int has_error, int is_paused,
                                          int is_active);
+const char *deneb_print_job_state_or_none(int has_error, int is_paused,
+                                          int is_active);
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active);
+int deneb_print_manual_action_allowed(int connected, int has_error,
+                                      int is_paused, int is_active);
+int deneb_print_elapsed_seconds(int time_total, int time_left);
 
 #endif

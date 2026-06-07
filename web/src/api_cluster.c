@@ -152,14 +152,6 @@ static int send_pending_job_instruction(const char *instruction)
     return -1;
 }
 
-static int elapsed_seconds(const printer_state_t *s)
-{
-    if (s->time_total <= 0) return 0;
-    if (s->time_left <= 0) return s->time_total;
-    if (s->time_left >= s->time_total) return 0;
-    return s->time_total - s->time_left;
-}
-
 static const char *active_job_uuid(const printer_state_t *s)
 {
     return s->uuid[0] ? s->uuid : DENEB_CLUSTER_JOB_UUID;
@@ -461,7 +453,8 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     json_bool(&w, "started", s->is_printing || s->is_paused);
     json_str(&w, "status", cluster_job_status(s));
     json_int(&w, "time_total", s->time_total);
-    json_int(&w, "time_elapsed", elapsed_seconds(s));
+    json_int(&w, "time_elapsed",
+             deneb_print_elapsed_seconds(s->time_total, s->time_left));
     json_str(&w, "uuid", active_job_uuid(s));
     write_configuration(&w);
     json_str(&w, "owner", s->source[0] ? s->source : "Cura");

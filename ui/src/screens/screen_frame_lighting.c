@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_state_rules.h"
 #include "lvgl.h"
 
 #include <stdint.h>
@@ -247,8 +248,10 @@ static void startup_apply_timer_cb(lv_timer_t *timer)
     if (startup_apply_attempts < STARTUP_APPLY_SETTLE_ATTEMPTS)
         return;
 
-    if (!state || !state->connected || state->has_error ||
-        state->is_printing || state->is_paused) {
+    if (!state ||
+        !deneb_print_manual_action_allowed(state->connected, state->has_error,
+                                           state->is_paused,
+                                           state->is_printing)) {
         if (startup_apply_attempts < STARTUP_APPLY_MAX_ATTEMPTS)
             return;
 

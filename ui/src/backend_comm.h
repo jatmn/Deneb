@@ -74,6 +74,9 @@ void backend_poll(void);
  * Safe to call from any screen at any time.
  */
 const printer_state_t *backend_get_state(void);
+const char *backend_get_print_backend_name(void);
+const char *backend_get_print_backend_status_url(void);
+const char *backend_get_print_backend_command_url(void);
 
 /**
  * Send a G-code command to the printer.

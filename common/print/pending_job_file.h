@@ -21,6 +21,9 @@ void deneb_pending_job_file_init(deneb_pending_job_file_t *job);
 int deneb_pending_job_file_load(const char *path,
                                 deneb_pending_job_file_t *job);
 int deneb_pending_job_file_load_default(deneb_pending_job_file_t *job);
+int deneb_pending_job_file_display_name(const deneb_pending_job_file_t *job,
+                                        char *out, size_t out_sz);
+int deneb_pending_job_file_default_display_name(char *out, size_t out_sz);
 int deneb_pending_job_file_has_conflict(const deneb_pending_job_file_t *job);
 int deneb_pending_job_file_same_path(const char *pending_path,
                                      const char *candidate_path);

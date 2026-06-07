@@ -27,42 +27,14 @@ static char active_print_name[128];
 
 static lv_timer_t *update_timer = NULL;
 
-static int read_cluster_pending_name(char *out, size_t out_sz)
-{
-    deneb_pending_job_file_t job;
-
-    if (!out || out_sz == 0)
-        return -1;
-
-    if (deneb_pending_job_file_load_default(&job) != 0)
-        return -1;
-
-    if (job.name[0] && strcmp(job.name, "none") != 0) {
-        strncpy(out, job.name, out_sz - 1);
-        out[out_sz - 1] = '\0';
-        return 0;
-    }
-
-    if (job.path[0] && strcmp(job.path, "none") != 0) {
-        const char *base = strrchr(job.path, '/');
-        base = base ? base + 1 : job.path;
-        if (base && *base && strcmp(base, "none") != 0) {
-            strncpy(out, base, out_sz - 1);
-            out[out_sz - 1] = '\0';
-            return 0;
-        }
-    }
-
-    return -1;
-}
-
 static int state_has_print_name(const printer_state_t *s)
 {
     if (deneb_print_file_is_candidate(s->filename))
         return 1;
 
     char pending_name[128];
-    return read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 &&
+    return deneb_pending_job_file_default_display_name(pending_name,
+                                                       sizeof(pending_name)) == 0 &&
            deneb_print_file_is_candidate(pending_name);
 }
 
@@ -201,7 +173,8 @@ static void update_timer_cb(lv_timer_t *timer)
     const char *raw_name = s->filename[0] && strcmp(s->filename, "none") != 0 ? s->filename : "";
     char pending_name[128];
     if ((!raw_name[0] || deneb_print_file_is_transient(raw_name)) &&
-        read_cluster_pending_name(pending_name, sizeof(pending_name)) == 0 &&
+        deneb_pending_job_file_default_display_name(pending_name,
+                                                    sizeof(pending_name)) == 0 &&
         !deneb_print_file_is_transient(pending_name)) {
         raw_name = pending_name;
     }

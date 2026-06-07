@@ -147,6 +147,51 @@ int deneb_pending_job_file_load_default(deneb_pending_job_file_t *job)
     return deneb_pending_job_file_load(DENEB_PENDING_JOB_PATH, job);
 }
 
+static int copy_display_value(const char *value, char *out, size_t out_sz)
+{
+    const char *base;
+
+    if (!out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+
+    if (!value || !*value || strcmp(value, "none") == 0)
+        return -1;
+
+    base = strrchr(value, '/');
+    base = base ? base + 1 : value;
+    if (!base || !*base || strcmp(base, "none") == 0)
+        return -1;
+
+    snprintf(out, out_sz, "%s", base);
+    return out[0] ? 0 : -1;
+}
+
+int deneb_pending_job_file_display_name(const deneb_pending_job_file_t *job,
+                                        char *out, size_t out_sz)
+{
+    if (!job || !out || out_sz == 0)
+        return -1;
+
+    if (copy_display_value(job->name, out, out_sz) == 0)
+        return 0;
+    return copy_display_value(job->path, out, out_sz);
+}
+
+int deneb_pending_job_file_default_display_name(char *out, size_t out_sz)
+{
+    deneb_pending_job_file_t job;
+
+    if (!out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+
+    if (deneb_pending_job_file_load_default(&job) != 0)
+        return -1;
+
+    return deneb_pending_job_file_display_name(&job, out, out_sz);
+}
+
 int deneb_pending_job_file_has_conflict(const deneb_pending_job_file_t *job)
 {
     return job && job->tracker >= 0 && job->has_configuration_changes &&

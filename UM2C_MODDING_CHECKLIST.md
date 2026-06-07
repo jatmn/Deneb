@@ -631,6 +631,21 @@ Completed implementation slices:
   use common macro-name constants, the shared print-state rules own transient
   macro-file filtering, and LCD/API job-name display reads pending-job metadata
   through `pending_job_file` instead of local JSON scans.
+- [x] Move pending-job display-name fallback rules into
+  `common/print/pending_job_file.*` so LCD backend status retention,
+  touchscreen status labels, and web/API printer responses all prefer the same
+  pending name, path basename, and `"none"` filtering rules.
+- [x] Move manual-action safety gating into shared native print-state rules so
+  web/API motion controls, touchscreen jog controls, temperature actions,
+  material moves, and frame-light startup apply all use one connected,
+  not-printing, not-paused, not-error predicate.
+- [x] Move print elapsed-time calculation into shared native print-state rules
+  so UM API, Deneb API, and Cura cluster API responses clamp `time_total` /
+  `time_left` consistently instead of each computing elapsed seconds locally.
+- [x] Move job state-or-none naming into shared native print-state rules so UM
+  API and Deneb API current-job responses agree on `"none"`, `"printing"`,
+  `"paused"`, and `"error"` behavior, including errored jobs that are no longer
+  actively streaming.
 - [x] Add native error mapping for Marlin faults and service-side storage,
   serial, command, thermal, and motion categories, with escaped status JSON
   fields for machine-readable Deneb error keys/details.
@@ -664,6 +679,14 @@ Completed implementation slices:
   `common/print/print_backend_route.*` with host tests so LCD, web/API, and
   `deneb-printsvc` tests share the same coordinator/native endpoint constants
   and lab-gate parsing instead of duplicating UCI/env logic.
+- [x] Publish the selected stock/coordinator versus native print backend route
+  through shared native route diagnostics: LCD and web/API backend modules now
+  expose route accessors, web status JSON includes the selected backend and
+  endpoint URLs, and host tests cover the shared formatter.
+- [x] Add a Deneb API route diagnostic endpoint,
+  `GET /api/v1/deneb/print_backend`, so lab validation can query the selected
+  stock-coordinator/native-printsvc route without parsing the full status
+  payload or consulting Python/coordinator state.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
   artifact without enabling it over stock `printserver` by default.
 
