@@ -129,8 +129,13 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   names/transient-file filtering, shared web/API status label mapping,
   shared pending-job display-name fallback,
   shared manual-action safety gating,
+  shared temperature-target readiness,
   shared print elapsed-time calculation,
+  shared print progress calculation,
+  shared UM API progress fraction clamping,
   shared job state-or-none naming,
+  shared print completion history labeling,
+  shared active/preparing/stoppable print-context decisions,
   touchscreen/web macro and G-code command helper routing,
   shared backend route diagnostics,
   touchscreen conflict actions and Cura cluster pending-job actions through

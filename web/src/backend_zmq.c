@@ -184,13 +184,12 @@ static void append_print_history(const printer_state_t *prev, const printer_stat
                  tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                  tm->tm_hour, tm->tm_min, tm->tm_sec);
 
-    const char *state_str = "stopped";
-    if (curr->has_error)
-        state_str = "error";
-    else if (prev->time_total > 0 && prev->time_left <= 0)
-        state_str = "completed";
+    const char *state_str =
+        deneb_print_completion_state_label(curr->has_error, prev->time_total,
+                                           prev->time_left);
 
-    int elapsed = prev->time_total > 0 ? prev->time_total - prev->time_left : 0;
+    int elapsed = deneb_print_elapsed_seconds(prev->time_total,
+                                              prev->time_left);
 
     char entry[1024];
     json_writer_t w;
@@ -438,10 +437,8 @@ void backend_zmq_poll(void)
             state.time_total = json_get_int(json, "Ttot", 0);
             state.time_left = json_get_int(json, "Tleft", 0);
 
-            if (state.time_total > 0 && state.time_total > state.time_left)
-                state.progress = (float)(state.time_total - state.time_left) * 100.0f / (float)state.time_total;
-            else
-                state.progress = 0;
+            state.progress = deneb_print_progress_percent(state.time_total,
+                                                          state.time_left);
 
             state.filename[0] = '\0';
             state.source[0] = '\0';
@@ -464,7 +461,9 @@ void backend_zmq_poll(void)
             obs.nozzle_target = state.nozzle_temp_set;
 
             state.is_paused = deneb_print_req_is_paused(state.current_req);
-            state.is_printing = deneb_print_observation_has_context(&obs);
+            state.is_printing =
+                deneb_print_has_active_context(&obs, 0, state.is_paused,
+                                               deneb_print_file_is_candidate(state.filename));
             if (!state.is_printing) {
                 state.time_total = 0;
                 state.time_left = 0;

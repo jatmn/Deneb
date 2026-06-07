@@ -215,16 +215,15 @@ static int state_has_print_context(const printer_state_t *s)
 {
     deneb_print_observation_t obs;
 
-    if (s->is_printing || s->is_paused)
-        return 1;
-
     obs.req = s->current_req;
     obs.file = s->filename;
     obs.time_total = s->time_total;
     obs.time_left = s->time_left;
     obs.bed_target = s->bed_temp_set;
     obs.nozzle_target = s->nozzle_temp_set;
-    return deneb_print_observation_has_context(&obs);
+    return deneb_print_has_active_context(&obs, s->is_printing,
+                                          s->is_paused,
+                                          deneb_print_file_is_candidate(s->filename));
 }
 
 static void set_filename_or_none(char *dst, const char *value)
@@ -314,10 +313,14 @@ static void log_status_transition(const printer_state_t *curr)
         fprintf(stderr, "backend: print paused (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
 
     if (previous_state.is_printing && !curr->is_printing) {
-        if (curr->has_error)
+        const char *completion =
+            deneb_print_completion_state_label(curr->has_error,
+                                               curr->time_total,
+                                               curr->time_left);
+        if (strcmp(completion, "error") == 0)
             fprintf(stderr, "backend: print ended with error (filename=%s)\n",
                     previous_state.filename[0] ? previous_state.filename : "(unknown)");
-        else if (curr->time_total > 0 && curr->time_left <= 0)
+        else if (strcmp(completion, "completed") == 0)
             fprintf(stderr, "backend: print completed (filename=%s)\n",
                     previous_state.filename[0] ? previous_state.filename : "(unknown)");
         else
@@ -407,11 +410,8 @@ static void parse_status(const char *json)
     else
         state.current_req[0] = '\0';
 
-    /* Calculate progress from time */
-    if (state.time_total > 0) {
-        state.progress = (float)(state.time_total - state.time_left)
-                         / (float)state.time_total * 100.0f;
-    }
+    state.progress = deneb_print_progress_percent(state.time_total,
+                                                  state.time_left);
 
     deneb_print_observation_t obs;
     obs.req = state.current_req;
@@ -522,6 +522,8 @@ static void parse_status(const char *json)
 
     if (state.time_total > 0 && state.time_left > state.time_total)
         state.time_left = state.time_total;
+    state.progress = deneb_print_progress_percent(state.time_total,
+                                                  state.time_left);
 
     state.has_error = (json_get_int(json, "received_faults") != 0);
 

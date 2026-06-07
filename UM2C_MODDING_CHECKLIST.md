@@ -639,13 +639,29 @@ Completed implementation slices:
   web/API motion controls, touchscreen jog controls, temperature actions,
   material moves, and frame-light startup apply all use one connected,
   not-printing, not-paused, not-error predicate.
+- [x] Move temperature-target readiness into shared native print-state rules so
+  preheat logging, native heater waits, and material move readiness agree on
+  bed-only, nozzle-only, combined-target, and tolerance behavior.
 - [x] Move print elapsed-time calculation into shared native print-state rules
   so UM API, Deneb API, and Cura cluster API responses clamp `time_total` /
   `time_left` consistently instead of each computing elapsed seconds locally.
+- [x] Move print progress percentage calculation into shared native print-state
+  rules so LCD and web/API backend status parsing clamp weird `Tleft` values
+  the same way during preheat, printing, completion, and abort cleanup.
+- [x] Move UM API print progress fraction clamping into shared native
+  print-state rules so API responses cannot drift from the backend percentage
+  contract.
 - [x] Move job state-or-none naming into shared native print-state rules so UM
   API and Deneb API current-job responses agree on `"none"`, `"printing"`,
   `"paused"`, and `"error"` behavior, including errored jobs that are no longer
   actively streaming.
+- [x] Move print completion history labeling into shared native print-state
+  rules so web history and future native diagnostics use the same
+  `"completed"`, `"stopped"`, and `"error"` decision.
+- [x] Move active/preparing/stoppable print-context decisions into shared
+  native print-state rules so the touchscreen Stop button, preheat status, and
+  abort cleanup use the same tested contract instead of local screen/backend
+  predicates.
 - [x] Add native error mapping for Marlin faults and service-side storage,
   serial, command, thermal, and motion categories, with escaped status JSON
   fields for machine-readable Deneb error keys/details.

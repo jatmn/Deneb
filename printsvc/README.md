@@ -35,6 +35,10 @@ scaffold:
   native-printsvc endpoint selection used by touchscreen UI and web/API
   clients, plus the route-diagnostics JSON fields that show which backend and
   endpoint URLs a native client selected.
+- `../common/print/print_state_rules.*` owns shared print-state labels, manual
+  action gates, temperature-target readiness, elapsed time, progress
+  percentage, active/preparing/stoppable context decisions, and transient
+  macro-file filtering for native service, touchscreen UI, and web/API callers.
 - `diagnostics_log.*` writes low-volume comparison lines that pair stock-shaped
   status fields with native counters and latency fields for lab validation.
 - `service.*` owns the print lifecycle state machine and command dispatch.

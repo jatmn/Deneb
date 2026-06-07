@@ -65,8 +65,9 @@ static int material_motion_allowed(void)
 static int material_temp_ready(const printer_state_t *s)
 {
     return s && workflow_target_temp >= MATERIAL_MIN_MOVE_TEMP &&
-           s->nozzle_temp_cur + MATERIAL_READY_WINDOW >=
-               (float)workflow_target_temp;
+           deneb_print_temp_target_ready(s->nozzle_temp_cur,
+                                         (float)workflow_target_temp,
+                                         MATERIAL_READY_WINDOW);
 }
 
 static void set_btn_enabled(lv_obj_t *btn, int enabled)

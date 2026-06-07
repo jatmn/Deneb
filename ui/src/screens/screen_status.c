@@ -27,6 +27,21 @@ static char active_print_name[128];
 
 static lv_timer_t *update_timer = NULL;
 
+static deneb_print_observation_t print_observation_from_state(const printer_state_t *s,
+                                                              int has_print_name)
+{
+    deneb_print_observation_t obs = {
+        .req = s->current_req,
+        .file = has_print_name ? s->filename : NULL,
+        .bed_target = s->bed_temp_set,
+        .nozzle_target = s->nozzle_temp_set,
+        .time_total = s->time_total,
+        .time_left = s->time_left,
+    };
+
+    return obs;
+}
+
 static int state_has_print_name(const printer_state_t *s)
 {
     if (deneb_print_file_is_candidate(s->filename))
@@ -40,59 +55,22 @@ static int state_has_print_name(const printer_state_t *s)
 
 static int has_active_print_context(const printer_state_t *s, int has_print_name)
 {
-    deneb_print_observation_t obs = {
-        .req = s->current_req,
-        .file = has_print_name ? s->filename : NULL,
-        .bed_target = s->bed_temp_set,
-        .nozzle_target = s->nozzle_temp_set,
-        .time_total = s->time_total,
-        .time_left = s->time_left,
-    };
-
-    if (deneb_print_req_is_abort(s->current_req))
-        return 0;
-
-    return s->is_printing ||
-           s->is_paused ||
-           deneb_print_observation_has_context(&obs) ||
-           has_print_name;
-}
-
-static int has_heat_targets(const printer_state_t *s)
-{
-    return s->bed_temp_set > 0.0f || s->nozzle_temp_set > 0.0f;
+    deneb_print_observation_t obs = print_observation_from_state(s, has_print_name);
+    return deneb_print_has_active_context(&obs, s->is_printing, s->is_paused,
+                                          has_print_name);
 }
 
 static int has_preparing_print_context(const printer_state_t *s, int has_print_name)
 {
-    if (deneb_print_req_is_abort(s->current_req))
-        return 0;
-
-    return has_print_name &&
-           (deneb_print_req_is_lifecycle(s->current_req) ||
-            has_heat_targets(s) ||
-            deneb_print_req_is_print(s->current_req) ||
-            deneb_print_req_is_paused(s->current_req));
+    deneb_print_observation_t obs = print_observation_from_state(s, has_print_name);
+    return deneb_print_has_preparing_context(&obs, has_print_name);
 }
 
 static int has_stoppable_print_context(const printer_state_t *s, int has_print_name)
 {
-    if (deneb_print_req_is_abort(s->current_req))
-        return 0;
-
-    if (s->is_paused)
-        return 1;
-
-    if (!has_print_name)
-        return 0;
-
-    if (s->is_printing || s->time_total > 0 || s->time_left > 0)
-        return 1;
-
-    return deneb_print_req_is_print(s->current_req) ||
-           deneb_print_req_is_paused(s->current_req) ||
-           deneb_print_req_is_lifecycle(s->current_req) ||
-           has_heat_targets(s);
+    deneb_print_observation_t obs = print_observation_from_state(s, has_print_name);
+    return deneb_print_has_stoppable_context(&obs, s->is_printing,
+                                             s->is_paused, has_print_name);
 }
 
 static void clear_active_print_context_if_idle(const printer_state_t *s, int has_print_name)

@@ -167,23 +167,52 @@ static void test_print_state_rules(void)
     assert(deneb_print_file_is_transient(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP));
     assert(deneb_print_active_time(120, 60));
     assert(!deneb_print_active_time(120, 0));
+    assert(deneb_print_temp_target_ready(0.0f, 0.0f, 1.0f));
+    assert(deneb_print_temp_target_ready(198.2f, 200.0f, 2.0f));
+    assert(!deneb_print_temp_target_ready(197.0f, 200.0f, 2.0f));
     assert(deneb_print_temp_targets_ready(59.2f, 60.0f, 199.3f, 200.0f));
+    assert(deneb_print_temp_targets_ready(0.0f, 0.0f, 199.3f, 200.0f));
+    assert(deneb_print_temp_targets_ready(59.2f, 60.0f, 0.0f, 0.0f));
+    assert(!deneb_print_temp_targets_ready(0.0f, 0.0f, 0.0f, 0.0f));
+    assert(!deneb_print_temp_targets_ready(59.2f, 60.0f, 190.0f, 200.0f));
 
     obs.req = "PREHEATING";
     obs.bed_target = 60.0f;
     obs.nozzle_target = 210.0f;
     assert(deneb_print_observation_has_context(&obs));
+    assert(!deneb_print_has_stoppable_context(&obs, 0, 0, 0));
+    assert(deneb_print_has_preparing_context(&obs, 1));
+    assert(deneb_print_has_stoppable_context(&obs, 0, 0, 1));
 
     obs.req = "HOME";
     obs.bed_target = 0.0f;
     obs.nozzle_target = 0.0f;
     assert(!deneb_print_observation_has_context(&obs));
+    assert(!deneb_print_has_stoppable_context(&obs, 0, 0, 0));
+    assert(deneb_print_has_stoppable_context(&obs, 0, 0, 1));
+
+    obs.req = "";
+    obs.file = NULL;
+    obs.time_total = 0;
+    obs.time_left = 0;
+    assert(!deneb_print_has_active_context(&obs, 0, 0, 0));
+    assert(deneb_print_has_active_context(&obs, 0, 0, 1));
+    assert(!deneb_print_has_preparing_context(&obs, 0));
 
     obs.req = "ABORT";
     obs.file = "/home/3D/cube.gcode";
     obs.time_total = 120;
     obs.time_left = 100;
     assert(!deneb_print_observation_has_context(&obs));
+    assert(!deneb_print_has_active_context(&obs, 1, 1, 1));
+    assert(!deneb_print_has_preparing_context(&obs, 1));
+    assert(!deneb_print_has_stoppable_context(&obs, 1, 1, 1));
+
+    obs.req = "JOB";
+    obs.time_total = 120;
+    obs.time_left = 80;
+    assert(deneb_print_has_stoppable_context(&obs, 1, 0, 1));
+    assert(deneb_print_has_stoppable_context(&obs, 0, 1, 0));
 
     assert(strcmp(deneb_print_status_label(0, 0, 0, 0), "offline") == 0);
     assert(strcmp(deneb_print_status_label(1, 0, 0, 0), "idle") == 0);
@@ -197,6 +226,11 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_job_state_or_none(0, 0, 1), "printing") == 0);
     assert(strcmp(deneb_print_job_state_or_none(0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_job_state_or_none(1, 1, 1), "error") == 0);
+    assert(strcmp(deneb_print_completion_state_label(0, 120, 0), "completed") == 0);
+    assert(strcmp(deneb_print_completion_state_label(0, 120, -1), "completed") == 0);
+    assert(strcmp(deneb_print_completion_state_label(0, 120, 30), "stopped") == 0);
+    assert(strcmp(deneb_print_completion_state_label(1, 120, 0), "error") == 0);
+    assert(strcmp(deneb_print_completion_state_label(0, 0, 0), "stopped") == 0);
     assert(deneb_print_job_is_active(1, 0, 0));
     assert(deneb_print_job_is_active(0, 1, 0));
     assert(deneb_print_job_is_active(0, 0, 1));
@@ -211,6 +245,16 @@ static void test_print_state_rules(void)
     assert(deneb_print_elapsed_seconds(120, -1) == 120);
     assert(deneb_print_elapsed_seconds(120, 121) == 0);
     assert(deneb_print_elapsed_seconds(0, 10) == 0);
+    assert(deneb_print_progress_percent(120, 60) > 49.9f);
+    assert(deneb_print_progress_percent(120, 60) < 50.1f);
+    assert(deneb_print_progress_percent(120, 0) == 100.0f);
+    assert(deneb_print_progress_percent(120, -1) == 100.0f);
+    assert(deneb_print_progress_percent(120, 121) == 0.0f);
+    assert(deneb_print_progress_percent(0, 10) == 0.0f);
+    assert(deneb_print_progress_fraction(50.0f) > 0.49f);
+    assert(deneb_print_progress_fraction(50.0f) < 0.51f);
+    assert(deneb_print_progress_fraction(-1.0f) == 0.0f);
+    assert(deneb_print_progress_fraction(101.0f) == 1.0f);
 }
 
 static void test_print_backend_route_contract(void)
@@ -598,6 +642,13 @@ static void test_heater_wait(void)
     status.head_t_cur = 209.2f;
     assert(deneb_heater_wait_ready(&wait, &status));
     status.head_t_cur = 200.0f;
+    assert(!deneb_heater_wait_ready(&wait, &status));
+
+    deneb_heater_wait_start(&wait, 0.0f, 200.0f, 1.0f);
+    deneb_status_init(&status);
+    status.head_t_cur = 199.2f;
+    assert(deneb_heater_wait_ready(&wait, &status));
+    status.head_t_cur = 198.0f;
     assert(!deneb_heater_wait_ready(&wait, &status));
 }
 

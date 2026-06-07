@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "heater_wait.h"
 #include "print_control.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -23,21 +24,16 @@ void deneb_heater_wait_start(deneb_heater_wait_t *wait, float bed_target,
     wait->active = (bed_target > 0.0f || head_target > 0.0f);
 }
 
-static int target_ready(float current, float target, float tolerance)
-{
-    if (target <= 0.0f)
-        return 1;
-    return current >= target - tolerance;
-}
-
 int deneb_heater_wait_ready(const deneb_heater_wait_t *wait,
                             const deneb_status_t *status)
 {
     if (!wait || !status || !wait->active)
         return 1;
 
-    return target_ready(status->bed_t_cur, wait->bed_target, wait->tolerance) &&
-           target_ready(status->head_t_cur, wait->head_target, wait->tolerance);
+    return deneb_print_temp_target_ready(status->bed_t_cur, wait->bed_target,
+                                         wait->tolerance) &&
+           deneb_print_temp_target_ready(status->head_t_cur, wait->head_target,
+                                         wait->tolerance);
 }
 
 void deneb_heater_wait_apply_status(const deneb_heater_wait_t *wait,

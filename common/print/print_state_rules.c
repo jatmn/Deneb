@@ -140,11 +140,23 @@ int deneb_print_has_temp_targets(float bed_target, float nozzle_target)
     return bed_target > 0.0f || nozzle_target > 0.0f;
 }
 
+int deneb_print_temp_target_ready(float current, float target, float tolerance)
+{
+    if (target <= 0.0f)
+        return 1;
+    if (tolerance <= 0.0f)
+        tolerance = 1.0f;
+    return current >= target - tolerance;
+}
+
 int deneb_print_temp_targets_ready(float bed_current, float bed_target,
                                    float nozzle_current, float nozzle_target)
 {
-    return (bed_target > 0.0f && bed_current >= bed_target - 1.0f) &&
-           (nozzle_target <= 0.0f || nozzle_current >= nozzle_target - 1.0f);
+    if (!deneb_print_has_temp_targets(bed_target, nozzle_target))
+        return 0;
+
+    return deneb_print_temp_target_ready(bed_current, bed_target, 1.0f) &&
+           deneb_print_temp_target_ready(nozzle_current, nozzle_target, 1.0f);
 }
 
 int deneb_print_active_time(int time_total, int time_left)
@@ -173,6 +185,51 @@ int deneb_print_observation_has_context(const deneb_print_observation_t *obs)
         return deneb_print_has_temp_targets(obs->bed_target, obs->nozzle_target);
 
     return deneb_print_req_is_print(obs->req);
+}
+
+int deneb_print_has_active_context(const deneb_print_observation_t *obs,
+                                   int is_printing, int is_paused,
+                                   int has_print_name)
+{
+    if (!obs || deneb_print_req_is_abort(obs->req))
+        return 0;
+
+    return is_printing || is_paused || has_print_name ||
+           deneb_print_observation_has_context(obs);
+}
+
+int deneb_print_has_preparing_context(const deneb_print_observation_t *obs,
+                                      int has_print_name)
+{
+    if (!obs || deneb_print_req_is_abort(obs->req) || !has_print_name)
+        return 0;
+
+    return deneb_print_req_is_lifecycle(obs->req) ||
+           deneb_print_has_temp_targets(obs->bed_target, obs->nozzle_target) ||
+           deneb_print_req_is_print(obs->req) ||
+           deneb_print_req_is_paused(obs->req);
+}
+
+int deneb_print_has_stoppable_context(const deneb_print_observation_t *obs,
+                                      int is_printing, int is_paused,
+                                      int has_print_name)
+{
+    if (!obs || deneb_print_req_is_abort(obs->req))
+        return 0;
+
+    if (is_paused)
+        return 1;
+
+    if (!has_print_name)
+        return 0;
+
+    if (is_printing || obs->time_total > 0 || obs->time_left > 0)
+        return 1;
+
+    return deneb_print_req_is_print(obs->req) ||
+           deneb_print_req_is_paused(obs->req) ||
+           deneb_print_req_is_lifecycle(obs->req) ||
+           deneb_print_has_temp_targets(obs->bed_target, obs->nozzle_target);
 }
 
 const char *deneb_print_status_label(int connected, int has_error,
@@ -209,6 +266,16 @@ const char *deneb_print_job_state_or_none(int has_error, int is_paused,
     return deneb_print_job_status_label(has_error, is_paused, is_active);
 }
 
+const char *deneb_print_completion_state_label(int has_error, int time_total,
+                                               int time_left)
+{
+    if (has_error)
+        return "error";
+    if (time_total > 0 && time_left <= 0)
+        return "completed";
+    return "stopped";
+}
+
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active)
 {
     return has_error || is_paused || is_active;
@@ -229,4 +296,24 @@ int deneb_print_elapsed_seconds(int time_total, int time_left)
     if (time_left >= time_total)
         return 0;
     return time_total - time_left;
+}
+
+float deneb_print_progress_percent(int time_total, int time_left)
+{
+    int elapsed = deneb_print_elapsed_seconds(time_total, time_left);
+
+    if (time_total <= 0 || elapsed <= 0)
+        return 0.0f;
+    if (elapsed >= time_total)
+        return 100.0f;
+    return (float)elapsed * 100.0f / (float)time_total;
+}
+
+float deneb_print_progress_fraction(float progress_percent)
+{
+    if (progress_percent <= 0.0f)
+        return 0.0f;
+    if (progress_percent >= 100.0f)
+        return 1.0f;
+    return progress_percent / 100.0f;
 }
