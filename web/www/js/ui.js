@@ -84,6 +84,10 @@ Deneb.ui = {
             var tl = data.time_left || data.time_total || 0;
             el.textContent = tl > 0 ? this.formatTime(tl) : '--:--';
         }
+        el = document.getElementById('stop-print-btn');
+        if (el) {
+            el.disabled = !(data && (data.is_printing || data.is_paused));
+        }
     },
 
     updateMotionState: function() {
@@ -216,6 +220,10 @@ Deneb.ui = {
                 '<div class="progress-info"><span id="filename">--</span> &middot; <span id="time-left">--:--</span></div>' +
                 '</div>' +
                 '<div class="card">' +
+                '<div class="card-title">Print Control</div>' +
+                '<div class="control-group"><button class="btn btn-warn" id="stop-print-btn" onclick="Deneb.cmdStop()">Stop</button></div>' +
+                '</div>' +
+                '<div class="card">' +
                 '<div class="card-title" data-i18n="web.status.position">Position</div>' +
                 '<div class="status-grid">' +
                 '<div class="status-item"><div class="value" id="pos-x">--</div><div class="label">X</div></div>' +
@@ -231,6 +239,7 @@ Deneb.ui = {
                 '<button class="btn btn-secondary" onclick="Deneb.cmd(\'pause\')" data-i18n="web.control.pause">Pause</button>' +
                 '<button class="btn btn-secondary" onclick="Deneb.cmd(\'resume\')" data-i18n="web.control.resume">Resume</button>' +
                 '<button class="btn btn-warn" onclick="Deneb.cmdAbort()" data-i18n="web.control.cancel">Cancel</button>' +
+                '<button class="btn btn-warn" onclick="Deneb.cmdStop()">Stop</button>' +
                 '</div></div>' +
                 '<div class="card">' +
                 '<div class="card-title" data-i18n="web.control.temperature">Temperature</div>' +

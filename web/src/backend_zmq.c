@@ -11,6 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
+#include <stdbool.h>
+#include <unistd.h>
 
 #ifdef BACKEND_ZMQ_STUB
 
@@ -36,6 +39,7 @@ int backend_zmq_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_zmq_pause(void) { return 0; }
 int backend_zmq_resume(void) { return 0; }
 int backend_zmq_abort(void) { return 0; }
+int backend_zmq_stop_print(void) { return 0; }
 void backend_zmq_deinit(void) {}
 
 #else /* ========== REAL ZMQ IMPLEMENTATION ========== */
@@ -47,12 +51,92 @@ void backend_zmq_deinit(void) {}
 #define RPC_URL      "tcp://127.0.0.1:5566"
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 4
+#define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 
 static void *zmq_ctx = NULL;
 static void *status_sock = NULL;
 static void *rpc_sock = NULL;
 static printer_state_t state;
 static char *status_json_cache = NULL;  /* pre-serialized JSON of last status */
+static int had_previous_status = 0;
+static printer_state_t previous_state;
+static int preheat_targets_logged = 0;
+static int preheat_reached_logged = 0;
+
+static int is_temp_reached(float current, float target)
+{
+    return target > 0.0f && current >= target - 1.0f;
+}
+
+static int has_temp_targets(const printer_state_t *s)
+{
+    return (s->bed_temp_set > 0.0f) || (s->nozzle_temp_set > 0.0f);
+}
+
+static int have_jobs_targets(const printer_state_t *s)
+{
+    return (s->bed_temp_set > 0.0f && is_temp_reached(s->bed_temp_cur, s->bed_temp_set)) &&
+           (s->nozzle_temp_set <= 0.0f || is_temp_reached(s->nozzle_temp_cur, s->nozzle_temp_set));
+}
+
+static void log_status_transition(const printer_state_t *curr)
+{
+    if (!had_previous_status) {
+        previous_state = *curr;
+        had_previous_status = 1;
+        return;
+    }
+
+    if (strcmp(previous_state.current_req, curr->current_req) != 0)
+        fprintf(stderr, "deneb-api: printer req changed: \"%s\" -> \"%s\"\n",
+                previous_state.current_req[0] ? previous_state.current_req : "none",
+                curr->current_req[0] ? curr->current_req : "none");
+
+    if (previous_state.is_paused && !curr->is_paused)
+        fprintf(stderr, "deneb-api: print resumed (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
+    if (!previous_state.is_paused && curr->is_paused)
+        fprintf(stderr, "deneb-api: print paused (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
+
+    if (previous_state.is_printing && !curr->is_printing) {
+        if (curr->has_error)
+            fprintf(stderr, "deneb-api: print ended with error (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
+        else if (curr->time_total > 0 && curr->time_left <= 0)
+            fprintf(stderr, "deneb-api: print completed (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
+        else
+            fprintf(stderr, "deneb-api: print stopped before completion (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
+
+        preheat_targets_logged = 0;
+        preheat_reached_logged = 0;
+        if (unlink(DENEB_CLUSTER_PENDING_JOB) == 0)
+            fprintf(stderr, "deneb-api: removed pending job metadata after print end\n");
+    }
+
+    if (!previous_state.is_printing && curr->is_printing) {
+        fprintf(stderr, "deneb-api: print started (filename=%s, req=%s)\n",
+                curr->filename[0] ? curr->filename : "(unknown)",
+                curr->current_req[0] ? curr->current_req : "unknown");
+    }
+
+    if (!preheat_targets_logged && has_temp_targets(curr)) {
+        fprintf(stderr, "deneb-api: print preheating targets active: bed=%0.1fC(nozzle=%0.1fC)\n",
+                curr->bed_temp_set, curr->nozzle_temp_set);
+        preheat_targets_logged = 1;
+    }
+
+    if (preheat_targets_logged && !preheat_reached_logged && have_jobs_targets(curr)) {
+        fprintf(stderr, "deneb-api: preheat targets reached: bed=%0.1fC(nozzle=%0.1fC)\n",
+                curr->bed_temp_cur, curr->nozzle_temp_cur);
+        preheat_reached_logged = 1;
+    }
+
+    if (!has_temp_targets(curr)) {
+        preheat_targets_logged = 0;
+        preheat_reached_logged = 0;
+    }
+
+    previous_state = *curr;
+}
+
 
 static int create_rpc_socket(void)
 {
@@ -317,6 +401,7 @@ void backend_zmq_poll(void)
             clock_gettime(CLOCK_MONOTONIC, &ts);
             state.last_update_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 
+            log_status_transition(&state);
             update_status_cache();
         }
 
@@ -387,6 +472,27 @@ int backend_zmq_resume(void)
 int backend_zmq_abort(void)
 {
     return backend_zmq_send_command("ABORT", "{}");
+}
+
+int backend_zmq_stop_print(void)
+{
+    int rc = 0;
+
+    if (backend_zmq_abort() < 0)
+        rc = -1;
+    if (backend_zmq_send_gcode("M140 S0") < 0)
+        rc = -1;
+    if (backend_zmq_send_gcode("M104 S0") < 0)
+        rc = -1;
+    if (backend_zmq_send_gcode("G28") < 0)
+        rc = -1;
+
+    if (rc == 0)
+        fprintf(stderr, "deneb-api: stop print command sent successfully\n");
+    else
+        fprintf(stderr, "deneb-api: stop print command completed with one or more failures\n");
+
+    return rc;
 }
 
 void backend_zmq_deinit(void)

@@ -148,6 +148,8 @@ static int send_pending_job_instruction(const char *instruction)
     int tracker = pending_job_tracker();
     if (tracker < 0) return -1;
 
+    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n", instruction, tracker);
+
     char cmd[2048];
     snprintf(cmd, sizeof(cmd),
              "PYTHONPATH=/home:/home/lib python3 -c \""
@@ -481,10 +483,6 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
         return;
     }
 
-    if (access(DENEB_CLUSTER_PENDING_JOB, F_OK) == 0) {
-        unlink(DENEB_CLUSTER_PENDING_JOB);
-    }
-
     read_guid(guid, sizeof(guid));
     snprintf(created_at, sizeof(created_at), "%lld", (long long)time(NULL));
 
@@ -600,6 +598,15 @@ static int action_is_abort(const char *action)
     return strcmp(action, "abort") == 0 || strcmp(action, "cancel") == 0;
 }
 
+static void log_cluster_action(const char *action, int has_pending_job, const char *path)
+{
+    fprintf(stderr, "deneb-api: cluster print action=%s path=%s has_pending=%s override=%s\n",
+            action ? action : "(none)",
+            path ? path : "(none)",
+            has_pending_job ? "true" : "false",
+            (action && strcmp(action, "force") == 0) ? "true" : "false");
+}
+
 void api_cluster_print_job_action_put(const http_request_t *req, http_response_t *resp)
 {
     char action[16];
@@ -618,6 +625,8 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             return;
         }
     }
+
+    log_cluster_action(action, has_pending_job, req->path);
 
     if (action_wants_prepare(action) && has_pending_job) {
         if (send_pending_job_instruction("PREPARE") != 0) {
@@ -653,6 +662,14 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
+        unlink(DENEB_CLUSTER_PENDING_JOB);
+    } else if (strcmp(action, "stop") == 0) {
+        if (backend_zmq_stop_print() < 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
+            return;
+        }
+        unlink(DENEB_CLUSTER_PENDING_JOB);
     } else {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Unknown print job action\"}");

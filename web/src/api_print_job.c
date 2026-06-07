@@ -20,6 +20,29 @@
 #define DENEB_PRINT_SPOOL_DIR "/home/3D/deneb-uploads"
 #define DENEB_CLUSTER_PENDING_JOB "/tmp/deneb-cluster-print-job.json"
 
+static void log_print_job_state_cmd(const char *cmd, const char *body)
+{
+    fprintf(stderr, "deneb-api: print_job/state command=%s body=%s\n",
+            cmd ? cmd : "(none)", body ? body : "{}");
+}
+
+static const char *parse_state_cmd(const char *body, char *out, size_t out_sz)
+{
+    if (!body || !out || out_sz < 2) return NULL;
+
+    while (*body == ' ' || *body == '\n' || *body == '\r' || *body == '\t' || *body == '"' || *body == '\'')
+        body++;
+
+    size_t i = 0;
+    while (*body && *body != ' ' && *body != '"' && *body != '\'' &&
+           *body != '\n' && *body != '\r' && *body != '\t' && i < out_sz - 1) {
+        out[i++] = *body++;
+    }
+
+    out[i] = '\0';
+    return i > 0 ? out : NULL;
+}
+
 static int register_coordinator_print(const char *path)
 {
     static const char script[] =
@@ -99,9 +122,11 @@ static int register_coordinator_print(const char *path)
         "if not reply.get('accepted'):\n"
         "    sys.exit(3)\n"
         "print_tracker = reply.get('tracker')\n"
+        "print('coordinator tracker=%s' % print_tracker)\n"
         "if print_tracker is None:\n"
         "    sys.exit(4)\n"
         "change_count = result.get('change_count', -1)\n"
+        "print('configuration change_count=%s' % change_count)\n"
         "if change_count < 0:\n"
         "    sys.exit(5)\n"
         "if change_count == 0:\n"
@@ -109,9 +134,9 @@ static int register_coordinator_print(const char *path)
         "    print('prepare reply: %r' % (prepare_reply,))\n"
         "    if not prepare_reply.get('accepted'):\n"
         "        sys.exit(6)\n"
-        "    try: os.unlink(PENDING)\n"
-        "    except Exception: pass\n"
         "sys.exit(0)\n";
+
+    fprintf(stderr, "deneb-api: registering print path with coordinator: %s\n", path);
 
     pid_t pid = fork();
     if (pid < 0) return -1;
@@ -131,7 +156,10 @@ static int register_coordinator_print(const char *path)
     int status = 0;
     if (waitpid(pid, &status, 0) < 0)
         return -1;
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
+    int ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    fprintf(stderr, "deneb-api: register_coordinator_print result for %s = %s\n",
+            path, ok ? "accepted" : "rejected");
+    return ok ? 0 : -1;
 }
 
 static int is_printing(const printer_state_t *s)
@@ -272,24 +300,18 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
 {
     /* Body is a plain string: "pause", "resume", or "abort" */
     /* Body is a plain string: "pause", "print", or "abort" */
-    /* Trim whitespace and quotes for robust matching */
-    const char *body = req->body;
-    while (*body == ' ' || *body == '"' || *body == '\'') body++;
-    char cmd[16] = "";
-    size_t i = 0;
-    while (body[i] && body[i] != '"' && body[i] != '\'' && body[i] != ' ' && i < sizeof(cmd) - 1) {
-        cmd[i] = body[i]; i++;
-    }
-    cmd[i] = '\0';
+    char cmd[16];
+    const char *action = parse_state_cmd(req->body, cmd, sizeof(cmd));
+    log_print_job_state_cmd(action, req->body);
 
-    if (strcmp(cmd, "pause") == 0) {
+    if (action && strcmp(action, "pause") == 0) {
         if (backend_zmq_pause() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to pause print\"}");
             return;
         }
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (strcmp(cmd, "resume") == 0 || strcmp(cmd, "print") == 0) {
+    } else if (action && (strcmp(action, "resume") == 0 || strcmp(action, "print") == 0)) {
         /* API spec uses "print" to resume; "resume" is an alias */
         if (backend_zmq_resume() < 0) {
             resp->status_code = 503;
@@ -297,12 +319,20 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
             return;
         }
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    } else if (strcmp(cmd, "abort") == 0) {
+    } else if (action && strcmp(action, "abort") == 0) {
         if (backend_zmq_abort() < 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
             return;
         }
+        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+    } else if (action && strcmp(action, "stop") == 0) {
+        if (backend_zmq_stop_print() < 0) {
+            resp->status_code = 503;
+            api_http_set_body_str(resp, "{\"message\":\"Failed to stop print\"}");
+            return;
+        }
+        unlink(DENEB_CLUSTER_PENDING_JOB);
         api_http_set_body_str(resp, "{\"message\":\"OK\"}");
     } else {
         resp->status_code = 400;
@@ -424,12 +454,15 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
 
     fprintf(stderr, "deneb-api: print file saved to %s\n", dest_path);
 
+    fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n", filename, dest_path);
+
     if (register_coordinator_print(dest_path) < 0) {
         fprintf(stderr, "deneb-api: failed to register print with coordinator for %s\n", dest_path);
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to start print\"}");
         return;
     }
+    fprintf(stderr, "deneb-api: registration accepted and print metadata prepared for %s\n", filename);
 
     /* Return print job info */
     char buf[512];

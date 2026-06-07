@@ -68,6 +68,7 @@ int backend_zmq_send_gcode(const char *gcode);
 int backend_zmq_pause(void);
 int backend_zmq_resume(void);
 int backend_zmq_abort(void);
+int backend_zmq_stop_print(void);
 
 /* Get pre-serialized status JSON string. */
 const char *backend_zmq_get_status_json(void);

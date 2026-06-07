@@ -108,6 +108,16 @@ Deneb.cmdAbort = function() {
     }
 };
 
+Deneb.cmdStop = function() {
+    if (confirm('Force stop print, cooldown heaters, and home all axes?')) {
+        Deneb.api.request('PUT', '/print_job/state', 'stop').then(function() {
+            Deneb.api.pollStatus();
+        }).catch(function(err) {
+            Deneb.ui.showError(err.message || 'Failed to stop print');
+        });
+    }
+};
+
 Deneb.cmdCooldown = function() {
     Deneb.api.put('/printer/bed/temperature', {temperature: 0});
     Deneb.api.put('/printer/heads/0/extruders/0/hotend/temperature', {temperature: 0});
