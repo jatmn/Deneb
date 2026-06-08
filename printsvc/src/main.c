@@ -3,6 +3,7 @@
 #include "config.h"
 #include "diagnostics_log.h"
 #include "motion_firmware.h"
+#include "print_control.h"
 #include "service.h"
 
 #include <stdio.h>
@@ -19,6 +20,23 @@ static int smoke_test(void)
     if (strncmp(frame, "10001<", 6) != 0)
         return 1;
     return 0;
+}
+
+static void local_job_smoke_emit(const char *phase, const deneb_status_t *status)
+{
+    deneb_print_phase_t print_phase;
+
+    if (!phase || !status)
+        return;
+
+    print_phase = deneb_print_control_phase_from_state(status->state);
+    printf("phase=%s deneb_state=%s native_active=%s "
+           "native_stop_allowed=%s source=%s rc=0\n",
+           phase,
+           deneb_print_control_phase_name(print_phase),
+           deneb_print_control_phase_active(print_phase) ? "true" : "false",
+           deneb_print_control_phase_stop_allowed(print_phase) ? "true" : "false",
+           status->source[0] ? status->source : "none");
 }
 
 static int local_job_smoke(const char *path)
@@ -48,6 +66,7 @@ static int local_job_smoke(const char *path)
         goto out;
     if (strcmp(svc.status.source, "USB") != 0)
         goto out;
+    local_job_smoke_emit("local-job-accepted", &svc.status);
 
     if (deneb_printsvc_ipc_handle_frame(&svc, "ABORT<{}", reply,
                                         sizeof(reply)) != 0)
@@ -56,6 +75,7 @@ static int local_job_smoke(const char *path)
         goto out;
     if (strcmp(svc.status.file, "none") != 0)
         goto out;
+    local_job_smoke_emit("local-job-aborted-state", &svc.status);
 
     rc = 0;
 out:

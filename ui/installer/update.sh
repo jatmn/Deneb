@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-init-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -122,6 +122,10 @@ install_web_runtime() {
     cp /tmp/update/deneb-printsvc-smoke-selftest /usr/bin/deneb-printsvc-smoke-selftest
     chmod 0755 /usr/bin/deneb-printsvc-smoke-selftest
     log "installed deneb-printsvc-smoke-selftest to /usr/bin/deneb-printsvc-smoke-selftest"
+
+    cp /tmp/update/deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc-cli-selftest
+    chmod 0755 /usr/bin/deneb-printsvc-cli-selftest
+    log "installed deneb-printsvc-cli-selftest to /usr/bin/deneb-printsvc-cli-selftest"
 
     cp /tmp/update/deneb-printsvc-init-selftest /usr/bin/deneb-printsvc-init-selftest
     chmod 0755 /usr/bin/deneb-printsvc-init-selftest
@@ -507,6 +511,13 @@ smoke_test_printsvc_tools() {
         exit 1
     fi
     log "deneb-printsvc smoke tool selftest passed"
+
+    if ! /usr/bin/deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc >/tmp/deneb-printsvc-cli-selftest.log 2>&1; then
+        log "ERROR: deneb-printsvc CLI selftest failed"
+        cat /tmp/deneb-printsvc-cli-selftest.log 2>/dev/null || true
+        exit 1
+    fi
+    log "deneb-printsvc CLI selftest passed"
 }
 
 smoke_test_printsvc_init_handoff() {

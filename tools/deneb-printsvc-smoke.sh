@@ -23,6 +23,7 @@ RUN_MACRO=0
 RUN_PAUSE_RESUME=0
 RUN_RESTART=0
 RUN_BOOT_SYNC=0
+RUN_PARSER_SELFTEST=0
 JOB_PATH=""
 LOCAL_JOB_PATH=""
 CURA_JOB_PATH=""
@@ -52,6 +53,8 @@ Observe-only by default:
                         Max seconds to wait for --complete-job, default 3600
   --restart             Restart deneb-printsvc and deneb-api, then sample recovery
   --boot-sync           Wait for print backend route/status readiness evidence
+  --summary-parser-selftest
+                        Exercise summary status/body parsing without hardware
   --ready-timeout SEC   Max seconds for --boot-sync, default 180
   --log PATH            Write the smoke log to PATH
   --summary PATH        Write compact evidence summary to PATH
@@ -126,6 +129,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         --restart) RUN_RESTART=1 ;;
         --boot-sync) RUN_BOOT_SYNC=1 ;;
+        --summary-parser-selftest) RUN_PARSER_SELFTEST=1 ;;
         --ready-timeout)
             shift
             [ "$#" -gt 0 ] || { echo "missing seconds after --ready-timeout" >&2; exit 2; }
@@ -246,6 +250,24 @@ sanitize_summary_value() {
     printf '%s' "$1" | tr -d '\r\n"' | sed 's/[^A-Za-z0-9_.:-]/_/g'
 }
 
+extract_status_value() {
+    raw="$1"
+    value="$(printf '%s' "$raw" |
+        sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+        head -n 1)"
+    if [ -z "$value" ]; then
+        value="$(printf '%s' "$raw" |
+            sed -n 's/.*status[[:space:]]*:[[:space:]]*\([A-Za-z_][A-Za-z0-9_-]*\).*/\1/p' |
+            head -n 1)"
+    fi
+    if [ -z "$value" ]; then
+        value="$(printf '%s' "$raw" | tr -d '\r\n" ' |
+            sed -n '/^\(idle\|printing\|paused\|error\|offline\|finished\)$/p' |
+            head -n 1)"
+    fi
+    sanitize_summary_value "$value"
+}
+
 http_get_capture() {
     path="$1"
     out="$2"
@@ -288,10 +310,12 @@ status_step() {
         cat "$body_file" >>"$LOG"
         printf '\n' >>"$LOG"
     fi
-    status_value="$(sanitize_summary_value "$(cat "$body_file" 2>/dev/null || true)")"
+    raw_body="$(cat "$body_file" 2>/dev/null || true)"
+    status_value="$(extract_status_value "$raw_body")"
+    body_value="$(sanitize_summary_value "$raw_body")"
     rm -f "$body_file"
     say "$label rc=$rc status=${status_value:-unknown}"
-    summary "phase=$label kind=api method=GET path=/printer/status rc=$rc status=${status_value:-unknown} body=${status_value:-unknown}"
+    summary "phase=$label kind=api method=GET path=/printer/status rc=$rc status=${status_value:-unknown} body=${body_value:-unknown}"
     return "$rc"
 }
 
@@ -408,7 +432,9 @@ wait_for_boot_sync() {
         http_get_capture /printer/status "$status_file"
         status_rc=$?
         route_value="$(sanitize_summary_value "$(cat "$route_file" 2>/dev/null || true)")"
-        status_value="$(sanitize_summary_value "$(cat "$status_file" 2>/dev/null || true)")"
+        raw_status="$(cat "$status_file" 2>/dev/null || true)"
+        status_value="$(extract_status_value "$raw_status")"
+        status_body_value="$(sanitize_summary_value "$raw_status")"
 
         if [ -s "$route_file" ]; then
             cat "$route_file" >>"$LOG"
@@ -422,11 +448,12 @@ wait_for_boot_sync() {
 
         if [ "$route_rc" = "0" ] && [ "$status_rc" = "0" ] && \
            printf '%s' "$route_value" | grep -q 'native_only_route:true' && \
+           printf '%s' "$status_body_value" | grep -q 'native_only_route:true' && \
            [ -n "$status_value" ] && [ "$status_value" != "unknown" ]; then
             uptime_now="$(monotonic_seconds)"
             boot_elapsed=$((uptime_now - start_uptime))
             [ "$boot_elapsed" -ge 0 ] || boot_elapsed=0
-            summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=$boot_elapsed route_body=${route_value:-unknown} status=$status_value rc=0"
+            summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=$boot_elapsed route_body=${route_value:-unknown} status=$status_value status_body=${status_body_value:-unknown} rc=0"
             return 0
         fi
 
@@ -434,7 +461,7 @@ wait_for_boot_sync() {
         elapsed=$((elapsed + interval))
     done
 
-    summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=0 route_body=${route_value:-unknown} status=${status_value:-unknown} rc=1"
+    summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=0 route_body=${route_value:-unknown} status=${status_value:-unknown} status_body=${status_body_value:-unknown} rc=1"
     return 1
 }
 
@@ -500,6 +527,41 @@ snapshot() {
     status_step "status-$label" || true
     printer_root_step "printer-$label" || true
 }
+
+parser_selftest_case() {
+    label="$1"
+    raw="$2"
+    expected="$3"
+
+    actual="$(extract_status_value "$raw")"
+    body="$(sanitize_summary_value "$raw")"
+    if [ "$actual" = "$expected" ]; then
+        summary "phase=summary-parser-${label} status=$actual body=${body:-unknown} rc=0"
+        return 0
+    fi
+    summary "phase=summary-parser-${label} expected=$expected actual=${actual:-unknown} body=${body:-unknown} rc=1"
+    return 1
+}
+
+parser_selftest() {
+    rc=0
+
+    parser_selftest_case json '{"status":"idle","native_only_route":true}' idle || rc=1
+    parser_selftest_case flat '{status:printing,native_only_route:true}' printing || rc=1
+    parser_selftest_case scalar '"paused"' paused || rc=1
+    parser_selftest_case spaced '{ "status" : "finished", "native_only_route" : true }' finished || rc=1
+    if [ "$rc" = "0" ]; then
+        say "summary parser selftest passed"
+    else
+        say "summary parser selftest failed"
+    fi
+    return "$rc"
+}
+
+if [ "$RUN_PARSER_SELFTEST" = "1" ]; then
+    parser_selftest
+    exit $?
+fi
 
 say "deneb-printsvc smoke started"
 say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
@@ -567,14 +629,23 @@ if [ "$RUN_LOCAL_JOB" = "1" ]; then
         say "ERROR: local-job path does not exist: $LOCAL_JOB_PATH"
         exit 1
     fi
-    append_cmd /usr/bin/deneb-printsvc --local-job-smoke "$LOCAL_JOB_PATH"
+    local_job_evidence="/tmp/deneb-printsvc-smoke-local-job.$$"
+    say "$ /usr/bin/deneb-printsvc --local-job-smoke $LOCAL_JOB_PATH"
+    /usr/bin/deneb-printsvc --local-job-smoke "$LOCAL_JOB_PATH" \
+        >"$local_job_evidence" 2>>"$LOG"
     rc=$?
+    if [ -s "$local_job_evidence" ]; then
+        cat "$local_job_evidence" >>"$LOG"
+        while IFS= read -r line; do
+            [ -n "$line" ] && summary "$line"
+        done <"$local_job_evidence"
+    fi
+    rm -f "$local_job_evidence"
+    say "local-job-native rc=$rc"
     summary "phase=local-job-native kind=printsvc-cli path=$LOCAL_JOB_PATH rc=$rc"
     [ "$rc" = "0" ] || exit "$rc"
     summary "phase=local-job-start path=$LOCAL_JOB_PATH source=USB rc=0"
-    summary "phase=status-local-job-active status=printing rc=0"
     summary "phase=local-job-abort rc=0"
-    summary "phase=status-local-job-aborted status=idle rc=0"
 fi
 
 if [ "$RUN_JOB" = "1" ] || [ "$RUN_CURA_JOB" = "1" ] || [ "$RUN_PREHEAT_ABORT" = "1" ] || [ "$RUN_COMPLETE_JOB" = "1" ]; then

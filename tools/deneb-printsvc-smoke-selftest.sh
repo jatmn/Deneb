@@ -13,12 +13,16 @@ STOCK_SUMMARY="$TMP_DIR/stock.summary"
 NATIVE_SUMMARY="$TMP_DIR/native.summary"
 VERIFY="${SCRIPT_DIR}/deneb-printsvc-smoke-verify.sh"
 COMPARE="${SCRIPT_DIR}/deneb-printsvc-smoke-compare.sh"
+SMOKE="${SCRIPT_DIR}/deneb-printsvc-smoke.sh"
 
 if [ ! -f "$VERIFY" ]; then
     VERIFY="${SCRIPT_DIR}/deneb-printsvc-smoke-verify"
 fi
 if [ ! -f "$COMPARE" ]; then
     COMPARE="${SCRIPT_DIR}/deneb-printsvc-smoke-compare"
+fi
+if [ ! -f "$SMOKE" ]; then
+    SMOKE="${SCRIPT_DIR}/deneb-printsvc-smoke"
 fi
 
 expect_failure() {
@@ -45,7 +49,7 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
 2026-06-08T00:00:00Z sample=initial load1=0.20
 2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
-2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle rc=0
+2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle status_body={status:idle,native_only_route:true} rc=0
 2026-06-08T00:01:00Z phase=job-throughput path=/home/3D/stock.gcode bytes=10000 elapsed_seconds=20 bytes_per_second=500 rc=0
 2026-06-08T00:02:00Z sample=final mem_total_kb=250000 mem_used_kb=122000
 2026-06-08T00:02:00Z sample=final uptime_seconds=220
@@ -72,7 +76,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:01Z phase=route-native-enabled kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
 2026-06-08T00:00:01Z phase=status-native-enabled kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
 2026-06-08T00:00:01Z phase=printer-native-enabled kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
-2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle rc=0
+2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle status_body={status:idle,native_only_route:true} rc=0
 2026-06-08T00:00:03Z phase=bed-low-heat kind=api rc=0
 2026-06-08T00:00:03Z phase=nozzle-low-heat kind=api rc=0
 2026-06-08T00:00:03Z snapshot=heating
@@ -93,9 +97,9 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:06Z phase=printer-macro kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:07Z phase=local-job-native kind=printsvc-cli path=/media/usb/local.gcode rc=0
 2026-06-08T00:00:07Z phase=local-job-start path=/media/usb/local.gcode source=USB rc=0
-2026-06-08T00:00:07Z phase=status-local-job-active status=printing rc=0
+2026-06-08T00:00:07Z phase=local-job-accepted deneb_state=pre_print native_active=true native_stop_allowed=true source=USB rc=0
 2026-06-08T00:00:07Z phase=local-job-abort rc=0
-2026-06-08T00:00:07Z phase=status-local-job-aborted status=idle rc=0
+2026-06-08T00:00:07Z phase=local-job-aborted-state deneb_state=idle native_active=false native_stop_allowed=false source=USB rc=0
 2026-06-08T00:00:08Z phase=job-start kind=multipart path=/tmp/job.gcode rc=0
 2026-06-08T00:00:08Z snapshot=job-running
 2026-06-08T00:00:08Z phase=status-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
@@ -152,6 +156,9 @@ EOF
 
 sh "$VERIFY" --full "$NATIVE_SUMMARY"
 sh "$COMPARE" "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
+sh "$SMOKE" --summary-parser-selftest \
+    --log "$TMP_DIR/parser.log" \
+    --summary "$TMP_DIR/parser.summary"
 
 sed 's/native_stop_allowed:true/native_stop_allowed:false/g' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-stop.summary"
@@ -179,6 +186,15 @@ grep -v 'phase=local-job-start ' \
 expect_failure compare_rejects_missing_local_job \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-local-job.summary"
+
+sed '/phase=local-job-accepted /s/native_stop_allowed=true/native_stop_allowed=false/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-local-job-missing-stop.summary"
+expect_failure verify_rejects_local_job_missing_stop \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-local-job-missing-stop.summary"
+expect_failure compare_rejects_local_job_missing_stop \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-local-job-missing-stop.summary"
 
 sed 's/ body={status:[^}]*native_only_route:true}//g' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-status-route.summary"
@@ -218,6 +234,24 @@ expect_failure verify_rejects_non_native_only_route \
 expect_failure compare_rejects_non_native_only_route \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-route-not-exclusive.summary"
+
+sed '/phase=boot-sync-ready /s/status=idle/status={status:idle,native_only_route:true}/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-boot-sync-json-status.summary"
+expect_failure verify_rejects_boot_sync_json_status \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-boot-sync-json-status.summary"
+expect_failure compare_rejects_boot_sync_json_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-boot-sync-json-status.summary"
+
+sed '/phase=boot-sync-ready /s/ status_body=[^ ]*//' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-boot-sync-missing-status-body.summary"
+expect_failure verify_rejects_boot_sync_missing_status_body \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-boot-sync-missing-status-body.summary"
+expect_failure compare_rejects_boot_sync_missing_status_body \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-boot-sync-missing-status-body.summary"
 
 awk '
     { print }

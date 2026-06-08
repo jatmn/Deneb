@@ -1288,9 +1288,10 @@ Completed implementation slices:
   installs with Deneb but only observes unless a tester explicitly enables
   native route, boot-sync, heat, motion, macro, local-job, REST job,
   preheat-abort, Cura job, complete-job, or restart phases, and writes both
-  a full log plus a compact summary with phase results, bounded boot-sync ready timing, scalar
-  `/printer/status` values, `/printer` root snapshots with Deneb-native
-  active/stop-allowed flags, and `/proc`-sourced process RSS/VSZ samples, CPU
+  a full log plus a compact summary with phase results, bounded boot-sync
+  ready timing, scalar `/printer/status` values plus sanitized full status
+  bodies, `/printer` root snapshots with Deneb-native active/stop-allowed
+  flags, and `/proc`-sourced process RSS/VSZ samples, CPU
   jiffies, load averages, uptime samples, and completed-job throughput records,
   including native route/status snapshots after native-route tests.
 - [x] Add a packaged shell-only verifier,
@@ -1300,12 +1301,15 @@ Completed implementation slices:
   explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
   service-restart, and native-route evidence without Python or ad hoc log
   inspection. Native-route evidence now requires the route diagnostic body and
-  captured status bodies to report native-only route evidence
+  captured status bodies to report native-only route evidence while keeping
+  the summary `status=` field as a scalar UI state
   (`print_backend:native` plus `native_only_route:true` on route diagnostics,
   and `native_only_route:true` on status bodies), `deneb-printsvc` to be
   running with no stock `print_service.py` process, and no captured native
   process sample to contain `print_service.py`; local/USB job evidence now
-  requires that same native ownership proof. The verifier also checks
+  requires that same native ownership proof plus native CLI-emitted accepted
+  `pre_print` active/stop-allowed state and aborted `idle` inactive/stop
+  disabled state. The verifier also checks
   active-job UI status
   transitions: `printing` while active, `paused` after pause, and `idle` after
   abort or natural completion, including the active `printing` status snapshot
@@ -1325,15 +1329,19 @@ Completed implementation slices:
   time, and print throughput, and fails if the stock summary lacks
   initial/final `print_service.py` process evidence, CPU or throughput
   intervals are not positive, or the native summary lacks per-lifecycle status
-  values with native-only route evidence, contains any stock `print_service.py`
-  process sample, lacks native local/USB IPC job acceptance, active-status,
-  abort, and idle-status evidence, lacks
+  values with native-only route evidence, lacks scalar boot-sync status plus a
+  native-only boot-sync status body, contains any stock `print_service.py`
+  process sample, lacks native local/USB IPC job acceptance, accepted
+  stop-state, abort, and idle-state evidence, lacks
   `deneb-printsvc` process ownership, or lacks per-lifecycle native
   active/stop-allowed safety evidence for each required active and inactive
   printer-root snapshot.
 - [x] Add a shell-only synthetic selftest,
   `deneb-printsvc-smoke-selftest`, that builds stock/native summary fixtures
   and runs the full smoke verifier plus stock/native comparator without Python.
+  It also invokes the live smoke harness' no-hardware
+  `--summary-parser-selftest` mode so scalar status extraction from JSON,
+  flat, and raw status bodies is covered by the packaged shell gate.
   The selftest also checks expected-failure fixtures for missing native
   stop-allowed evidence, single missing active and inactive comparator
   stop-safety phases, missing native local/USB job evidence, a route diagnostic
@@ -1345,8 +1353,15 @@ Completed implementation slices:
   resource requirements, including rejection of summaries where status
   snapshots lose `native_only_route:true` in either verifier or comparator
   paths, including a single missing comparator lifecycle status snapshot,
-  missing natural-completion active status evidence, or reporting the wrong
-  lifecycle status during preheat/abort evidence.
+  missing natural-completion active status evidence, reporting the wrong
+  lifecycle status during preheat/abort evidence, putting the full status body
+  into boot-sync `status=`, or omitting boot-sync `status_body` native-route
+  proof.
+- [x] Add a shell-only native binary CLI selftest,
+  `deneb-printsvc-cli-selftest`, that runs the real `deneb-printsvc`
+  `--smoke-test` and `--local-job-smoke` entry points against a temp G-code
+  file without opening the motion serial device, then requires the native
+  local-job accepted and aborted stop-state rows.
 - [x] Add a shell-only native init handoff selftest,
   `deneb-printsvc-init-selftest`, that checks the packaged
   `deneb-printsvc.init`, installer source, installer-generated printserver
@@ -1359,21 +1374,24 @@ Completed implementation slices:
   `dist/Deneb_Update_bc2645c.deneb` contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
   `deneb-printsvc-smoke-compare`, `deneb-printsvc-smoke-selftest`,
-  `deneb-printsvc-init-selftest`,
+  `deneb-printsvc-cli-selftest`, `deneb-printsvc-init-selftest`,
   `deneb-printsvc-macros/`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`, with
   no packaged Python or `print_service.py` entries. The package builder now
   fails if a Python driver artifact is present in the staging directory or the
   final `.deneb` archive, and `tools/build-update-release.ps1` also inspects the
   produced `.deneb` archive so release automation fails closed if a Python
   driver artifact is packaged or `deneb-printsvc` /
-  `deneb-printsvc-smoke-selftest` / `deneb-printsvc-init-selftest` is missing.
-  Both `ui/build-package.sh` and the PowerShell release verifier run the shell
-  selftests so the packaged smoke evidence and init handoff gates must pass
-  before the artifact is accepted. The print-service CTest suite also runs both
-  shell selftests, and the installer deploys them to `/usr/bin/` beside the live
-  smoke verifier and comparator. The installer also rejects update packages
-  that contain Python driver artifacts and runs the installed print-service
-  smoke-tool and init-handoff selftests before completing the update.
+  `deneb-printsvc-smoke-selftest` / `deneb-printsvc-cli-selftest` /
+  `deneb-printsvc-init-selftest` is missing.
+  Both `ui/build-package.sh` and the PowerShell release verifier require the
+  packaged smoke, CLI, and init selftests to be present while running the
+  shell-only smoke/init gates that do not execute the cross-compiled target
+  binary. The print-service CTest suite runs the shell smoke, native CLI, and
+  init selftests against the host build, and the installer deploys them to
+  `/usr/bin/` beside the live smoke verifier and comparator. The installer also
+  rejects update packages that contain Python driver artifacts and runs the
+  installed print-service smoke-tool, CLI, and init-handoff selftests before
+  completing the update.
 
 ## 9. Motion Controller / Marlin Firmware
 

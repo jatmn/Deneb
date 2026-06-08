@@ -206,9 +206,9 @@ fi
 if [ "$REQUIRE_LOCAL_JOB" = "1" ]; then
     require_pattern ' phase=local-job-native .*rc=0' "native local job smoke passed"
     require_pattern ' phase=local-job-start .*source=USB .*rc=0' "local job source is USB"
-    require_pattern ' phase=status-local-job-active .*status=printing .*rc=0' "local job active status is printing"
+    require_pattern ' phase=local-job-accepted .*deneb_state=pre_print .*native_active=true .*native_stop_allowed=true .*source=USB .*rc=0' "local job native accepted state is stoppable"
     require_pattern ' phase=local-job-abort .*rc=0' "local job abort passed"
-    require_pattern ' phase=status-local-job-aborted .*status=idle .*rc=0' "local job aborted status is idle"
+    require_pattern ' phase=local-job-aborted-state .*deneb_state=idle .*native_active=false .*native_stop_allowed=false .*rc=0' "local job native aborted state is idle"
 fi
 
 if [ "$REQUIRE_RESTART" = "1" ]; then
@@ -221,7 +221,10 @@ if [ "$REQUIRE_RESTART" = "1" ]; then
 fi
 
 if [ "$REQUIRE_BOOT_SYNC" = "1" ]; then
-    require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*route_body=.*native_only_route:true .*status=(idle|printing|paused|error|offline|finished) .*rc=0' "boot sync reached native-only route/status readiness"
+    require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*rc=0' "boot sync reached readiness"
+    require_pattern ' phase=boot-sync-ready .*route_body=[^ ]*native_only_route:true' "boot sync route body has native-only route evidence"
+    require_pattern ' phase=boot-sync-ready .*status=(idle|printing|paused|error|offline|finished) ' "boot sync status is scalar"
+    require_pattern ' phase=boot-sync-ready .*status_body=[^ ]*native_only_route:true' "boot sync status body has native-only route evidence"
 fi
 
 if [ "$REQUIRE_RESOURCES" = "1" ]; then

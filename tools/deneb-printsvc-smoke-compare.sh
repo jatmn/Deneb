@@ -165,14 +165,14 @@ require_local_job_evidence() {
         ' phase=local-job-start .*source=USB .*rc=0' \
         "native summary missing native local/USB job source evidence"
     require_pattern "$NATIVE" \
-        ' phase=status-local-job-active .*status=printing .*rc=0' \
-        "native summary missing native local/USB active status evidence"
+        ' phase=local-job-accepted .*deneb_state=pre_print .*native_active=true .*native_stop_allowed=true .*source=USB .*rc=0' \
+        "native summary missing native local/USB accepted stop-state evidence"
     require_pattern "$NATIVE" \
         ' phase=local-job-abort .*rc=0' \
         "native summary missing native local/USB abort evidence"
     require_pattern "$NATIVE" \
-        ' phase=status-local-job-aborted .*status=idle .*rc=0' \
-        "native summary missing native local/USB aborted status evidence"
+        ' phase=local-job-aborted-state .*deneb_state=idle .*native_active=false .*native_stop_allowed=false .*rc=0' \
+        "native summary missing native local/USB aborted idle-state evidence"
 }
 
 delta_line() {
@@ -210,8 +210,17 @@ require_pattern "$NATIVE" \
     ' phase=route-native-enabled .*rc=0 .*body=.*print_backend:native.*native_only_route:true' \
     "native summary missing native-only route evidence"
 require_pattern "$NATIVE" \
-    ' phase=boot-sync-ready .*route_body=.*native_only_route:true .*rc=0' \
+    ' phase=boot-sync-ready .*rc=0' \
+    "native summary missing successful boot-sync evidence"
+require_pattern "$NATIVE" \
+    ' phase=boot-sync-ready .*route_body=[^ ]*native_only_route:true' \
     "native summary missing native-only boot-sync route evidence"
+require_pattern "$NATIVE" \
+    ' phase=boot-sync-ready .*status=(idle|printing|paused|error|offline|finished) ' \
+    "native summary missing scalar boot-sync status evidence"
+require_pattern "$NATIVE" \
+    ' phase=boot-sync-ready .*status_body=[^ ]*native_only_route:true' \
+    "native summary missing native-only boot-sync status body evidence"
 require_local_job_evidence
 for phase in initial native-enabled cooldown motion macro service-restarted \
     job-aborted cura-job-aborted preheat-aborted job-completed; do

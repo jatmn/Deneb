@@ -375,8 +375,8 @@ Material-profile USB import root/depth/suffix policy and the
   generate the live evidence required by Section 8 once
   SSH/hardware validation is allowed again. The harness writes a full log and a
   compact summary with phase return codes, bounded boot-sync ready timing, the
-  selected print-backend route body, scalar `/printer/status` body, and
-  `/printer` root body for every snapshot,
+  selected print-backend route body, scalar `/printer/status` values plus
+  sanitized full status bodies, and `/printer` root body for every snapshot,
   `/proc`-sourced process VmSize/VmRSS samples, system CPU jiffies, load
   averages, uptime samples for boot/ready timing correlation, and completed-job
   bytes/elapsed/bytes-per-second throughput records for stock and native print
@@ -386,9 +386,12 @@ Material-profile USB import root/depth/suffix policy and the
   observe/native/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/Cura-job/
   pause-resume/completion/restart evidence, including native `deneb-printsvc`
   process ownership with no running `print_service.py`, route diagnostics and
-  captured status bodies that report `native_only_route:true`, rejection of any
+  captured status bodies that report `native_only_route:true` while keeping
+  summary `status=` values scalar, rejection of any
   native process sample that shows stock `print_service.py` returned,
-  local/USB job evidence tied to that native ownership, active-job status transitions from
+  local/USB job evidence tied to that native ownership and emitted by the
+  native CLI as accepted `pre_print` active/stop-allowed state followed by
+  aborted `idle` inactive/stop-disabled state, active-job status transitions from
   `printing` to `paused` and back to `idle`, including the active `printing`
   status snapshot for natural-completion runs, native active/stop-allowed flags
   during preheat and active jobs, heat/motion/macro status-root snapshot
@@ -401,24 +404,34 @@ Material-profile USB import root/depth/suffix policy and the
   stock summary lacks initial/final `print_service.py` process evidence, CPU
   or throughput intervals are not positive, or the native summary lacks
   native-only route evidence in route diagnostics or any required status
-  lifecycle body, reports the wrong status value for a required lifecycle
+  lifecycle body, lacks scalar boot-sync status plus native-only boot-sync
+  status-body evidence, reports the wrong status value for a required lifecycle
   phase, contains a stock `print_service.py` process sample, lacks native
-  local/USB IPC job acceptance plus abort/idle status evidence, lacks
+  local/USB IPC job acceptance plus accepted stop-state and abort/idle-state
+  evidence, lacks
   `deneb-printsvc` process ownership, or lacks native active/stop-allowed
   evidence in any required active or inactive printer-root lifecycle body.
   The package also carries `deneb-printsvc-smoke-selftest`, a shell-only
   synthetic summary fixture runner that exercises the full verifier and
-  comparator gates locally, including expected failures for missing native
+  comparator gates locally and invokes the live harness'
+  `--summary-parser-selftest` mode so scalar status extraction is tested
+  without hardware, including expected failures for missing native
   stop-safety evidence, missing status-body native-route evidence in verifier
   and comparator paths, missing native-route evidence in a single comparator
   lifecycle status snapshot, missing natural-completion active status evidence,
-  a wrong single-phase lifecycle status value, missing active or inactive
-  stop-safety evidence in a single comparator lifecycle snapshot, missing
+  a wrong single-phase lifecycle status value, boot-sync summaries that put the
+  full status response into `status=` or omit `status_body` native-route proof,
+  missing active or inactive stop-safety evidence in a single comparator
+  lifecycle snapshot, missing
   native local/USB job evidence, a non-native-only route diagnostic, a returned
   stock `print_service.py` process in a native run,
   missing stock
   `print_service.py` baseline evidence, and zero-throughput records, so the
   evidence contract can be tested without Python or live hardware.
+  `deneb-printsvc-cli-selftest` runs the actual native binary's `--smoke-test`
+  and `--local-job-smoke` entry points against a temp G-code file without
+  opening the motion serial device, then rejects missing accepted/aborted
+  local-job stop-state rows.
   `deneb-printsvc-init-selftest`
   statically checks the packaged native init, installer source,
   installer-generated printserver heredoc, and installed printserver shim for
@@ -429,20 +442,22 @@ Material-profile USB import root/depth/suffix policy and the
   The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
-  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-init-selftest`,
+  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-cli-selftest`,
+  `deneb-printsvc-init-selftest`,
   `manifest.txt`, and the declared
   `LVGL_LICENSE_TLSF.txt` notice, with no packaged Python or `print_service.py`
   entries. The package builder fails closed if a Python driver artifact appears
   in the staging directory or final `.deneb` archive, and the PowerShell release
   builder now inspects the final `.deneb` archive for the same
-  no-Python-driver invariant while requiring `deneb-printsvc` and both shell
-  selftests to be present. The package builder runs the staged selftests, and
-  the release verifier extracts and runs the archived selftests before
-  accepting the artifact. The printsvc CTest suite also registers both
-  selftests when `sh` is available, and the installer deploys them to `/usr/bin`
-  for target-side gate checks. The installer rejects update packages containing
-  Python driver artifacts and runs the installed print-service smoke-tool and
-  init-handoff selftests before completing the update.
+  no-Python-driver invariant while requiring `deneb-printsvc` and the smoke,
+  CLI, and init shell selftests to be present. The package builder and release
+  verifier run the shell-only smoke/init gates that do not execute the
+  cross-compiled target binary before accepting the artifact. The printsvc CTest
+  suite registers the smoke, CLI, and init selftests when `sh` is available, and
+  the installer deploys them to `/usr/bin` for target-side gate checks. The
+  installer rejects update packages containing Python driver artifacts and runs
+  the installed print-service smoke-tool, CLI, and init-handoff selftests before
+  completing the update.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API
