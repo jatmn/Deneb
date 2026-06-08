@@ -102,8 +102,9 @@ tr -d '\r' < "${REPO_ROOT}/web/init/deneb-mdns.init" > "${STAGING_DIR}/deneb-mdn
 tr -d '\r' < "${REPO_ROOT}/printsvc/init/deneb-printsvc.init" > "${STAGING_DIR}/deneb-printsvc.init"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke.sh" > "${STAGING_DIR}/deneb-printsvc-smoke"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-verify.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-verify"
+tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-compare.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-compare"
 chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init"
-chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify"
+chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare"
 
 mkdir -p "${STAGING_DIR}/www"
 cp -r "${REPO_ROOT}/web/www/"* "${STAGING_DIR}/www/"
@@ -145,6 +146,7 @@ contents:
   deneb-printsvc    - Lab-gated native print service replacement scaffold (MIPS)
   deneb-printsvc-smoke - Lab-only native print service smoke/resource harness
   deneb-printsvc-smoke-verify - Shell verifier for smoke summary evidence
+  deneb-printsvc-smoke-compare - Shell stock/native smoke summary comparator
   lighttpd          - Static web server and API reverse proxy (MIPS)
   deneb-api.init    - OpenWrt procd init script for deneb-api
   deneb-web.init    - OpenWrt procd init script for lighttpd
@@ -167,7 +169,7 @@ EOF
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
-    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
+    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"

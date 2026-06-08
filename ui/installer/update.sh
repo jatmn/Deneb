@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -103,6 +103,10 @@ install_web_runtime() {
     cp /tmp/update/deneb-printsvc-smoke-verify /usr/bin/deneb-printsvc-smoke-verify
     chmod 0755 /usr/bin/deneb-printsvc-smoke-verify
     log "installed deneb-printsvc-smoke-verify to /usr/bin/deneb-printsvc-smoke-verify"
+
+    cp /tmp/update/deneb-printsvc-smoke-compare /usr/bin/deneb-printsvc-smoke-compare
+    chmod 0755 /usr/bin/deneb-printsvc-smoke-compare
+    log "installed deneb-printsvc-smoke-compare to /usr/bin/deneb-printsvc-smoke-compare"
 
     cp /tmp/update/lighttpd /usr/sbin/lighttpd
     chmod 0755 /usr/sbin/lighttpd

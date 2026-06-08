@@ -21,6 +21,54 @@ static int smoke_test(void)
     return 0;
 }
 
+static int local_job_smoke(const char *path)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char frame[640];
+    char reply[128];
+    int rc = 1;
+
+    if (!path || !*path)
+        return 1;
+    if (strchr(path, '"') || strchr(path, '\\'))
+        return 1;
+
+    if (snprintf(frame, sizeof(frame),
+                 "JOB<{\"file\":\"%s\",\"source\":\"USB\","
+                 "\"uuid\":\"deneb-local-smoke\"}",
+                 path) >= (int)sizeof(frame))
+        return 1;
+
+    deneb_print_service_init(&svc);
+    if (deneb_command_parse(frame, &cmd) != 0)
+        goto out;
+    if (deneb_print_service_handle_command(&svc, &cmd, reply,
+                                           sizeof(reply)) != 0)
+        goto out;
+    if (!svc.job_active)
+        goto out;
+    if (strcmp(svc.status.file, path) != 0)
+        goto out;
+    if (strcmp(svc.status.source, "USB") != 0)
+        goto out;
+
+    if (deneb_command_parse("ABORT<{}", &cmd) != 0)
+        goto out;
+    if (deneb_print_service_handle_command(&svc, &cmd, reply,
+                                           sizeof(reply)) != 0)
+        goto out;
+    if (svc.job_active)
+        goto out;
+    if (strcmp(svc.status.file, "none") != 0)
+        goto out;
+
+    rc = 0;
+out:
+    deneb_print_service_close(&svc);
+    return rc;
+}
+
 int main(int argc, char **argv)
 {
     deneb_print_service_t svc;
@@ -28,6 +76,8 @@ int main(int argc, char **argv)
 
     if (argc > 1 && strcmp(argv[1], "--smoke-test") == 0)
         return smoke_test();
+    if (argc > 2 && strcmp(argv[1], "--local-job-smoke") == 0)
+        return local_job_smoke(argv[2]);
     if (argc > 1 && strcmp(argv[1], "--program-motion-firmware") == 0)
         allow_programming = 1;
 

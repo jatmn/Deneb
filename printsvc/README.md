@@ -125,25 +125,54 @@ Release packages install `/usr/bin/deneb-printsvc-smoke`, a no-Python lab
 harness for gathering the live Section 8 evidence. Running it with no flags is
 observe-only and records route/status/process/resource snapshots to
 `/tmp/deneb-printsvc-smoke.log`; it also writes compact phase and `/proc`
-memory evidence to `/tmp/deneb-printsvc-smoke.summary`. Native-route runs
-restore the previous route by default and record a post-restore snapshot.
+memory, CPU jiffy, load, and completed-job throughput evidence to
+`/tmp/deneb-printsvc-smoke.summary`. Native-route runs restore the previous
+route by default and record a post-restore snapshot.
+Every snapshot records the scalar `/printer/status` body in the summary so
+preheat, pause/resume, abort, completion, and restart runs prove the UI-visible
+state instead of only proving HTTP reachability.
+`--boot-sync` waits for print-backend route and printer-status readiness before
+the initial snapshot and records the bounded ready elapsed time.
 
 Risky phases are explicit:
 
 ```sh
 deneb-printsvc-smoke --native
+deneb-printsvc-smoke --boot-sync
 deneb-printsvc-smoke --native --heat
 deneb-printsvc-smoke --native --motion
-deneb-printsvc-smoke --native --job /home/3D/test.gcode
+deneb-printsvc-smoke --native --macro home
+deneb-printsvc-smoke --native --local-job /mnt/usb/local-test.gcode
+deneb-printsvc-smoke --native --job /home/3D/test.gcode --pause-resume
+deneb-printsvc-smoke --native --preheat-abort /home/3D/preheat-test.gcode
+deneb-printsvc-smoke --native --cura-job /home/3D/cura-test.gcode
+deneb-printsvc-smoke --native --complete-job /home/3D/short-test.gcode
+deneb-printsvc-smoke --native --restart
 deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
 ```
 
 The script restores the previous `deneb.printsvc.enabled` value by default.
 Use only under supervision with clear motion axes and a ready power cutoff.
+`--local-job` runs the native `deneb-printsvc --local-job-smoke` path and proves
+local/USB job acceptance, active `printing` status, abort, and final `idle`
+status without routing through the legacy Python driver. `--job` is the
+abort-path exercise; `--complete-job` intentionally waits for a short print to
+leave the active-job API without issuing an abort.
 
 Verify a captured summary on-device without Python:
 
 ```sh
 deneb-printsvc-smoke-verify /tmp/deneb-printsvc-smoke.summary
-deneb-printsvc-smoke-verify --native --heat --motion --job /tmp/native-printsvc.summary
+deneb-printsvc-smoke-verify --native --heat --motion --macro --local-job --job --preheat-abort --cura-job --pause-resume /tmp/native-printsvc.summary
+deneb-printsvc-smoke-verify --native --complete-job --restart --resources --boot-sync /tmp/native-printsvc.summary
+deneb-printsvc-smoke-compare /tmp/stock-printsvc.summary /tmp/native-printsvc.summary
 ```
+
+For job runs the verifier requires `printing` while active, `paused` after a
+pause command, and `idle` after abort or natural completion. `--resources`
+requires initial/final memory, uptime, CPU, load, and process RSS samples, and
+`--complete-job` requires a bytes/elapsed/bytes-per-second throughput record.
+`--boot-sync` requires a successful route/status readiness record with elapsed
+and uptime-delta seconds.
+The compare tool reports before/after deltas for memory, process RSS, CPU
+jiffies, boot-sync elapsed time, and print throughput.

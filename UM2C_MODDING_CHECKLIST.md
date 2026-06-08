@@ -1205,22 +1205,38 @@ Completed implementation slices:
   consumed or cleared the pending metadata.
 - [x] Add a packaged no-Python live smoke/resource harness,
   `deneb-printsvc-smoke`, for supervised lab validation of native route
-  selection, idle status snapshots, heat/cool, Z-home, optional multipart job
-  upload, abort, process/resource samples, and route restoration. The harness
+  selection, boot/backend readiness, idle status snapshots, heat/cool, Z-home,
+  macro-backed manual actions, optional multipart job upload, pause/resume,
+  abort, explicit native local/USB job acceptance, explicit preheat abort, Cura
+  cluster API job upload/abort, short-job completion, native service-restart
+  recovery, process/resource samples, and route restoration. The harness
   installs with Deneb but only observes unless a tester explicitly enables
-  native route, heat, motion, or job phases, and writes both a full log plus a
-  compact summary with phase results and `/proc`-sourced process RSS/VSZ
-  samples, including a post-restore route/status snapshot after native-route
-  tests.
+  native route, boot-sync, heat, motion, macro, local-job, REST job,
+  preheat-abort, Cura job, complete-job, or restart phases, and writes both
+  a full log plus a compact summary with phase results, bounded boot-sync ready timing, scalar
+  `/printer/status` values, and `/proc`-sourced process RSS/VSZ samples, CPU
+  jiffies, load averages, uptime samples, and completed-job throughput records,
+  including a post-restore route/status snapshot after native-route tests.
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
-  for observe-only, native-route, heat/cool, Z-home, and job-start/abort
-  evidence plus route restoration without Python or ad hoc log inspection.
+  for observe-only, native-route, boot-sync readiness, heat/cool, Z-home,
+  macro-backed action, local/USB native job-start/abort, REST job-start/abort,
+  explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
+  service-restart, and route restoration evidence without Python or ad hoc log
+  inspection. The verifier also checks active-job UI status
+  transitions: `printing` while active, `paused` after pause, and `idle` after
+  abort or natural completion. Its resource mode requires initial/final memory,
+  uptime, CPU, load, process RSS, and completed-job throughput evidence so
+  future stock/native live runs can satisfy the before/after measurement gate.
+- [x] Add a packaged shell-only comparator,
+  `deneb-printsvc-smoke-compare`, so stock and native live summary files can be
+  compared on-device without Python. It emits before/after deltas for memory,
+  process RSS, CPU jiffies, boot-sync elapsed time, and print throughput.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
-  `dist/Deneb_Update_78b02f1.deneb` contains `deneb-printsvc`,
-  `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`, `manifest.txt`, and
-  `LVGL_LICENSE_TLSF.txt`.
+  `dist/Deneb_Update_25766cc.deneb` contains `deneb-printsvc`,
+  `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
+  `deneb-printsvc-smoke-compare`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`.
 
 ## 9. Motion Controller / Marlin Firmware
 

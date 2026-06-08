@@ -322,15 +322,29 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
 - Deneb packages now include `/usr/bin/deneb-printsvc-smoke`, a no-Python
   device-side smoke/resource harness for the native print-service milestone.
   Its default mode only records route/status/process/resource snapshots; heat,
-  motion, native-route switching, and multipart job upload/abort phases require
-  explicit lab flags and are intended to generate the live evidence required by
-  Section 8 once SSH/hardware validation is allowed again. The harness writes a
-  full log and a compact summary with phase return codes plus `/proc`-sourced
-  process VmSize/VmRSS samples for stock and native print paths, including a
-  post-restore route/status snapshot after native-route tests. The local
-  release package also includes `deneb-printsvc-smoke-verify`, a shell-only
-  summary verifier for observe/native/heat/motion/job and restoration evidence,
-  so live runs can be checked on target without Python. The local release
+  boot/backend readiness, motion, macro-backed manual actions, native-route
+  switching, REST multipart job upload/abort, explicit preheat abort, Cura
+  cluster API job upload/abort, pause/resume, short-job completion, and native
+  service-restart recovery phases require explicit lab flags and are intended to
+  generate the live evidence required by Section 8 once
+  SSH/hardware validation is allowed again. The harness writes a full log and a
+  compact summary with phase return codes, bounded boot-sync ready timing, the
+  scalar `/printer/status` body for every snapshot,
+  `/proc`-sourced process VmSize/VmRSS samples, system CPU jiffies, load
+  averages, uptime samples for boot/ready timing correlation, and completed-job
+  bytes/elapsed/bytes-per-second throughput records for stock and native print
+  paths, including local/USB native job acceptance evidence and a post-restore
+  route/status snapshot after native-route tests. The local release package also includes
+  `deneb-printsvc-smoke-verify`, a shell-only summary verifier for
+  observe/native/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/Cura-job/
+  pause-resume/completion/restart and restoration evidence, including active-job status transitions from
+  `printing` to `paused` and back to `idle` plus resource/throughput evidence,
+  so live runs can be checked on target without Python. Packages also include
+  `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator
+  that emits before/after deltas for memory, process RSS, CPU jiffies,
+  boot-sync elapsed time, and print throughput without exporting data to an
+  external Python script.
+  The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `manifest.txt`, and the declared
   `LVGL_LICENSE_TLSF.txt` notice.

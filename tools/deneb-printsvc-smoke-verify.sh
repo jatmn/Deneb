@@ -10,7 +10,16 @@ SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 REQUIRE_NATIVE=0
 REQUIRE_HEAT=0
 REQUIRE_MOTION=0
+REQUIRE_MACRO=0
+REQUIRE_LOCAL_JOB=0
 REQUIRE_JOB=0
+REQUIRE_CURA_JOB=0
+REQUIRE_PREHEAT_ABORT=0
+REQUIRE_PAUSE_RESUME=0
+REQUIRE_COMPLETE_JOB=0
+REQUIRE_RESTART=0
+REQUIRE_RESOURCES=0
+REQUIRE_BOOT_SYNC=0
 
 usage() {
     cat <<'EOF'
@@ -22,7 +31,19 @@ Options:
   --native      Require native route enable evidence
   --heat        Require heat/cool evidence
   --motion      Require Z-home motion evidence
+  --macro       Require macro-backed manual action evidence
+  --local-job   Require native USB/local JOB acceptance evidence
   --job         Require multipart job start and abort/stop evidence
+  --cura-job    Require Cura cluster API job start and abort evidence
+  --preheat-abort
+               Require quick abort evidence during preparation/preheat
+  --pause-resume
+               Require pause and resume evidence during --job
+  --complete-job
+               Require a job run to leave the active-job API without abort
+  --restart     Require native print-service restart recovery evidence
+  --resources   Require resource evidence: uptime, memory, CPU, and load samples
+  --boot-sync   Require bounded boot/backend readiness evidence
   --full        Require native, heat, motion, and job evidence
   -h, --help    Show this help
 
@@ -36,12 +57,36 @@ while [ "$#" -gt 0 ]; do
         --native) REQUIRE_NATIVE=1 ;;
         --heat) REQUIRE_HEAT=1 ;;
         --motion) REQUIRE_MOTION=1 ;;
+        --macro) REQUIRE_MACRO=1 ;;
+        --local-job) REQUIRE_LOCAL_JOB=1 ;;
         --job) REQUIRE_JOB=1 ;;
+        --cura-job) REQUIRE_CURA_JOB=1 ;;
+        --preheat-abort) REQUIRE_PREHEAT_ABORT=1 ;;
+        --pause-resume)
+            REQUIRE_JOB=1
+            REQUIRE_PAUSE_RESUME=1
+            ;;
+        --complete-job) REQUIRE_COMPLETE_JOB=1 ;;
+        --restart)
+            REQUIRE_NATIVE=1
+            REQUIRE_RESTART=1
+            ;;
+        --resources) REQUIRE_RESOURCES=1 ;;
+        --boot-sync) REQUIRE_BOOT_SYNC=1 ;;
         --full)
             REQUIRE_NATIVE=1
             REQUIRE_HEAT=1
             REQUIRE_MOTION=1
+            REQUIRE_MACRO=1
+            REQUIRE_LOCAL_JOB=1
             REQUIRE_JOB=1
+            REQUIRE_CURA_JOB=1
+            REQUIRE_PREHEAT_ABORT=1
+            REQUIRE_PAUSE_RESUME=1
+            REQUIRE_COMPLETE_JOB=1
+            REQUIRE_RESTART=1
+            REQUIRE_RESOURCES=1
+            REQUIRE_BOOT_SYNC=1
             ;;
         -h|--help)
             usage
@@ -90,8 +135,11 @@ require_pattern ' phase=printsvc-self-test rc=0' "printsvc self-test passed"
 require_pattern ' snapshot=initial' "initial snapshot present"
 require_pattern ' snapshot=final' "final snapshot present"
 require_pattern ' phase=route-initial .*rc=0' "initial route query passed"
-require_pattern ' phase=status-initial .*rc=0' "initial status query passed"
+require_pattern ' phase=status-initial .*rc=0 .*status=' "initial status query passed with body"
 require_pattern 'sample=initial .*mem_total_kb=' "initial memory sample present"
+require_pattern 'sample=initial .*uptime_seconds=' "initial uptime sample present"
+require_pattern 'sample=initial .*cpu_total_jiffies=' "initial CPU sample present"
+require_pattern 'sample=initial .*load1=' "initial load sample present"
 
 if grep -Eq ' phase=[^ ]+ .*rc=[1-9][0-9]*' "$SUMMARY"; then
     fail "one or more recorded phases failed"
@@ -122,15 +170,88 @@ if [ "$REQUIRE_MOTION" = "1" ]; then
     require_pattern ' snapshot=motion' "motion snapshot present"
 fi
 
+if [ "$REQUIRE_MACRO" = "1" ]; then
+    require_pattern ' phase=macro-(home|bed_up|bed_down) .*rc=0' "macro-backed action passed"
+    require_pattern ' snapshot=macro' "macro snapshot present"
+fi
+
+if [ "$REQUIRE_LOCAL_JOB" = "1" ]; then
+    require_pattern ' phase=local-job-native .*rc=0' "native local job smoke passed"
+    require_pattern ' phase=local-job-start .*source=USB .*rc=0' "local job source is USB"
+    require_pattern ' phase=status-local-job-active .*status=printing .*rc=0' "local job active status is printing"
+    require_pattern ' phase=local-job-abort .*rc=0' "local job abort passed"
+    require_pattern ' phase=status-local-job-aborted .*status=idle .*rc=0' "local job aborted status is idle"
+fi
+
+if [ "$REQUIRE_RESTART" = "1" ]; then
+    require_pattern ' phase=service-restart .*rc=0' "service restart passed"
+    require_pattern ' snapshot=service-restarted' "service restart snapshot present"
+    require_pattern ' phase=route-service-restarted .*rc=0' "post-restart route query passed"
+    require_pattern ' phase=status-service-restarted .*rc=0' "post-restart status query passed"
+fi
+
+if [ "$REQUIRE_BOOT_SYNC" = "1" ]; then
+    require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*status=(idle|printing|paused|error|offline|finished) .*rc=0' "boot sync reached route/status readiness"
+fi
+
+if [ "$REQUIRE_RESOURCES" = "1" ]; then
+    require_pattern 'sample=final .*mem_total_kb=' "final memory sample present"
+    require_pattern 'sample=final .*uptime_seconds=' "final uptime sample present"
+    require_pattern 'sample=final .*cpu_total_jiffies=' "final CPU sample present"
+    require_pattern 'sample=final .*load1=' "final load sample present"
+    require_pattern 'sample=initial pid=[0-9]+ .*vmrss_kb=' "initial process RSS sample present"
+fi
+
 if [ "$REQUIRE_JOB" = "1" ]; then
     require_pattern ' phase=job-start .*rc=0' "job start passed"
     require_pattern ' snapshot=job-running' "job-running snapshot present"
+    require_pattern ' phase=status-job-running .*rc=0 .*status=printing' "job-running status is printing"
+    if [ "$REQUIRE_PAUSE_RESUME" = "1" ]; then
+        require_pattern ' phase=job-pause .*rc=0' "job pause passed"
+        require_pattern ' snapshot=job-paused' "job-paused snapshot present"
+        require_pattern ' phase=status-job-paused .*rc=0 .*status=paused' "job-paused status is paused"
+        require_pattern ' phase=job-resume .*rc=0' "job resume passed"
+        require_pattern ' snapshot=job-resumed' "job-resumed snapshot present"
+        require_pattern ' phase=status-job-resumed .*rc=0 .*status=printing' "job-resumed status is printing"
+    fi
     if grep -Eq ' phase=job-abort .*rc=0| phase=job-stop .*rc=0' "$SUMMARY"; then
         pass "job abort/stop passed"
     else
         fail "job abort/stop passed"
     fi
     require_pattern ' snapshot=job-aborted' "job-aborted snapshot present"
+    require_pattern ' phase=status-job-aborted .*rc=0 .*status=idle' "job-aborted status is idle"
+fi
+
+if [ "$REQUIRE_CURA_JOB" = "1" ]; then
+    require_pattern ' phase=cura-job-start .*rc=0' "Cura job start passed"
+    require_pattern ' snapshot=cura-job-running' "Cura job-running snapshot present"
+    require_pattern ' phase=status-cura-job-running .*rc=0 .*status=printing' "Cura job-running status is printing"
+    require_pattern ' phase=cura-job-abort .*rc=0' "Cura job abort passed"
+    require_pattern ' snapshot=cura-job-aborted' "Cura job-aborted snapshot present"
+    require_pattern ' phase=status-cura-job-aborted .*rc=0 .*status=idle' "Cura job-aborted status is idle"
+fi
+
+if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
+    require_pattern ' phase=preheat-abort-start .*rc=0' "preheat abort job start passed"
+    require_pattern ' snapshot=preheat-abort-active' "preheat-abort active snapshot present"
+    require_pattern ' phase=status-preheat-abort-active .*rc=0 .*status=printing' "preheat-abort active status is printing"
+    if grep -Eq ' phase=preheat-abort .*rc=0| phase=preheat-stop .*rc=0' "$SUMMARY"; then
+        pass "preheat abort/stop passed"
+    else
+        fail "preheat abort/stop passed"
+    fi
+    require_pattern ' snapshot=preheat-aborted' "preheat-aborted snapshot present"
+    require_pattern ' phase=status-preheat-aborted .*rc=0 .*status=idle' "preheat-aborted status is idle"
+fi
+
+if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
+    require_pattern ' phase=complete-job-start .*rc=0' "completion job start passed"
+    require_pattern ' snapshot=complete-job-running' "completion job-running snapshot present"
+    require_pattern ' phase=job-completion-wait .*rc=0' "completion wait observed inactive job"
+    require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[0-9]+ .*rc=0' "completion throughput sample present"
+    require_pattern ' snapshot=job-completed' "job-completed snapshot present"
+    require_pattern ' phase=status-job-completed .*rc=0 .*status=idle' "job-completed status is idle"
 fi
 
 if [ "$failures" -ne 0 ]; then
