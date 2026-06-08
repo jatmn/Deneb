@@ -46,6 +46,7 @@ summary_value() {
             for (i = 1; i <= n; i++) {
                 if (index(fields[i], key "=") == 1) {
                     sub("^[^=]*=", "", fields[i]);
+                    gsub("\r", "", fields[i]);
                     print fields[i];
                     exit;
                 }
@@ -64,6 +65,7 @@ phase_value() {
             for (i = 1; i <= n; i++) {
                 if (index(fields[i], key "=") == 1) {
                     sub("^[^=]*=", "", fields[i]);
+                    gsub("\r", "", fields[i]);
                     print fields[i];
                     exit;
                 }
@@ -98,6 +100,32 @@ require_number() {
     return 0
 }
 
+require_positive_integer() {
+    value="$1"
+    label="$2"
+
+    if ! require_number "$value" "$label"; then
+        return 1
+    fi
+    if [ "$value" -le 0 ]; then
+        fail "$label must be positive"
+        return 1
+    fi
+    return 0
+}
+
+require_pattern() {
+    file="$1"
+    pattern="$2"
+    label="$3"
+
+    if grep -Eq "$pattern" "$file"; then
+        return 0
+    fi
+    fail "$label"
+    return 1
+}
+
 delta_line() {
     name="$1"
     before="$2"
@@ -123,6 +151,22 @@ if [ ! -s "$NATIVE" ]; then
 fi
 [ "$failures" -eq 0 ] || exit 1
 
+require_pattern "$NATIVE" \
+    ' phase=native-driver-process .*deneb_printsvc=1 .*print_service_py=0 .*rc=0' \
+    "native summary missing deneb-printsvc process ownership evidence"
+require_pattern "$STOCK" \
+    'sample=initial .*pid=[0-9]+ .*command="?.*print_service.py' \
+    "stock summary missing initial print_service.py process evidence"
+require_pattern "$STOCK" \
+    'sample=final .*pid=[0-9]+ .*command="?.*print_service.py' \
+    "stock summary missing final print_service.py process evidence"
+require_pattern "$NATIVE" \
+    ' phase=printer-(job-running|complete-job-running|preheat-abort-active|cura-job-running) .*native_active:true.*native_stop_allowed:true' \
+    "native summary missing active native stop-allowed evidence"
+require_pattern "$NATIVE" \
+    ' phase=printer-(job-aborted|preheat-aborted|cura-job-aborted|job-completed) .*native_active:false.*native_stop_allowed:false' \
+    "native summary missing inactive native stop-disabled evidence"
+
 stock_initial_mem="$(summary_value "$STOCK" initial mem_used_kb)"
 native_initial_mem="$(summary_value "$NATIVE" initial mem_used_kb)"
 stock_final_mem="$(summary_value "$STOCK" final mem_used_kb)"
@@ -135,10 +179,24 @@ stock_initial_cpu="$(summary_value "$STOCK" initial cpu_total_jiffies)"
 native_initial_cpu="$(summary_value "$NATIVE" initial cpu_total_jiffies)"
 stock_final_cpu="$(summary_value "$STOCK" final cpu_total_jiffies)"
 native_final_cpu="$(summary_value "$NATIVE" final cpu_total_jiffies)"
+stock_cpu_interval=""
+native_cpu_interval=""
+if require_number "$stock_initial_cpu" "stock CPU initial" &&
+   require_number "$stock_final_cpu" "stock CPU final"; then
+    stock_cpu_interval=$((stock_final_cpu - stock_initial_cpu))
+    require_positive_integer "$stock_cpu_interval" "stock CPU interval"
+fi
+if require_number "$native_initial_cpu" "native CPU initial" &&
+   require_number "$native_final_cpu" "native CPU final"; then
+    native_cpu_interval=$((native_final_cpu - native_initial_cpu))
+    require_positive_integer "$native_cpu_interval" "native CPU interval"
+fi
 stock_boot="$(phase_value "$STOCK" boot-sync-ready elapsed_seconds)"
 native_boot="$(phase_value "$NATIVE" boot-sync-ready elapsed_seconds)"
 stock_bps="$(phase_value "$STOCK" job-throughput bytes_per_second)"
 native_bps="$(phase_value "$NATIVE" job-throughput bytes_per_second)"
+require_positive_integer "$stock_bps" "stock print throughput"
+require_positive_integer "$native_bps" "native print throughput"
 
 delta_line mem_used_initial "$stock_initial_mem" "$native_initial_mem" kb
 delta_line mem_used_final "$stock_final_mem" "$native_final_mem" kb
@@ -146,6 +204,7 @@ delta_line process_rss_initial "$stock_initial_rss" "$native_initial_rss" kb
 delta_line process_rss_final "$stock_final_rss" "$native_final_rss" kb
 delta_line cpu_total_initial "$stock_initial_cpu" "$native_initial_cpu" jiffies
 delta_line cpu_total_final "$stock_final_cpu" "$native_final_cpu" jiffies
+delta_line cpu_total_interval "$stock_cpu_interval" "$native_cpu_interval" jiffies
 delta_line boot_sync_elapsed "$stock_boot" "$native_boot" seconds
 delta_line print_throughput "$stock_bps" "$native_bps" bytes_per_second
 

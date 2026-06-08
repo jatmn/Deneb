@@ -372,7 +372,7 @@ Material-profile USB import root/depth/suffix policy and the
   generate the live evidence required by Section 8 once
   SSH/hardware validation is allowed again. The harness writes a full log and a
   compact summary with phase return codes, bounded boot-sync ready timing, the
-  scalar `/printer/status` body for every snapshot,
+  scalar `/printer/status` body and `/printer` root body for every snapshot,
   `/proc`-sourced process VmSize/VmRSS samples, system CPU jiffies, load
   averages, uptime samples for boot/ready timing correlation, and completed-job
   bytes/elapsed/bytes-per-second throughput records for stock and native print
@@ -381,17 +381,25 @@ Material-profile USB import root/depth/suffix policy and the
   `deneb-printsvc-smoke-verify`, a shell-only summary verifier for
   observe/native/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/Cura-job/
   pause-resume/completion/restart evidence, including native `deneb-printsvc`
-  process ownership with no running `print_service.py`, active-job status transitions from
-  `printing` to `paused` and back to `idle` plus resource/throughput evidence,
-  so live runs can be checked on target without Python. Packages also include
+  process ownership with no running `print_service.py`, local/USB job evidence
+  tied to that native ownership, active-job status transitions from
+  `printing` to `paused` and back to `idle`, native active/stop-allowed flags
+  during preheat and active jobs, heat/motion/macro status-root snapshot
+  evidence, and resource/throughput evidence, so live runs can be checked on
+  target without Python. Packages also include
   `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator
-  that emits before/after deltas for memory, process RSS, CPU jiffies,
-  boot-sync elapsed time, and print throughput without exporting data to an
-  external Python script.
+  that emits before/after deltas for memory, process RSS, raw CPU jiffies,
+  initial-to-final CPU jiffies, boot-sync elapsed time, and print throughput
+  without exporting data to an external Python script. It also fails if the
+  stock summary lacks initial/final `print_service.py` process evidence, CPU
+  or throughput intervals are not positive, or the native summary lacks
+  `deneb-printsvc` process ownership or native active/stop-allowed evidence.
   The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
-  `deneb-printsvc-smoke-verify`, `manifest.txt`, and the declared
-  `LVGL_LICENSE_TLSF.txt` notice.
+  `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
+  `manifest.txt`, and the declared `LVGL_LICENSE_TLSF.txt` notice, with no
+  packaged Python or `print_service.py` entries. The package builder fails
+  closed if a Python driver artifact appears in the staging directory.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

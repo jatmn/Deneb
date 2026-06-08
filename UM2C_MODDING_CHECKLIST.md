@@ -1284,7 +1284,8 @@ Completed implementation slices:
   native route, boot-sync, heat, motion, macro, local-job, REST job,
   preheat-abort, Cura job, complete-job, or restart phases, and writes both
   a full log plus a compact summary with phase results, bounded boot-sync ready timing, scalar
-  `/printer/status` values, and `/proc`-sourced process RSS/VSZ samples, CPU
+  `/printer/status` values, `/printer` root snapshots with Deneb-native
+  active/stop-allowed flags, and `/proc`-sourced process RSS/VSZ samples, CPU
   jiffies, load averages, uptime samples, and completed-job throughput records,
   including native route/status snapshots after native-route tests.
 - [x] Add a packaged shell-only verifier,
@@ -1294,21 +1295,33 @@ Completed implementation slices:
   explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
   service-restart, and native-route evidence without Python or ad hoc log
   inspection. Native-route evidence now requires `deneb-printsvc` to be running
-  with no stock `print_service.py` process. The verifier also checks active-job UI status
+  with no stock `print_service.py` process, and local/USB job evidence now
+  requires that same native ownership proof. The verifier also checks active-job UI status
   transitions: `printing` while active, `paused` after pause, and `idle` after
-  abort or natural completion. Its resource mode requires initial/final memory,
-  uptime, CPU, load, process RSS, and completed-job throughput evidence so
-  future stock/native live runs can satisfy the before/after measurement gate.
+  abort or natural completion. Active, preheat, paused, resumed, aborted, and
+  completed snapshots must also prove native active/stop-allowed flags so the
+  LCD Stop safety state is checked from the native driver contract. Heat,
+  motion, and macro phases must include their snapshot status/root API samples
+  so command acceptance alone cannot satisfy those live checks. Its
+  resource mode requires initial/final memory, uptime, CPU, load, process RSS,
+  and completed-job throughput evidence so future stock/native live runs can
+  satisfy the before/after measurement gate.
 - [x] Add a packaged shell-only comparator,
   `deneb-printsvc-smoke-compare`, so stock and native live summary files can be
   compared on-device without Python. It emits before/after deltas for memory,
-  process RSS, CPU jiffies, boot-sync elapsed time, and print throughput.
+  process RSS, raw CPU jiffies, initial-to-final CPU jiffies, boot-sync elapsed
+  time, and print throughput, and fails if the stock summary lacks
+  initial/final `print_service.py` process evidence, CPU or throughput
+  intervals are not positive, or the native summary lacks `deneb-printsvc`
+  process ownership or native active/stop-allowed safety evidence.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
-  `dist/Deneb_Update_411df36.deneb` contains `deneb-printsvc`,
+  `dist/Deneb_Update_6ef473e.deneb` contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
   `deneb-printsvc-smoke-compare`, `deneb-printsvc-macros/`, `manifest.txt`,
-  and `LVGL_LICENSE_TLSF.txt`.
+  and `LVGL_LICENSE_TLSF.txt`, with no packaged Python or `print_service.py`
+  entries. The package builder now fails if a Python driver artifact is present
+  in the staging directory.
 
 ## 9. Motion Controller / Marlin Firmware
 

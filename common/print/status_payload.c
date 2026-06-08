@@ -55,6 +55,8 @@ int deneb_status_payload_parse(const char *json,
 {
     char name[256];
     int topcap_present = 0;
+    int native_active = 0;
+    int native_stop_allowed = 0;
 
     if (!json || !payload)
         return -1;
@@ -99,6 +101,18 @@ int deneb_status_payload_parse(const char *json,
     payload->is_paused = deneb_print_req_is_paused(payload->req);
     payload->is_printing = deneb_print_req_is_abort(payload->req) ?
         0 : deneb_print_observation_has_context(&payload->observation);
+    if (deneb_json_get_truthy_value(json, "denebActive",
+                                    &native_active) == 0) {
+        payload->has_native_active = 1;
+        payload->native_active = native_active;
+        if (!deneb_print_req_is_abort(payload->req))
+            payload->is_printing = native_active;
+    }
+    if (deneb_json_get_truthy_value(json, "denebStopAllowed",
+                                    &native_stop_allowed) == 0) {
+        payload->has_native_stop_allowed = 1;
+        payload->native_stop_allowed = native_stop_allowed;
+    }
     payload->has_error = deneb_json_get_int(json, "received_faults", 0) != 0;
     return 0;
 }

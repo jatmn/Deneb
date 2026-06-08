@@ -35,6 +35,8 @@ static printer_state_t state = {
     .filename = "(stub)", .source = "usb", .uuid = "",
     .time_total = 0, .time_left = 0, .progress = 0,
     .is_printing = false, .is_paused = false, .has_error = false,
+    .native_active = false, .native_stop_allowed = false,
+    .has_native_active = false, .has_native_stop_allowed = false,
     .current_req = "", .connected = false, .last_update_ms = 0,
 };
 static deneb_print_backend_route_t backend_route = {
@@ -328,6 +330,10 @@ static void parse_status(const char *json)
     snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
     state.is_printing = payload.is_printing != 0;
     state.is_paused = payload.is_paused != 0;
+    state.native_active = payload.native_active != 0;
+    state.native_stop_allowed = payload.native_stop_allowed != 0;
+    state.has_native_active = payload.has_native_active != 0;
+    state.has_native_stop_allowed = payload.has_native_stop_allowed != 0;
 
     curr_ctx = filename_context_from_state(&state);
     prev_ctx = filename_context_from_state(&prev);
@@ -481,6 +487,9 @@ int backend_has_active_print_context(void)
     int has_print_name;
     deneb_print_context_flags_t flags;
 
+    if (state.has_native_active)
+        return state.native_active;
+
     backend_get_print_display_name(display_name, sizeof(display_name));
     has_print_name = state_has_print_name(&state, display_name);
     flags = context_flags_from_state(&state, has_print_name);
@@ -504,6 +513,9 @@ int backend_has_stoppable_print_context(void)
     char display_name[128];
     int has_print_name;
     deneb_print_context_flags_t flags;
+
+    if (state.has_native_stop_allowed)
+        return state.native_stop_allowed;
 
     backend_get_print_display_name(display_name, sizeof(display_name));
     has_print_name = state_has_print_name(&state, display_name);

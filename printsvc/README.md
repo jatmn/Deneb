@@ -158,9 +158,10 @@ memory, CPU jiffy, load, and completed-job throughput evidence to
 `/tmp/deneb-printsvc-smoke.summary`. Native-route runs restart and assert
 `deneb-printsvc` instead of toggling a stock-driver route, and fail if
 `print_service.py` is still running during native validation.
-Every snapshot records the scalar `/printer/status` body in the summary so
-preheat, pause/resume, abort, completion, and restart runs prove the UI-visible
-state instead of only proving HTTP reachability.
+Every snapshot records the scalar `/printer/status` body and `/printer` root
+body in the summary so preheat, pause/resume, abort, completion, and restart
+runs prove the UI-visible state and native active/stop-allowed safety flags
+instead of only proving HTTP reachability.
 `--boot-sync` waits for print-backend route and printer-status readiness before
 the initial snapshot and records the bounded ready elapsed time.
 
@@ -182,10 +183,11 @@ deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
 ```
 
 Use only under supervision with clear motion axes and a ready power cutoff.
-`--local-job` runs the native `deneb-printsvc --local-job-smoke` path through
-the shared IPC frame helper and proves local/USB job acceptance, active
-`printing` status, abort, and final `idle` status without routing through the
-legacy Python driver. `--job` is the
+`--local-job` requires `--native`, runs the native
+`deneb-printsvc --local-job-smoke` path through the shared IPC frame helper, and
+proves native route ownership, local/USB job acceptance, active `printing`
+status, abort, and final `idle` status without routing through the legacy
+Python driver. `--job` is the
 abort-path exercise; `--complete-job` intentionally waits for a short print to
 leave the active-job API without issuing an abort.
 
@@ -199,12 +201,21 @@ deneb-printsvc-smoke-compare /tmp/stock-printsvc.summary /tmp/native-printsvc.su
 ```
 
 For job runs the verifier requires `printing` while active, `paused` after a
-pause command, and `idle` after abort or natural completion. `--resources`
-requires initial/final memory, uptime, CPU, load, and process RSS samples, and
-`--complete-job` requires a bytes/elapsed/bytes-per-second throughput record.
+pause command, and `idle` after abort or natural completion. It also checks
+native active/stop-allowed flags during active, preheat, paused, and resumed
+snapshots, then requires those flags to be false after abort or completion.
+Heat, motion, and macro verification require their snapshot status and printer
+root records so those phases prove backend state sampling, not only command
+acceptance.
+`--resources` requires initial/final memory, uptime, CPU, load, process RSS
+samples, and a bytes/elapsed/bytes-per-second throughput record.
 `--boot-sync` requires a successful route/status readiness record with elapsed
 and uptime-delta seconds.
 `--native` also requires native `deneb-printsvc` process evidence and absence
 of stock `print_service.py`.
 The compare tool reports before/after deltas for memory, process RSS, CPU
-jiffies, boot-sync elapsed time, and print throughput.
+jiffies, CPU jiffies consumed between initial/final samples, boot-sync elapsed
+time, and print throughput. It fails if the stock summary lacks
+initial/final `print_service.py` process evidence, if CPU or throughput
+intervals are not positive, or if the native summary lacks `deneb-printsvc`
+process ownership or native stop-safety flags.

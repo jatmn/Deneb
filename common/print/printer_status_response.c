@@ -395,6 +395,7 @@ int deneb_printer_status_response_format_um_root(
         "\"max_speed\":{\"x\":300.0,\"y\":300.0,\"z\":40.0}}],"
         "\"status\":\"%s\",\"connected\":%s,\"is_printing\":%s,"
         "\"is_paused\":%s,\"has_error\":%s,\"progress\":%.1f,"
+        "\"native_active\":%s,\"native_stop_allowed\":%s,"
         "\"time_total\":%d,\"time_left\":%d,\"filename\":\"%s\","
         "\"diagnostics\":{}"
         "}",
@@ -403,7 +404,11 @@ int deneb_printer_status_response_format_um_root(
         status->pos_y, status->pos_z, status_label,
         bool_text(status->connected), bool_text(status->is_printing),
         bool_text(status->is_paused), bool_text(status->has_error),
-        status->progress, status->time_total, status->time_left, filename);
+        status->progress,
+        bool_text(status->has_native_active && status->native_active),
+        bool_text(status->has_native_stop_allowed &&
+                  status->native_stop_allowed),
+        status->time_total, status->time_left, filename);
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
     return n;

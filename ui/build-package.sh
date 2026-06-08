@@ -168,8 +168,17 @@ contents:
   LVGL_LICENSE_TLSF.txt - LVGL bundled TLSF helper BSD-style license notice
   LIBZMQ_NOTICE.txt - libzmq MPL-2.0 notice and source location
   MPL-2.0.txt       - Mozilla Public License 2.0 text for libzmq
+  no Python driver files are packaged; native deneb-printsvc owns marlindriver
   manifest.txt      - This file
 EOF
+
+if find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
+    -print | grep . >/dev/null 2>&1; then
+    echo "ERROR: Python driver artifact found in Deneb package staging" >&2
+    find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
+        -print >&2
+    exit 1
+fi
 
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"

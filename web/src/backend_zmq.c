@@ -35,6 +35,8 @@ static printer_state_t state = {
     .filename = "", .source = "", .uuid = "",
     .time_total = 0, .time_left = 0, .progress = 0,
     .is_printing = false, .is_paused = false, .has_error = false,
+    .native_active = false, .native_stop_allowed = false,
+    .has_native_active = false, .has_native_stop_allowed = false,
     .current_req = "", .connected = false, .last_update_ms = 0,
 };
 static deneb_print_backend_route_t backend_route = {
@@ -79,6 +81,10 @@ void backend_zmq_get_printer_status_response(
     status->is_printing = state.is_printing;
     status->is_paused = state.is_paused;
     status->has_error = state.has_error;
+    status->native_active = state.native_active;
+    status->native_stop_allowed = state.native_stop_allowed;
+    status->has_native_active = state.has_native_active;
+    status->has_native_stop_allowed = state.has_native_stop_allowed;
     status->topcap_present = state.topcap_present;
     status->progress = state.progress;
     status->time_total = state.time_total;
@@ -331,7 +337,8 @@ static void update_status_cache(void)
         "\"progress\":%.1f,\"time_total\":%d,\"time_left\":%d,"
         "\"filename\":\"%s\",\"status\":\"%s\","
         "\"is_printing\":%s,\"is_paused\":%s,\"has_error\":%s,"
-        "\"connected\":%s,%s}",
+        "\"connected\":%s,\"native_active\":%s,"
+        "\"native_stop_allowed\":%s,%s}",
         state.nozzle_temp_cur, state.nozzle_temp_set,
         state.bed_temp_cur, state.bed_temp_set,
         state.pos_x, state.pos_y, state.pos_z,
@@ -342,6 +349,9 @@ static void update_status_cache(void)
         state.is_paused ? "true" : "false",
         state.has_error ? "true" : "false",
         state.connected ? "true" : "false",
+        state.has_native_active && state.native_active ? "true" : "false",
+        state.has_native_stop_allowed && state.native_stop_allowed ?
+            "true" : "false",
         route_fields);
 
     p += n; rem -= n;
@@ -435,6 +445,11 @@ void backend_zmq_poll(void)
             state.topcap_present = payload.topcap_present != 0;
             state.is_paused = payload.is_paused != 0;
             state.is_printing = payload.is_printing != 0;
+            state.native_active = payload.native_active != 0;
+            state.native_stop_allowed = payload.native_stop_allowed != 0;
+            state.has_native_active = payload.has_native_active != 0;
+            state.has_native_stop_allowed =
+                payload.has_native_stop_allowed != 0;
             {
                 deneb_status_filename_context_t curr_ctx =
                     filename_context_from_state(&state);

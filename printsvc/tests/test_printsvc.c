@@ -1582,6 +1582,10 @@ static void test_printer_status_response(void)
     status.is_printing = 1;
     status.is_paused = 0;
     status.has_error = 0;
+    status.native_active = 1;
+    status.native_stop_allowed = 1;
+    status.has_native_active = 1;
+    status.has_native_stop_allowed = 1;
     status.progress = 42.5f;
     status.time_total = 1200;
     status.time_left = 690;
@@ -1605,6 +1609,8 @@ static void test_printer_status_response(void)
     assert(strstr(json, "\"is_printing\":true") != NULL);
     assert(strstr(json, "\"is_paused\":false") != NULL);
     assert(strstr(json, "\"has_error\":false") != NULL);
+    assert(strstr(json, "\"native_active\":true") != NULL);
+    assert(strstr(json, "\"native_stop_allowed\":true") != NULL);
     assert(strstr(json, "\"progress\":42.5") != NULL);
     assert(strstr(json, "\"time_total\":1200") != NULL);
     assert(strstr(json, "\"time_left\":690") != NULL);
@@ -2271,6 +2277,8 @@ static void test_status_payload_helpers(void)
     assert(payload.progress > 49.9f && payload.progress < 50.1f);
     assert(payload.nozzle_temp_cur > 199.4f);
     assert(payload.observation.file == payload.file);
+    assert(!payload.has_native_active);
+    assert(!payload.has_native_stop_allowed);
 
     assert(deneb_status_payload_parse(
                "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"PAUSE\","
@@ -2284,6 +2292,27 @@ static void test_status_payload_helpers(void)
                "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"ABORT\","
                "\"Ttot\":120,\"Tleft\":80}",
                &payload) == 0);
+    assert(!payload.is_printing);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"PREHEATING\","
+               "\"headTset\":210,\"bedTset\":60,"
+               "\"denebActive\":true,\"denebStopAllowed\":true}",
+               &payload) == 0);
+    assert(payload.has_native_active);
+    assert(payload.native_active);
+    assert(payload.has_native_stop_allowed);
+    assert(payload.native_stop_allowed);
+    assert(payload.is_printing);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"ABORT\","
+               "\"denebActive\":false,\"denebStopAllowed\":false}",
+               &payload) == 0);
+    assert(payload.has_native_active);
+    assert(!payload.native_active);
+    assert(payload.has_native_stop_allowed);
+    assert(!payload.native_stop_allowed);
     assert(!payload.is_printing);
 }
 

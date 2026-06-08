@@ -43,6 +43,10 @@ typedef struct {
     bool is_printing;
     bool is_paused;
     bool has_error;
+    bool native_active;
+    bool native_stop_allowed;
+    bool has_native_active;
+    bool has_native_stop_allowed;
     char current_req[32];
 
     /* Connection */

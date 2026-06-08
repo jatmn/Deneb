@@ -295,6 +295,24 @@ status_step() {
     return "$rc"
 }
 
+printer_root_step() {
+    label="$1"
+    body_file="/tmp/deneb-printsvc-smoke-printer.$$"
+
+    say "$label: GET /printer"
+    http_get_capture /printer "$body_file"
+    rc=$?
+    if [ -s "$body_file" ]; then
+        cat "$body_file" >>"$LOG"
+        printf '\n' >>"$LOG"
+    fi
+    body_value="$(sanitize_summary_value "$(cat "$body_file" 2>/dev/null || true)")"
+    rm -f "$body_file"
+    say "$label rc=$rc body=${body_value:-unknown}"
+    summary "phase=$label kind=api method=GET path=/printer rc=$rc body=${body_value:-unknown}"
+    return "$rc"
+}
+
 monotonic_seconds() {
     awk '{printf("%d", $1)}' /proc/uptime 2>/dev/null || printf '0'
 }
@@ -460,6 +478,7 @@ snapshot() {
     sample_processes "$label"
     api_step "route-$label" GET /deneb/print_backend || true
     status_step "status-$label" || true
+    printer_root_step "printer-$label" || true
 }
 
 say "deneb-printsvc smoke started"
@@ -520,6 +539,10 @@ if [ "$RUN_RESTART" = "1" ]; then
 fi
 
 if [ "$RUN_LOCAL_JOB" = "1" ]; then
+    if [ "$ENABLE_NATIVE" != "1" ]; then
+        say "ERROR: --local-job requires --native so local/USB acceptance proves native driver ownership"
+        exit 2
+    fi
     if [ ! -f "$LOCAL_JOB_PATH" ]; then
         say "ERROR: local-job path does not exist: $LOCAL_JOB_PATH"
         exit 1

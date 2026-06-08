@@ -48,7 +48,8 @@ On first access, the web UI shows a setup page:
 
 Implemented local API surface:
 - `GET /api/v1/printer/status` — printer status string
-- `GET /api/v1/printer` — full printer state
+- `GET /api/v1/printer` — full printer state, including Deneb-native
+  `native_active` and `native_stop_allowed` flags from `deneb-printsvc`
 - `GET /api/v1/print_job` — current print job
 - `GET /api/v1/system` — system information
 - `POST /api/v1/print_job` — initial multipart upload and start handler

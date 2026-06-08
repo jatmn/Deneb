@@ -28,6 +28,10 @@ typedef struct {
     int is_printing;
     int is_paused;
     int has_error;
+    int native_active;
+    int native_stop_allowed;
+    int has_native_active;
+    int has_native_stop_allowed;
     deneb_print_observation_t observation;
 } deneb_status_payload_t;
 
