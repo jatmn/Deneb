@@ -12,7 +12,6 @@ CLUSTER_API_BASE="${DENEB_CLUSTER_API_BASE:-http://127.0.0.1/cluster-api/v1}"
 LOG="${DENEB_PRINTSVC_SMOKE_LOG:-/tmp/deneb-printsvc-smoke.log}"
 SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 ENABLE_NATIVE=0
-RESTORE_ROUTE=1
 RUN_HEAT=0
 RUN_MOTION=0
 RUN_LOCAL_JOB=0
@@ -32,17 +31,14 @@ COMPLETE_JOB_PATH=""
 MACRO_ACTION=""
 COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-3600}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
-OLD_NATIVE=""
-OLD_NATIVE_SET=0
-ROUTE_RESTORED=0
 
 usage() {
     cat <<'EOF'
 Usage: deneb-printsvc-smoke [options]
 
 Observe-only by default:
-  --native              Temporarily route Deneb clients to deneb-printsvc
-  --no-restore          Leave deneb.printsvc.enabled at its final value
+  --native              Restart and assert the native deneb-printsvc route
+  --no-restore          Accepted for older commands; native routing is not toggled
   --heat                Exercise low bed/nozzle heat targets, then cool down
   --motion              Exercise a Z-home request through the REST API
   --macro ACTION        Exercise a macro-backed manual action: home, bed_up, or bed_down
@@ -72,7 +68,7 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) ENABLE_NATIVE=1 ;;
-        --no-restore) RESTORE_ROUTE=0 ;;
+        --no-restore) ;;
         --heat) RUN_HEAT=1 ;;
         --motion) RUN_MOTION=1 ;;
         --macro)
@@ -420,6 +416,30 @@ sample_processes() {
         done
 }
 
+assert_native_driver_process() {
+    label="$1"
+    deneb_running=0
+    stock_running=0
+
+    if ps w | grep -E '(^|[ /])deneb-printsvc([ ]|$)' |
+       grep -v grep >/dev/null 2>&1; then
+        deneb_running=1
+    fi
+    if ps w | grep 'print_service.py' | grep -v grep >/dev/null 2>&1; then
+        stock_running=1
+    fi
+
+    if [ "$deneb_running" = "1" ] && [ "$stock_running" = "0" ]; then
+        rc=0
+    else
+        rc=1
+    fi
+
+    say "$label: native process check deneb_printsvc=$deneb_running print_service_py=$stock_running rc=$rc"
+    summary "phase=$label kind=process deneb_printsvc=$deneb_running print_service_py=$stock_running rc=$rc"
+    return "$rc"
+}
+
 snapshot() {
     label="$1"
     say "===== snapshot: $label ====="
@@ -442,35 +462,6 @@ snapshot() {
     status_step "status-$label" || true
 }
 
-restore_route() {
-    if [ "$ROUTE_RESTORED" = "1" ]; then
-        return
-    fi
-    if [ "$ENABLE_NATIVE" = "1" ] && [ "$RESTORE_ROUTE" = "1" ]; then
-        if [ "$OLD_NATIVE_SET" = "1" ]; then
-            say "restoring deneb.printsvc.enabled=$OLD_NATIVE"
-            uci -q set deneb.printsvc.enabled="$OLD_NATIVE" 2>/dev/null || true
-            summary "phase=route-restored value=$OLD_NATIVE"
-        else
-            say "restoring deneb.printsvc.enabled to unset"
-            uci -q delete deneb.printsvc.enabled 2>/dev/null || true
-            summary "phase=route-restored value=unset"
-        fi
-        uci -q commit deneb 2>/dev/null || true
-        if [ "$OLD_NATIVE_SET" = "1" ] && [ "$OLD_NATIVE" = "0" ]; then
-            /etc/init.d/deneb-printsvc stop >>"$LOG" 2>&1 || true
-            /etc/init.d/printserver restart >>"$LOG" 2>&1 || true
-        else
-            /etc/init.d/printserver stop >>"$LOG" 2>&1 || true
-            /etc/init.d/deneb-printsvc restart >>"$LOG" 2>&1 || true
-        fi
-        /etc/init.d/deneb-api restart >>"$LOG" 2>&1 || true
-        ROUTE_RESTORED=1
-    fi
-}
-
-trap restore_route EXIT INT TERM
-
 say "deneb-printsvc smoke started"
 say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
 summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
@@ -485,25 +476,13 @@ fi
 snapshot "initial"
 
 if [ "$ENABLE_NATIVE" = "1" ]; then
-    if OLD_NATIVE="$(uci -q get deneb.printsvc.enabled 2>/dev/null)"; then
-        OLD_NATIVE_SET=1
-        say "enabling native route, previous deneb.printsvc.enabled=$OLD_NATIVE"
-    else
-        OLD_NATIVE=""
-        OLD_NATIVE_SET=0
-        say "enabling native route, previous deneb.printsvc.enabled unset"
-    fi
-    append_cmd uci -q set deneb.printsvc.enabled=1 || true
-    append_cmd uci -q commit deneb || true
+    say "asserting native deneb-printsvc route"
     append_cmd /etc/init.d/printserver stop || true
     append_cmd /etc/init.d/deneb-printsvc restart || true
     append_cmd /etc/init.d/deneb-api restart || true
     sleep 3
-    if [ "$OLD_NATIVE_SET" = "1" ]; then
-        summary "phase=native-route-enabled previous=$OLD_NATIVE"
-    else
-        summary "phase=native-route-enabled previous=unset"
-    fi
+    summary "phase=native-route-enabled previous=native-only"
+    assert_native_driver_process "native-driver-process" || exit $?
     snapshot "native-enabled"
 fi
 
@@ -676,10 +655,5 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
 fi
 
 snapshot "final"
-if [ "$ENABLE_NATIVE" = "1" ] && [ "$RESTORE_ROUTE" = "1" ]; then
-    restore_route
-    sleep 3
-    snapshot "restored"
-fi
 summary "complete log=$LOG summary=$SUMMARY"
 say "deneb-printsvc smoke complete"

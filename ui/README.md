@@ -153,12 +153,9 @@ choose the relevant import action.
 
 ## Backend IPC
 
-The UI communicates with native `deneb-printsvc` via ZeroMQ by default:
+The UI communicates with native `deneb-printsvc` via ZeroMQ:
 - Status: SUB on tcp://127.0.0.1:5555, topic "10001"
 - Commands: REQ on tcp://127.0.0.1:5556
-
-Setting `deneb.printsvc.enabled=0` selects the stock coordinator recovery route
-on ports 5565/5566.
 
 Command format: `COMMAND<json_payload`
 - `GCODE<["M140 S60"]` - Send G-code

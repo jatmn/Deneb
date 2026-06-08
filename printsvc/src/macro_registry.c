@@ -36,35 +36,30 @@ static int macro_join_path(const char *dir,
     return 0;
 }
 
-int deneb_macro_resolve_from_dirs(const char *macro_name,
-                                  const char *override_dir,
-                                  const char *stock_dir,
-                                  char *path,
-                                  size_t path_sz)
+int deneb_macro_resolve_from_dir(const char *macro_name,
+                                 const char *macro_dir,
+                                 char *path,
+                                 size_t path_sz)
 {
     char candidate[512];
 
     if (!deneb_macro_name_is_safe(macro_name) || !path || path_sz == 0)
         return -1;
 
-    if (override_dir && override_dir[0] &&
-        macro_join_path(override_dir, macro_name, candidate,
+    if (macro_dir && macro_dir[0] &&
+        macro_join_path(macro_dir, macro_name, candidate,
                         sizeof(candidate)) == 0 &&
         access(candidate, R_OK) == 0) {
-        return macro_join_path(override_dir, macro_name, path, path_sz);
+        return macro_join_path(macro_dir, macro_name, path, path_sz);
     }
-
-    if (stock_dir && stock_dir[0])
-        return macro_join_path(stock_dir, macro_name, path, path_sz);
 
     return -1;
 }
 
 int deneb_macro_resolve(const char *macro_name, char *path, size_t path_sz)
 {
-    return deneb_macro_resolve_from_dirs(macro_name,
-                                         DENEB_PRINTSVC_MACRO_DIR,
-                                         DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR,
-                                         path,
-                                         path_sz);
+    return deneb_macro_resolve_from_dir(macro_name,
+                                        DENEB_PRINTSVC_MACRO_DIR,
+                                        path,
+                                        path_sz);
 }

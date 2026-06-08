@@ -3,8 +3,8 @@
 ## Architecture
 
 ZeroMQ (ZMQ) over localhost TCP between Deneb's native print service and
-Deneb's native UI/API clients. The stock Python coordinator route is retained
-only as an explicit recovery/legacy compatibility route.
+Deneb's native UI/API clients. Deneb clients route print-service traffic
+directly to native `deneb-printsvc`.
 
 ## Port Map
 
@@ -17,21 +17,15 @@ only as an explicit recovery/legacy compatibility route.
 - tcp://127.0.0.1:5566 - ZMQ REP (receives commands from menu/UI, proxies to print service)
 
 ### Deneb UI and Web/API clients
-- tcp://127.0.0.1:5555 - ZMQ SUB (native print status, default)
-- tcp://127.0.0.1:5556 - ZMQ REQ (native print commands, default)
-- tcp://127.0.0.1:5565 - ZMQ SUB (stock coordinator recovery route)
-- tcp://127.0.0.1:5566 - ZMQ REQ (stock coordinator recovery route)
+- tcp://127.0.0.1:5555 - ZMQ SUB (native print status)
+- tcp://127.0.0.1:5556 - ZMQ REQ (native print commands)
 
 ## Data Flow
 
   deneb-printsvc --[PUB 5555]--> deneb-ui / deneb-api
   deneb-ui / deneb-api --[REQ 5556]--> deneb-printsvc
 
-  recovery only:
-  print_service --[PUB 5555]--> coordinator --[PUB 5565]--> deneb-ui / deneb-api
-  deneb-ui / deneb-api --[REQ 5566]--> coordinator --[REQ 5556]--> print_service
-
-## Status Protocol (SUB on port 5555 by default)
+## Status Protocol (SUB on port 5555)
 
 Subscribe to topic: "10001"
 Frame format: "10001<{json_payload}"
@@ -50,7 +44,7 @@ Frame format: "10001<{json_payload}"
 - req: current request type (string, e.g. "Paused", "Resume")
 - received_faults: fault list from Marlin (array)
 
-## Command Protocol (REQ on port 5556 by default)
+## Command Protocol (REQ on port 5556)
 
 Frame format: "COMMAND<json_payload"
 
@@ -66,8 +60,9 @@ Frame format: "COMMAND<json_payload"
 ### Available Macro Files
 
 Deneb packages original native macro defaults under
-`/etc/deneb/marlindriver/gcode/`. The stock
-`/home/cygnus/marlindriver/gcode/` path is kept only as a recovery fallback.
+`/etc/deneb/marlindriver/gcode/`. Native macro execution fails closed when a
+macro is missing and does not fall back to stock
+`/home/cygnus/marlindriver/gcode/` files.
 - init.gcode                    - Printer initialization
 - home_and_center_head.gcode    - Home all axes and center head
 - home_release.gcode            - Home and release motors
@@ -90,8 +85,8 @@ The stock menu uses TWO communication paths:
 2. Gershwin IPC - for higher-level coordinator calls (prefixed with ::, ??, __)
 
 For our LVGL UI, the native print path uses raw ZMQ commands on port `5556`
-directly. The stock coordinator proxy on port `5566` is an explicit recovery
-route, not the default Deneb print-control path.
+directly. Deneb print-control clients do not select the stock coordinator proxy
+on port `5566`.
 
 ## Deneb Compatibility Layers
 
@@ -110,20 +105,17 @@ preheats.
 
 `ui/src/backend_comm.c` and `web/src/backend_zmq.c` select native
 `deneb-printsvc` directly on status `5555` and command `5556` for
-print-service traffic when `deneb.printsvc.enabled` is missing or set to `1`.
-The stock coordinator route is selected only when `deneb.printsvc.enabled=0`
-or an explicit host override requests it, preserving rollback assumptions
-without making Python the default print-control path.
-`common/print/print_backend_route.*` owns this route decision and endpoint
-mapping for Deneb clients. `DENEB_PRINTSVC_BACKEND=native` or `coordinator` can
-override the route for host/lab debugging.
+print-service traffic. `common/print/print_backend_route.*` owns this
+native-only endpoint mapping for Deneb clients.
 The same helper publishes route diagnostics for native clients: web status JSON
 includes `print_backend`, `print_backend_status_url`, and
 `print_backend_command_url`, and both LCD and web/API backends expose accessors
 for the selected route so lab checks can confirm the process is talking to the
-expected coordinator or native service endpoint. The Deneb API also exposes
+expected native service endpoint. The Deneb API also exposes
 `GET /api/v1/deneb/print_backend` for the same selected-route contract without
-requiring clients to parse the full status payload.
+requiring clients to parse the full status payload; that response includes
+`native_only_route` so lab checks can assert that no stock coordinator route is
+selectable.
 
 Shared native print-file helpers also own the temporary metadata file and print
 history file contracts used by compatibility APIs. Pending-job metadata lives at

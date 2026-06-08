@@ -1,8 +1,8 @@
 #!/bin/sh /etc/rc.common
 # SPDX-License-Identifier: MPL-2.0
 #
-# Native print service. Deneb enables this by default for the print backend;
-# setting deneb.printsvc.enabled=0 keeps the stock printserver recovery path.
+# Native print service. Deneb owns the print backend and stops the stock
+# printserver before starting.
 
 START=94
 STOP=16
@@ -10,10 +10,6 @@ USE_PROCD=1
 PROG=/usr/bin/deneb-printsvc
 
 start_service() {
-    local enabled
-    enabled=$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "1")
-    [ "$enabled" = "1" ] || return 0
-
     if [ -x /etc/init.d/printserver ]; then
         /etc/init.d/printserver stop 2>/dev/null || true
     fi

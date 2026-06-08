@@ -69,7 +69,8 @@ advertised firmware version is older than `4.0.0`, so Deneb defaults the mDNS
 Deneb build version remains available from `/api/v1/deneb/version`.
 The selected print backend route is available from
 `/api/v1/deneb/print_backend`; it returns the shared native route helper's
-backend name plus status and command endpoint URLs for lab validation.
+backend name, status and command endpoint URLs, `native_printsvc`, and
+`native_only_route` for lab validation.
 
 Current Cura derives the displayed network printer model by matching the mDNS
 `machine` value against BOM numbers in its bundled machine definitions. The
@@ -114,12 +115,12 @@ on real hardware remains open.
   Cura upload registration also delegates pending-vs-immediate-start dispatch
   sequencing to the native pending-job registration helper, leaving the web
   layer responsible only for backend transport callbacks.
-  `deneb-api` selects native `deneb-printsvc` status/command ports directly
-  unless `deneb.printsvc.enabled=0` or a host override explicitly requests the
-  stock coordinator recovery route. The cached Deneb status JSON
+  `deneb-api` selects native `deneb-printsvc` status/command ports directly.
+  The cached Deneb status JSON
   exposes `print_backend`, `print_backend_status_url`, and
   `print_backend_command_url` from the shared native route helper so lab checks
-  can confirm which backend the API selected.
+  can confirm which backend the API selected. The dedicated
+  `/api/v1/deneb/print_backend` response also exposes `native_only_route`.
   Web motion macro names and pending-job display reads are shared with the
   native print-control helpers instead of being hard-coded/parsing JSON in this
   layer.

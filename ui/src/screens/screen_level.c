@@ -1,7 +1,7 @@
 /**
  * SPDX-License-Identifier: MPL-2.0
  *
- * Build plate leveling shortcuts using stock macro files.
+ * Build plate leveling shortcuts using Deneb-owned native macro files.
  */
 
 #include "screen_mgr.h"

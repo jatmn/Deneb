@@ -5,8 +5,7 @@
 #include <stddef.h>
 
 typedef enum {
-    DENEB_PRINT_BACKEND_COORDINATOR = 0,
-    DENEB_PRINT_BACKEND_NATIVE
+    DENEB_PRINT_BACKEND_NATIVE = 0
 } deneb_print_backend_t;
 
 typedef struct {
@@ -15,14 +14,9 @@ typedef struct {
     const char *command_url;
 } deneb_print_backend_route_t;
 
-#define DENEB_COORDINATOR_STATUS_URL "tcp://127.0.0.1:5565"
-#define DENEB_COORDINATOR_COMMAND_URL "tcp://127.0.0.1:5566"
 #define DENEB_PRINTSVC_STATUS_URL "tcp://127.0.0.1:5555"
 #define DENEB_PRINTSVC_COMMAND_URL "tcp://127.0.0.1:5556"
 
-int deneb_print_backend_parse_override(const char *value,
-                                       deneb_print_backend_t *backend);
-deneb_print_backend_t deneb_print_backend_from_flag_text(const char *value);
 deneb_print_backend_route_t deneb_print_backend_route(deneb_print_backend_t backend);
 deneb_print_backend_route_t deneb_print_backend_route_detect(void);
 const char *deneb_print_backend_name(deneb_print_backend_t backend);

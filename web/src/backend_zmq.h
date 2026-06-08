@@ -2,8 +2,7 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend ZMQ communication for deneb-api.
- * Stock coordinator remains the default route; native deneb-printsvc is used
- * when the lab gate is enabled.
+ * Uses native deneb-printsvc for print status and commands.
  */
 
 #ifndef BACKEND_ZMQ_H
@@ -70,7 +69,7 @@ int backend_zmq_has_active_job(void);
 int backend_zmq_print_start_allowed(void);
 int backend_zmq_manual_action_allowed(void);
 
-/* Send a command to the selected backend. Returns 0 on success. */
+/* Send a command to the native print service. Returns 0 on success. */
 int backend_zmq_send_command(const char *cmd, const char *args);
 
 /* Send raw G-code. Returns 0 on success. */

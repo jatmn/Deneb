@@ -1,7 +1,7 @@
 /**
  * SPDX-License-Identifier: MPL-2.0
  *
- * Status screen - live printer state from coordinator. LVGL v9.
+ * Status screen - live printer state from native deneb-printsvc. LVGL v9.
  */
 
 #include "screen_mgr.h"

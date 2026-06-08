@@ -122,8 +122,8 @@ void api_deneb_print_backend_get(const http_request_t *req, http_response_t *res
     json_str(&w, "command_url", backend_zmq_get_print_backend_command_url());
     json_bool(&w, "native_printsvc",
               deneb_print_backend_is_native(route_backend));
-    json_bool(&w, "stock_coordinator_route",
-              !deneb_print_backend_is_native(route_backend));
+    json_bool(&w, "native_only_route",
+              deneb_print_backend_is_native(route_backend));
     json_obj_close(&w);
     json_len(&w);
     api_http_set_body_str(resp, buf);

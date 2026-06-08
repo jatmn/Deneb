@@ -139,10 +139,6 @@ install_web_runtime() {
     uci -q set deneb.mdns=mdns 2>/dev/null || true
     uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
     uci -q set deneb.printsvc=printsvc 2>/dev/null || true
-    if [ -z "$(uci -q get deneb.printsvc.enabled 2>/dev/null || true)" ]; then
-        uci -q set deneb.printsvc.enabled='1' 2>/dev/null || true
-        log "defaulted native deneb-printsvc backend to enabled"
-    fi
     if [ -z "$(uci -q get ultimaker.option.nozzle_size 2>/dev/null || true)" ]; then
         uci -q set ultimaker.option.nozzle_size='0.4' 2>/dev/null || true
         log "defaulted nozzle size to 0.40 mm"
@@ -389,34 +385,14 @@ START=95
 # shellcheck disable=SC2034
 STOP=15
 
-STOCK_PRINTSERVER_INIT="/home/deneb/backups/deneb-ui/init/printserver.orig"
-
-native_printsvc_enabled() {
-    [ "$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "1")" = "1" ]
-}
-
 start() {
-    if native_printsvc_enabled; then
-        logger -t deneb-printserver "native deneb-printsvc owns the print backend"
-        rm -f /var/run/printserver.pid
-        return 0
-    fi
-
-    if [ -x "${STOCK_PRINTSERVER_INIT}" ]; then
-        logger -t deneb-printserver "delegating to backed-up stock printserver init"
-        "${STOCK_PRINTSERVER_INIT}" start
-        return $?
-    fi
-
-    logger -t deneb-printserver "stock printserver fallback unavailable"
-    return 1
+    logger -t deneb-printserver "native deneb-printsvc owns the print backend"
+    rm -f /var/run/printserver.pid
+    return 0
 }
 
 stop() {
     echo Stopping print server
-    if ! native_printsvc_enabled && [ -x "${STOCK_PRINTSERVER_INIT}" ]; then
-        "${STOCK_PRINTSERVER_INIT}" stop 2>/dev/null || true
-    fi
     if [ -f /var/run/printserver.pid ]; then
         PID=$(cat /var/run/printserver.pid)
         kill -9 "${PID}" 2>/dev/null || true

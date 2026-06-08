@@ -1,7 +1,7 @@
 /**
  * SPDX-License-Identifier: MPL-2.0
  *
- * Manual jog screen - uses coordinator macros for homing. LVGL v9.
+ * Manual jog screen - uses Deneb-owned native macros for homing. LVGL v9.
  *
  * Macro files on device:
  *   home_and_center_head.gcode - Home all axes and center head

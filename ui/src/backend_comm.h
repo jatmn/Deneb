@@ -2,8 +2,7 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend communication module for Deneb UI.
- * Connects to the selected print backend via ZeroMQ. Native deneb-printsvc is
- * the default route; stock coordinator remains an explicit recovery route.
+ * Connects to native deneb-printsvc via ZeroMQ.
  *
  * Two sockets:
  *   1. SUB receives printer status on topic "10001"
@@ -64,7 +63,7 @@ typedef struct {
 int backend_init(void);
 
 /**
- * Poll for new status updates from the selected backend.
+ * Poll for new native print-service status updates.
  * Call this once per main loop iteration (~every 5-20ms).
  * Non-blocking -- returns immediately if no data available.
  */
@@ -103,7 +102,7 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
 int backend_send_pending_instruction(const char *instruction);
 
 /**
- * Send a command to the selected backend.
+ * Send a command to the native print service.
  * Example: backend_send_command("PAUSE", "{}")
  * Returns 0 on success, -1 on send failure.
  */

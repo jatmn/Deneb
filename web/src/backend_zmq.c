@@ -2,8 +2,7 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend ZMQ communication. Adapted from ui/src/backend_comm.c.
- * Connects to native deneb-printsvc by default, with the stock coordinator
- * retained as an explicit recovery backend.
+ * Connects to native deneb-printsvc.
  */
 
 #include "backend_zmq.h"
@@ -39,9 +38,9 @@ static printer_state_t state = {
     .current_req = "", .connected = false, .last_update_ms = 0,
 };
 static deneb_print_backend_route_t backend_route = {
-    DENEB_PRINT_BACKEND_COORDINATOR,
-    DENEB_COORDINATOR_STATUS_URL,
-    DENEB_COORDINATOR_COMMAND_URL
+    DENEB_PRINT_BACKEND_NATIVE,
+    DENEB_PRINTSVC_STATUS_URL,
+    DENEB_PRINTSVC_COMMAND_URL
 };
 
 int backend_zmq_init(void) { fprintf(stderr, "backend_zmq: stub mode\n"); state.connected = true; return 0; }

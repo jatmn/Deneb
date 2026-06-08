@@ -149,11 +149,9 @@ fi
 
 if [ "$REQUIRE_NATIVE" = "1" ]; then
     require_pattern ' phase=native-route-enabled ' "native route enabled"
+    require_pattern ' phase=native-driver-process .*deneb_printsvc=1 .*print_service_py=0 .*rc=0' "native driver process owns marlindriver route"
     require_pattern ' snapshot=native-enabled' "native route snapshot present"
     require_pattern ' phase=route-native-enabled .*rc=0' "native route query passed"
-    require_pattern ' phase=route-restored ' "native route restored"
-    require_pattern ' snapshot=restored' "restored snapshot present"
-    require_pattern ' phase=route-restored .*rc=0' "restored route query passed"
 fi
 
 if [ "$REQUIRE_HEAT" = "1" ]; then

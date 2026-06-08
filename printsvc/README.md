@@ -69,11 +69,10 @@ scaffold:
 - `crc.*` owns CRC helpers.
 - `gcode_stream.*` streams job and macro G-code line by line without loading
   whole files.
-- `macro_registry.*` resolves Deneb-owned macro defaults from
-  `DENEB_PRINTSVC_MACRO_DIR` (`/etc/deneb/marlindriver/gcode/`), with
-  `DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR` retained only as an explicit
-  recovery fallback. Deneb macro resolution does not require the stock
-  directory to exist.
+- `macro_registry.*` resolves Deneb-owned macro defaults only from
+  `DENEB_PRINTSVC_MACRO_DIR` (`/etc/deneb/marlindriver/gcode/`) and fails
+  closed when a macro is missing instead of falling back to stock
+  `/home/cygnus/marlindriver/gcode/` files.
 - `macro_control.*` owns macro command execution against the service runtime:
   flow-window waiting, abort checks, motion polling, G-code send callbacks,
   and command error mapping.
@@ -83,10 +82,10 @@ scaffold:
   conflict-state detection, handled-state updates, display-name fallback, and
   shared pending metadata cleanup for native pending-job metadata, touchscreen
   UI, and web/API callers.
-- `../common/print/print_backend_route.*` owns the stock-coordinator versus
-  native-printsvc endpoint selection used by touchscreen UI and web/API
-  clients, plus the route-diagnostics JSON fields that show which backend and
-  endpoint URLs a native client selected.
+- `../common/print/print_backend_route.*` owns the native-printsvc endpoint
+  selection used by touchscreen UI and web/API clients, plus the
+  route-diagnostics JSON fields that show which backend and endpoint URLs a
+  native client selected.
 - `../common/print/print_state_rules.*` owns shared print-state labels, manual
   action gates, temperature-target readiness, elapsed time, progress
   percentage, current-job fallback identity, active/preparing/stoppable context
@@ -113,17 +112,14 @@ file or macro, result, and latency.
 
 ## Safety State
 
-The binary is packaged into Deneb update releases and is now the default Deneb
-print backend when no explicit fallback flag exists. Missing
-`deneb.printsvc.enabled` values are treated the same as `1`, the installer sets
-`deneb.printsvc.enabled=1` on fresh installs, `deneb-printsvc.init` stops the
-stock `printserver` before starting the native service, and Deneb's patched
-stock `printserver` init shim no longer launches the old driver from Deneb
-code. Setting the flag back to `0` delegates to the backed-up stock init script
-as an explicit recovery path without a reflash. Generated Deneb init shims do
-not spell stock Python process entry points directly, and the installer does
-not patch stock coordinator Python modules for the native route; Deneb-owned
-init scripts and C route helpers own the migration boundary.
+The binary is packaged into Deneb update releases and is now the Deneb print
+backend. `deneb-printsvc.init` stops the stock `printserver` before starting
+the native service, and Deneb's patched stock `printserver` init shim no longer
+launches the old driver or delegates back through a Deneb config flag.
+Generated Deneb init shims do not spell stock Python process entry points
+directly, and the installer does not patch stock coordinator Python modules for
+the native route; Deneb-owned init scripts and C route helpers own the
+migration boundary.
 
 Normal device startup fails closed if `/dev/ttyS1` cannot be opened. The
 `--dry-run` option is reserved for host/lab debugging and must not be used by
@@ -159,8 +155,9 @@ harness for gathering the live Section 8 evidence. Running it with no flags is
 observe-only and records route/status/process/resource snapshots to
 `/tmp/deneb-printsvc-smoke.log`; it also writes compact phase and `/proc`
 memory, CPU jiffy, load, and completed-job throughput evidence to
-`/tmp/deneb-printsvc-smoke.summary`. Native-route runs restore the previous
-route by default and record a post-restore snapshot.
+`/tmp/deneb-printsvc-smoke.summary`. Native-route runs restart and assert
+`deneb-printsvc` instead of toggling a stock-driver route, and fail if
+`print_service.py` is still running during native validation.
 Every snapshot records the scalar `/printer/status` body in the summary so
 preheat, pause/resume, abort, completion, and restart runs prove the UI-visible
 state instead of only proving HTTP reachability.
@@ -184,7 +181,6 @@ deneb-printsvc-smoke --native --restart
 deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
 ```
 
-The script restores the previous `deneb.printsvc.enabled` value by default.
 Use only under supervision with clear motion axes and a ready power cutoff.
 `--local-job` runs the native `deneb-printsvc --local-job-smoke` path through
 the shared IPC frame helper and proves local/USB job acceptance, active
@@ -208,5 +204,7 @@ requires initial/final memory, uptime, CPU, load, and process RSS samples, and
 `--complete-job` requires a bytes/elapsed/bytes-per-second throughput record.
 `--boot-sync` requires a successful route/status readiness record with elapsed
 and uptime-delta seconds.
+`--native` also requires native `deneb-printsvc` process evidence and absence
+of stock `print_service.py`.
 The compare tool reports before/after deltas for memory, process RSS, CPU
 jiffies, boot-sync elapsed time, and print throughput.

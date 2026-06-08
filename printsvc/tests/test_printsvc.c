@@ -2372,35 +2372,10 @@ static void test_printer_identity_helpers(void)
 
 static void test_print_backend_route_contract(void)
 {
-    deneb_print_backend_t backend;
     deneb_print_backend_route_t route;
     char fields[256];
 
-    assert(deneb_print_backend_parse_override("native", &backend) == 0);
-    assert(backend == DENEB_PRINT_BACKEND_NATIVE);
-    assert(deneb_print_backend_parse_override("1", &backend) == 0);
-    assert(backend == DENEB_PRINT_BACKEND_NATIVE);
-    assert(deneb_print_backend_parse_override("coordinator", &backend) == 0);
-    assert(backend == DENEB_PRINT_BACKEND_COORDINATOR);
-    assert(deneb_print_backend_parse_override("stock", &backend) == 0);
-    assert(backend == DENEB_PRINT_BACKEND_COORDINATOR);
-    assert(deneb_print_backend_parse_override("bad", &backend) != 0);
     assert(deneb_print_backend_is_native(DENEB_PRINT_BACKEND_NATIVE));
-    assert(!deneb_print_backend_is_native(DENEB_PRINT_BACKEND_COORDINATOR));
-
-    assert(deneb_print_backend_from_flag_text("1\n") == DENEB_PRINT_BACKEND_NATIVE);
-    assert(deneb_print_backend_from_flag_text("0\n") == DENEB_PRINT_BACKEND_COORDINATOR);
-    assert(deneb_print_backend_from_flag_text(NULL) == DENEB_PRINT_BACKEND_NATIVE);
-    assert(deneb_print_backend_from_flag_text("") == DENEB_PRINT_BACKEND_NATIVE);
-
-    route = deneb_print_backend_route(DENEB_PRINT_BACKEND_COORDINATOR);
-    assert(route.backend == DENEB_PRINT_BACKEND_COORDINATOR);
-    assert(strcmp(route.status_url, DENEB_COORDINATOR_STATUS_URL) == 0);
-    assert(strcmp(route.command_url, DENEB_COORDINATOR_COMMAND_URL) == 0);
-    assert(deneb_print_backend_route_json_fields(&route, fields, sizeof(fields)) > 0);
-    assert(strstr(fields, "\"print_backend\":\"coordinator\"") != NULL);
-    assert(strstr(fields, DENEB_COORDINATOR_STATUS_URL) != NULL);
-    assert(strstr(fields, DENEB_COORDINATOR_COMMAND_URL) != NULL);
 
     route = deneb_print_backend_route(DENEB_PRINT_BACKEND_NATIVE);
     assert(route.backend == DENEB_PRINT_BACKEND_NATIVE);
@@ -2965,20 +2940,14 @@ static void test_material_catalog_helpers(void)
 static void test_macro_safety(void)
 {
     char path[256];
-    const char *override_dir = "/tmp/deneb-macro-override";
-    const char *stock_dir = "/tmp/deneb-macro-stock";
-    const char *override_path = "/tmp/deneb-macro-override/init.gcode";
+    const char *macro_dir = "/tmp/deneb-macro-override";
+    const char *macro_path = "/tmp/deneb-macro-override/init.gcode";
     FILE *f;
 
     assert(strcmp(DENEB_PRINTSVC_MACRO_DIR,
                   "/etc/deneb/marlindriver/gcode") == 0);
-    assert(strcmp(DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR,
-                  "/home/cygnus/marlindriver/gcode") == 0);
-    assert(deneb_macro_resolve(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD,
-                               path, sizeof(path)) == 0);
-    assert(strstr(path, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) != NULL);
-    assert(deneb_macro_resolve("init.gcode", path, sizeof(path)) == 0);
-    assert(strstr(path, DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR) == path);
+    assert(deneb_macro_resolve("missing-test-only.gcode",
+                               path, sizeof(path)) != 0);
     assert(deneb_macro_name_is_safe("init.gcode"));
     assert(!deneb_macro_name_is_safe("init.gcode.bak"));
     assert(!deneb_macro_name_is_safe("gcode"));
@@ -2987,35 +2956,28 @@ static void test_macro_safety(void)
     assert(deneb_macro_resolve("/tmp/init.gcode", path, sizeof(path)) != 0);
     assert(deneb_macro_resolve("dir\\init.gcode", path, sizeof(path)) != 0);
 
-    remove(override_path);
-    rmdir(override_dir);
-    rmdir(stock_dir);
-    assert(mkdir(override_dir, 0755) == 0);
-    assert(mkdir(stock_dir, 0755) == 0);
-    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, stock_dir,
-                                         path, sizeof(path)) == 0);
-    assert(strstr(path, stock_dir) == path);
+    remove(macro_path);
+    rmdir(macro_dir);
+    assert(mkdir(macro_dir, 0755) == 0);
+    assert(deneb_macro_resolve_from_dir("init.gcode", macro_dir,
+                                        path, sizeof(path)) != 0);
 
-    f = fopen(override_path, "wb");
+    f = fopen(macro_path, "wb");
     assert(f != NULL);
     fputs("M105\n", f);
     fclose(f);
-    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, stock_dir,
-                                         path, sizeof(path)) == 0);
-    assert(strcmp(path, override_path) == 0);
-    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, stock_dir,
-                                         path, 8) != 0);
-    assert(deneb_macro_resolve_from_dirs("../init.gcode", override_dir,
-                                         stock_dir, path, sizeof(path)) != 0);
-    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, "",
-                                         path, sizeof(path)) == 0);
-    assert(strcmp(path, override_path) == 0);
-    remove(override_path);
-    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, "",
-                                         path, sizeof(path)) != 0);
-    remove(override_path);
-    rmdir(override_dir);
-    rmdir(stock_dir);
+    assert(deneb_macro_resolve_from_dir("init.gcode", macro_dir,
+                                        path, sizeof(path)) == 0);
+    assert(strcmp(path, macro_path) == 0);
+    assert(deneb_macro_resolve_from_dir("init.gcode", macro_dir,
+                                        path, 8) != 0);
+    assert(deneb_macro_resolve_from_dir("../init.gcode", macro_dir,
+                                        path, sizeof(path)) != 0);
+    remove(macro_path);
+    assert(deneb_macro_resolve_from_dir("init.gcode", macro_dir,
+                                        path, sizeof(path)) != 0);
+    remove(macro_path);
+    rmdir(macro_dir);
 }
 
 static void test_system_language_helpers(void)

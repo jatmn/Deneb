@@ -533,10 +533,9 @@ current buildable slice provides a native-default experimental
   handling, command parsing,
 status serialization, Marlin status parsing, serial transport, packet/CRC
 helpers, flow control, G-code streaming, heater waits, macro lookup, and
-service state. It is packaged into `.deneb` releases and fresh installs default
-to `deneb.printsvc.enabled=1`, while `deneb.printsvc.enabled=0` remains the
-explicit stock recovery path until resource measurements and live-device
-validation prove it can ship outside experimental builds.
+service state. It is packaged into `.deneb` releases, Deneb clients route
+directly to native `deneb-printsvc`, and the generated printserver handoff no
+longer delegates back to the stock driver through a Deneb config flag.
 
 - [x] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
 - [x] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
@@ -556,17 +555,20 @@ validation prove it can ship outside experimental builds.
 - [x] Port the status parser for M105, M114, G28 home-distance, M115 version data, Marlin log messages, and Marlin fault messages.
 - [x] Port bounded G-code streaming for `JOB`, `MACRO`, and raw `GCODE` without loading whole print jobs into RAM.
 - [x] Ship Deneb-owned macro defaults under `/etc/deneb/marlindriver/gcode/`
-  while preserving `/home/cygnus/marlindriver/gcode/` only as a stock recovery
-  fallback.
+  and fail closed when a macro is missing instead of falling back to
+  `/home/cygnus/marlindriver/gcode/`.
 - [x] Re-design abort, pause, resume, and print-finish behavior deliberately instead of blindly copying stock motion sequences.
 - [x] Fix unsafe abort cleanup as part of the native design: no duplicate homing, no unsafe XY motion into unknown print geometry, and clear status transitions after cancellation.
 - [x] Preserve startup motion-controller firmware verification/programming behavior or document and test a safer replacement.
-- [x] Add an explicit init switch so stock `printserver` can be restored without reflashing if native print service fails.
+- [x] Replace the Deneb printserver handoff with native ownership so Deneb
+  clients do not route back to stock `printserver` through a config flag.
 - [x] Add side-by-side logging for stock versus native service status fields, serial ACK/reject rates, resend counts, queue depth, planner starvation indicators, and command latency.
 - [x] Add host tests for CRC, packet framing, status parsing, G-code stream replacement, command parsing, and state transitions.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
-- [x] Keep stock `printserver` restorable through an explicit fallback flag until the native service has rollback, diagnostics, and repeated live print validation.
+- [x] Remove the stock `printserver` fallback flag from Deneb's print-control
+  route so native `deneb-printsvc` owns the driver path during experimental
+  validation.
 
 Completed implementation slices:
 
@@ -787,8 +789,8 @@ Completed implementation slices:
 - [x] Add a safer native macro resolution policy: `deneb-printsvc` now rejects
   path traversal and non-`.gcode` macro names, treats the Deneb-owned
   `/etc/deneb/marlindriver/gcode` directory as `DENEB_PRINTSVC_MACRO_DIR`,
-  and keeps `/home/cygnus/marlindriver/gcode` named as an explicit stock
-  recovery directory instead of the compiled normal macro source.
+  and fails closed when a macro is missing instead of falling back to stock
+  `/home/cygnus/marlindriver/gcode` files.
 - [x] Package original Deneb macro defaults for native `MACRO` execution:
   homing/parking, manual build-plate jogs, build-plate leveling positions,
   finish cleanup, material feed/retract helpers, and frame-light toggles now
@@ -1078,13 +1080,10 @@ Completed implementation slices:
   lab-gated programming handoff without adding Python to the new driver path.
 - [x] Add deliberate native finish/abort motion-policy helpers with tests that
   guard against duplicate or unsafe XY homing during abort cleanup.
-- [x] Add the native print-service init handoff: Deneb defaults fresh installs
-  to `deneb.printsvc.enabled=1`, preserves an existing explicit flag across
-  updates, stops stock `printserver` before starting native `deneb-printsvc`,
-  and replaces the stock `printserver` init script with a Deneb-owned shim
-  that no longer launches the old driver from Deneb code. The stock path can
-  still be restored by setting the flag back to `0`, which delegates to the
-  backed-up stock init script.
+- [x] Add the native print-service init handoff: Deneb stops stock
+  `printserver` before starting native `deneb-printsvc`, and replaces the
+  stock `printserver` init script with a Deneb-owned shim that no longer
+  launches the old driver or delegates back through a Deneb config flag.
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.
@@ -1236,38 +1235,39 @@ Completed implementation slices:
   emitted comparison keys.
 - [x] Add direct native print-service routing for touchscreen and web/API
   clients: LCD `backend_comm` and web `backend_zmq` select native
-  `deneb-printsvc` status `5555` and command `5556` endpoints by default, while
-  `deneb.printsvc.enabled=0` or a host override explicitly selects the stock
-  coordinator recovery route.
-- [x] Move the stock-vs-native print backend route decision into
+  `deneb-printsvc` status `5555` and command `5556` endpoints without a stock
+  coordinator or UCI/env override path.
+- [x] Move the native print backend route decision into
   `common/print/print_backend_route.*` with host tests so LCD, web/API, and
-  `deneb-printsvc` tests share the same coordinator/native endpoint constants
-  and native-default UCI/env parsing instead of duplicating route logic.
-- [x] Publish the selected stock/coordinator versus native print backend route
+  `deneb-printsvc` tests share the same native endpoint constants instead of
+  duplicating route logic.
+- [x] Publish the selected native print backend route
   through shared native route diagnostics: LCD and web/API backend modules now
   expose route accessors, web status JSON includes the selected backend and
   endpoint URLs, and host tests cover the shared formatter.
 - [x] Add a Deneb API route diagnostic endpoint,
   `GET /api/v1/deneb/print_backend`, so lab validation can query the selected
-  stock-coordinator/native-printsvc route without parsing the full status
-  payload or consulting Python/coordinator state.
+  native-printsvc route without parsing the full status
+  payload or consulting Python/coordinator state, including a
+  `native_only_route` field that proves the stock coordinator route is not
+  selectable.
 - [x] Move route identity checks behind typed native backend accessors so
   Deneb API route diagnostics, web backend, and LCD backend no longer compare
-  presentation strings to decide whether the stock coordinator or native
-  `deneb-printsvc` route is active.
+  presentation strings to decide whether the native `deneb-printsvc` route is
+  active.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
-  artifact and make it the default Deneb print backend while retaining an
-  explicit stock `printserver` recovery flag.
+  artifact and make it the Deneb print backend without retaining a stock
+  `printserver` route flag.
 - [x] Remove the installer-time stock coordinator Python patch from the
   de-Python path: Deneb no longer rewrites
   `/home/cygnus/coordinator/companion/printer_service_command.py` during
-  install, leaving stock Python fallback files untouched while native
-  `deneb-printsvc` routing remains controlled by the reversible explicit
-  recovery flag.
+  install, leaving stock Python files untouched while native `deneb-printsvc`
+  routing remains owned by Deneb C/shell code.
 - [x] Remove Deneb-authored Python process launch lines from generated
   printserver/coordinator init shims and drop their Python runtime environment
-  exports. Explicit recovery now delegates to the backed-up stock init scripts
-  instead of spelling Python entry points in Deneb installer code.
+  exports. Deneb's generated printserver shim no longer delegates back to the
+  stock driver, and coordinator backup delegation is kept outside the print
+  driver route.
 - [x] Move default pending-job JSON-array reads and idempotent pending-file
   cleanup behind `common/print/pending_job_file.*` so Deneb and Cura REST
   endpoints no longer spell the bridge path directly when serving queued jobs,
@@ -1279,21 +1279,22 @@ Completed implementation slices:
   macro-backed manual actions, optional multipart job upload, pause/resume,
   abort, explicit native local/USB job acceptance, explicit preheat abort, Cura
   cluster API job upload/abort, short-job completion, native service-restart
-  recovery, process/resource samples, and route restoration. The harness
+  recovery, process/resource samples, and native-route assertion. The harness
   installs with Deneb but only observes unless a tester explicitly enables
   native route, boot-sync, heat, motion, macro, local-job, REST job,
   preheat-abort, Cura job, complete-job, or restart phases, and writes both
   a full log plus a compact summary with phase results, bounded boot-sync ready timing, scalar
   `/printer/status` values, and `/proc`-sourced process RSS/VSZ samples, CPU
   jiffies, load averages, uptime samples, and completed-job throughput records,
-  including a post-restore route/status snapshot after native-route tests.
+  including native route/status snapshots after native-route tests.
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
   for observe-only, native-route, boot-sync readiness, heat/cool, Z-home,
   macro-backed action, local/USB native job-start/abort, REST job-start/abort,
   explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
-  service-restart, and route restoration evidence without Python or ad hoc log
-  inspection. The verifier also checks active-job UI status
+  service-restart, and native-route evidence without Python or ad hoc log
+  inspection. Native-route evidence now requires `deneb-printsvc` to be running
+  with no stock `print_service.py` process. The verifier also checks active-job UI status
   transitions: `printing` while active, `paused` after pause, and `idle` after
   abort or natural completion. Its resource mode requires initial/final memory,
   uptime, CPU, load, process RSS, and completed-job throughput evidence so

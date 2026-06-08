@@ -145,10 +145,10 @@ compatibility. Native macro resolution now rejects traversal and non-`.gcode`
 names, and packages Deneb-owned macro defaults under
 `/etc/deneb/marlindriver/gcode` so normal native macro execution no longer
 depends on stock `/home/cygnus/marlindriver/gcode` files; resolver tests now
-cover Deneb macro resolution with no stock directory. The compiled macro
-directory constants now name `/etc/deneb/marlindriver/gcode` as the default
-native macro source and `/home/cygnus/marlindriver/gcode` only as the stock
-recovery path. Material-profile USB import root/depth/suffix policy and the
+cover Deneb macro resolution with no stock directory and fail-closed behavior
+when a macro is missing. The compiled macro directory constants now name
+`/etc/deneb/marlindriver/gcode` as the only native macro source.
+Material-profile USB import root/depth/suffix policy and the
   recursive import walker now live in `common/print/material_catalog.*` beside
   native material parser/storage helpers instead of inside the LVGL material
   screen. Stock
@@ -204,14 +204,11 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   `common/print/material_catalog.*`, keeping temp-file cleanup and default
   catalog persistence with the native material catalog owner. LCD and
   web/API backends now select native
-  `deneb-printsvc` status/command ports directly unless
-  `deneb.printsvc.enabled=0` or a host override explicitly selects the stock
-  coordinator recovery route. That route decision lives in
-  `common/print/print_backend_route.*` so clients do not each duplicate UCI/env
-  parsing or endpoint constants. The same helper now
-  formats route diagnostics exposed by web status JSON and LCD/web backend
-  accessors, giving lab runs a native way to prove whether a process selected
-  stock coordinator or native `deneb-printsvc`. Backend preheat transition
+  `deneb-printsvc` status/command ports directly. That endpoint mapping lives
+  in `common/print/print_backend_route.*` so clients do not each duplicate
+  native print-service constants. The same helper now formats route diagnostics
+  exposed by web status JSON and LCD/web backend accessors, giving lab runs a
+  native way to prove that a process selected `deneb-printsvc`. Backend preheat transition
   tracking now lives in `common/print/print_state_rules.*`, so LCD and web/API
   status clients share one tested owner for target-active and target-ready
   transitions instead of carrying parallel local preheat log flags. Active,
@@ -340,8 +337,8 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   shared backend route diagnostics,
   touchscreen conflict actions and Cura cluster pending-job actions through
   native `JOB`/`ABORT` backend adapter helpers, native Cura upload registration
-  planning, no-conflict `JOB` startup, reversible native-vs-stock print service init
-  gating, low-volume side-by-side diagnostic logging, native
+  planning, no-conflict `JOB` startup, native-only print service init
+  handoff, low-volume side-by-side diagnostic logging, native
   frame-light/material-import/diagnostics UI helpers, native
   default pending-upload classification, shared queued upload response formatting,
   shared relative jog command sequencing, shared cooldown command sequencing,
@@ -350,19 +347,17 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   temperature command limits, native
   error mapping, and native diagnostics slices. It still needs live validation
   before it can leave the experimental lane.
-- The native switch is explicit and reversible in the package scripts:
-  missing `deneb.printsvc.enabled` values are native, fresh installs default
-  the flag to `1`, existing values are preserved across Deneb updates, native
-  `deneb-printsvc` stops stock
-  `printserver` on start, and the patched stock `printserver` init shim no
-  longer launches the old driver from Deneb-authored code. Setting the flag to
-  `0` delegates to the backed-up stock init script as the manual recovery path.
+- The native print-service handoff is owned by Deneb package scripts: native
+  `deneb-printsvc` stops stock `printserver` on start, and the patched stock
+  `printserver` init shim no longer launches the old driver from
+  Deneb-authored code or delegates back through a Deneb config flag.
   The installer no longer rewrites the stock coordinator's Python
   command-writer module; native route selection and print-control cleanup now
   stay in Deneb-owned shell/C code while stock Python files remain untouched
-  fallback artifacts. Generated Deneb printserver/coordinator init shims also
+  backup artifacts. Generated Deneb printserver/coordinator init shims also
   avoid spelling Python entry points or Python runtime environment exports
-  directly; explicit recovery delegates to the backed-up stock init scripts.
+  directly; the generated printserver shim no longer delegates back to the
+  stock driver.
 - Pending-job file ownership tightened further: default queued-job JSON-array
   reads and missing-file cleanup are now wrapped by
   `common/print/pending_job_file.*`, so Deneb/Cura REST surfaces no longer
@@ -371,7 +366,7 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   device-side smoke/resource harness for the native print-service milestone.
   Its default mode only records route/status/process/resource snapshots; heat,
   boot/backend readiness, motion, macro-backed manual actions, native-route
-  switching, REST multipart job upload/abort, explicit preheat abort, Cura
+  assertion, REST multipart job upload/abort, explicit preheat abort, Cura
   cluster API job upload/abort, pause/resume, short-job completion, and native
   service-restart recovery phases require explicit lab flags and are intended to
   generate the live evidence required by Section 8 once
@@ -381,11 +376,12 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   `/proc`-sourced process VmSize/VmRSS samples, system CPU jiffies, load
   averages, uptime samples for boot/ready timing correlation, and completed-job
   bytes/elapsed/bytes-per-second throughput records for stock and native print
-  paths, including local/USB native job acceptance evidence and a post-restore
-  route/status snapshot after native-route tests. The local release package also includes
+  paths, including local/USB native job acceptance evidence. The local release
+  package also includes
   `deneb-printsvc-smoke-verify`, a shell-only summary verifier for
   observe/native/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/Cura-job/
-  pause-resume/completion/restart and restoration evidence, including active-job status transitions from
+  pause-resume/completion/restart evidence, including native `deneb-printsvc`
+  process ownership with no running `print_service.py`, active-job status transitions from
   `printing` to `paused` and back to `idle` plus resource/throughput evidence,
   so live runs can be checked on target without Python. Packages also include
   `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator

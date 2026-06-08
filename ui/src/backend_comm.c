@@ -2,8 +2,7 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend communication implementation.
- * Connects to native deneb-printsvc by default, with the stock coordinator
- * retained as an explicit recovery backend.
+ * Connects to native deneb-printsvc.
  *
  * Build note: requires libzmq (static link for MIPS target).
  * For host testing without libzmq, define BACKEND_COMM_STUB to
@@ -39,9 +38,9 @@ static printer_state_t state = {
     .current_req = "", .connected = false, .last_update_ms = 0,
 };
 static deneb_print_backend_route_t backend_route = {
-    DENEB_PRINT_BACKEND_COORDINATOR,
-    DENEB_COORDINATOR_STATUS_URL,
-    DENEB_COORDINATOR_COMMAND_URL
+    DENEB_PRINT_BACKEND_NATIVE,
+    DENEB_PRINTSVC_STATUS_URL,
+    DENEB_PRINTSVC_COMMAND_URL
 };
 
 int backend_init(void) {
@@ -115,8 +114,8 @@ void backend_deinit(void) { /* no-op */ }
 static deneb_print_backend_route_t backend_route;
 
 static void *zmq_ctx = NULL;
-static void *status_socket = NULL;  /* SUB - status from coordinator */
-static void *rpc_socket = NULL;     /* REQ - commands to coordinator */
+static void *status_socket = NULL;  /* SUB - native print status */
+static void *rpc_socket = NULL;     /* REQ - native print commands */
 
 static printer_state_t state = {0};
 static int had_previous_status = 0;
