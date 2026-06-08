@@ -18,6 +18,7 @@ RUN_LOCAL_JOB=0
 RUN_JOB=0
 RUN_CURA_JOB=0
 RUN_PREHEAT_ABORT=0
+RUN_ACTIVE_ABORT=0
 RUN_COMPLETE_JOB=0
 RUN_MACRO=0
 RUN_PAUSE_RESUME=0
@@ -28,10 +29,12 @@ JOB_PATH=""
 LOCAL_JOB_PATH=""
 CURA_JOB_PATH=""
 PREHEAT_ABORT_PATH=""
+ACTIVE_ABORT_PATH=""
 COMPLETE_JOB_PATH=""
 MACRO_ACTION=""
 COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-3600}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
+ACTIVE_ABORT_DELAY="${DENEB_PRINTSVC_SMOKE_ACTIVE_ABORT_DELAY:-60}"
 
 usage() {
     cat <<'EOF'
@@ -47,6 +50,9 @@ Observe-only by default:
   --job PATH            Start PATH through the REST API and abort it after a sample
   --cura-job PATH       Start PATH through the Cura cluster API and abort it
   --preheat-abort PATH  Start PATH and abort quickly during preparation/preheat
+  --active-abort PATH   Start PATH, wait for active printing evidence, then abort
+  --active-abort-delay SEC
+                        Delay before --active-abort snapshot, default 60
   --pause-resume        During --job, pause and resume before aborting
   --complete-job PATH   Start PATH and wait for it to leave the active job API
   --completion-timeout SEC
@@ -111,6 +117,20 @@ while [ "$#" -gt 0 ]; do
             [ "$#" -gt 0 ] || { echo "missing path after --preheat-abort" >&2; exit 2; }
             RUN_PREHEAT_ABORT=1
             PREHEAT_ABORT_PATH="$1"
+            ;;
+        --active-abort)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing path after --active-abort" >&2; exit 2; }
+            RUN_ACTIVE_ABORT=1
+            ACTIVE_ABORT_PATH="$1"
+            ;;
+        --active-abort-delay)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing seconds after --active-abort-delay" >&2; exit 2; }
+            case "$1" in
+                ''|*[!0-9]*) echo "invalid active abort delay: $1" >&2; exit 2 ;;
+            esac
+            ACTIVE_ABORT_DELAY="$1"
             ;;
         --pause-resume) RUN_PAUSE_RESUME=1 ;;
         --complete-job)
@@ -564,8 +584,8 @@ if [ "$RUN_PARSER_SELFTEST" = "1" ]; then
 fi
 
 say "deneb-printsvc smoke started"
-say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
-summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
+say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
+summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
 
 append_cmd /usr/bin/deneb-printsvc --smoke-test
 summary "phase=printsvc-self-test rc=$?"
@@ -648,7 +668,7 @@ if [ "$RUN_LOCAL_JOB" = "1" ]; then
     summary "phase=local-job-abort rc=0"
 fi
 
-if [ "$RUN_JOB" = "1" ] || [ "$RUN_CURA_JOB" = "1" ] || [ "$RUN_PREHEAT_ABORT" = "1" ] || [ "$RUN_COMPLETE_JOB" = "1" ]; then
+if [ "$RUN_JOB" = "1" ] || [ "$RUN_CURA_JOB" = "1" ] || [ "$RUN_PREHEAT_ABORT" = "1" ] || [ "$RUN_ACTIVE_ABORT" = "1" ] || [ "$RUN_COMPLETE_JOB" = "1" ]; then
     if ! command -v curl >/dev/null 2>&1; then
         say "ERROR: job upload requires curl for multipart/form-data"
         exit 1
@@ -665,6 +685,13 @@ fi
 if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
     if [ ! -f "$PREHEAT_ABORT_PATH" ]; then
         say "ERROR: preheat-abort path does not exist: $PREHEAT_ABORT_PATH"
+        exit 1
+    fi
+fi
+
+if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
+    if [ ! -f "$ACTIVE_ABORT_PATH" ]; then
+        say "ERROR: active-abort path does not exist: $ACTIVE_ABORT_PATH"
         exit 1
     fi
 fi
@@ -715,6 +742,23 @@ if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
         api_step "preheat-stop" PUT /print_job/state '{"action":"stop"}' || true
     sleep 10
     snapshot "preheat-aborted"
+fi
+
+if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
+    say "active-abort-start: multipart upload $ACTIVE_ABORT_PATH"
+    curl -fsS -F "file=@${ACTIVE_ABORT_PATH}" \
+        -F "jobname=$(basename "$ACTIVE_ABORT_PATH")" \
+        -F "owner=Deneb smoke active abort" "${API_BASE}/print_job" >>"$LOG" 2>&1
+    rc=$?
+    say "active-abort-start rc=$rc"
+    summary "phase=active-abort-start kind=multipart path=$ACTIVE_ABORT_PATH rc=$rc"
+    [ "$rc" = "0" ] || exit "$rc"
+    sleep "$ACTIVE_ABORT_DELAY"
+    snapshot "active-abort-printing"
+    api_step "active-abort" PUT /print_job/state '{"action":"abort"}' || \
+        api_step "active-stop" PUT /print_job/state '{"action":"stop"}' || true
+    sleep 10
+    snapshot "active-aborted"
 fi
 
 if [ "$RUN_CURA_JOB" = "1" ]; then

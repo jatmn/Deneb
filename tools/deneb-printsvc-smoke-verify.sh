@@ -8,6 +8,7 @@ set -u
 
 SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 REQUIRE_NATIVE=0
+REQUIRE_IDLE=0
 REQUIRE_HEAT=0
 REQUIRE_MOTION=0
 REQUIRE_MACRO=0
@@ -15,6 +16,7 @@ REQUIRE_LOCAL_JOB=0
 REQUIRE_JOB=0
 REQUIRE_CURA_JOB=0
 REQUIRE_PREHEAT_ABORT=0
+REQUIRE_ACTIVE_ABORT=0
 REQUIRE_PAUSE_RESUME=0
 REQUIRE_COMPLETE_JOB=0
 REQUIRE_RESTART=0
@@ -29,6 +31,7 @@ Checks a deneb-printsvc-smoke summary for required evidence.
 
 Options:
   --native      Require native route enable evidence
+  --idle        Require initial idle status and inactive stop state
   --heat        Require heat/cool evidence
   --motion      Require Z-home motion evidence
   --macro       Require macro-backed manual action evidence
@@ -37,6 +40,8 @@ Options:
   --cura-job    Require Cura cluster API job start and abort evidence
   --preheat-abort
                Require quick abort evidence during preparation/preheat
+  --active-abort
+               Require abort evidence after active printing has started
   --pause-resume
                Require pause and resume evidence during --job
   --complete-job
@@ -55,6 +60,7 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) REQUIRE_NATIVE=1 ;;
+        --idle) REQUIRE_IDLE=1 ;;
         --heat) REQUIRE_HEAT=1 ;;
         --motion) REQUIRE_MOTION=1 ;;
         --macro) REQUIRE_MACRO=1 ;;
@@ -65,6 +71,7 @@ while [ "$#" -gt 0 ]; do
         --job) REQUIRE_JOB=1 ;;
         --cura-job) REQUIRE_CURA_JOB=1 ;;
         --preheat-abort) REQUIRE_PREHEAT_ABORT=1 ;;
+        --active-abort) REQUIRE_ACTIVE_ABORT=1 ;;
         --pause-resume)
             REQUIRE_JOB=1
             REQUIRE_PAUSE_RESUME=1
@@ -78,6 +85,7 @@ while [ "$#" -gt 0 ]; do
         --boot-sync) REQUIRE_BOOT_SYNC=1 ;;
         --full)
             REQUIRE_NATIVE=1
+            REQUIRE_IDLE=1
             REQUIRE_HEAT=1
             REQUIRE_MOTION=1
             REQUIRE_MACRO=1
@@ -85,6 +93,7 @@ while [ "$#" -gt 0 ]; do
             REQUIRE_JOB=1
             REQUIRE_CURA_JOB=1
             REQUIRE_PREHEAT_ABORT=1
+            REQUIRE_ACTIVE_ABORT=1
             REQUIRE_PAUSE_RESUME=1
             REQUIRE_COMPLETE_JOB=1
             REQUIRE_RESTART=1
@@ -170,6 +179,11 @@ if [ "$REQUIRE_NATIVE" = "1" ]; then
     require_pattern ' phase=route-native-enabled .*rc=0 .*body=.*print_backend:native.*native_only_route:true' "native-only route query passed"
     require_pattern ' phase=status-native-enabled .*rc=0 .*body=.*native_only_route:true' "native status body has native-only route evidence"
     require_pattern ' phase=printer-native-enabled .*rc=0' "native printer root query passed"
+fi
+
+if [ "$REQUIRE_IDLE" = "1" ]; then
+    require_pattern ' phase=status-initial .*rc=0 .*status=idle' "initial status is idle"
+    require_pattern ' phase=printer-initial .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "initial idle native active/stop flags are false"
 fi
 
 if [ "$REQUIRE_HEAT" = "1" ]; then
@@ -294,6 +308,23 @@ if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
     require_pattern ' phase=status-preheat-aborted .*rc=0 .*status=idle' "preheat-aborted status is idle"
     require_pattern ' phase=status-preheat-aborted .*rc=0 .*body=.*native_only_route:true' "preheat-aborted status body has native-only route evidence"
     require_pattern ' phase=printer-preheat-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "preheat-aborted native active/stop flags are false"
+fi
+
+if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
+    require_pattern ' phase=active-abort-start .*rc=0' "active abort job start passed"
+    require_pattern ' snapshot=active-abort-printing' "active-abort printing snapshot present"
+    require_pattern ' phase=status-active-abort-printing .*rc=0 .*status=printing' "active-abort printing status is printing"
+    require_pattern ' phase=status-active-abort-printing .*rc=0 .*body=.*native_only_route:true' "active-abort printing status body has native-only route evidence"
+    require_pattern ' phase=printer-active-abort-printing .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "active-abort native active/stop flags are true"
+    if grep -Eq ' phase=active-abort .*rc=0| phase=active-stop .*rc=0' "$SUMMARY"; then
+        pass "active abort/stop passed"
+    else
+        fail "active abort/stop passed"
+    fi
+    require_pattern ' snapshot=active-aborted' "active-aborted snapshot present"
+    require_pattern ' phase=status-active-aborted .*rc=0 .*status=idle' "active-aborted status is idle"
+    require_pattern ' phase=status-active-aborted .*rc=0 .*body=.*native_only_route:true' "active-aborted status body has native-only route evidence"
+    require_pattern ' phase=printer-active-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "active-aborted native active/stop flags are false"
 fi
 
 if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then

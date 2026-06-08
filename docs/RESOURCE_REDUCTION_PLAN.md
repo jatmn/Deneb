@@ -369,8 +369,9 @@ Material-profile USB import root/depth/suffix policy and the
   device-side smoke/resource harness for the native print-service milestone.
   Its default mode only records route/status/process/resource snapshots; heat,
   boot/backend readiness, motion, macro-backed manual actions, native-route
-  assertion, REST multipart job upload/abort, explicit preheat abort, Cura
-  cluster API job upload/abort, pause/resume, short-job completion, and native
+  assertion, REST multipart job upload/abort, explicit preheat abort,
+  explicit active-print abort with a configurable delay, Cura cluster API job upload/abort, pause/resume,
+  short-job completion, and native
   service-restart recovery phases require explicit lab flags and are intended to
   generate the live evidence required by Section 8 once
   SSH/hardware validation is allowed again. The harness writes a full log and a
@@ -383,18 +384,19 @@ Material-profile USB import root/depth/suffix policy and the
   paths, including local/USB native job acceptance evidence. The local release
   package also includes
   `deneb-printsvc-smoke-verify`, a shell-only summary verifier for
-  observe/native/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/Cura-job/
-  pause-resume/completion/restart evidence, including native `deneb-printsvc`
-  process ownership with no running `print_service.py`, route diagnostics and
+  observe/native/idle/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/
+  active-abort/Cura-job/pause-resume/completion/restart evidence, including native `deneb-printsvc`
+  process ownership with no running `print_service.py`, explicit initial idle
+  status and inactive stop-state evidence, route diagnostics and
   captured status bodies that report `native_only_route:true` while keeping
   summary `status=` values scalar, rejection of any
   native process sample that shows stock `print_service.py` returned,
   local/USB job evidence tied to that native ownership and emitted by the
   native CLI as accepted `pre_print` active/stop-allowed state followed by
   aborted `idle` inactive/stop-disabled state, active-job status transitions from
-  `printing` to `paused` and back to `idle`, including the active `printing`
-  status snapshot for natural-completion runs, native active/stop-allowed flags
-  during preheat and active jobs, heat/motion/macro status-root snapshot
+  `printing` to `paused` and back to `idle`, including active-print abort and
+  natural-completion `printing` snapshots before they settle to idle, native
+  active/stop-allowed flags during preheat and active jobs, heat/motion/macro status-root snapshot
   evidence, and resource/throughput evidence, so live runs can be checked on
   target without Python. Packages also include
   `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator
@@ -408,17 +410,22 @@ Material-profile USB import root/depth/suffix policy and the
   status-body evidence, reports the wrong status value for a required lifecycle
   phase, contains a stock `print_service.py` process sample, lacks native
   local/USB IPC job acceptance plus accepted stop-state and abort/idle-state
-  evidence, lacks
+  evidence, lacks explicit active-print abort evidence, lacks
   `deneb-printsvc` process ownership, or lacks native active/stop-allowed
-  evidence in any required active or inactive printer-root lifecycle body.
+  evidence in any required active or inactive printer-root lifecycle body. Its
+  `--require-reduction` mode fails unless native memory, print-service RSS,
+  CPU interval, and boot-sync elapsed time are lower than stock while native
+  print throughput remains at least stock.
   The package also carries `deneb-printsvc-smoke-selftest`, a shell-only
   synthetic summary fixture runner that exercises the full verifier and
   comparator gates locally and invokes the live harness'
   `--summary-parser-selftest` mode so scalar status extraction is tested
-  without hardware, including expected failures for missing native
+  without hardware, including expected failures for missing initial idle,
+  missing native
   stop-safety evidence, missing status-body native-route evidence in verifier
   and comparator paths, missing native-route evidence in a single comparator
-  lifecycle status snapshot, missing natural-completion active status evidence,
+  lifecycle status snapshot, missing active-abort or natural-completion active
+  status evidence,
   a wrong single-phase lifecycle status value, boot-sync summaries that put the
   full status response into `status=` or omit `status_body` native-route proof,
   missing active or inactive stop-safety evidence in a single comparator
@@ -426,7 +433,8 @@ Material-profile USB import root/depth/suffix policy and the
   native local/USB job evidence, a non-native-only route diagnostic, a returned
   stock `print_service.py` process in a native run,
   missing stock
-  `print_service.py` baseline evidence, and zero-throughput records, so the
+  `print_service.py` baseline evidence, zero-throughput records, and nonzero
+  throughput regressions under strict reduction mode, so the
   evidence contract can be tested without Python or live hardware.
   `deneb-printsvc-cli-selftest` runs the actual native binary's `--smoke-test`
   and `--local-job-smoke` entry points against a temp G-code file without

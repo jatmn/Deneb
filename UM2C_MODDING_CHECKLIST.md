@@ -1299,12 +1299,14 @@ Completed implementation slices:
   `deneb-printsvc-smoke`, for supervised lab validation of native route
   selection, boot/backend readiness, idle status snapshots, heat/cool, Z-home,
   macro-backed manual actions, optional multipart job upload, pause/resume,
-  abort, explicit native local/USB job acceptance, explicit preheat abort, Cura
-  cluster API job upload/abort, short-job completion, native service-restart
+  abort, explicit native local/USB job acceptance, explicit preheat abort,
+  explicit active-print abort, Cura cluster API job upload/abort, short-job
+  completion, native service-restart
   recovery, process/resource samples, and native-route assertion. The harness
   installs with Deneb but only observes unless a tester explicitly enables
   native route, boot-sync, heat, motion, macro, local-job, REST job,
-  preheat-abort, Cura job, complete-job, or restart phases, and writes both
+  preheat-abort, active-abort with a configurable active-print delay, Cura job,
+  complete-job, or restart phases, and writes both
   a full log plus a compact summary with phase results, bounded boot-sync
   ready timing, scalar `/printer/status` values plus sanitized full status
   bodies, `/printer` root snapshots with Deneb-native active/stop-allowed
@@ -1313,9 +1315,10 @@ Completed implementation slices:
   including native route/status snapshots after native-route tests.
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
-  for observe-only, native-route, boot-sync readiness, heat/cool, Z-home,
+  for observe-only, native-route, explicit idle status, boot-sync readiness,
+  heat/cool, Z-home,
   macro-backed action, local/USB native job-start/abort, REST job-start/abort,
-  explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
+  explicit preheat abort, explicit active-print abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
   service-restart, and native-route evidence without Python or ad hoc log
   inspection. Native-route evidence now requires the route diagnostic body and
   captured status bodies to report native-only route evidence while keeping
@@ -1328,12 +1331,14 @@ Completed implementation slices:
   `pre_print` active/stop-allowed state and aborted `idle` inactive/stop
   disabled state. The verifier also checks
   active-job UI status
-  transitions: `printing` while active, `paused` after pause, and `idle` after
-  abort or natural completion, including the active `printing` status snapshot
-  before a short completion test is allowed to settle to idle. Active, preheat,
-  paused, resumed, aborted, and completed snapshots must also prove native
+  transitions: `printing` while active or active-abort evidence is being
+  captured, `paused` after pause, and `idle` after abort or natural completion,
+  including the active `printing` status snapshot before a short completion
+  test is allowed to settle to idle. Active, preheat,
+  active-abort, paused, resumed, aborted, and completed snapshots must also prove native
   active/stop-allowed flags so the LCD Stop safety state is checked from the
-  native driver contract. Heat,
+  native driver contract. Idle verification now requires the initial status to
+  be `idle` with initial native active/stop-allowed flags false. Heat,
   motion, and macro phases must include their snapshot status/root API samples
   so command acceptance alone cannot satisfy those live checks. Its
   resource mode requires initial/final memory, uptime, CPU, load, process RSS,
@@ -1349,10 +1354,13 @@ Completed implementation slices:
   values with native-only route evidence, lacks scalar boot-sync status plus a
   native-only boot-sync status body, contains any stock `print_service.py`
   process sample, lacks native local/USB IPC job acceptance, accepted
-  stop-state, abort, and idle-state evidence, lacks
+  stop-state, abort, and idle-state evidence, lacks active-print abort evidence, lacks
   `deneb-printsvc` process ownership, or lacks per-lifecycle native
   active/stop-allowed safety evidence for each required active and inactive
-  printer-root snapshot.
+  printer-root snapshot. Its `--require-reduction` mode turns the before/after
+  resource gate into a failing check by requiring native memory, print-service
+  RSS, CPU interval, and boot-sync elapsed time to be lower than stock while
+  keeping native print throughput at least stock.
 - [x] Add a shell-only synthetic selftest,
   `deneb-printsvc-smoke-selftest`, that builds stock/native summary fixtures
   and runs the full smoke verifier plus stock/native comparator without Python.
@@ -1364,14 +1372,15 @@ Completed implementation slices:
   stop-safety phases, missing native local/USB job evidence, a route diagnostic
   that is not native-only, a stock `print_service.py` process returning in a
   native run, missing stock
-  `print_service.py` baseline evidence, and zero-throughput records. This does
+  `print_service.py` baseline evidence, zero-throughput records, and nonzero
+  throughput regressions under strict reduction mode. This does
   not replace live hardware evidence, but it prevents the packaged
   verifier/comparator gates from drifting away from the Section 8 smoke and
   resource requirements, including rejection of summaries where status
   snapshots lose `native_only_route:true` in either verifier or comparator
   paths, including a single missing comparator lifecycle status snapshot,
   missing natural-completion active status evidence, reporting the wrong
-  lifecycle status during preheat/abort evidence, putting the full status body
+  lifecycle status during initial idle, preheat/abort, or active-abort evidence, putting the full status body
   into boot-sync `status=`, or omitting boot-sync `status_body` native-route
   proof.
 - [x] Add a shell-only native binary CLI selftest,

@@ -59,7 +59,7 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 EOF
 
 cat > "$NATIVE_SUMMARY" <<'EOF'
-2026-06-08T00:00:00Z start api=http://127.0.0.1/api/v1 cluster_api=http://127.0.0.1 native=1 heat=1 motion=1 macro=1 local_job=1 job=1 cura_job=1 preheat_abort=1 complete_job=1 pause_resume=1 restart=1 boot_sync=1
+2026-06-08T00:00:00Z start api=http://127.0.0.1/api/v1 cluster_api=http://127.0.0.1 native=1 heat=1 motion=1 macro=1 local_job=1 job=1 cura_job=1 preheat_abort=1 active_abort=1 active_abort_delay=60 complete_job=1 pause_resume=1 restart=1 boot_sync=1
 2026-06-08T00:00:00Z phase=printsvc-self-test rc=0
 2026-06-08T00:00:00Z snapshot=initial
 2026-06-08T00:00:00Z phase=route-initial kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
@@ -132,20 +132,28 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:15Z snapshot=preheat-aborted
 2026-06-08T00:00:15Z phase=status-preheat-aborted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
 2026-06-08T00:00:15Z phase=printer-preheat-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
-2026-06-08T00:00:16Z phase=complete-job-start kind=multipart path=/tmp/complete.gcode rc=0
-2026-06-08T00:00:16Z snapshot=complete-job-running
-2026-06-08T00:00:16Z phase=status-complete-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
-2026-06-08T00:00:16Z phase=printer-complete-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
-2026-06-08T00:00:36Z phase=job-completion-wait elapsed=20 rc=0
-2026-06-08T00:00:36Z phase=job-throughput path=/tmp/complete.gcode bytes=9000 elapsed_seconds=18 bytes_per_second=500 rc=0
-2026-06-08T00:00:36Z snapshot=job-completed
-2026-06-08T00:00:36Z phase=status-job-completed kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
-2026-06-08T00:00:36Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
-2026-06-08T00:00:37Z phase=service-restart kind=service-restart rc=0
-2026-06-08T00:00:37Z snapshot=service-restarted
-2026-06-08T00:00:37Z phase=route-service-restarted kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
-2026-06-08T00:00:37Z phase=status-service-restarted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
-2026-06-08T00:00:37Z phase=printer-service-restarted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:16Z phase=active-abort-start kind=multipart path=/tmp/active.gcode rc=0
+2026-06-08T00:00:16Z snapshot=active-abort-printing
+2026-06-08T00:00:16Z phase=status-active-abort-printing kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:16Z phase=printer-active-abort-printing kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
+2026-06-08T00:00:17Z phase=active-abort kind=api rc=0
+2026-06-08T00:00:17Z snapshot=active-aborted
+2026-06-08T00:00:17Z phase=status-active-aborted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:17Z phase=printer-active-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:18Z phase=complete-job-start kind=multipart path=/tmp/complete.gcode rc=0
+2026-06-08T00:00:18Z snapshot=complete-job-running
+2026-06-08T00:00:18Z phase=status-complete-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:18Z phase=printer-complete-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
+2026-06-08T00:00:38Z phase=job-completion-wait elapsed=20 rc=0
+2026-06-08T00:00:38Z phase=job-throughput path=/tmp/complete.gcode bytes=9000 elapsed_seconds=18 bytes_per_second=500 rc=0
+2026-06-08T00:00:38Z snapshot=job-completed
+2026-06-08T00:00:38Z phase=status-job-completed kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:38Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:39Z phase=service-restart kind=service-restart rc=0
+2026-06-08T00:00:39Z snapshot=service-restarted
+2026-06-08T00:00:39Z phase=route-service-restarted kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
+2026-06-08T00:00:39Z phase=status-service-restarted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:39Z phase=printer-service-restarted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:01:00Z sample=final mem_total_kb=250000 mem_used_kb=101000
 2026-06-08T00:01:00Z sample=final uptime_seconds=160
 2026-06-08T00:01:00Z sample=final cpu_total_jiffies=1300
@@ -156,6 +164,7 @@ EOF
 
 sh "$VERIFY" --full "$NATIVE_SUMMARY"
 sh "$COMPARE" "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
+sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
 sh "$SMOKE" --summary-parser-selftest \
     --log "$TMP_DIR/parser.log" \
     --summary "$TMP_DIR/parser.summary"
@@ -168,6 +177,15 @@ expect_failure verify_rejects_missing_active_stop \
 expect_failure compare_rejects_missing_active_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-stop.summary"
+
+sed '/phase=status-initial /s/status=idle/status=printing/; /phase=status-initial /s/status:idle/status:printing/; /phase=printer-initial /s/native_active:false/native_active:true/; /phase=printer-initial /s/native_stop_allowed:false/native_stop_allowed:true/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-idle.summary"
+expect_failure verify_rejects_missing_initial_idle \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-idle.summary"
+expect_failure compare_rejects_missing_initial_idle \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-idle.summary"
 
 sed '/phase=printer-cura-job-running /s/native_stop_allowed:true/native_stop_allowed:false/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-one-active-stop.summary"
@@ -226,6 +244,33 @@ expect_failure compare_rejects_wrong_one_status \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-wrong-one-status.summary"
 
+grep -v 'phase=status-active-abort-printing ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-active-abort-status.summary"
+expect_failure verify_rejects_missing_active_abort_status \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-active-abort-status.summary"
+expect_failure compare_rejects_missing_active_abort_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-active-abort-status.summary"
+
+sed '/phase=printer-active-abort-printing /s/native_stop_allowed:true/native_stop_allowed:false/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-active-abort-missing-stop.summary"
+expect_failure verify_rejects_active_abort_missing_stop \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-active-abort-missing-stop.summary"
+expect_failure compare_rejects_active_abort_missing_stop \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-active-abort-missing-stop.summary"
+
+sed '/phase=printer-active-aborted /s/native_stop_allowed:false/native_stop_allowed:true/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-active-aborted-stop-stuck.summary"
+expect_failure verify_rejects_active_aborted_stop_stuck \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-active-aborted-stop-stuck.summary"
+expect_failure compare_rejects_active_aborted_stop_stuck \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-active-aborted-stop-stuck.summary"
+
 sed 's/native_only_route:true/native_only_route:false/g' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-route-not-exclusive.summary"
 expect_failure verify_rejects_non_native_only_route \
@@ -279,5 +324,11 @@ expect_failure verify_rejects_zero_throughput \
 expect_failure compare_rejects_zero_throughput \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-zero-throughput.summary"
+
+sed 's/bytes_per_second=500/bytes_per_second=400/g' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-throughput-regressed.summary"
+expect_failure compare_strict_rejects_lower_throughput \
+    sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-throughput-regressed.summary"
 
 echo "deneb-printsvc smoke verifier selftest passed"

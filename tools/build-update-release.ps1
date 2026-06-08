@@ -181,6 +181,9 @@ $verifyPackage = "set -euo pipefail; " +
                  "grep -Eq '(^|/)update.sh$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc.init$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc-smoke$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc-smoke-verify$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc-smoke-compare$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-cli-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-init-selftest$' /tmp/deneb-release-package-files.txt; " +
@@ -189,7 +192,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "head -n 1 /tmp/deneb-release-packages.txt >&2; exit 1; " +
                  "fi; " +
                  "rm -rf /tmp/deneb-release-smoke-selftest; mkdir -p /tmp/deneb-release-smoke-selftest; " +
-                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar xf {} -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-init-selftest deneb-printsvc.init update.sh; " +
+                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar xf {} -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-init-selftest deneb-printsvc.init update.sh; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest >/tmp/deneb-release-smoke-selftest.log; " +
                  "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log; " +
                  "printf 'Verified native-only print service package: '; head -n 1 /tmp/deneb-release-packages.txt"

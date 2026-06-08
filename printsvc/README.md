@@ -213,6 +213,7 @@ deneb-printsvc-smoke --native --macro home
 deneb-printsvc-smoke --native --local-job /mnt/usb/local-test.gcode
 deneb-printsvc-smoke --native --job /home/3D/test.gcode --pause-resume
 deneb-printsvc-smoke --native --preheat-abort /home/3D/preheat-test.gcode
+deneb-printsvc-smoke --native --active-abort /home/3D/active-test.gcode --active-abort-delay 120
 deneb-printsvc-smoke --native --cura-job /home/3D/cura-test.gcode
 deneb-printsvc-smoke --native --complete-job /home/3D/short-test.gcode
 deneb-printsvc-smoke --native --restart
@@ -225,16 +226,20 @@ Use only under supervision with clear motion axes and a ready power cutoff.
 proves native route ownership, local/USB job acceptance with native `pre_print`
 active/stop-allowed state, abort, and final native `idle` inactive/stop-disabled
 state without routing through the legacy Python driver. `--job` is the
-abort-path exercise; `--complete-job` intentionally waits for a short print to
+pause/resume abort-path exercise, `--preheat-abort` catches stop behavior
+during preparation, `--active-abort` waits for the configured delay before
+capturing active-printing evidence and aborting, and `--complete-job`
+intentionally waits for a short print to
 leave the active-job API without issuing an abort.
 
 Verify a captured summary on-device without Python:
 
 ```sh
 deneb-printsvc-smoke-verify /tmp/deneb-printsvc-smoke.summary
-deneb-printsvc-smoke-verify --native --heat --motion --macro --local-job --job --preheat-abort --cura-job --pause-resume /tmp/native-printsvc.summary
+deneb-printsvc-smoke-verify --native --idle --heat --motion --macro --local-job --job --preheat-abort --active-abort --cura-job --pause-resume /tmp/native-printsvc.summary
 deneb-printsvc-smoke-verify --native --complete-job --restart --resources --boot-sync /tmp/native-printsvc.summary
 deneb-printsvc-smoke-compare /tmp/stock-printsvc.summary /tmp/native-printsvc.summary
+deneb-printsvc-smoke-compare --require-reduction /tmp/stock-printsvc.summary /tmp/native-printsvc.summary
 deneb-printsvc-smoke-selftest
 deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc
 deneb-printsvc-init-selftest
@@ -243,9 +248,13 @@ deneb-printsvc-init-selftest
 For job runs the verifier requires `printing` while active, `paused` after a
 pause command, and `idle` after abort or natural completion, including the
 active `printing` snapshot before a completion run is allowed to settle to
-idle. It also checks native active/stop-allowed flags during active, preheat,
+idle. Active-print abort runs must also show `printing` with native
+active/stop-allowed flags before abort and `idle` with both flags false after
+abort. It also checks native active/stop-allowed flags during active, preheat,
 paused, and resumed snapshots, then requires those flags to be false after
 abort or completion.
+`--idle` requires the initial status sample to be `idle` and the initial
+printer-root native active/stop flags to be false.
 Heat, motion, and macro verification require their snapshot status and printer
 root records so those phases prove backend state sampling, not only command
 acceptance.
@@ -265,8 +274,12 @@ intervals are not positive, or if the native summary lacks native-only route
 evidence in route diagnostics or any required status lifecycle body, lacks
 scalar boot-sync status plus native-only boot-sync status-body evidence,
 reports a wrong lifecycle status value, contains a stock `print_service.py` process
-sample, lacks native local/USB IPC job acceptance and stop-state evidence, lacks `deneb-printsvc`
-process ownership, or lacks per-lifecycle native stop-safety flags.
+sample, lacks native local/USB IPC job acceptance and stop-state evidence,
+lacks active-print abort evidence, lacks `deneb-printsvc` process ownership,
+or lacks per-lifecycle native stop-safety flags.
+Use `--require-reduction` for the release-decision pass; it fails unless native
+memory, print-service RSS, CPU interval, and boot-sync elapsed time are lower
+than the stock summary, and unless native throughput is at least stock.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also runs the
@@ -275,7 +288,8 @@ extraction without touching hardware. It also checks that
 missing native stop-safety evidence, missing status-body native-route evidence
 in both verifier and comparator paths, missing native-route evidence in a
 single comparator lifecycle status snapshot, a wrong single-phase lifecycle
-status value, boot-sync summaries that put the full status response into
+status value, missing active-abort status or stop-safety evidence, boot-sync
+summaries that put the full status response into
 `status=` or omit `status_body` native-route proof, missing natural-completion
 active status evidence, missing native local/USB job evidence, a non-native-only route diagnostic, a returned stock
 `print_service.py` process in a native run,

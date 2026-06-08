@@ -8,18 +8,40 @@ set -u
 
 usage() {
     cat <<'EOF'
-Usage: deneb-printsvc-smoke-compare STOCK.summary NATIVE.summary
+Usage: deneb-printsvc-smoke-compare [--require-reduction] STOCK.summary NATIVE.summary
 
 Prints compact before/after deltas for memory, CPU, boot-sync, and throughput.
 The command is evidence-oriented: missing required fields make it fail instead
 of silently reporting an incomplete comparison.
+
+Options:
+  --require-reduction  Fail if native memory/RSS/CPU/boot evidence is not lower
+                       than stock, or if throughput is lower than stock.
 EOF
 }
 
-if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    usage
-    exit 0
-fi
+REQUIRE_REDUCTION=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --require-reduction)
+            REQUIRE_REDUCTION=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --*)
+            echo "unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 if [ "$#" -ne 2 ]; then
     usage >&2
@@ -109,6 +131,42 @@ require_positive_integer() {
     fi
     if [ "$value" -le 0 ]; then
         fail "$label must be positive"
+        return 1
+    fi
+    return 0
+}
+
+require_less_than() {
+    before="$1"
+    after="$2"
+    label="$3"
+
+    if ! require_number "$before" "$label stock"; then
+        return 1
+    fi
+    if ! require_number "$after" "$label native"; then
+        return 1
+    fi
+    if [ "$after" -ge "$before" ]; then
+        fail "$label did not improve: stock=$before native=$after"
+        return 1
+    fi
+    return 0
+}
+
+require_at_least() {
+    before="$1"
+    after="$2"
+    label="$3"
+
+    if ! require_number "$before" "$label stock"; then
+        return 1
+    fi
+    if ! require_number "$after" "$label native"; then
+        return 1
+    fi
+    if [ "$after" -lt "$before" ]; then
+        fail "$label regressed: stock=$before native=$after"
         return 1
     fi
     return 0
@@ -223,11 +281,12 @@ require_pattern "$NATIVE" \
     "native summary missing native-only boot-sync status body evidence"
 require_local_job_evidence
 for phase in initial native-enabled cooldown motion macro service-restarted \
-    job-aborted cura-job-aborted preheat-aborted job-completed; do
+    job-aborted cura-job-aborted preheat-aborted active-aborted \
+    job-completed; do
     require_status_phase "$phase" idle
 done
 for phase in heating job-running job-resumed cura-job-running \
-    preheat-abort-active complete-job-running; do
+    preheat-abort-active active-abort-printing complete-job-running; do
     require_status_phase "$phase" printing
 done
 require_status_phase job-paused paused
@@ -238,11 +297,12 @@ require_pattern "$STOCK" \
     'sample=final .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing final print_service.py process evidence"
 for phase in heating job-running job-paused job-resumed cura-job-running \
-    preheat-abort-active complete-job-running; do
+    preheat-abort-active active-abort-printing complete-job-running; do
     require_printer_stop_phase "$phase" true true
 done
 for phase in initial native-enabled cooldown motion macro service-restarted \
-    job-aborted cura-job-aborted preheat-aborted job-completed; do
+    job-aborted cura-job-aborted preheat-aborted active-aborted \
+    job-completed; do
     require_printer_stop_phase "$phase" false false
 done
 
@@ -286,6 +346,16 @@ delta_line cpu_total_final "$stock_final_cpu" "$native_final_cpu" jiffies
 delta_line cpu_total_interval "$stock_cpu_interval" "$native_cpu_interval" jiffies
 delta_line boot_sync_elapsed "$stock_boot" "$native_boot" seconds
 delta_line print_throughput "$stock_bps" "$native_bps" bytes_per_second
+
+if [ "$REQUIRE_REDUCTION" = "1" ]; then
+    require_less_than "$stock_initial_mem" "$native_initial_mem" "initial memory use"
+    require_less_than "$stock_final_mem" "$native_final_mem" "final memory use"
+    require_less_than "$stock_initial_rss" "$native_initial_rss" "initial print-service RSS"
+    require_less_than "$stock_final_rss" "$native_final_rss" "final print-service RSS"
+    require_less_than "$stock_cpu_interval" "$native_cpu_interval" "CPU interval"
+    require_less_than "$stock_boot" "$native_boot" "boot-sync elapsed time"
+    require_at_least "$stock_bps" "$native_bps" "print throughput"
+fi
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures comparison failure(s)" >&2
