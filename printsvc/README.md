@@ -7,6 +7,11 @@ The service is intentionally split into focused source units from the first
 scaffold:
 
 - `command.*` parses the stock `COMMAND<json>` request frames.
+- `command_audit.*` wraps command execution with latency clamping,
+  diagnostic-counter refresh, and low-volume command/status log emission.
+- `command_dispatch.*` routes parsed `GCODE`, `MACRO`, `JOB`, `ABORT`,
+  `PAUSE`, and `RESUME` commands into native driver policies and reply
+  formatting.
 - `common/print/command_format.*` formats stock `GCODE`, `MACRO`, `JOB`, and
   action frames and owns the stock print-service command verbs for the service,
   web backend, and touchscreen backend.
@@ -21,14 +26,24 @@ scaffold:
 - `status_parser.*` parses Marlin temperature, position, version, and fault
   lines.
 - `serial_transport.*` opens and configures the Marlin serial device.
+- `motion_runtime.*` owns serial runtime state: Marlin transport open/close,
+  readiness, line polling, observation dispatch, and resend handoff.
 - `flow_control.*` tracks sequence numbers, in-flight packets, ACKs, rejects,
   and resend requests.
 - `heater_wait.*` owns native preheat target tracking and readiness checks.
+- `job_control.*` owns job acceptance and abort cleanup: active-job rejection,
+  stream-open failures, heater-wait setup, and native abort state/motion policy.
+- `job_streamer.*` owns active-job polling: preheat gating, paused/abort
+  checks, bounded line streaming, finish motion policy dispatch, and
+  planner-starvation accounting.
 - `marlin_packet.*` owns sequence-numbered packet formatting and CRC.
 - `crc.*` owns CRC helpers.
 - `gcode_stream.*` streams G-code line by line without loading whole files.
 - `macro_registry.*` resolves stock macro names under
   `/home/cygnus/marlindriver/gcode/`.
+- `macro_control.*` owns macro command execution against the service runtime:
+  flow-window waiting, abort checks, motion polling, G-code send callbacks,
+  and command error mapping.
 - `../common/print/print_macros.h` names stock macro files used by
   printsvc, touchscreen UI, and web/API callers.
 - `../common/print/pending_job_file.*` owns pending-job file parsing,

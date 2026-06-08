@@ -856,6 +856,10 @@ Completed implementation slices:
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.
+- [x] Move native job-control ownership into
+  `printsvc/src/job_control.*` so job acceptance, duplicate-active rejection,
+  stream-open storage failures, preheat heater-wait initialization, and abort
+  cleanup are not embedded in generic command dispatch.
 - [x] Move native pause/resume transition ownership into
   `printsvc/src/pause_resume.*` so the service command dispatcher no longer
   hand-rolls paused/preparing/printing transitions, idle pause/resume commands
@@ -866,6 +870,11 @@ Completed implementation slices:
   and storage-error transitions are not embedded directly in the service
   dispatcher/poller, with host tests covering source defaults, request labels,
   abort cleanup, and fault mapping.
+- [x] Move native active-job streaming ownership into
+  `printsvc/src/job_streamer.*` so preheat gating, paused/abort checks,
+  bounded line streaming, finish policy dispatch, and planner-starvation
+  accounting are one tested polling policy instead of inline service-loop
+  logic.
 - [x] Move native runtime diagnostic counter projection into
   `printsvc/src/runtime_diagnostics.*` so flow in-flight/sent/ACK/resend/reject,
   queued job depth, streamed line number, and planner-starvation fields are not
@@ -875,6 +884,15 @@ Completed implementation slices:
   `printsvc/src/command_reply.*` so the `{"status","message"}` response shape
   and JSON escaping are not private service-dispatcher details, with host tests
   for OK, error, escaping, and truncation failure.
+- [x] Move native command-audit ownership into
+  `printsvc/src/command_audit.*` so command latency clamping, post-command
+  diagnostic projection, and command/status log emission wrap dispatch through
+  one tested boundary instead of inline service-shell code.
+- [x] Move native command-dispatch ownership into
+  `printsvc/src/command_dispatch.*` so `GCODE`, `MACRO`, `JOB`, `ABORT`,
+  `PAUSE`, and `RESUME` routing, command error replies, macro callback wiring,
+  job acceptance, and abort policy dispatch are not embedded in the service
+  shell, with direct host tests for dry-run G-code and invalid command states.
 - [x] Move native motion-send ownership into
   `printsvc/src/motion_sender.*` so Marlin packet preparation, serial-ready
   behavior, resend packet writes, and multi-command motion-policy dispatch are
@@ -885,10 +903,18 @@ Completed implementation slices:
   iteration, abort checks, flow-window waits, motion sends, and motion polling
   are driven by a tested callback contract instead of private service helper
   loops.
+- [x] Move native macro-command ownership into
+  `printsvc/src/macro_control.*` so macro command execution, flow-window
+  waiting, abort checks, motion polling, G-code send callbacks, and command
+  error mapping are not embedded in generic command dispatch.
 - [x] Move native motion-observation ownership into
   `printsvc/src/motion_observer.*` so Marlin status parsing, heater-wait
   updates, ACK/reject/resend accounting, and resend-sequence detection are one
   tested per-line policy instead of inline serial-poll logic.
+- [x] Move native motion-runtime ownership into
+  `printsvc/src/motion_runtime.*` so serial open, readiness state, Marlin line
+  polling, observer dispatch, resend handoff, and serial close are one tested
+  runtime boundary instead of inline service shell logic.
 - [x] Publish native diagnostics for flow in-flight depth, sent/ACK/resend/reject
   counters, queued job depth, streamed job line number, command latency, and a
   planner-starvation indicator so lab comparisons have one service-owned source.

@@ -1,0 +1,68 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+#include "motion_runtime.h"
+
+#include "config.h"
+#include "motion_observer.h"
+#include "motion_sender.h"
+
+static int runtime_valid(const deneb_motion_runtime_t *runtime)
+{
+    return runtime && runtime->status && runtime->heater_wait &&
+           runtime->flow && runtime->serial && runtime->serial_ready;
+}
+
+int deneb_motion_runtime_open(deneb_motion_runtime_t *runtime)
+{
+    if (!runtime_valid(runtime))
+        return -1;
+
+    if (deneb_serial_open(runtime->serial, DENEB_PRINTSVC_SERIAL_DEVICE,
+                          DENEB_PRINTSVC_SERIAL_BAUD) == 0) {
+        *runtime->serial_ready = 1;
+        return 0;
+    }
+
+    *runtime->serial_ready = 0;
+    return -1;
+}
+
+int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
+{
+    char line[DENEB_PRINTSVC_SERIAL_LINE];
+    uint8_t resend_sequence = 0;
+    int handled = 0;
+
+    if (!runtime_valid(runtime))
+        return -1;
+    if (!*runtime->serial_ready)
+        return 0;
+
+    for (;;) {
+        int n = deneb_serial_read_line(runtime->serial, line, sizeof(line));
+        if (n < 0)
+            return -1;
+        if (n == 0)
+            break;
+
+        handled++;
+        int flow_rc = deneb_motion_observer_handle_line(
+            runtime->status, runtime->heater_wait, runtime->flow, line,
+            &resend_sequence);
+        if (flow_rc == 2) {
+            deneb_motion_sender_resend_sequence(runtime->flow, runtime->serial,
+                                                *runtime->serial_ready,
+                                                resend_sequence);
+        }
+    }
+
+    return handled;
+}
+
+void deneb_motion_runtime_close(deneb_motion_runtime_t *runtime)
+{
+    if (!runtime_valid(runtime))
+        return;
+
+    deneb_serial_close(runtime->serial);
+    *runtime->serial_ready = 0;
+}

@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "command.h"
+#include "command_audit.h"
+#include "command_dispatch.h"
 #include "command_format.h"
 #include "command_reply.h"
 #include "config.h"
@@ -12,7 +14,10 @@
 #include "json_field.h"
 #include "json_file.h"
 #include "json_string.h"
+#include "job_control.h"
 #include "job_lifecycle.h"
+#include "job_streamer.h"
+#include "macro_control.h"
 #include "macro_registry.h"
 #include "macro_runner.h"
 #include "material_catalog.h"
@@ -20,6 +25,7 @@
 #include "motion_firmware.h"
 #include "motion_observer.h"
 #include "motion_policy.h"
+#include "motion_runtime.h"
 #include "motion_sender.h"
 #include "pause_resume.h"
 #include "pending_job.h"
@@ -134,6 +140,67 @@ static void test_command_reply_helpers(void)
                   "{\"status\":\"error\",\"message\":\"bad \\\"quoted\\\" path\"}") == 0);
 
     assert(deneb_command_reply_json(reply, 8, "ok", "too long") < 0);
+}
+
+static void test_command_dispatch_policy(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_dispatch_handle(NULL, &cmd, reply, sizeof(reply)) < 0);
+
+    assert(deneb_command_parse("GCODE<[\"M105\",\"G28 X Y\"]", &cmd) == 0);
+    assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "\"status\":\"ok\"") != NULL);
+    assert(deneb_flow_inflight(&svc.flow) == 2);
+
+    assert(deneb_command_parse("PAUSE<{}", &cmd) == 0);
+    assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "no active print to pause") != NULL);
+
+    assert(deneb_command_parse("JOB<{}", &cmd) == 0);
+    assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "missing job file") != NULL);
+}
+
+static int command_audit_fake_handler(void *ctx, const deneb_command_t *cmd,
+                                      char *reply, size_t reply_sz)
+{
+    deneb_print_service_t *svc = (deneb_print_service_t *)ctx;
+
+    assert(svc != NULL);
+    assert(cmd != NULL);
+    assert(reply != NULL);
+    assert(reply_sz > 0);
+    svc->job_active = 1;
+    svc->job_stream.line_number = 77;
+    snprintf(reply, reply_sz, "{\"status\":\"ok\",\"message\":\"audited\"}");
+    return 0;
+}
+
+static void test_command_audit_policy(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+
+    assert(deneb_command_audit_elapsed_ms(100, 90) == 0);
+    assert(deneb_command_audit_elapsed_ms(100, 60150) == 60000);
+    assert(deneb_command_audit_elapsed_ms(100, 250) == 150);
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_parse("PAUSE<{}", &cmd) == 0);
+    assert(deneb_command_audit_run(NULL, &cmd, reply, sizeof(reply),
+                                   command_audit_fake_handler, &svc) < 0);
+    assert(deneb_command_audit_run(&svc, &cmd, reply, sizeof(reply),
+                                   NULL, &svc) < 0);
+    assert(deneb_command_audit_run(&svc, &cmd, reply, sizeof(reply),
+                                   command_audit_fake_handler, &svc) == 0);
+    assert(strstr(reply, "audited") != NULL);
+    assert(svc.status.job_queue_depth == 1);
+    assert(svc.status.job_line_number == 77);
 }
 
 static void test_status_frame(void)
@@ -290,6 +357,118 @@ static void test_job_lifecycle_policy(void)
     assert(status.error.code == DENEB_ERROR_STORAGE);
 }
 
+static void test_job_control_policy(void)
+{
+    const char *path = "/tmp/deneb-printsvc-job-control-test.gcode";
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char frame[512];
+    char reply[256];
+    FILE *f = fopen(path, "wb");
+
+    assert(f != NULL);
+    fputs("G1 X1\n", f);
+    fclose(f);
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_parse("JOB<{}", &cmd) == 0);
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "missing job file") != NULL);
+
+    snprintf(frame, sizeof(frame),
+             "JOB<{\"file\":\"%s\",\"source\":\"Cura\",\"uuid\":\"job-1\","
+             "\"bedTset\":60,\"headTset\":200}",
+             path);
+    assert(deneb_command_parse(frame, &cmd) == 0);
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "job accepted") != NULL);
+    assert(svc.job_active);
+    assert(!svc.abort_requested);
+    assert(svc.heater_wait.active);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(strcmp(svc.status.file, path) == 0);
+    assert(strcmp(svc.status.source, "Cura") == 0);
+    assert(strcmp(svc.status.uuid, "job-1") == 0);
+
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "job already active") != NULL);
+
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "abort accepted") != NULL);
+    assert(!svc.job_active);
+    assert(svc.abort_requested);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+
+    remove(path);
+}
+
+static void test_job_streamer_policy(void)
+{
+    const char *path = "/tmp/deneb-printsvc-job-streamer-test.gcode";
+    deneb_status_t status;
+    deneb_flow_control_t flow;
+    deneb_gcode_stream_t stream;
+    deneb_heater_wait_t wait;
+    deneb_serial_transport_t serial;
+    deneb_job_streamer_t streamer;
+    int job_active = 1;
+    int abort_requested = 0;
+    unsigned int starvation = 0;
+    FILE *f = fopen(path, "wb");
+
+    assert(f != NULL);
+    fputs("G1 X1\n", f);
+    fclose(f);
+
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    deneb_heater_wait_init(&wait);
+    memset(&serial, 0, sizeof(serial));
+    serial.fd = -1;
+
+    deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
+                              "streamer-uuid", 60.0f, 200.0f);
+    deneb_heater_wait_start(&wait, status.bed_t_set, status.head_t_set, 1.0f);
+    assert(deneb_gcode_stream_open(&stream, path) == 0);
+
+    streamer.status = &status;
+    streamer.flow = &flow;
+    streamer.stream = &stream;
+    streamer.heater_wait = &wait;
+    streamer.serial = &serial;
+    streamer.serial_ready = 0;
+    streamer.job_active = &job_active;
+    streamer.abort_requested = &abort_requested;
+    streamer.planner_starvation_count = &starvation;
+
+    assert(deneb_job_streamer_poll(NULL) < 0);
+    assert(deneb_job_streamer_poll(&streamer) == 0);
+    assert(status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(stream.line_number == 0);
+
+    status.bed_t_cur = 60.0f;
+    status.head_t_cur = 200.0f;
+    assert(deneb_job_streamer_poll(&streamer) == 1);
+    assert(status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(stream.line_number == 1);
+    assert(starvation == 1);
+    assert(deneb_flow_inflight(&flow) == 1);
+
+    assert(deneb_job_streamer_poll(&streamer) == 1);
+    assert(!job_active);
+    assert(status.state == DENEB_PRINT_STATE_COMPLETE);
+
+    deneb_flow_init(&flow);
+    assert(deneb_gcode_stream_open(&stream, path) == 0);
+    job_active = 1;
+    abort_requested = 1;
+    assert(deneb_job_streamer_poll(&streamer) == -2);
+    assert(!job_active);
+
+    remove(path);
+}
+
 static void test_runtime_diagnostics_policy(void)
 {
     deneb_status_t status;
@@ -428,6 +607,34 @@ static void test_motion_observer_policy(void)
     assert(resend == 0);
 }
 
+static void test_motion_runtime_policy(void)
+{
+    deneb_status_t status;
+    deneb_heater_wait_t wait;
+    deneb_flow_control_t flow;
+    deneb_serial_transport_t serial;
+    deneb_motion_runtime_t runtime;
+    int serial_ready = 0;
+
+    deneb_status_init(&status);
+    deneb_heater_wait_init(&wait);
+    deneb_flow_init(&flow);
+    memset(&serial, 0, sizeof(serial));
+    serial.fd = -1;
+
+    runtime.status = &status;
+    runtime.heater_wait = &wait;
+    runtime.flow = &flow;
+    runtime.serial = &serial;
+    runtime.serial_ready = &serial_ready;
+
+    assert(deneb_motion_runtime_poll(NULL) < 0);
+    assert(deneb_motion_runtime_poll(&runtime) == 0);
+    serial_ready = 1;
+    deneb_motion_runtime_close(&runtime);
+    assert(serial_ready == 0);
+}
+
 static void test_macro_runner_policy(void)
 {
     const char *path = "/tmp/deneb-printsvc-macro-runner-test.gcode";
@@ -473,6 +680,25 @@ static void test_macro_runner_policy(void)
     assert(deneb_macro_runner_run_file(path, NULL) < 0);
     assert(deneb_macro_runner_run_macro("../bad.gcode", &io) < 0);
     remove(path);
+}
+
+static void test_macro_control_policy(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+
+    deneb_print_service_init(&svc);
+    memset(&cmd, 0, sizeof(cmd));
+    snprintf(cmd.macro, sizeof(cmd.macro), "../bad.gcode");
+    assert(deneb_macro_control_run(NULL, &cmd, reply, sizeof(reply)) < 0);
+    assert(deneb_macro_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "macro failed") != NULL);
+    assert(svc.status.error.code == DENEB_ERROR_COMMAND);
+
+    snprintf(cmd.macro, sizeof(cmd.macro), "missing_macro.gcode");
+    assert(deneb_macro_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "macro failed") != NULL);
 }
 
 static void test_print_state_rules(void)
@@ -1732,14 +1958,20 @@ int main(void)
     test_command_parse();
     test_command_format_round_trip();
     test_command_reply_helpers();
+    test_command_dispatch_policy();
+    test_command_audit_policy();
     test_error_mapping();
     test_print_control_contract();
     test_pause_resume_policy();
     test_job_lifecycle_policy();
+    test_job_control_policy();
+    test_job_streamer_policy();
     test_runtime_diagnostics_policy();
     test_motion_sender_policy();
     test_motion_observer_policy();
+    test_motion_runtime_policy();
     test_macro_runner_policy();
+    test_macro_control_policy();
     test_print_state_rules();
     test_print_job_summary();
     test_json_field_helpers();

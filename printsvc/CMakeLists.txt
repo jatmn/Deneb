@@ -67,6 +67,8 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/print_state_rules.c
     ../common/print/status_payload.c
     src/command.c
+    src/command_audit.c
+    src/command_dispatch.c
     src/command_reply.c
     src/crc.c
     src/diagnostics_log.c
@@ -74,13 +76,17 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/flow_control.c
     src/gcode_stream.c
     src/heater_wait.c
+    src/job_control.c
     src/job_lifecycle.c
+    src/job_streamer.c
+    src/macro_control.c
     src/macro_registry.c
     src/macro_runner.c
     src/marlin_packet.c
     src/motion_firmware.c
     src/motion_observer.c
     src/motion_policy.c
+    src/motion_runtime.c
     src/motion_sender.c
     src/pause_resume.c
     src/pending_job.c
