@@ -247,14 +247,30 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
 - The service context now passes service-owned serial readiness into both the
   motion runtime and job streamer by reference, so print streaming, finish
   policy dispatch, and dry-run/test paths share one transport readiness state
-  instead of copying it into a single adapter.
+  instead of copying it into a single adapter. Active job stream-send failures
+  now close the stream, clear the active-job flag, and record command or serial
+  lifecycle errors so clients do not keep seeing a stale printing state after
+  native output fails. Job-streamer abort requests now also route through the
+  shared lifecycle abort owner, clearing file identity and timing along with the
+  active-job flag.
 - Treat abort, pause, resume, and print-finish as intentional Deneb behavior,
   not line-for-line ports. The native replacement must remove unsafe abort
   cleanup behavior, avoid duplicate homing, and report clear cancellation
   status before it can replace stock `printserver` outside experimental builds.
   Abort and finish cleanup policy dispatch now reports serial faults when
   transport is marked ready but cleanup G-code cannot be sent, preventing false
-  successful abort/completion status on cleanup-send failure.
+  successful abort/completion status on cleanup-send failure. Marlin resend
+  handoff is now covered by the same fail-visible rule: if the controller asks
+  for a resend and the native runtime cannot write that resend while the serial
+  transport is marked ready, the service records a serial error instead of
+  hiding the transport failure. Motion-send return codes now distinguish
+  invalid commands, flow-window pressure, and serial transport failure so raw
+  `GCODE` command dispatch can report serial faults without preserving the
+  Python driver's generic command-error behavior. Macro execution preserves the
+  same callback failure reason through the bounded macro runner for both macro
+  line sends and motion polling, letting native `MACRO` command handling report
+  serial transport faults instead of flattening them into generic macro
+  failures.
 - Native diagnostic logging now writes a low-volume comparison stream under
   `/var/log/ultimaker/deneb-printsvc.log` when the native service is running.
   Each status line places stock-shaped fields such as `stock.req`,
@@ -289,6 +305,9 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   shared print progress calculation,
   shared pending-job metadata persistence,
   native command audit policy,
+  audited unknown-command routing,
+  native IPC command-frame handling,
+  built-in smoke routing through the native IPC frame helper,
   native job-control policy,
   native active-job streaming policy,
   native macro-command policy,

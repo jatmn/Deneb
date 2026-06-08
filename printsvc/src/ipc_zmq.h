@@ -4,6 +4,11 @@
 
 #include "service.h"
 
+#include <stddef.h>
+
+int deneb_printsvc_ipc_handle_frame(deneb_print_service_t *svc,
+                                    const char *frame,
+                                    char *reply, size_t reply_sz);
 int deneb_printsvc_ipc_run(deneb_print_service_t *svc);
 
 #endif

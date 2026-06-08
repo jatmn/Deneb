@@ -24,7 +24,6 @@ static int smoke_test(void)
 static int local_job_smoke(const char *path)
 {
     deneb_print_service_t svc;
-    deneb_command_t cmd;
     char frame[640];
     char reply[128];
     int rc = 1;
@@ -41,10 +40,7 @@ static int local_job_smoke(const char *path)
         return 1;
 
     deneb_print_service_init(&svc);
-    if (deneb_command_parse(frame, &cmd) != 0)
-        goto out;
-    if (deneb_print_service_handle_command(&svc, &cmd, reply,
-                                           sizeof(reply)) != 0)
+    if (deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) != 0)
         goto out;
     if (!svc.job_active)
         goto out;
@@ -53,10 +49,8 @@ static int local_job_smoke(const char *path)
     if (strcmp(svc.status.source, "USB") != 0)
         goto out;
 
-    if (deneb_command_parse("ABORT<{}", &cmd) != 0)
-        goto out;
-    if (deneb_print_service_handle_command(&svc, &cmd, reply,
-                                           sizeof(reply)) != 0)
+    if (deneb_printsvc_ipc_handle_frame(&svc, "ABORT<{}", reply,
+                                        sizeof(reply)) != 0)
         goto out;
     if (svc.job_active)
         goto out;

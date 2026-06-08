@@ -90,8 +90,6 @@ int deneb_command_parse(const char *frame, deneb_command_t *out)
     out->verb[verb_len] = '\0';
 
     out->type = command_type_from_verb(out->verb);
-    if (out->type == DENEB_COMMAND_UNKNOWN)
-        return -1;
 
     payload_len = strlen(sep + 1);
     if (payload_len >= sizeof(out->payload))

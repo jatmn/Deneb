@@ -27,12 +27,18 @@ int deneb_macro_runner_run_file(const char *path,
             deneb_gcode_stream_close(&stream);
             return rc;
         }
-        if (io->send_gcode(io->ctx, line) != 0) {
+        rc = io->send_gcode(io->ctx, line);
+        if (rc != 0) {
             deneb_gcode_stream_close(&stream);
-            return -1;
+            return rc;
         }
-        if (io->poll_motion)
-            io->poll_motion(io->ctx);
+        if (io->poll_motion) {
+            rc = io->poll_motion(io->ctx);
+            if (rc != 0) {
+                deneb_gcode_stream_close(&stream);
+                return rc;
+            }
+        }
     }
 
     deneb_gcode_stream_close(&stream);

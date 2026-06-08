@@ -21,23 +21,39 @@ scaffold:
   web and touchscreen backend status consumers.
 - `common/print/print_state_rules.*` owns shared active-print, preheat, paused,
   abort, and transient macro-file classification used by web/touch clients.
+- `command.*`, `command_dispatch.*`, and `command_audit.*` keep well-formed
+  unknown verbs on the audited command path while malformed frames remain bad
+  command input.
+- `ipc_frame.*` owns command-frame handling shared by the ZMQ loop and host
+  tests.
 - `ipc_zmq.*` owns the first-stage ZMQ PUB/REP compatibility boundary:
   status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, and topic
-  `10001`.
+  `10001`. Command-frame handling is split into a host-tested helper so valid
+  commands, audited unknown verbs, and malformed-frame replies stay consistent.
 - `status.*` serializes stock-shaped status JSON.
 - `status_parser.*` parses Marlin temperature, position, version, and fault
   lines.
 - `serial_transport.*` opens and configures the Marlin serial device.
 - `motion_runtime.*` owns serial runtime state: Marlin transport open/close,
-  readiness, line polling, observation dispatch, and resend handoff.
+  readiness, line polling, observation dispatch, and resend handoff; resend
+  write failures are reported as serial errors when the transport is marked
+  ready.
 - `flow_control.*` tracks sequence numbers, in-flight packets, ACKs, rejects,
   and resend requests.
+- `motion_sender.*` returns named negative failure codes for invalid commands,
+  flow-window pressure, and serial transport writes so command handlers can map
+  failures to the correct native error class.
 - `heater_wait.*` owns native preheat target tracking and readiness checks.
 - `job_control.*` owns job acceptance and abort cleanup: active-job rejection,
   stream-open failures, heater-wait setup, and native abort state/motion policy.
 - `job_streamer.*` owns active-job polling: preheat gating, paused/abort
   checks, bounded line streaming, finish motion policy dispatch, and
-  planner-starvation accounting.
+  planner-starvation accounting. Stream-send failures close the active stream,
+  clear active-job state, and record command or serial lifecycle errors; abort
+  requests are finalized through shared job lifecycle cleanup.
+- `macro_runner.*` streams macro files through callbacks and preserves
+  send/poll callback failure codes so `MACRO` command handling can distinguish
+  serial transport errors from path/stream failures.
 - `pause_resume_control.*` owns command-level pause/resume replies and routes
   accepted requests into the native pause/resume state policy.
 - `marlin_packet.*` owns sequence-numbered packet formatting and CRC.
@@ -161,9 +177,10 @@ deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
 
 The script restores the previous `deneb.printsvc.enabled` value by default.
 Use only under supervision with clear motion axes and a ready power cutoff.
-`--local-job` runs the native `deneb-printsvc --local-job-smoke` path and proves
-local/USB job acceptance, active `printing` status, abort, and final `idle`
-status without routing through the legacy Python driver. `--job` is the
+`--local-job` runs the native `deneb-printsvc --local-job-smoke` path through
+the shared IPC frame helper and proves local/USB job acceptance, active
+`printing` status, abort, and final `idle` status without routing through the
+legacy Python driver. `--job` is the
 abort-path exercise; `--complete-job` intentionally waits for a short print to
 leave the active-job API without issuing an abort.
 

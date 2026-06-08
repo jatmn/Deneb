@@ -86,6 +86,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/gcode_control.c
     src/gcode_stream.c
     src/heater_wait.c
+    src/ipc_frame.c
     src/job_control.c
     src/job_lifecycle.c
     src/job_streamer.c

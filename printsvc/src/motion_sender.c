@@ -11,18 +11,22 @@ int deneb_motion_sender_send_gcode(deneb_flow_control_t *flow,
     uint8_t sequence = 0;
 
     if (!flow || !line || !*line)
-        return -1;
+        return DENEB_MOTION_SEND_INVALID;
 
-    if (deneb_flow_prepare_packet(flow, line, packet, sizeof(packet),
-                                  &written, &sequence) != 0)
-        return -1;
+    int rc = deneb_flow_prepare_packet(flow, line, packet, sizeof(packet),
+                                       &written, &sequence);
+    if (rc != 0)
+        return rc == -2 ? DENEB_MOTION_SEND_FLOW_FULL :
+                          DENEB_MOTION_SEND_INVALID;
 
     if (!serial_ready)
         return 0;
     if (!serial)
-        return -1;
+        return DENEB_MOTION_SEND_SERIAL;
 
-    return deneb_serial_write_all(serial, packet, written);
+    return deneb_serial_write_all(serial, packet, written) == 0 ?
+               0 :
+               DENEB_MOTION_SEND_SERIAL;
 }
 
 int deneb_motion_sender_resend_sequence(deneb_flow_control_t *flow,
@@ -34,18 +38,20 @@ int deneb_motion_sender_resend_sequence(deneb_flow_control_t *flow,
     size_t written = 0;
 
     if (!flow)
-        return -1;
+        return DENEB_MOTION_SEND_INVALID;
 
     if (deneb_flow_get_resend_packet(flow, sequence, packet,
                                      sizeof(packet), &written) != 0)
-        return -1;
+        return DENEB_MOTION_SEND_FLOW_FULL;
 
     if (!serial_ready)
         return 0;
     if (!serial)
-        return -1;
+        return DENEB_MOTION_SEND_SERIAL;
 
-    return deneb_serial_write_all(serial, packet, written);
+    return deneb_serial_write_all(serial, packet, written) == 0 ?
+               0 :
+               DENEB_MOTION_SEND_SERIAL;
 }
 
 int deneb_motion_sender_apply_policy(deneb_flow_control_t *flow,

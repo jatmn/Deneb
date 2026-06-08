@@ -13,11 +13,14 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
         return -1;
 
     for (size_t i = 0; i < cmd->gcode_count; i++) {
-        if (deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
-                                           svc->serial_ready,
-                                           cmd->gcode[i]) != 0) {
-            svc->status.error = deneb_error_make(DENEB_ERROR_COMMAND,
-                                                 "gcode failed");
+        int rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                                svc->serial_ready,
+                                                cmd->gcode[i]);
+        if (rc != 0) {
+            deneb_error_code_t code =
+                rc == DENEB_MOTION_SEND_SERIAL ? DENEB_ERROR_SERIAL :
+                                                  DENEB_ERROR_COMMAND;
+            svc->status.error = deneb_error_make(code, "gcode failed");
             deneb_command_reply_error(reply, reply_sz, "gcode failed");
             return -1;
         }

@@ -15,6 +15,7 @@
 #include "gcode_control.h"
 #include "gcode_command.h"
 #include "heater_wait.h"
+#include "ipc_zmq.h"
 #include "json_field.h"
 #include "json_file.h"
 #include "json_string.h"
@@ -84,6 +85,11 @@ static void test_command_parse(void)
     assert(cmd.type == DENEB_COMMAND_GCODE);
     assert(cmd.gcode_count == 2);
     assert(strcmp(cmd.gcode[1], "G28 X Y") == 0);
+
+    assert(deneb_command_parse("BOGUS<{}", &cmd) == 0);
+    assert(cmd.type == DENEB_COMMAND_UNKNOWN);
+    assert(strcmp(cmd.verb, "BOGUS") == 0);
+    assert(deneb_command_parse("BOGUS", &cmd) < 0);
 }
 
 static void test_command_format_round_trip(void)
@@ -229,6 +235,14 @@ static void test_gcode_control_policy(void)
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "gcode failed") != NULL);
     assert(svc.status.error.code == DENEB_ERROR_COMMAND);
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_parse("GCODE<[\"M105\"]", &cmd) == 0);
+    svc.serial_ready = 1;
+    svc.serial.fd = -1;
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "gcode failed") != NULL);
+    assert(svc.status.error.code == DENEB_ERROR_SERIAL);
 }
 
 static void test_pause_resume_control_policy(void)
@@ -556,12 +570,35 @@ static void test_job_streamer_policy(void)
     assert(!job_active);
     assert(status.state == DENEB_PRINT_STATE_COMPLETE);
 
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    deneb_heater_wait_init(&wait);
+    assert(deneb_gcode_stream_open(&stream, path) == 0);
+    deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
+                              "stream-send-fault", 0.0f, 0.0f);
+    job_active = 1;
+    abort_requested = 0;
+    serial_ready = 1;
+    assert(deneb_job_streamer_poll(&streamer) == -1);
+    assert(!job_active);
+    assert(status.state == DENEB_PRINT_STATE_ERROR);
+    assert(status.error.code == DENEB_ERROR_SERIAL);
+    assert(strstr(status.error.detail, "job stream send failed") != NULL);
+
     deneb_flow_init(&flow);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
+    deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
+                              "stream-abort", 0.0f, 0.0f);
+    status.time_total = 120;
+    status.time_left = 90;
     job_active = 1;
     abort_requested = 1;
     assert(deneb_job_streamer_poll(&streamer) == -2);
     assert(!job_active);
+    assert(status.state == DENEB_PRINT_STATE_IDLE);
+    assert(strcmp(status.file, DENEB_PRINT_NONE_VALUE) == 0);
+    assert(status.time_total == 0);
+    assert(status.time_left == 0);
 
     f = fopen(path, "wb");
     assert(f != NULL);
@@ -631,7 +668,10 @@ static void test_motion_sender_policy(void)
     assert(deneb_flow_inflight(&flow) == 1);
     assert(flow.sent_count == 1);
     assert(deneb_motion_sender_resend_sequence(&flow, &serial, 0, 0) == 0);
-    assert(deneb_motion_sender_resend_sequence(&flow, &serial, 0, 7) < 0);
+    assert(deneb_motion_sender_resend_sequence(&flow, &serial, 0, 7) ==
+           DENEB_MOTION_SEND_FLOW_FULL);
+    assert(deneb_motion_sender_send_gcode(&flow, &serial, 1, "M104 S0") ==
+           DENEB_MOTION_SEND_SERIAL);
 
     deneb_flow_init(&flow);
     deneb_motion_policy_abort(&policy);
@@ -645,6 +685,9 @@ typedef struct {
     int abort_after_sends;
     int fail_wait;
     int fail_send;
+    int fail_send_rc;
+    int fail_poll;
+    int fail_poll_rc;
     int sends;
     int polls;
     char sent[3][DENEB_PRINTSVC_MAX_GCODE_LINE];
@@ -668,7 +711,7 @@ static int macro_runner_fake_send(void *ctx, const char *line)
 {
     macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
     if (fake->fail_send)
-        return -1;
+        return fake->fail_send_rc ? fake->fail_send_rc : -1;
     if (fake->sends < 3)
         snprintf(fake->sent[fake->sends], sizeof(fake->sent[fake->sends]),
                  "%s", line);
@@ -680,6 +723,8 @@ static int macro_runner_fake_poll(void *ctx)
 {
     macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
     fake->polls++;
+    if (fake->fail_poll)
+        return fake->fail_poll_rc ? fake->fail_poll_rc : -1;
     return 0;
 }
 
@@ -728,6 +773,7 @@ static void test_motion_runtime_policy(void)
     deneb_flow_control_t flow;
     deneb_serial_transport_t serial;
     deneb_motion_runtime_t runtime;
+    int pipefd[2];
     int serial_ready = 0;
 
     deneb_status_init(&status);
@@ -747,6 +793,21 @@ static void test_motion_runtime_policy(void)
     serial_ready = 1;
     deneb_motion_runtime_close(&runtime);
     assert(serial_ready == 0);
+
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, "M105") == 0);
+    assert(pipe(pipefd) == 0);
+    assert(write(pipefd[1], "Resend: 0\n", 10) == 10);
+    close(pipefd[1]);
+    serial.fd = pipefd[0];
+    serial_ready = 1;
+    assert(deneb_motion_runtime_poll(&runtime) < 0);
+    assert(status.state == DENEB_PRINT_STATE_ERROR);
+    assert(status.error.code == DENEB_ERROR_SERIAL);
+    close(pipefd[0]);
+    serial.fd = -1;
+    serial_ready = 0;
 }
 
 static void test_macro_runner_policy(void)
@@ -790,7 +851,33 @@ static void test_macro_runner_policy(void)
     fake.abort_after_sends = -1;
     fake.fail_send = 1;
     io.ctx = &fake;
-    assert(deneb_macro_runner_run_file(path, &io) < 0);
+    assert(deneb_macro_runner_run_file(path, &io) == -1);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = -1;
+    fake.fail_send = 1;
+    fake.fail_send_rc = DENEB_MOTION_SEND_SERIAL;
+    io.ctx = &fake;
+    assert(deneb_macro_runner_run_file(path, &io) ==
+           DENEB_MOTION_SEND_SERIAL);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = -1;
+    fake.fail_poll = 1;
+    io.ctx = &fake;
+    assert(deneb_macro_runner_run_file(path, &io) == -1);
+    assert(fake.sends == 1);
+    assert(fake.polls == 1);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.abort_after_sends = -1;
+    fake.fail_poll = 1;
+    fake.fail_poll_rc = DENEB_MOTION_SEND_SERIAL;
+    io.ctx = &fake;
+    assert(deneb_macro_runner_run_file(path, &io) ==
+           DENEB_MOTION_SEND_SERIAL);
+    assert(fake.sends == 1);
+    assert(fake.polls == 1);
     assert(deneb_macro_runner_run_file(path, NULL) < 0);
     assert(deneb_macro_runner_run_macro("../bad.gcode", &io) < 0);
     remove(path);
@@ -3086,6 +3173,33 @@ static void test_service_command_policy(void)
     cmd.type = DENEB_COMMAND_UNKNOWN;
     assert(deneb_service_command_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "unknown command") != NULL);
+
+    assert(deneb_command_parse("BOGUS<{}", &cmd) == 0);
+    assert(deneb_service_command_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "unknown command") != NULL);
+    assert(svc.status.command_latency_ms <= 60000);
+}
+
+static void test_ipc_frame_policy(void)
+{
+    deneb_print_service_t svc;
+    char reply[256];
+
+    deneb_print_service_init(&svc);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"M105\"]",
+                                           reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "gcode accepted") != NULL);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "BOGUS<{}",
+                                           reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "unknown command") != NULL);
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "BOGUS",
+                                           reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "bad command") != NULL);
+    assert(deneb_printsvc_ipc_handle_frame(NULL, "GCODE<[\"M105\"]",
+                                           reply, sizeof(reply)) < 0);
 }
 
 static void test_job_poll_streams_after_preheat(void)
@@ -3577,6 +3691,7 @@ int main(void)
     test_job_accepts_without_blocking();
     test_service_context_policy();
     test_service_command_policy();
+    test_ipc_frame_policy();
     test_job_poll_streams_after_preheat();
     test_pause_gates_active_job_streaming();
     test_pause_during_preheat_resumes_to_preparing();

@@ -31,6 +31,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     if (*streamer->abort_requested) {
         deneb_gcode_stream_close(streamer->stream);
         *streamer->job_active = 0;
+        deneb_job_lifecycle_abort(streamer->status);
         return -2;
     }
 
@@ -78,7 +79,18 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     deneb_job_lifecycle_streaming(streamer->status);
     if (deneb_flow_inflight(streamer->flow) == 0)
         (*streamer->planner_starvation_count)++;
-    return deneb_motion_sender_send_gcode(streamer->flow, streamer->serial,
-                                          *streamer->serial_ready, line) == 0 ?
-        1 : -1;
+    rc = deneb_motion_sender_send_gcode(streamer->flow, streamer->serial,
+                                        *streamer->serial_ready, line);
+    if (rc != 0) {
+        deneb_error_code_t code =
+            rc == DENEB_MOTION_SEND_SERIAL ? DENEB_ERROR_SERIAL :
+                                             DENEB_ERROR_COMMAND;
+        deneb_gcode_stream_close(streamer->stream);
+        *streamer->job_active = 0;
+        deneb_job_lifecycle_error(streamer->status,
+                                  deneb_error_make(code,
+                                                   "job stream send failed"));
+        return -1;
+    }
+    return 1;
 }

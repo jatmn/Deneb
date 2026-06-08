@@ -529,7 +529,8 @@ this section is the milestone checklist for that same work.
 
 Current native replacement progress lives under [printsvc/](printsvc/). The
 current buildable slice provides a native-default experimental
-`deneb-printsvc` binary with separate modules for ZMQ IPC, command parsing,
+  `deneb-printsvc` binary with separate modules for ZMQ IPC, IPC command-frame
+  handling, command parsing,
 status serialization, Marlin status parsing, serial transport, packet/CRC
 helpers, flow control, G-code streaming, heater waits, macro lookup, and
 service state. It is packaged into `.deneb` releases and fresh installs default
@@ -1109,6 +1110,13 @@ Completed implementation slices:
   bounded line streaming, finish policy dispatch, and planner-starvation
   accounting are one tested polling policy instead of inline service-loop
   logic.
+- [x] Make active-job stream send failures terminal and visible: failed native
+  G-code output now closes the stream, clears active-job state, and records a
+  command or serial lifecycle error instead of leaving the status looking like
+  the job is still printing.
+- [x] Route job-streamer abort requests through the shared native job lifecycle
+  abort owner so a consumed abort clears active-job state, file identity, and
+  timing instead of leaving stale print status behind.
 - [x] Keep native job-streamer motion output tied to the service-owned serial
   readiness flag by reference, matching the motion-runtime adapter and avoiding
   stale copied readiness state if motion transport opens or closes around job
@@ -1126,6 +1134,15 @@ Completed implementation slices:
   `printsvc/src/command_audit.*` so command latency clamping, post-command
   diagnostic projection, and command/status log emission wrap dispatch through
   one tested boundary instead of inline service-shell code.
+- [x] Keep well-formed but unknown native command frames on the audited dispatch
+  path, so unsupported verbs receive the normal `unknown command` reply and
+  command diagnostics instead of being flattened into malformed-frame handling.
+- [x] Move native IPC command-frame handling into a named helper with host tests
+  so valid commands, audited unknown verbs, and malformed-frame `bad command`
+  replies are not embedded directly in the ZMQ service loop.
+- [x] Route the built-in native local-job smoke path through the same IPC
+  command-frame helper, so local executable smoke testing does not bypass the
+  ZMQ-loop command framing policy it is meant to validate.
 - [x] Move native command-dispatch ownership into
   `printsvc/src/command_dispatch.*` so `GCODE`, `MACRO`, `JOB`, `ABORT`,
   `PAUSE`, and `RESUME` routing, command error replies, macro callback wiring,
@@ -1157,11 +1174,18 @@ Completed implementation slices:
   behavior, resend packet writes, and multi-command motion-policy dispatch are
   no longer private `service.c` helpers, with host tests for dry-run sends,
   resend lookup, invalid input, and abort-policy expansion.
+- [x] Give native motion-send failures named return codes for invalid input,
+  flow-window pressure, and serial transport failure, then map raw `GCODE`
+  command send failures to serial faults when the transport write fails.
 - [x] Move native macro/file streaming ownership into
   `printsvc/src/macro_runner.*` so macro path resolution, bounded G-code stream
   iteration, abort checks, flow-window waits, motion sends, and motion polling
   are driven by a tested callback contract instead of private service helper
   loops.
+- [x] Preserve native macro-runner callback failure reasons so macro execution
+  can distinguish serial transport write and motion-poll failures from generic
+  macro/path failures instead of flattening every failed macro line into the
+  same error.
 - [x] Move native macro-command ownership into
   `printsvc/src/macro_control.*` so macro command execution, flow-window
   waiting, abort checks, motion polling, G-code send callbacks, and command
@@ -1174,6 +1198,10 @@ Completed implementation slices:
   `printsvc/src/motion_runtime.*` so serial open, readiness state, Marlin line
   polling, observer dispatch, resend handoff, and serial close are one tested
   runtime boundary instead of inline service shell logic.
+- [x] Make native resend handoff fail visibly when Marlin requests a resend but
+  the serial write cannot be performed while transport is marked ready; the
+  runtime now enters a serial-error state instead of silently continuing after a
+  failed resend attempt.
 - [x] Move native service-context ownership into
   `printsvc/src/service_context.*` so service initialization, motion-runtime
   adapter wiring, job-streamer adapter wiring, diagnostics projection, and

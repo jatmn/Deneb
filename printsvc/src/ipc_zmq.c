@@ -69,17 +69,12 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
         if (rc > 0 && (items[0].revents & ZMQ_POLLIN)) {
             char buf[1024];
             char reply[256];
-            deneb_command_t cmd;
             int n = zmq_recv(rep, buf, sizeof(buf) - 1, 0);
             if (n < 0)
                 continue;
             buf[n] = '\0';
 
-            if (deneb_command_parse(buf, &cmd) == 0)
-                deneb_print_service_handle_command(svc, &cmd, reply, sizeof(reply));
-            else
-                snprintf(reply, sizeof(reply), "{\"status\":\"error\",\"message\":\"bad command\"}");
-
+            deneb_printsvc_ipc_handle_frame(svc, buf, reply, sizeof(reply));
             zmq_send(rep, reply, strlen(reply), 0);
         }
 

@@ -2,6 +2,7 @@
 #include "motion_runtime.h"
 
 #include "config.h"
+#include "error_map.h"
 #include "motion_observer.h"
 #include "motion_sender.h"
 
@@ -49,9 +50,15 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
             runtime->status, runtime->heater_wait, runtime->flow, line,
             &resend_sequence);
         if (flow_rc == 2) {
-            deneb_motion_sender_resend_sequence(runtime->flow, runtime->serial,
-                                                *runtime->serial_ready,
-                                                resend_sequence);
+            if (deneb_motion_sender_resend_sequence(runtime->flow,
+                                                    runtime->serial,
+                                                    *runtime->serial_ready,
+                                                    resend_sequence) != 0) {
+                runtime->status->state = DENEB_PRINT_STATE_ERROR;
+                runtime->status->error = deneb_error_make(DENEB_ERROR_SERIAL,
+                                                          "resend failed");
+                return -1;
+            }
         }
     }
 
