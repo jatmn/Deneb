@@ -89,15 +89,20 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   now cover command formatting and stock command verbs, flat status JSON field
   extraction, pending-job files, print-state rules, backend status
   time/progress normalization, shared stock macro names, and web/API status
-  labels. Web and touchscreen macro,
-  multi-line G-code, and job-start callers now route through native backend
-  helper functions instead of each hand-rolling stock command JSON. LCD/API
-  immediate print-file starts now share one native start-plan helper for
+  labels. LCD and web backend transports now use the shared command-format
+  planner for simple action frames, raw payload frames, and `JOB` path
+  extraction before applying local filename retention. Web and touchscreen
+  macro, multi-line G-code, and job-start callers now route through native
+  backend helper functions instead of each hand-rolling stock command JSON.
+  LCD/API immediate print-file starts now share one native start-plan helper for
   path/source/UUID/default-temperature semantics before dispatching backend
   `JOB` commands, so touchscreen USB starts and web/Cura no-conflict starts do
   not preserve separate driver defaults. Pending-job continue dispatch uses the
   same helper while preserving queued path/source/UUID metadata, leaving only
-  the transport send in the LCD/web adapters. Print-start readiness now has one
+  the transport send in the LCD/web adapters. Cura upload registration now
+  dispatches no-conflict immediate starts through
+  `printsvc/src/pending_job_registration.*`, leaving only transport-specific
+  callbacks in the web layer. Print-start readiness now has one
   shared native rule for connected/not-error/not-paused/not-printing checks
   before any touchscreen, web/Cura, or pending-continue `JOB` dispatch. The
   touchscreen status screen now also asks shared print-state rules for its
@@ -159,10 +164,24 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   stock coordinator or native `deneb-printsvc`. Backend preheat transition
   tracking now lives in `common/print/print_state_rules.*`, so LCD and web/API
   status clients share one tested owner for target-active and target-ready
-  transitions instead of carrying parallel local preheat log flags. Deneb API route diagnostics now
-  use typed backend accessors instead of comparing route display strings, so
-  backend identity classification stays with the shared route owner. Later slices should
-  keep collapsing remaining
+  transitions instead of carrying parallel local preheat log flags. Active,
+  preparing, and stoppable print-context flags are now projected by the shared
+  native print-state helper, so LCD and web/API clients no longer bundle those
+  filename/request/timing/preheat decisions separately. Web/API heat-target
+  endpoints now use `common/print/gcode_command.*` for bounded temperature JSON
+  parsing and `M104`/`M140` planning, keeping raw heater G-code limits out of
+  the REST layer. Web/API jog and absolute-position requests now plan through
+  the same helper, so axis, distance, coordinate, speed, build-volume, and raw
+  move-command decisions are native shared print-control logic instead of REST
+  endpoint policy. Web/API manual-motion action requests now parse through
+  `common/print/manual_motion.*`, so action JSON shape, legacy home fallback,
+  unknown-action classification, and macro-vs-G-code selection share the same
+  native owner as touchscreen motion helpers. Cura cluster action parsing now
+  also uses the shared print-state helper for the pending-job `print` default,
+  so a missing action body only turns into continue when pending metadata
+  exists. Deneb API route diagnostics now use typed backend accessors instead
+  of comparing route display strings, so backend identity classification stays
+  with the shared route owner. Later slices should keep collapsing remaining
   duplicate web/UI/API logic toward those helpers or a single
   `deneb-printsvc` API.
 - Keep `deneb-printsvc` source files split by responsibility from the first

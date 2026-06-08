@@ -34,11 +34,41 @@ typedef struct {
     const char *lines[3];
 } deneb_gcode_jog_sequence_t;
 
+typedef enum {
+    DENEB_GCODE_MOTION_PLAN_NONE = 0,
+    DENEB_GCODE_MOTION_PLAN_JOG,
+    DENEB_GCODE_MOTION_PLAN_ABSOLUTE_POSITION
+} deneb_gcode_motion_plan_kind_t;
+
+typedef enum {
+    DENEB_GCODE_MOTION_PLAN_OK = 0,
+    DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED = -1,
+    DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE = -2,
+    DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE = -3,
+    DENEB_GCODE_MOTION_PLAN_ERR_X = -4,
+    DENEB_GCODE_MOTION_PLAN_ERR_Y = -5,
+    DENEB_GCODE_MOTION_PLAN_ERR_Z = -6,
+    DENEB_GCODE_MOTION_PLAN_ERR_VOLUME = -7,
+    DENEB_GCODE_MOTION_PLAN_ERR_SPEED = -8
+} deneb_gcode_motion_plan_result_t;
+
+typedef struct {
+    deneb_gcode_motion_plan_kind_t kind;
+    deneb_gcode_jog_sequence_t jog;
+    char absolute_move[96];
+    const char *absolute_lines[2];
+} deneb_gcode_motion_plan_t;
+
 typedef struct {
     char nozzle_off[32];
     char bed_off[32];
     const char *lines[3];
 } deneb_gcode_cooldown_sequence_t;
+
+typedef enum {
+    DENEB_GCODE_HEATER_NOZZLE = 0,
+    DENEB_GCODE_HEATER_BED
+} deneb_gcode_heater_t;
 
 typedef struct {
     char move[64];
@@ -63,8 +93,21 @@ int deneb_gcode_format_absolute_position(int has_x, float x,
                                          int has_z, float z,
                                          float speed_mm_s,
                                          char *out, size_t out_sz);
+void deneb_gcode_motion_plan_init(deneb_gcode_motion_plan_t *plan);
+int deneb_gcode_plan_motion_from_json(const char *json,
+                                      deneb_gcode_motion_plan_t *plan);
 int deneb_gcode_format_nozzle_target(float temp_c, char *out, size_t out_sz);
 int deneb_gcode_format_bed_target(float temp_c, char *out, size_t out_sz);
+int deneb_gcode_format_heater_target(deneb_gcode_heater_t heater,
+                                     float temp_c,
+                                     char *out,
+                                     size_t out_sz);
+int deneb_gcode_plan_temperature_target_from_json(
+    deneb_gcode_heater_t heater,
+    const char *json,
+    float *out_temp_c,
+    char *out_gcode,
+    size_t out_gcode_sz);
 int deneb_gcode_format_nozzle_off(char *out, size_t out_sz);
 int deneb_gcode_format_bed_off(char *out, size_t out_sz);
 int deneb_gcode_build_cooldown_sequence(deneb_gcode_cooldown_sequence_t *seq);

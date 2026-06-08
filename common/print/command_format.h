@@ -11,6 +11,12 @@
 #define DENEB_COMMAND_VERB_PAUSE "PAUSE"
 #define DENEB_COMMAND_VERB_RESUME "RESUME"
 
+typedef struct {
+    int len;
+    int has_job_path;
+    char job_path[256];
+} deneb_command_frame_plan_t;
+
 int deneb_command_format_gcode(const char *const *lines, size_t count,
                                char *out, size_t out_sz);
 int deneb_command_format_macro(const char *macro, char *out, size_t out_sz);
@@ -22,5 +28,11 @@ int deneb_command_format_raw(const char *verb, const char *payload,
                              char *out, size_t out_sz);
 int deneb_command_extract_job_path(const char *args_json, char *out,
                                    size_t out_sz);
+void deneb_command_frame_plan_init(deneb_command_frame_plan_t *plan);
+int deneb_command_plan_frame(const char *verb,
+                             const char *payload,
+                             char *out,
+                             size_t out_sz,
+                             deneb_command_frame_plan_t *plan);
 
 #endif

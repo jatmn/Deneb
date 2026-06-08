@@ -4,6 +4,7 @@
 #include "print_macros.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 static int ascii_tolower(int c)
@@ -266,6 +267,40 @@ int deneb_print_has_stoppable_context(const deneb_print_observation_t *obs,
            deneb_print_req_is_paused(obs->req) ||
            deneb_print_req_is_lifecycle(obs->req) ||
            deneb_print_has_temp_targets(obs->bed_target, obs->nozzle_target);
+}
+
+void deneb_print_context_flags_init(deneb_print_context_flags_t *flags)
+{
+    if (!flags)
+        return;
+
+    flags->has_active_context = 0;
+    flags->has_preparing_context = 0;
+    flags->has_stoppable_context = 0;
+}
+
+void deneb_print_context_flags_from_observation(
+    deneb_print_context_flags_t *flags,
+    const deneb_print_observation_t *obs,
+    int is_printing,
+    int is_paused,
+    int has_print_name)
+{
+    if (!flags)
+        return;
+
+    deneb_print_context_flags_init(flags);
+    if (!obs)
+        return;
+
+    flags->has_active_context =
+        deneb_print_has_active_context(obs, is_printing, is_paused,
+                                       has_print_name);
+    flags->has_preparing_context =
+        deneb_print_has_preparing_context(obs, has_print_name);
+    flags->has_stoppable_context =
+        deneb_print_has_stoppable_context(obs, is_printing, is_paused,
+                                          has_print_name);
 }
 
 const char *deneb_print_status_label(int connected, int has_error,
@@ -541,6 +576,24 @@ int deneb_print_action_parse(const char *body, char *out, size_t out_sz)
     out[i] = '\0';
     normalize_action_value(out);
     return out[0] ? 0 : -1;
+}
+
+int deneb_print_action_parse_or_pending_default(const char *body,
+                                                int has_pending_job,
+                                                char *out,
+                                                size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return -1;
+
+    if (deneb_print_action_parse(body, out, out_sz) == 0)
+        return 0;
+
+    if (!has_pending_job || out_sz <= strlen(DENEB_PRINT_ACTION_PRINT_TEXT))
+        return -1;
+
+    snprintf(out, out_sz, "%s", DENEB_PRINT_ACTION_PRINT_TEXT);
+    return 0;
 }
 
 int deneb_print_action_is_pause(const char *action)

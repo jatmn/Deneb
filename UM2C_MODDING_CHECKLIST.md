@@ -693,6 +693,9 @@ Completed implementation slices:
   native print-service entry points share one owner for profile comparison,
   tracker assignment, pending metadata population, and immediate-start
   decisions.
+- [x] Move Cura upload immediate-start dispatch into
+  `printsvc/src/pending_job_registration.*` so the web upload endpoint no
+  longer owns the pending-vs-start callback sequence after native registration.
 - [x] Remove remaining native UI Python launchers from frame lighting, USB
   material-profile import, and diagnostics export: frame lighting sends native
   `M142` G-code directly, material import scans USB/profile XML in C, and log
@@ -711,6 +714,10 @@ Completed implementation slices:
 - [x] Move generic `JOB` argument path/file fallback extraction into the shared
   native command-format helper so LCD `backend_comm` no longer keeps a local
   JSON field helper just to retain active job filenames.
+- [x] Move backend command-frame planning into
+  `common/print/command_format.*` so LCD and web transports share the same
+  decision for simple action frames, raw payload frames, and `JOB` path
+  extraction before applying only their local filename-retention side effects.
 - [x] Move stock print-service command verb names for `GCODE`, `MACRO`, `JOB`,
   `ABORT`, `PAUSE`, and `RESUME` into `common/print/command_format.h` so
   action-frame formatting, LCD backend commands, web backend commands, and
@@ -787,6 +794,10 @@ Completed implementation slices:
   so touchscreen jog buttons and web/API `home`/`z_home`/`bed_up`/`bed_down`
   actions share one native owner for whether a motion action sends a macro or
   direct G-code.
+- [x] Move web/API manual-motion action request parsing into
+  `common/print/manual_motion.*` so action JSON shape, the legacy home
+  fallback, unknown-action classification, and macro-vs-G-code selection are
+  not split between REST endpoints and touchscreen helpers.
 - [x] Move build-plate leveling macro planning into
   `common/print/buildplate_level.*` so the touchscreen leveling workflow no
   longer owns the stock leveling macro filename sequence in LVGL screen code.
@@ -915,6 +926,10 @@ Completed implementation slices:
   print-state rules so `pause`, `print`, `resume`, `continue`, `force`,
   `start`, `abort`, `cancel`, and `stop` are not duplicated between the parser,
   cluster pending fallback, and host tests.
+- [x] Move Cura cluster pending-action fallback parsing into shared native
+  print-state rules so a missing action body only defaults to `print` when a
+  pending job exists, instead of keeping that compatibility rule inside the
+  REST endpoint.
 - [x] Move web print-job action planning into shared native print-state rules
   so pause, resume/start, abort/cancel, and stop share one owner for backend
   command selection, failure classification, and pending-job cleanup intent.
@@ -951,6 +966,10 @@ Completed implementation slices:
   native print-state rules so the touchscreen Stop button, preheat status, and
   abort cleanup use the same tested contract instead of local screen/backend
   predicates.
+- [x] Bundle active/preparing/stoppable context flags into one shared native
+  print-state helper so LCD and web/API clients do not independently combine
+  filename, request, timing, pause, and preheat signals when deciding whether a
+  print is still controllable.
 - [x] Move print observation construction into shared native print-state rules
   so LCD status rendering, LCD backend status parsing, web backend status
   parsing, and native status parsing do not each hand-build the same
@@ -1025,6 +1044,15 @@ Completed implementation slices:
   `printsvc/src/gcode_control.*` so multi-line `GCODE` command dispatch,
   packet-send failures, command error mapping, and stock-compatible replies
   are not embedded in generic command routing.
+- [x] Move REST heat-target parsing and raw heater G-code planning into
+  `common/print/gcode_command.*` so web/API temperature endpoints no longer
+  locally clamp targets or hand-select `M104`/`M140` command formatting.
+- [x] Add a shared native heater-target formatter used by touchscreen
+  temperature controls and web/API heat planning so nozzle-vs-bed command
+  selection has one owner.
+- [x] Move web/API jog and absolute-position request parsing into
+  `common/print/gcode_command.*` so REST endpoints no longer own axis,
+  distance, coordinate, speed, build-volume, or raw move-command planning.
 - [x] Move native pause/resume command ownership into
   `printsvc/src/pause_resume_control.*` so command-level pause/resume replies,
   heater-wait-aware resume routing, and invalid-state errors are not embedded

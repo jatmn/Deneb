@@ -18,8 +18,14 @@ typedef struct {
     const char *command;
 } deneb_manual_motion_plan_t;
 
+#define DENEB_MANUAL_MOTION_PLAN_OK 0
+#define DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST -1
+#define DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION -2
+
 void deneb_manual_motion_plan_init(deneb_manual_motion_plan_t *plan);
 int deneb_manual_motion_plan_action(const char *action,
                                     deneb_manual_motion_plan_t *plan);
+int deneb_manual_motion_plan_request(const char *json,
+                                     deneb_manual_motion_plan_t *plan);
 
 #endif

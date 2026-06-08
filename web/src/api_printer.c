@@ -13,7 +13,6 @@
 #include "pending_job_file.h"
 #include "print_profile.h"
 
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -29,83 +28,55 @@ static void set_motion_blocked(http_response_t *resp)
     api_http_set_body_str(resp, "{\"message\":\"Motion unavailable while printer is disconnected, printing, paused, or in error\"}");
 }
 
-static int parse_axis_value(const char *body, char *axis)
-{
-    char axis_buf[8];
-    if (deneb_json_get_value(body, "axis", axis_buf, sizeof(axis_buf)) < 0 || !axis_buf[0] || axis_buf[1])
-        return -1;
-
-    char upper = deneb_gcode_normalize_motion_axis(axis_buf[0]);
-    if (!deneb_gcode_axis_is_motion_axis(upper))
-        return -1;
-
-    *axis = upper;
-    return 0;
-}
-
-static int parse_temperature_target(const char *body, float max_temp,
-                                    float *out)
-{
-    float temp = 0.0f;
-
-    if (!out)
-        return -1;
-
-    if (deneb_json_field_present(body, "temperature") &&
-        (deneb_json_get_float_value(body, "temperature", &temp) < 0 ||
-         !isfinite(temp))) {
-        return -1;
-    }
-
-    if (temp > max_temp)
-        temp = max_temp;
-    if (temp < 0.0f)
-        temp = 0.0f;
-
-    *out = temp;
-    return 0;
-}
-
-static int send_jog_command(char axis, float distance)
-{
-    deneb_gcode_jog_sequence_t seq;
-
-    if (deneb_gcode_build_jog_sequence(axis, distance, &seq) < 0)
-        return -1;
-    return backend_zmq_send_gcodes(seq.lines, 3);
-}
-
-static int send_absolute_position_command(int has_x, float x, int has_y, float y, int has_z, float z, float speed)
-{
-    char move_cmd[96];
-
-    if (backend_zmq_send_gcode(DENEB_GCODE_ABSOLUTE_MODE) < 0)
-        return -1;
-    if (deneb_gcode_format_absolute_position(has_x, x, has_y, y, has_z, z,
-                                             speed, move_cmd,
-                                             sizeof(move_cmd)) < 0)
-        return -1;
-
-    return backend_zmq_send_gcode(move_cmd);
-}
-
-static int send_motion_action(const char *action)
-{
-    deneb_manual_motion_plan_t plan;
-
-    if (deneb_manual_motion_plan_action(action, &plan) < 0)
-        return -2;
-    if (plan.kind == DENEB_MANUAL_MOTION_GCODE)
-        return backend_zmq_send_gcode(plan.command);
-    if (plan.kind == DENEB_MANUAL_MOTION_MACRO)
-        return backend_zmq_send_macro(plan.command);
-    return -2;
-}
-
 static void set_motion_failed(http_response_t *resp)
 {
     resp->status_code = 503;
     api_http_set_body_str(resp, "{\"message\":\"Failed to send motion command\"}");
+}
+
+static void set_motion_plan_error(http_response_t *resp, int rc)
+{
+    resp->status_code = 400;
+    switch (rc) {
+        case DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE:
+            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}");
+            break;
+        case DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE:
+            api_http_set_body_str(resp, "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}");
+            break;
+        case DENEB_GCODE_MOTION_PLAN_ERR_X:
+            api_http_set_body_str(resp, "{\"message\":\"Invalid x position\"}");
+            break;
+        case DENEB_GCODE_MOTION_PLAN_ERR_Y:
+            api_http_set_body_str(resp, "{\"message\":\"Invalid y position\"}");
+            break;
+        case DENEB_GCODE_MOTION_PLAN_ERR_Z:
+            api_http_set_body_str(resp, "{\"message\":\"Invalid z position\"}");
+            break;
+        case DENEB_GCODE_MOTION_PLAN_ERR_VOLUME:
+            api_http_set_body_str(resp, "{\"message\":\"Position is outside the printable volume\"}");
+            break;
+        case DENEB_GCODE_MOTION_PLAN_ERR_SPEED:
+            api_http_set_body_str(resp, "{\"message\":\"Invalid movement speed\"}");
+            break;
+        default:
+            api_http_set_body_str(resp, "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}");
+            break;
+    }
+}
+
+static int send_motion_plan(const deneb_gcode_motion_plan_t *plan)
+{
+    if (!plan)
+        return -1;
+
+    if (plan->kind == DENEB_GCODE_MOTION_PLAN_JOG)
+        return backend_zmq_send_gcodes(plan->jog.lines, 3);
+
+    if (plan->kind == DENEB_GCODE_MOTION_PLAN_ABSOLUTE_POSITION)
+        return backend_zmq_send_gcodes(plan->absolute_lines, 2);
+
+    return -1;
 }
 
 void api_printer_status_get(const http_request_t *req, http_response_t *resp)
@@ -626,14 +597,9 @@ void api_printer_airmanager_get(const http_request_t *req, http_response_t *resp
 void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 {
     float temp = 0;
-    if (parse_temperature_target(req->body, DENEB_GCODE_MAX_BED_TEMP_C,
-                                 &temp) < 0) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
-        return;
-    }
     char cmd[32];
-    if (deneb_gcode_format_bed_target(temp, cmd, sizeof(cmd)) < 0) {
+    if (deneb_gcode_plan_temperature_target_from_json(
+            DENEB_GCODE_HEATER_BED, req->body, &temp, cmd, sizeof(cmd)) < 0) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
         return;
@@ -649,14 +615,9 @@ void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 void api_printer_hotend_temp_put(const http_request_t *req, http_response_t *resp)
 {
     float temp = 0;
-    if (parse_temperature_target(req->body, DENEB_GCODE_MAX_NOZZLE_TEMP_C,
-                                 &temp) < 0) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
-        return;
-    }
     char cmd[32];
-    if (deneb_gcode_format_nozzle_target(temp, cmd, sizeof(cmd)) < 0) {
+    if (deneb_gcode_plan_temperature_target_from_json(
+            DENEB_GCODE_HEATER_NOZZLE, req->body, &temp, cmd, sizeof(cmd)) < 0) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
         return;
@@ -678,80 +639,21 @@ void api_printer_bed_preheat_put(const http_request_t *req, http_response_t *res
 void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 {
     const printer_state_t *s = backend_zmq_get_state();
+    deneb_gcode_motion_plan_t plan;
+    int rc;
+
     if (!motion_allowed(s)) {
         set_motion_blocked(resp);
         return;
     }
 
-    char axis;
-    float distance = 0;
-    if (deneb_json_field_present(req->body, "axis") ||
-        deneb_json_field_present(req->body, "distance")) {
-        if (parse_axis_value(req->body, &axis) < 0 ||
-            deneb_json_get_float_value(req->body, "distance", &distance) < 0) {
-            resp->status_code = 400;
-            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}");
-            return;
-        }
-
-        if (!deneb_gcode_valid_jog_distance(distance)) {
-            resp->status_code = 400;
-            api_http_set_body_str(resp, "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}");
-            return;
-        }
-
-        if (send_jog_command(axis, distance) < 0) {
-            set_motion_failed(resp);
-            return;
-        }
-
-        api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+    rc = deneb_gcode_plan_motion_from_json(req->body, &plan);
+    if (rc != DENEB_GCODE_MOTION_PLAN_OK) {
+        set_motion_plan_error(resp, rc);
         return;
     }
 
-    float x = 0;
-    float y = 0;
-    float z = 0;
-    float speed = DENEB_GCODE_DEFAULT_MOVE_SPEED_MM_S;
-    int has_x = deneb_json_get_float_value(req->body, "x", &x) == 0;
-    int has_y = deneb_json_get_float_value(req->body, "y", &y) == 0;
-    int has_z = deneb_json_get_float_value(req->body, "z", &z) == 0;
-
-    if (!has_x && deneb_json_field_present(req->body, "x")) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid x position\"}");
-        return;
-    }
-    if (!has_y && deneb_json_field_present(req->body, "y")) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid y position\"}");
-        return;
-    }
-    if (!has_z && deneb_json_field_present(req->body, "z")) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid z position\"}");
-        return;
-    }
-    if (!has_x && !has_y && !has_z) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}");
-        return;
-    }
-    if ((has_x && !deneb_gcode_valid_position_value('X', x)) ||
-        (has_y && !deneb_gcode_valid_position_value('Y', y)) ||
-        (has_z && !deneb_gcode_valid_position_value('Z', z))) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Position is outside the printable volume\"}");
-        return;
-    }
-    if (deneb_json_field_present(req->body, "speed") &&
-        (deneb_json_get_float_value(req->body, "speed", &speed) < 0 ||
-         !deneb_gcode_valid_move_speed(speed))) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid movement speed\"}");
-        return;
-    }
-    if (send_absolute_position_command(has_x, x, has_y, y, has_z, z, speed) < 0) {
+    if (send_motion_plan(&plan) < 0) {
         set_motion_failed(resp);
         return;
     }
@@ -761,28 +663,33 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 void api_printer_position_post(const http_request_t *req, http_response_t *resp)
 {
     const printer_state_t *s = backend_zmq_get_state();
+    deneb_manual_motion_plan_t plan;
+    int rc;
+
     if (!motion_allowed(s)) {
         set_motion_blocked(resp);
         return;
     }
 
-    char action[32];
-    if (deneb_json_get_value(req->body, "action", action, sizeof(action)) < 0) {
-        if (strstr(req->body, "\"home\"")) {
-            snprintf(action, sizeof(action), "home");
-        } else {
-            resp->status_code = 400;
-            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"home|z_home|bed_up|bed_down\\\"}\"}");
-            return;
-        }
+    rc = deneb_manual_motion_plan_request(req->body, &plan);
+    if (rc == DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"home|z_home|bed_up|bed_down\\\"}\"}");
+        return;
     }
-
-    int rc = send_motion_action(action);
-    if (rc == -2) {
+    if (rc == DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Unknown motion action\"}");
         return;
     }
+
+    if (plan.kind == DENEB_MANUAL_MOTION_GCODE)
+        rc = backend_zmq_send_gcode(plan.command);
+    else if (plan.kind == DENEB_MANUAL_MOTION_MACRO)
+        rc = backend_zmq_send_macro(plan.command);
+    else
+        rc = -1;
+
     if (rc < 0) {
         set_motion_failed(resp);
         return;

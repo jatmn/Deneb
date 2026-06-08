@@ -172,3 +172,55 @@ int deneb_command_extract_job_path(const char *args_json, char *out,
 
     return 0;
 }
+
+void deneb_command_frame_plan_init(deneb_command_frame_plan_t *plan)
+{
+    if (!plan)
+        return;
+
+    plan->len = -1;
+    plan->has_job_path = 0;
+    plan->job_path[0] = '\0';
+}
+
+static int is_empty_action_payload(const char *payload)
+{
+    return !payload || strcmp(payload, "{}") == 0;
+}
+
+static int is_simple_action_verb(const char *verb)
+{
+    return strcmp(verb, DENEB_COMMAND_VERB_ABORT) == 0 ||
+           strcmp(verb, DENEB_COMMAND_VERB_PAUSE) == 0 ||
+           strcmp(verb, DENEB_COMMAND_VERB_RESUME) == 0;
+}
+
+int deneb_command_plan_frame(const char *verb,
+                             const char *payload,
+                             char *out,
+                             size_t out_sz,
+                             deneb_command_frame_plan_t *plan)
+{
+    int len;
+
+    if (plan)
+        deneb_command_frame_plan_init(plan);
+
+    if (!verb || !*verb || !out || out_sz == 0)
+        return -1;
+
+    if (strcmp(verb, DENEB_COMMAND_VERB_JOB) == 0 && payload && plan &&
+        deneb_command_extract_job_path(payload, plan->job_path,
+                                       sizeof(plan->job_path)) == 0) {
+        plan->has_job_path = 1;
+    }
+
+    if (is_simple_action_verb(verb) && is_empty_action_payload(payload))
+        len = deneb_command_format_action(verb, out, out_sz);
+    else
+        len = deneb_command_format_raw(verb, payload, out, out_sz);
+
+    if (plan)
+        plan->len = len;
+    return len;
+}

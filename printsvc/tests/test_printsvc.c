@@ -125,6 +125,37 @@ static void test_command_format_round_trip(void)
 
     assert(deneb_command_format_action(DENEB_COMMAND_VERB_ABORT, frame, sizeof(frame)) > 0);
     assert(strcmp(frame, "ABORT<{}") == 0);
+    {
+        deneb_command_frame_plan_t plan;
+
+        assert(deneb_command_plan_frame(DENEB_COMMAND_VERB_ABORT, "{}",
+                                        frame, sizeof(frame), &plan) > 0);
+        assert(strcmp(frame, "ABORT<{}") == 0);
+        assert(plan.len == (int)strlen(frame));
+        assert(!plan.has_job_path);
+
+        assert(deneb_command_plan_frame(DENEB_COMMAND_VERB_PAUSE, NULL,
+                                        frame, sizeof(frame), NULL) > 0);
+        assert(strcmp(frame, "PAUSE<{}") == 0);
+
+        assert(deneb_command_plan_frame(
+                   DENEB_COMMAND_VERB_GCODE, "[\"M105\"]", frame,
+                   sizeof(frame), &plan) > 0);
+        assert(strcmp(frame, "GCODE<[\"M105\"]") == 0);
+        assert(!plan.has_job_path);
+
+        assert(deneb_command_plan_frame(
+                   DENEB_COMMAND_VERB_JOB,
+                   "{\"path\":\"/home/3D/planned.gcode\"}", frame,
+                   sizeof(frame), &plan) > 0);
+        assert(strcmp(frame, "JOB<{\"path\":\"/home/3D/planned.gcode\"}") == 0);
+        assert(plan.has_job_path);
+        assert(strcmp(plan.job_path, "/home/3D/planned.gcode") == 0);
+
+        assert(deneb_command_plan_frame(NULL, "{}", frame,
+                                        sizeof(frame), &plan) < 0);
+        assert(plan.len < 0);
+    }
     assert(deneb_command_format_raw(DENEB_COMMAND_VERB_PAUSE, NULL,
                                     frame, sizeof(frame)) > 0);
     assert(strcmp(frame, "PAUSE<{}") == 0);
@@ -831,6 +862,24 @@ static void test_print_state_rules(void)
     assert(!deneb_print_has_stoppable_context(&obs, 0, 0, 0));
     assert(deneb_print_has_preparing_context(&obs, 1));
     assert(deneb_print_has_stoppable_context(&obs, 0, 0, 1));
+    {
+        deneb_print_context_flags_t flags;
+
+        deneb_print_context_flags_from_observation(&flags, &obs, 0, 0, 1);
+        assert(flags.has_active_context);
+        assert(flags.has_preparing_context);
+        assert(flags.has_stoppable_context);
+
+        deneb_print_context_flags_from_observation(&flags, &obs, 0, 0, 0);
+        assert(flags.has_active_context);
+        assert(!flags.has_preparing_context);
+        assert(!flags.has_stoppable_context);
+
+        deneb_print_context_flags_from_observation(&flags, NULL, 1, 1, 1);
+        assert(!flags.has_active_context);
+        assert(!flags.has_preparing_context);
+        assert(!flags.has_stoppable_context);
+    }
 
     deneb_print_observation_init(&obs, "HOME", NULL, 0, 0, 0.0f, 0.0f);
     assert(!deneb_print_observation_has_context(&obs));
@@ -851,6 +900,14 @@ static void test_print_state_rules(void)
     assert(!deneb_print_has_active_context(&obs, 1, 1, 1));
     assert(!deneb_print_has_preparing_context(&obs, 1));
     assert(!deneb_print_has_stoppable_context(&obs, 1, 1, 1));
+    {
+        deneb_print_context_flags_t flags;
+
+        deneb_print_context_flags_from_observation(&flags, &obs, 1, 1, 1);
+        assert(!flags.has_active_context);
+        assert(!flags.has_preparing_context);
+        assert(!flags.has_stoppable_context);
+    }
 
     obs.req = DENEB_COMMAND_VERB_JOB;
     obs.time_total = 120;
@@ -956,6 +1013,16 @@ static void test_print_state_rules(void)
         assert(deneb_print_action_parse("{\"action\":\"stop\"}", action, sizeof(action)) == 0);
         assert(strcmp(action, DENEB_PRINT_ACTION_STOP_TEXT) == 0);
         assert(deneb_print_action_is_stop(action));
+        assert(deneb_print_action_parse_or_pending_default(
+                   "{\"action\":\"abort\"}", 1, action, sizeof(action)) == 0);
+        assert(strcmp(action, DENEB_PRINT_ACTION_ABORT_TEXT) == 0);
+        assert(deneb_print_action_parse_or_pending_default(
+                   "{}", 1, action, sizeof(action)) == 0);
+        assert(strcmp(action, DENEB_PRINT_ACTION_PRINT_TEXT) == 0);
+        assert(deneb_print_action_parse_or_pending_default(
+                   "{}", 0, action, sizeof(action)) != 0);
+        assert(deneb_print_action_parse_or_pending_default(
+                   "{}", 1, action, 3) != 0);
         assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_PRINT_TEXT));
         assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_RESUME_TEXT));
         assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_CONTINUE_TEXT));
@@ -1281,11 +1348,97 @@ static void test_gcode_command_helpers(void)
     assert(deneb_gcode_format_absolute_position(0, 0.0f, 0, 0.0f,
                                                 0, 0.0f, 150.0f,
                                                 value, sizeof(value)) != 0);
+    {
+        deneb_gcode_motion_plan_t plan;
+
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"axis\":\"x\",\"distance\":5}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_OK);
+        assert(plan.kind == DENEB_GCODE_MOTION_PLAN_JOG);
+        assert(strcmp(plan.jog.lines[0], DENEB_GCODE_RELATIVE_MODE) == 0);
+        assert(strcmp(plan.jog.lines[1], "G1 X5 F3000") == 0);
+        assert(strcmp(plan.jog.lines[2], DENEB_GCODE_ABSOLUTE_MODE) == 0);
+
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"x\":12,\"y\":34.5,\"speed\":150}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_OK);
+        assert(plan.kind == DENEB_GCODE_MOTION_PLAN_ABSOLUTE_POSITION);
+        assert(strcmp(plan.absolute_lines[0], DENEB_GCODE_ABSOLUTE_MODE) == 0);
+        assert(strcmp(plan.absolute_lines[1], "G1 X12 Y34.5 F9e+03") == 0);
+
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"axis\":\"E\",\"distance\":5}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE);
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"axis\":\"X\",\"distance\":1.5}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE);
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"x\":\"bad\"}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_X);
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"x\":999}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_VOLUME);
+        assert(deneb_gcode_plan_motion_from_json(
+                   "{\"x\":1,\"speed\":0}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_SPEED);
+        assert(deneb_gcode_plan_motion_from_json("{}", &plan) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED);
+        assert(deneb_gcode_plan_motion_from_json("{\"x\":1}", NULL) ==
+               DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED);
+    }
 
     assert(deneb_gcode_format_nozzle_target(210.0f, value, sizeof(value)) == 0);
     assert(strcmp(value, "M104 S210") == 0);
     assert(deneb_gcode_format_bed_target(60.0f, value, sizeof(value)) == 0);
     assert(strcmp(value, "M140 S60") == 0);
+    assert(deneb_gcode_format_heater_target(DENEB_GCODE_HEATER_NOZZLE,
+                                            205.0f, value,
+                                            sizeof(value)) == 0);
+    assert(strcmp(value, "M104 S205") == 0);
+    assert(deneb_gcode_format_heater_target(DENEB_GCODE_HEATER_BED,
+                                            55.0f, value,
+                                            sizeof(value)) == 0);
+    assert(strcmp(value, "M140 S55") == 0);
+    assert(deneb_gcode_format_heater_target((deneb_gcode_heater_t)99,
+                                            55.0f, value,
+                                            sizeof(value)) != 0);
+    {
+        float temp = -1.0f;
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_NOZZLE, "{\"temperature\":215}",
+                   &temp, value, sizeof(value)) == 0);
+        assert(temp == 215.0f);
+        assert(strcmp(value, "M104 S215") == 0);
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_NOZZLE, "{\"temperature\":999}",
+                   &temp, value, sizeof(value)) == 0);
+        assert(temp == DENEB_GCODE_MAX_NOZZLE_TEMP_C);
+        assert(strcmp(value, "M104 S260") == 0);
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_BED, "{\"temperature\":-10}",
+                   &temp, value, sizeof(value)) == 0);
+        assert(temp == 0.0f);
+        assert(strcmp(value, "M140 S0") == 0);
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_BED, "{}", &temp, value,
+                   sizeof(value)) == 0);
+        assert(temp == 0.0f);
+        assert(strcmp(value, "M140 S0") == 0);
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_BED, "{\"temperature\":\"hot\"}",
+                   &temp, value, sizeof(value)) != 0);
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   (deneb_gcode_heater_t)99, "{\"temperature\":1}",
+                   &temp, value, sizeof(value)) != 0);
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_NOZZLE, "{\"temperature\":1}",
+                   NULL, value, sizeof(value)) != 0);
+    }
     assert(deneb_gcode_format_nozzle_off(value, sizeof(value)) == 0);
     assert(strcmp(value, "M104 S0") == 0);
     assert(deneb_gcode_format_bed_off(value, sizeof(value)) == 0);
@@ -1425,6 +1578,26 @@ static void test_manual_motion_helpers(void)
     assert(deneb_manual_motion_plan_action("unknown", &plan) != 0);
     assert(deneb_manual_motion_plan_action(
                DENEB_MANUAL_MOTION_ACTION_HOME, NULL) != 0);
+
+    assert(deneb_manual_motion_plan_request(
+               "{\"action\":\"z_home\"}", &plan) ==
+           DENEB_MANUAL_MOTION_PLAN_OK);
+    assert(plan.kind == DENEB_MANUAL_MOTION_GCODE);
+    assert(strcmp(plan.command, DENEB_GCODE_HOME_Z) == 0);
+
+    assert(deneb_manual_motion_plan_request(
+               "{\"home\":true}", &plan) == DENEB_MANUAL_MOTION_PLAN_OK);
+    assert(plan.kind == DENEB_MANUAL_MOTION_MACRO);
+    assert(strcmp(plan.command, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) == 0);
+
+    assert(deneb_manual_motion_plan_request(
+               "{\"action\":\"bogus\"}", &plan) ==
+           DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION);
+    assert(deneb_manual_motion_plan_request("{}", &plan) ==
+           DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST);
+    assert(deneb_manual_motion_plan_request(
+               "{\"action\":\"home\"}", NULL) ==
+           DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST);
 }
 
 static void test_buildplate_level_helpers(void)
@@ -1732,16 +1905,21 @@ typedef struct {
     int start_allowed;
     int fail_abort;
     int fail_job;
+    int start_checks;
     int abort_calls;
     int job_calls;
     char job_path[256];
     char job_source[32];
     char job_uuid[64];
+    float bed_target;
+    float nozzle_target;
 } pending_dispatch_fake_t;
 
 static int pending_dispatch_fake_start_allowed(void *ctx)
 {
     pending_dispatch_fake_t *fake = (pending_dispatch_fake_t *)ctx;
+    if (fake)
+        fake->start_checks++;
     return fake && fake->start_allowed;
 }
 
@@ -1758,12 +1936,16 @@ static int pending_dispatch_fake_job(void *ctx,
                                      const deneb_print_job_start_plan_t *plan)
 {
     pending_dispatch_fake_t *fake = (pending_dispatch_fake_t *)ctx;
-    if (!fake || !plan || fake->fail_job)
+    if (!fake || !plan)
         return -1;
     fake->job_calls++;
+    if (fake->fail_job)
+        return -1;
     snprintf(fake->job_path, sizeof(fake->job_path), "%s", plan->path);
     snprintf(fake->job_source, sizeof(fake->job_source), "%s", plan->source);
     snprintf(fake->job_uuid, sizeof(fake->job_uuid), "%s", plan->uuid);
+    fake->bed_target = plan->bed_target;
+    fake->nozzle_target = plan->nozzle_target;
     return 0;
 }
 
@@ -1874,6 +2056,8 @@ static void test_pending_job_registration_policy(void)
     const char *plain_path = "/tmp/deneb-registration-plain.gcode";
     const char *conflict_path = "/tmp/deneb-registration-conflict.gcode";
     deneb_pending_job_registration_t registration;
+    deneb_pending_job_registration_dispatch_ops_t ops;
+    pending_dispatch_fake_t fake;
     FILE *f;
 
     f = fopen(plain_path, "wb");
@@ -1889,6 +2073,43 @@ static void test_pending_job_registration_policy(void)
     assert(strcmp(registration.job.path, plain_path) == 0);
     assert(strcmp(registration.job.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
 
+    memset(&fake, 0, sizeof(fake));
+    fake.start_allowed = 1;
+    ops.ctx = &fake;
+    ops.start_allowed = pending_dispatch_fake_start_allowed;
+    ops.send_job = pending_dispatch_fake_job;
+
+    assert(deneb_pending_job_registration_dispatch_start(
+               &registration, &ops) == 0);
+    assert(fake.start_checks == 1);
+    assert(fake.job_calls == 1);
+    assert(strcmp(fake.job_path, plain_path) == 0);
+    assert(strcmp(fake.job_source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+    assert(fake.job_uuid[0] != '\0');
+    assert(fake.bed_target == 0.0f);
+    assert(fake.nozzle_target == 0.0f);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.start_allowed = 0;
+    ops.ctx = &fake;
+    assert(deneb_pending_job_registration_dispatch_start(
+               &registration, &ops) != 0);
+    assert(fake.start_checks == 1);
+    assert(fake.job_calls == 0);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.start_allowed = 1;
+    fake.fail_job = 1;
+    ops.ctx = &fake;
+    assert(deneb_pending_job_registration_dispatch_start(
+               &registration, &ops) != 0);
+    assert(fake.start_checks == 1);
+    assert(fake.job_calls == 1);
+
+    assert(deneb_pending_job_registration_dispatch_start(NULL, &ops) != 0);
+    assert(deneb_pending_job_registration_dispatch_start(
+               &registration, NULL) != 0);
+
     f = fopen(conflict_path, "wb");
     assert(f != NULL);
     fputs("; material_guid='material-123'\n; nozzle_size=0.8\n", f);
@@ -1901,6 +2122,16 @@ static void test_pending_job_registration_policy(void)
     assert(strcmp(registration.job.nozzle_id, "0.8 mm") == 0);
     assert(registration.change_count >= 1);
     assert(!registration.should_start_immediately);
+
+    memset(&fake, 0, sizeof(fake));
+    fake.start_allowed = 1;
+    ops.ctx = &fake;
+    assert(deneb_pending_job_registration_dispatch_start(
+               &registration, &ops) == 0);
+    assert(fake.start_checks == 0);
+    assert(fake.job_calls == 0);
+    assert(deneb_pending_job_registration_dispatch_start(
+               &registration, NULL) == 0);
 
     remove(plain_path);
     remove(conflict_path);

@@ -106,3 +106,33 @@ int deneb_pending_job_registration_write_default(
         return -1;
     return deneb_pending_job_write_default(&registration->job);
 }
+
+int deneb_pending_job_registration_dispatch_start(
+    const deneb_pending_job_registration_t *registration,
+    const deneb_pending_job_registration_dispatch_ops_t *ops)
+{
+    deneb_print_job_start_plan_t plan;
+
+    if (!registration)
+        return -1;
+
+    if (!registration->should_start_immediately)
+        return 0;
+
+    if (!ops || !ops->start_allowed || !ops->send_job)
+        return -1;
+
+    if (!ops->start_allowed(ops->ctx))
+        return -1;
+
+    if (deneb_print_job_start_plan_prepare(
+            registration->job.path,
+            registration->job.source,
+            registration->job.uuid,
+            0.0f,
+            0.0f,
+            &plan) < 0)
+        return -1;
+
+    return ops->send_job(ops->ctx, &plan);
+}

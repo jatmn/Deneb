@@ -255,15 +255,11 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
         return;
     }
 
-    if (deneb_print_action_parse(req->body, action, sizeof(action)) < 0) {
-        if (pending_job) {
-            snprintf(action, sizeof(action), "%s",
-                     DENEB_PRINT_ACTION_PRINT_TEXT);
-        } else {
-            resp->status_code = 400;
-            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}");
-            return;
-        }
+    if (deneb_print_action_parse_or_pending_default(
+            req->body, pending_job, action, sizeof(action)) < 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}");
+        return;
     }
 
     log_cluster_action(action, pending_job, req->path);

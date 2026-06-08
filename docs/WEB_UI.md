@@ -111,6 +111,9 @@ on real hardware remains open.
   pending-job and print-state helpers instead of embedded Python coordinator
   launchers. Web motion macros, Cura upload start, and pending-job continue now
   route through native backend macro/job helpers instead of local command JSON.
+  Cura upload registration also delegates pending-vs-immediate-start dispatch
+  sequencing to the native pending-job registration helper, leaving the web
+  layer responsible only for backend transport callbacks.
   When `deneb.printsvc.enabled=1`, `deneb-api` selects native `deneb-printsvc`
   status/command ports directly instead of routing print-service traffic
   through the Python coordinator; the coordinator route remains the default
@@ -121,6 +124,17 @@ on real hardware remains open.
   Web motion macro names and pending-job display reads are shared with the
   native print-control helpers instead of being hard-coded/parsing JSON in this
   layer.
+  Web temperature writes also delegate bounded target parsing and `M104`/`M140`
+  command planning to the shared native G-code helper instead of clamping and
+  formatting heater commands inside the REST endpoint.
+  Web position writes now delegate jog/absolute-position JSON parsing,
+  build-volume checks, speed checks, and raw move-command planning to that same
+  helper before the endpoint sends the planned command sequence.
+  Web motion action writes also delegate action JSON parsing, legacy home
+  fallback, and macro-vs-G-code selection to the shared manual-motion helper.
+  Cura cluster action writes use the shared print-state action parser for the
+  pending-job `print` default, keeping that compatibility behavior out of the
+  endpoint.
   UM API and cluster API status labels also share the native print-state helper
   instead of each REST surface owning its own active-job mapping.
   Remaining native-service work should keep collapsing web/API and touchscreen

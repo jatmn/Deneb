@@ -135,15 +135,17 @@ static void append_print_history(const printer_state_t *prev,
 static int state_has_print_context(const printer_state_t *s)
 {
     deneb_print_observation_t obs;
+    deneb_print_context_flags_t flags;
 
     if (!s)
         return 0;
     deneb_print_observation_init(&obs, s->current_req, s->filename,
                                  s->time_total, s->time_left,
                                  s->bed_temp_set, s->nozzle_temp_set);
-    return deneb_print_has_active_context(&obs, s->is_printing,
-                                          s->is_paused,
-                                          deneb_print_file_is_candidate(s->filename));
+    deneb_print_context_flags_from_observation(
+        &flags, &obs, s->is_printing, s->is_paused,
+        deneb_print_file_is_candidate(s->filename));
+    return flags.has_active_context;
 }
 
 static deneb_status_filename_context_t filename_context_from_state(
@@ -551,23 +553,13 @@ static int backend_zmq_send_frame(const char *buf, size_t len)
 int backend_zmq_send_command(const char *cmd, const char *args)
 {
     char buf[4096];
+    deneb_command_frame_plan_t plan;
     int len;
 
     if (!rpc_sock || !cmd || !*cmd) return -1;
-    if (strcmp(cmd, DENEB_COMMAND_VERB_JOB) == 0 && args) {
-        char path[256];
-        if (deneb_command_extract_job_path(args, path, sizeof(path)) == 0)
-            retain_backend_filename(path);
-    }
-    if (cmd &&
-        (strcmp(cmd, DENEB_COMMAND_VERB_ABORT) == 0 ||
-         strcmp(cmd, DENEB_COMMAND_VERB_PAUSE) == 0 ||
-         strcmp(cmd, DENEB_COMMAND_VERB_RESUME) == 0) &&
-        (!args || strcmp(args, "{}") == 0)) {
-        len = deneb_command_format_action(cmd, buf, sizeof(buf));
-    } else {
-        len = deneb_command_format_raw(cmd, args, buf, sizeof(buf));
-    }
+    len = deneb_command_plan_frame(cmd, args, buf, sizeof(buf), &plan);
+    if (plan.has_job_path)
+        retain_backend_filename(plan.job_path);
     if (len < 0 || (size_t)len >= sizeof(buf)) {
         fprintf(stderr, "backend_zmq: rpc payload too large\n");
         return -1;

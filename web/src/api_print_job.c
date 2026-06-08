@@ -47,21 +47,30 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
     resp->status_code = status_code;
 }
 
-static int send_native_job_start(const char *path)
+static int registration_start_allowed(void *ctx)
 {
-    deneb_print_job_start_plan_t plan;
+    (void)ctx;
+    return backend_zmq_print_start_allowed();
+}
 
-    if (deneb_print_job_start_plan_file(path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
-                                        &plan) < 0)
+static int registration_send_job(void *ctx,
+                                 const deneb_print_job_start_plan_t *plan)
+{
+    (void)ctx;
+    if (!plan)
         return -1;
-
-    return backend_zmq_send_job(plan.path, plan.source, plan.uuid,
-                                plan.bed_target, plan.nozzle_target);
+    return backend_zmq_send_job(plan->path, plan->source, plan->uuid,
+                                plan->bed_target, plan->nozzle_target);
 }
 
 static int register_native_print(const char *path)
 {
     deneb_pending_job_registration_t registration;
+    deneb_pending_job_registration_dispatch_ops_t ops = {
+        NULL,
+        registration_start_allowed,
+        registration_send_job
+    };
 
     fprintf(stderr, "deneb-api: registering print path natively: %s\n", path);
 
@@ -78,12 +87,8 @@ static int register_native_print(const char *path)
         return 0;
     }
 
-    if (!backend_zmq_print_start_allowed()) {
-        fprintf(stderr, "deneb-api: native print start rejected because backend is busy\n");
-        return -1;
-    }
-
-    if (send_native_job_start(path) < 0) {
+    if (deneb_pending_job_registration_dispatch_start(
+            &registration, &ops) < 0) {
         fprintf(stderr, "deneb-api: failed to send native JOB for %s\n", path);
         return -1;
     }

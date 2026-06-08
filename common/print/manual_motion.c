@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "manual_motion.h"
 #include "gcode_command.h"
+#include "json_field.h"
 #include "print_macros.h"
 
+#include <stdio.h>
 #include <string.h>
 
 void deneb_manual_motion_plan_init(deneb_manual_motion_plan_t *plan)
@@ -41,4 +43,26 @@ int deneb_manual_motion_plan_action(const char *action,
         return 0;
     }
     return -1;
+}
+
+int deneb_manual_motion_plan_request(const char *json,
+                                     deneb_manual_motion_plan_t *plan)
+{
+    char action[32];
+
+    if (!json || !plan)
+        return DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST;
+
+    if (deneb_json_get_value(json, "action", action, sizeof(action)) < 0) {
+        if (strstr(json, "\"home\""))
+            snprintf(action, sizeof(action), "%s",
+                     DENEB_MANUAL_MOTION_ACTION_HOME);
+        else
+            return DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST;
+    }
+
+    if (deneb_manual_motion_plan_action(action, plan) < 0)
+        return DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION;
+
+    return DENEB_MANUAL_MOTION_PLAN_OK;
 }

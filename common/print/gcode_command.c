@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "gcode_command.h"
 
+#include "json_field.h"
+
 #include <math.h>
 #include <stdio.h>
 
@@ -151,6 +153,114 @@ int deneb_gcode_format_absolute_position(int has_x, float x,
     return 0;
 }
 
+void deneb_gcode_motion_plan_init(deneb_gcode_motion_plan_t *plan)
+{
+    if (!plan)
+        return;
+
+    plan->kind = DENEB_GCODE_MOTION_PLAN_NONE;
+    plan->jog.move[0] = '\0';
+    plan->jog.lines[0] = NULL;
+    plan->jog.lines[1] = NULL;
+    plan->jog.lines[2] = NULL;
+    plan->absolute_move[0] = '\0';
+    plan->absolute_lines[0] = NULL;
+    plan->absolute_lines[1] = NULL;
+}
+
+static int parse_motion_axis_json(const char *json, char *axis)
+{
+    char axis_buf[8];
+    char upper;
+
+    if (!axis ||
+        deneb_json_get_value(json, "axis", axis_buf, sizeof(axis_buf)) < 0 ||
+        !axis_buf[0] ||
+        axis_buf[1])
+        return -1;
+
+    upper = deneb_gcode_normalize_motion_axis(axis_buf[0]);
+    if (!deneb_gcode_axis_is_motion_axis(upper))
+        return -1;
+
+    *axis = upper;
+    return 0;
+}
+
+static int plan_jog_motion_from_json(const char *json,
+                                     deneb_gcode_motion_plan_t *plan)
+{
+    char axis;
+    float distance = 0.0f;
+
+    if (parse_motion_axis_json(json, &axis) < 0 ||
+        deneb_json_get_float_value(json, "distance", &distance) < 0)
+        return DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE;
+
+    if (!deneb_gcode_valid_jog_distance(distance))
+        return DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE;
+
+    if (deneb_gcode_build_jog_sequence(axis, distance, &plan->jog) < 0)
+        return DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE;
+
+    plan->kind = DENEB_GCODE_MOTION_PLAN_JOG;
+    return DENEB_GCODE_MOTION_PLAN_OK;
+}
+
+int deneb_gcode_plan_motion_from_json(const char *json,
+                                      deneb_gcode_motion_plan_t *plan)
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float speed = DENEB_GCODE_DEFAULT_MOVE_SPEED_MM_S;
+    int has_x;
+    int has_y;
+    int has_z;
+
+    if (!plan)
+        return DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED;
+
+    deneb_gcode_motion_plan_init(plan);
+
+    if (deneb_json_field_present(json, "axis") ||
+        deneb_json_field_present(json, "distance"))
+        return plan_jog_motion_from_json(json, plan);
+
+    has_x = deneb_json_get_float_value(json, "x", &x) == 0;
+    has_y = deneb_json_get_float_value(json, "y", &y) == 0;
+    has_z = deneb_json_get_float_value(json, "z", &z) == 0;
+
+    if (!has_x && deneb_json_field_present(json, "x"))
+        return DENEB_GCODE_MOTION_PLAN_ERR_X;
+    if (!has_y && deneb_json_field_present(json, "y"))
+        return DENEB_GCODE_MOTION_PLAN_ERR_Y;
+    if (!has_z && deneb_json_field_present(json, "z"))
+        return DENEB_GCODE_MOTION_PLAN_ERR_Z;
+    if (!has_x && !has_y && !has_z)
+        return DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED;
+
+    if ((has_x && !deneb_gcode_valid_position_value('X', x)) ||
+        (has_y && !deneb_gcode_valid_position_value('Y', y)) ||
+        (has_z && !deneb_gcode_valid_position_value('Z', z)))
+        return DENEB_GCODE_MOTION_PLAN_ERR_VOLUME;
+
+    if (deneb_json_field_present(json, "speed") &&
+        (deneb_json_get_float_value(json, "speed", &speed) < 0 ||
+         !deneb_gcode_valid_move_speed(speed)))
+        return DENEB_GCODE_MOTION_PLAN_ERR_SPEED;
+
+    if (deneb_gcode_format_absolute_position(
+            has_x, x, has_y, y, has_z, z, speed, plan->absolute_move,
+            sizeof(plan->absolute_move)) < 0)
+        return DENEB_GCODE_MOTION_PLAN_ERR_VOLUME;
+
+    plan->kind = DENEB_GCODE_MOTION_PLAN_ABSOLUTE_POSITION;
+    plan->absolute_lines[0] = DENEB_GCODE_ABSOLUTE_MODE;
+    plan->absolute_lines[1] = plan->absolute_move;
+    return DENEB_GCODE_MOTION_PLAN_OK;
+}
+
 int deneb_gcode_format_nozzle_target(float temp_c, char *out, size_t out_sz)
 {
     if (!out || out_sz == 0)
@@ -167,6 +277,61 @@ int deneb_gcode_format_bed_target(float temp_c, char *out, size_t out_sz)
     if (snprintf(out, out_sz, "M140 S%.0f", temp_c) >= (int)out_sz)
         return -1;
     return 0;
+}
+
+int deneb_gcode_format_heater_target(deneb_gcode_heater_t heater,
+                                     float temp_c,
+                                     char *out,
+                                     size_t out_sz)
+{
+    switch (heater) {
+        case DENEB_GCODE_HEATER_NOZZLE:
+            return deneb_gcode_format_nozzle_target(temp_c, out, out_sz);
+        case DENEB_GCODE_HEATER_BED:
+            return deneb_gcode_format_bed_target(temp_c, out, out_sz);
+        default:
+            return -1;
+    }
+}
+
+static float heater_max_temp(deneb_gcode_heater_t heater)
+{
+    switch (heater) {
+        case DENEB_GCODE_HEATER_NOZZLE:
+            return DENEB_GCODE_MAX_NOZZLE_TEMP_C;
+        case DENEB_GCODE_HEATER_BED:
+            return DENEB_GCODE_MAX_BED_TEMP_C;
+        default:
+            return -1.0f;
+    }
+}
+
+int deneb_gcode_plan_temperature_target_from_json(
+    deneb_gcode_heater_t heater,
+    const char *json,
+    float *out_temp_c,
+    char *out_gcode,
+    size_t out_gcode_sz)
+{
+    float temp = 0.0f;
+    float max_temp = heater_max_temp(heater);
+
+    if (max_temp < 0.0f || !out_temp_c || !out_gcode || out_gcode_sz == 0)
+        return -1;
+
+    if (deneb_json_field_present(json, "temperature") &&
+        (deneb_json_get_float_value(json, "temperature", &temp) < 0 ||
+         !isfinite(temp)))
+        return -1;
+
+    if (temp > max_temp)
+        temp = max_temp;
+    if (temp < 0.0f)
+        temp = 0.0f;
+
+    *out_temp_c = temp;
+    return deneb_gcode_format_heater_target(heater, temp, out_gcode,
+                                            out_gcode_sz);
 }
 
 int deneb_gcode_format_nozzle_off(char *out, size_t out_sz)

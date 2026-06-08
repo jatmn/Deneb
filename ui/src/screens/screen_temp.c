@@ -63,7 +63,8 @@ static void set_nozzle_btn_cb(lv_event_t *e)
 
     int temp = lv_slider_get_value(nozzle_slider);
     char gcode[32];
-    if (deneb_gcode_format_nozzle_target((float)temp, gcode,
+    if (deneb_gcode_format_heater_target(DENEB_GCODE_HEATER_NOZZLE,
+                                         (float)temp, gcode,
                                          sizeof(gcode)) == 0)
         backend_send_gcode(gcode);
 }
@@ -76,8 +77,9 @@ static void set_bed_btn_cb(lv_event_t *e)
 
     int temp = lv_slider_get_value(bed_slider);
     char gcode[32];
-    if (deneb_gcode_format_bed_target((float)temp, gcode,
-                                      sizeof(gcode)) == 0)
+    if (deneb_gcode_format_heater_target(DENEB_GCODE_HEATER_BED,
+                                         (float)temp, gcode,
+                                         sizeof(gcode)) == 0)
         backend_send_gcode(gcode);
 }
 

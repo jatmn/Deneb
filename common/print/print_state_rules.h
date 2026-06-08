@@ -53,6 +53,12 @@ typedef struct {
     int targets_ready_seen;
 } deneb_print_preheat_tracker_t;
 
+typedef struct {
+    int has_active_context;
+    int has_preparing_context;
+    int has_stoppable_context;
+} deneb_print_context_flags_t;
+
 typedef enum {
     DENEB_PRINT_PREHEAT_EVENT_NONE = 0,
     DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE = 1,
@@ -113,6 +119,13 @@ int deneb_print_has_preparing_context(const deneb_print_observation_t *obs,
 int deneb_print_has_stoppable_context(const deneb_print_observation_t *obs,
                                       int is_printing, int is_paused,
                                       int has_print_name);
+void deneb_print_context_flags_init(deneb_print_context_flags_t *flags);
+void deneb_print_context_flags_from_observation(
+    deneb_print_context_flags_t *flags,
+    const deneb_print_observation_t *obs,
+    int is_printing,
+    int is_paused,
+    int has_print_name);
 const char *deneb_print_status_label(int connected, int has_error,
                                      int is_paused, int is_active);
 const char *deneb_print_job_status_label(int has_error, int is_paused,
@@ -152,6 +165,10 @@ int deneb_print_preheat_tracker_update(deneb_print_preheat_tracker_t *tracker,
                                        float nozzle_current,
                                        float nozzle_target);
 int deneb_print_action_parse(const char *body, char *out, size_t out_sz);
+int deneb_print_action_parse_or_pending_default(const char *body,
+                                                int has_pending_job,
+                                                char *out,
+                                                size_t out_sz);
 int deneb_print_action_is_pause(const char *action);
 int deneb_print_action_is_resume_or_start(const char *action);
 int deneb_print_action_is_abort(const char *action);
