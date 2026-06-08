@@ -30,6 +30,8 @@
 #define DENEB_PRINT_ACTION_ABORT_TEXT "abort"
 #define DENEB_PRINT_ACTION_CANCEL_TEXT "cancel"
 #define DENEB_PRINT_ACTION_STOP_TEXT "stop"
+#define DENEB_PRINT_MATERIAL_MIN_MOVE_TEMP_C 170.0f
+#define DENEB_PRINT_MATERIAL_READY_TOLERANCE_C 2.0f
 
 typedef struct {
     const char *req;
@@ -71,6 +73,8 @@ int deneb_print_has_temp_targets(float bed_target, float nozzle_target);
 int deneb_print_temp_target_ready(float current, float target, float tolerance);
 int deneb_print_temp_targets_ready(float bed_current, float bed_target,
                                    float nozzle_current, float nozzle_target);
+int deneb_print_material_move_ready(float current_nozzle_temp,
+                                    float target_nozzle_temp);
 int deneb_print_active_time(int time_total, int time_left);
 void deneb_print_observation_init(deneb_print_observation_t *obs,
                                   const char *req,

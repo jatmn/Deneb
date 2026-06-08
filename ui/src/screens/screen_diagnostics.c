@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "gcode_command.h"
 #include "lvgl.h"
 
 #include <stdio.h>
@@ -45,9 +46,16 @@ static void diag_timer_cb(lv_timer_t *timer)
 
 static void fan_toggle_cb(lv_event_t *e)
 {
+    char gcode[32];
+    int next_fan_on;
+
     (void)e;
-    fan_on = !fan_on;
-    backend_send_gcode(fan_on ? "M12030 S255" : "M12030 S0");
+    next_fan_on = !fan_on;
+    if (deneb_gcode_format_air_manager_fan(next_fan_on, gcode,
+                                           sizeof(gcode)) < 0 ||
+        backend_send_gcode(gcode) != 0)
+        return;
+    fan_on = next_fan_on;
     update_diag_labels();
 }
 

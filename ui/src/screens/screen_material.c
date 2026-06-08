@@ -42,13 +42,6 @@ extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
 
 #define MATERIAL_DEFAULT_TEMP 210
-#define MATERIAL_MAX_TEMP     260
-#define MATERIAL_MIN_MOVE_TEMP 170
-#define MATERIAL_READY_WINDOW  2.0f
-#define MATERIAL_MOVE_DISTANCE 360
-#define MATERIAL_LOAD_FEEDRATE 60
-#define MATERIAL_UNLOAD_FEEDRATE 300
-#define MATERIAL_MOVE_MARGIN_MS 2000
 
 static int material_backend_ready(void)
 {
@@ -62,10 +55,8 @@ static int material_motion_allowed(void)
 
 static int material_temp_ready(const printer_state_t *s)
 {
-    return s && workflow_target_temp >= MATERIAL_MIN_MOVE_TEMP &&
-           deneb_print_temp_target_ready(s->nozzle_temp_cur,
-                                         (float)workflow_target_temp,
-                                         MATERIAL_READY_WINDOW);
+    return s && deneb_print_material_move_ready(
+                    s->nozzle_temp_cur, (float)workflow_target_temp);
 }
 
 static void set_btn_enabled(lv_obj_t *btn, int enabled)
@@ -119,7 +110,7 @@ static void workflow_update(void)
         } else if (workflow_target_temp == 0) {
             lv_label_set_text(workflow_status_label,
                               locale_get("material.cooling"));
-        } else if (workflow_target_temp < MATERIAL_MIN_MOVE_TEMP) {
+        } else if (workflow_target_temp < DENEB_PRINT_MATERIAL_MIN_MOVE_TEMP_C) {
             lv_label_set_text(workflow_status_label,
                               locale_get("material.target_too_low"));
         } else if (ready) {
@@ -180,26 +171,17 @@ static void workflow_load_cb(lv_event_t *e)
 {
     (void)e;
     const printer_state_t *s = backend_get_state();
-    char move[48];
-    const char *lines[2];
+    deneb_gcode_material_move_sequence_t seq;
     if (!material_motion_allowed() || !material_temp_ready(s)) {
         workflow_update();
         return;
     }
 
-    lines[0] = DENEB_GCODE_RESET_EXTRUDER;
-    if (deneb_gcode_format_extrude((float)MATERIAL_MOVE_DISTANCE,
-                                   (float)MATERIAL_LOAD_FEEDRATE, move,
-                                   sizeof(move)) < 0)
+    if (deneb_gcode_build_material_move_sequence(0, &seq) < 0)
         return;
-    lines[1] = move;
-    if (backend_send_gcodes(lines, 2) == 0) {
+    if (backend_send_gcodes(seq.lines, 2) == 0) {
         workflow_moving = 1;
-        workflow_move_done_at =
-            lv_tick_get() +
-            (uint32_t)((MATERIAL_MOVE_DISTANCE * 60000) /
-                       MATERIAL_LOAD_FEEDRATE) +
-            MATERIAL_MOVE_MARGIN_MS;
+        workflow_move_done_at = lv_tick_get() + seq.duration_ms;
     }
     workflow_update();
 }
@@ -208,26 +190,17 @@ static void workflow_unload_cb(lv_event_t *e)
 {
     (void)e;
     const printer_state_t *s = backend_get_state();
-    char move[48];
-    const char *lines[2];
+    deneb_gcode_material_move_sequence_t seq;
     if (!material_motion_allowed() || !material_temp_ready(s)) {
         workflow_update();
         return;
     }
 
-    lines[0] = DENEB_GCODE_RESET_EXTRUDER;
-    if (deneb_gcode_format_extrude((float)-MATERIAL_MOVE_DISTANCE,
-                                   (float)MATERIAL_UNLOAD_FEEDRATE, move,
-                                   sizeof(move)) < 0)
+    if (deneb_gcode_build_material_move_sequence(1, &seq) < 0)
         return;
-    lines[1] = move;
-    if (backend_send_gcodes(lines, 2) == 0) {
+    if (backend_send_gcodes(seq.lines, 2) == 0) {
         workflow_moving = 1;
-        workflow_move_done_at =
-            lv_tick_get() +
-            (uint32_t)((MATERIAL_MOVE_DISTANCE * 60000) /
-                       MATERIAL_UNLOAD_FEEDRATE) +
-            MATERIAL_MOVE_MARGIN_MS;
+        workflow_move_done_at = lv_tick_get() + seq.duration_ms;
     }
     workflow_update();
 }
@@ -402,7 +375,8 @@ static lv_obj_t *material_workflow_create(void)
     workflow_slider = lv_slider_create(panel);
     lv_obj_set_size(workflow_slider, 210, 12);
     lv_obj_align(workflow_slider, LV_ALIGN_BOTTOM_LEFT, 0, -4);
-    lv_slider_set_range(workflow_slider, 0, MATERIAL_MAX_TEMP);
+    lv_slider_set_range(workflow_slider, 0,
+                        (int)DENEB_GCODE_MAX_NOZZLE_TEMP_C);
     lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0xe94560),

@@ -167,6 +167,15 @@ int deneb_print_temp_targets_ready(float bed_current, float bed_target,
            deneb_print_temp_target_ready(nozzle_current, nozzle_target, 1.0f);
 }
 
+int deneb_print_material_move_ready(float current_nozzle_temp,
+                                    float target_nozzle_temp)
+{
+    return target_nozzle_temp >= DENEB_PRINT_MATERIAL_MIN_MOVE_TEMP_C &&
+           deneb_print_temp_target_ready(
+               current_nozzle_temp, target_nozzle_temp,
+               DENEB_PRINT_MATERIAL_READY_TOLERANCE_C);
+}
+
 int deneb_print_active_time(int time_total, int time_left)
 {
     return time_total > 0 && time_left > 0 && time_left <= time_total;

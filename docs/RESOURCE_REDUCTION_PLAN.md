@@ -153,6 +153,7 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   shared pending-job display-name fallback and native metadata naming,
   shared manual-action safety gating,
   shared temperature-target readiness,
+  shared material-move readiness limits,
   shared print elapsed-time calculation,
   shared print progress calculation,
   shared pending-job metadata persistence,
@@ -172,6 +173,7 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   web REST current-job/status adapter accessors,
   shared Cura/pending native job-start identity,
   shared print completion history labeling,
+  shared touchscreen print-file scan roots and candidate filtering,
   shared active/preparing/stoppable print-context decisions,
   LCD status-screen print-context adapter accessors,
   LCD/web manual-action readiness adapter helpers,
@@ -183,7 +185,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   gating, low-volume side-by-side diagnostic logging, native
   frame-light/material-import/diagnostics UI helpers, native
   default pending-upload classification, shared queued upload response formatting,
-  native
+  shared relative jog command sequencing, shared cooldown command sequencing,
+  shared material load/unload command sequencing, shared manual motion action
+  planning, shared diagnostics fan command formatting, shared bed/nozzle
+  temperature command limits, native
   error mapping, and native diagnostics slices. It is still disabled by default
   and does not yet satisfy the release criteria for replacing stock
   `printserver`.

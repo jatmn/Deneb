@@ -21,6 +21,7 @@
 #include "macro_control.h"
 #include "macro_registry.h"
 #include "macro_runner.h"
+#include "manual_motion.h"
 #include "material_catalog.h"
 #include "marlin_packet.h"
 #include "motion_firmware.h"
@@ -762,8 +763,10 @@ static void test_print_state_rules(void)
     assert(deneb_print_req_is_abort("BUSY_ABORTING"));
     assert(deneb_print_file_is_candidate("/home/3D/cube.gcode"));
     assert(deneb_print_file_is_candidate("/home/3D/job.ufp"));
+    assert(deneb_print_file_is_candidate("LOCAL_JOB.GCODE"));
     assert(!deneb_print_file_is_candidate("/home/cygnus/marlindriver/gcode/"
                                           DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD));
+    assert(!deneb_print_file_is_candidate("readme.txt"));
     assert(deneb_print_file_is_transient(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP));
     assert(deneb_print_active_time(120, 60));
     assert(!deneb_print_active_time(120, 0));
@@ -775,6 +778,11 @@ static void test_print_state_rules(void)
     assert(deneb_print_temp_targets_ready(59.2f, 60.0f, 0.0f, 0.0f));
     assert(!deneb_print_temp_targets_ready(0.0f, 0.0f, 0.0f, 0.0f));
     assert(!deneb_print_temp_targets_ready(59.2f, 60.0f, 190.0f, 200.0f));
+    assert(DENEB_PRINT_MATERIAL_MIN_MOVE_TEMP_C == 170.0f);
+    assert(DENEB_PRINT_MATERIAL_READY_TOLERANCE_C == 2.0f);
+    assert(!deneb_print_material_move_ready(210.0f, 160.0f));
+    assert(!deneb_print_material_move_ready(207.0f, 210.0f));
+    assert(deneb_print_material_move_ready(208.0f, 210.0f));
 
     deneb_print_observation_init(&obs, DENEB_PRINT_REQ_PREHEATING, NULL,
                                  0, 0, 60.0f, 210.0f);
@@ -1136,18 +1144,45 @@ static void test_gcode_command_helpers(void)
     assert(deneb_gcode_valid_move_speed(DENEB_GCODE_DEFAULT_MOVE_SPEED_MM_S));
     assert(!deneb_gcode_valid_move_speed(0.0f));
     assert(!deneb_gcode_valid_move_speed(DENEB_GCODE_MAX_MOVE_SPEED_MM_S + 1.0f));
+    assert(DENEB_GCODE_MAX_NOZZLE_TEMP_C == 260.0f);
+    assert(DENEB_GCODE_MAX_BED_TEMP_C == 110.0f);
 
     assert(deneb_gcode_format_jog('X', 10.0f, value, sizeof(value)) == 0);
     assert(strcmp(value, "G1 X10 F3000") == 0);
     assert(deneb_gcode_format_jog('Y', -1.0f, value, sizeof(value)) == 0);
     assert(strcmp(value, "G1 Y-1 F3000") == 0);
     assert(deneb_gcode_format_jog('E', 1.0f, value, sizeof(value)) != 0);
+    {
+        deneb_gcode_jog_sequence_t seq;
+        assert(deneb_gcode_build_jog_sequence('x', 5.0f, &seq) == 0);
+        assert(strcmp(seq.lines[0], DENEB_GCODE_RELATIVE_MODE) == 0);
+        assert(strcmp(seq.lines[1], "G1 X5 F3000") == 0);
+        assert(strcmp(seq.lines[2], DENEB_GCODE_ABSOLUTE_MODE) == 0);
+        assert(deneb_gcode_build_jog_sequence('E', 5.0f, &seq) != 0);
+        assert(deneb_gcode_build_jog_sequence('X', 5.0f, NULL) != 0);
+    }
     assert(deneb_gcode_format_extrude(360.0f, 60.0f, value,
                                       sizeof(value)) == 0);
     assert(strcmp(value, "G1 E360 F60") == 0);
     assert(deneb_gcode_format_extrude(-360.0f, 300.0f, value,
                                       sizeof(value)) == 0);
     assert(strcmp(value, "G1 E-360 F300") == 0);
+    {
+        deneb_gcode_material_move_sequence_t seq;
+        assert(DENEB_GCODE_MATERIAL_MOVE_DISTANCE_MM == 360.0f);
+        assert(DENEB_GCODE_MATERIAL_LOAD_FEEDRATE_MM_MIN == 60.0f);
+        assert(DENEB_GCODE_MATERIAL_UNLOAD_FEEDRATE_MM_MIN == 300.0f);
+        assert(DENEB_GCODE_MATERIAL_MOVE_MARGIN_MS == 2000U);
+        assert(deneb_gcode_build_material_move_sequence(0, &seq) == 0);
+        assert(strcmp(seq.lines[0], DENEB_GCODE_RESET_EXTRUDER) == 0);
+        assert(strcmp(seq.lines[1], "G1 E360 F60") == 0);
+        assert(seq.duration_ms == 362000U);
+        assert(deneb_gcode_build_material_move_sequence(1, &seq) == 0);
+        assert(strcmp(seq.lines[0], DENEB_GCODE_RESET_EXTRUDER) == 0);
+        assert(strcmp(seq.lines[1], "G1 E-360 F300") == 0);
+        assert(seq.duration_ms == 74000U);
+        assert(deneb_gcode_build_material_move_sequence(0, NULL) != 0);
+    }
 
     assert(deneb_gcode_format_absolute_position(1, 12.0f, 1, 34.5f,
                                                 0, 0.0f, 150.0f,
@@ -1165,6 +1200,14 @@ static void test_gcode_command_helpers(void)
     assert(strcmp(value, "M104 S0") == 0);
     assert(deneb_gcode_format_bed_off(value, sizeof(value)) == 0);
     assert(strcmp(value, "M140 S0") == 0);
+    {
+        deneb_gcode_cooldown_sequence_t seq;
+        assert(deneb_gcode_build_cooldown_sequence(&seq) == 0);
+        assert(strcmp(seq.lines[0], "M104 S0") == 0);
+        assert(strcmp(seq.lines[1], "M140 S0") == 0);
+        assert(strcmp(seq.lines[2], DENEB_GCODE_FAN_OFF) == 0);
+        assert(deneb_gcode_build_cooldown_sequence(NULL) != 0);
+    }
     assert(deneb_gcode_frame_light_brightness_to_pwm(-5) == 0);
     assert(deneb_gcode_frame_light_brightness_to_pwm(100) == 255);
     assert(deneb_gcode_frame_light_brightness_to_pwm(50) == 128);
@@ -1172,6 +1215,45 @@ static void test_gcode_command_helpers(void)
     assert(strcmp(value, "M142 w128") == 0);
     assert(deneb_gcode_format_frame_light(150, value, sizeof(value)) == 0);
     assert(strcmp(value, "M142 w255") == 0);
+    assert(DENEB_GCODE_AIR_MANAGER_FAN_MAX_PWM == 255);
+    assert(deneb_gcode_format_air_manager_fan(1, value, sizeof(value)) == 0);
+    assert(strcmp(value, "M12030 S255") == 0);
+    assert(deneb_gcode_format_air_manager_fan(0, value, sizeof(value)) == 0);
+    assert(strcmp(value, "M12030 S0") == 0);
+    assert(deneb_gcode_format_air_manager_fan(1, NULL, 0) != 0);
+}
+
+static void test_manual_motion_helpers(void)
+{
+    deneb_manual_motion_plan_t plan;
+
+    deneb_manual_motion_plan_init(&plan);
+    assert(plan.kind == DENEB_MANUAL_MOTION_NONE);
+    assert(plan.command == NULL);
+
+    assert(deneb_manual_motion_plan_action(
+               DENEB_MANUAL_MOTION_ACTION_HOME, &plan) == 0);
+    assert(plan.kind == DENEB_MANUAL_MOTION_MACRO);
+    assert(strcmp(plan.command, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) == 0);
+
+    assert(deneb_manual_motion_plan_action(
+               DENEB_MANUAL_MOTION_ACTION_Z_HOME, &plan) == 0);
+    assert(plan.kind == DENEB_MANUAL_MOTION_GCODE);
+    assert(strcmp(plan.command, DENEB_GCODE_HOME_Z) == 0);
+
+    assert(deneb_manual_motion_plan_action(
+               DENEB_MANUAL_MOTION_ACTION_BED_UP, &plan) == 0);
+    assert(plan.kind == DENEB_MANUAL_MOTION_MACRO);
+    assert(strcmp(plan.command, DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP) == 0);
+
+    assert(deneb_manual_motion_plan_action(
+               DENEB_MANUAL_MOTION_ACTION_BED_DOWN, &plan) == 0);
+    assert(plan.kind == DENEB_MANUAL_MOTION_MACRO);
+    assert(strcmp(plan.command, DENEB_PRINT_MACRO_MOVE_BUILDPLATE_DOWN) == 0);
+
+    assert(deneb_manual_motion_plan_action("unknown", &plan) != 0);
+    assert(deneb_manual_motion_plan_action(
+               DENEB_MANUAL_MOTION_ACTION_HOME, NULL) != 0);
 }
 
 static void test_json_string_helpers(void)
@@ -1449,6 +1531,8 @@ static void test_print_job_file_metadata(void)
     char spool_path[256];
     FILE *f;
 
+    assert(strcmp(DENEB_PRINT_JOB_USB_SCAN_DIR, "/mnt/sda1") == 0);
+    assert(strcmp(DENEB_PRINT_JOB_LOCAL_SCAN_DIR, "/home/3D") == 0);
     assert(strcmp(DENEB_PRINT_JOB_SPOOL_DIR, "/home/3D/deneb-uploads") == 0);
     assert(deneb_print_job_file_sanitize_name("../../cube.gcode",
                                               safe, sizeof(safe)) == 0);
@@ -2205,6 +2289,7 @@ int main(void)
     test_json_field_helpers();
     test_status_payload_filename_resolution();
     test_gcode_command_helpers();
+    test_manual_motion_helpers();
     test_json_string_helpers();
     test_status_payload_helpers();
     test_print_profile_helpers();

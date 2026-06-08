@@ -70,6 +70,21 @@ int deneb_gcode_format_jog(char axis, float distance, char *out, size_t out_sz)
     return 0;
 }
 
+int deneb_gcode_build_jog_sequence(char axis, float distance,
+                                   deneb_gcode_jog_sequence_t *seq)
+{
+    if (!seq)
+        return -1;
+    if (deneb_gcode_format_jog(axis, distance, seq->move,
+                               sizeof(seq->move)) < 0)
+        return -1;
+
+    seq->lines[0] = DENEB_GCODE_RELATIVE_MODE;
+    seq->lines[1] = seq->move;
+    seq->lines[2] = DENEB_GCODE_ABSOLUTE_MODE;
+    return 0;
+}
+
 int deneb_gcode_format_extrude(float distance, float feedrate,
                                char *out, size_t out_sz)
 {
@@ -78,6 +93,29 @@ int deneb_gcode_format_extrude(float distance, float feedrate,
     if (snprintf(out, out_sz, "G1 E%.3g F%.3g", distance, feedrate) >=
         (int)out_sz)
         return -1;
+    return 0;
+}
+
+int deneb_gcode_build_material_move_sequence(
+    int unload, deneb_gcode_material_move_sequence_t *seq)
+{
+    float distance = unload ? -DENEB_GCODE_MATERIAL_MOVE_DISTANCE_MM :
+                              DENEB_GCODE_MATERIAL_MOVE_DISTANCE_MM;
+    float feedrate = unload ? DENEB_GCODE_MATERIAL_UNLOAD_FEEDRATE_MM_MIN :
+                              DENEB_GCODE_MATERIAL_LOAD_FEEDRATE_MM_MIN;
+
+    if (!seq)
+        return -1;
+    if (deneb_gcode_format_extrude(distance, feedrate, seq->move,
+                                   sizeof(seq->move)) < 0)
+        return -1;
+
+    seq->lines[0] = DENEB_GCODE_RESET_EXTRUDER;
+    seq->lines[1] = seq->move;
+    seq->duration_ms =
+        (uint32_t)((DENEB_GCODE_MATERIAL_MOVE_DISTANCE_MM * 60000.0f) /
+                   feedrate) +
+        DENEB_GCODE_MATERIAL_MOVE_MARGIN_MS;
     return 0;
 }
 
@@ -141,6 +179,21 @@ int deneb_gcode_format_bed_off(char *out, size_t out_sz)
     return deneb_gcode_format_bed_target(0.0f, out, out_sz);
 }
 
+int deneb_gcode_build_cooldown_sequence(deneb_gcode_cooldown_sequence_t *seq)
+{
+    if (!seq)
+        return -1;
+    if (deneb_gcode_format_nozzle_off(seq->nozzle_off,
+                                      sizeof(seq->nozzle_off)) < 0 ||
+        deneb_gcode_format_bed_off(seq->bed_off, sizeof(seq->bed_off)) < 0)
+        return -1;
+
+    seq->lines[0] = seq->nozzle_off;
+    seq->lines[1] = seq->bed_off;
+    seq->lines[2] = DENEB_GCODE_FAN_OFF;
+    return 0;
+}
+
 int deneb_gcode_frame_light_brightness_to_pwm(int brightness_percent)
 {
     if (brightness_percent < 0)
@@ -158,6 +211,17 @@ int deneb_gcode_format_frame_light(int brightness_percent,
     if (snprintf(out, out_sz, "M142 w%d",
                  deneb_gcode_frame_light_brightness_to_pwm(
                      brightness_percent)) >= (int)out_sz)
+        return -1;
+    return 0;
+}
+
+int deneb_gcode_format_air_manager_fan(int enabled, char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return -1;
+    if (snprintf(out, out_sz, "M12030 S%d",
+                 enabled ? DENEB_GCODE_AIR_MANAGER_FAN_MAX_PWM : 0) >=
+        (int)out_sz)
         return -1;
     return 0;
 }

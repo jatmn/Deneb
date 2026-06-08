@@ -4,6 +4,8 @@
 
 #include <stddef.h>
 
+#define DENEB_PRINT_JOB_USB_SCAN_DIR "/mnt/sda1"
+#define DENEB_PRINT_JOB_LOCAL_SCAN_DIR "/home/3D"
 #define DENEB_PRINT_JOB_SPOOL_DIR "/home/3D/deneb-uploads"
 
 typedef struct {

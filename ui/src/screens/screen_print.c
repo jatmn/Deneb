@@ -8,6 +8,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_job_file.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
 #include <dirent.h>
@@ -40,10 +41,7 @@ static void scan_print_files(const char *path)
 
     struct dirent *ent;
     while ((ent = readdir(dir)) != NULL && file_count < MAX_FILES) {
-        size_t len = strlen(ent->d_name);
-        int is_gcode = (len > 6 && strcmp(ent->d_name + len - 6, ".gcode") == 0);
-        int is_ufp = (len > 4 && strcmp(ent->d_name + len - 4, ".ufp") == 0);
-        if (is_gcode || is_ufp) {
+        if (deneb_print_file_is_candidate(ent->d_name)) {
             strncpy(file_names[file_count], ent->d_name, MAX_FILENAME - 1);
             file_names[file_count][MAX_FILENAME - 1] = '\0';
             snprintf(file_paths[file_count], MAX_FILE_PATH, "%s/%s",
@@ -140,9 +138,9 @@ static void refresh_btn_cb(lv_event_t *e)
         file_list = NULL;
     }
 
-    scan_print_files("/mnt/sda1");
+    scan_print_files(DENEB_PRINT_JOB_USB_SCAN_DIR);
     if (file_count == 0)
-        scan_print_files("/home/3D");
+        scan_print_files(DENEB_PRINT_JOB_LOCAL_SCAN_DIR);
 
     selected_path[0] = '\0';
     selected_name[0] = '\0';

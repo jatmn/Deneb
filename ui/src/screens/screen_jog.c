@@ -17,7 +17,7 @@
 #include "locale.h"
 #include "backend_comm.h"
 #include "gcode_command.h"
-#include "print_macros.h"
+#include "manual_motion.h"
 #include "lvgl.h"
 #include <stdio.h>
 
@@ -68,34 +68,39 @@ static void jog_btn_cb(lv_event_t *e)
 
     const char *axis_dir = (const char *)lv_event_get_user_data(e);
     int step = step_sizes[current_step_idx];
-    char gcode[64];
+    deneb_gcode_jog_sequence_t seq;
     char axis = axis_dir[0];
     int sign = (axis_dir[1] == '+') ? 1 : -1;
 
-    const char *lines[3];
-    lines[0] = DENEB_GCODE_RELATIVE_MODE;
-    if (deneb_gcode_format_jog(axis, (float)(step * sign), gcode,
-                               sizeof(gcode)) < 0)
+    if (deneb_gcode_build_jog_sequence(axis, (float)(step * sign), &seq) < 0)
         return;
-    lines[1] = gcode;
-    lines[2] = DENEB_GCODE_ABSOLUTE_MODE;
-    backend_send_gcodes(lines, 3);
+    backend_send_gcodes(seq.lines, 3);
 }
 
 static void home_xy_btn_cb(lv_event_t *e)
 {
+    deneb_manual_motion_plan_t plan;
+
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_macro(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD);
+    if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_HOME,
+                                        &plan) == 0 &&
+        plan.kind == DENEB_MANUAL_MOTION_MACRO)
+        backend_send_macro(plan.command);
 }
 
 static void home_z_btn_cb(lv_event_t *e)
 {
+    deneb_manual_motion_plan_t plan;
+
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_gcode(DENEB_GCODE_HOME_Z);
+    if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_Z_HOME,
+                                        &plan) == 0 &&
+        plan.kind == DENEB_MANUAL_MOTION_GCODE)
+        backend_send_gcode(plan.command);
 }
 
 static void step_btn_cb(lv_event_t *e)
@@ -107,18 +112,28 @@ static void step_btn_cb(lv_event_t *e)
 
 static void bed_up_btn_cb(lv_event_t *e)
 {
+    deneb_manual_motion_plan_t plan;
+
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP);
+    if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_BED_UP,
+                                        &plan) == 0 &&
+        plan.kind == DENEB_MANUAL_MOTION_MACRO)
+        backend_send_macro(plan.command);
 }
 
 static void bed_down_btn_cb(lv_event_t *e)
 {
+    deneb_manual_motion_plan_t plan;
+
     (void)e;
     if (!motion_allowed())
         return;
-    backend_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_DOWN);
+    if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_BED_DOWN,
+                                        &plan) == 0 &&
+        plan.kind == DENEB_MANUAL_MOTION_MACRO)
+        backend_send_macro(plan.command);
 }
 
 static lv_obj_t *create_jog_btn(lv_obj_t *parent, const char *symbol,

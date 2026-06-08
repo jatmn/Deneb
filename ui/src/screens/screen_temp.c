@@ -20,9 +20,6 @@ static lv_obj_t *nozzle_slider = NULL;
 static lv_obj_t *bed_slider = NULL;
 static lv_timer_t *temp_timer = NULL;
 
-#define NOZZLE_MAX_TEMP 260
-#define BED_MAX_TEMP    110
-
 static int temp_actions_allowed(void)
 {
     return backend_manual_action_allowed();
@@ -91,13 +88,10 @@ static void cooldown_btn_cb(lv_event_t *e)
         return;
 
     {
-        char gcode[32];
-        if (deneb_gcode_format_nozzle_target(0.0f, gcode, sizeof(gcode)) == 0)
-            backend_send_gcode(gcode);
-        if (deneb_gcode_format_bed_target(0.0f, gcode, sizeof(gcode)) == 0)
-            backend_send_gcode(gcode);
+        deneb_gcode_cooldown_sequence_t seq;
+        if (deneb_gcode_build_cooldown_sequence(&seq) == 0)
+            backend_send_gcodes(seq.lines, 3);
     }
-    backend_send_gcode(DENEB_GCODE_FAN_OFF);
     lv_slider_set_value(nozzle_slider, 0, LV_ANIM_ON);
     lv_slider_set_value(bed_slider, 0, LV_ANIM_ON);
     lv_label_set_text(nozzle_target_label, "0\u00b0C");
@@ -172,13 +166,15 @@ static lv_obj_t *temp_create(void)
     lv_obj_set_flex_flow(temp_screen, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_gap(temp_screen, 8, 0);
 
-    create_temp_control(temp_screen, locale_get("temp.nozzle"), NOZZLE_MAX_TEMP,
-                        nozzle_slider_cb, set_nozzle_btn_cb,
-                        &nozzle_slider, &nozzle_cur_label, &nozzle_target_label);
+    create_temp_control(temp_screen, locale_get("temp.nozzle"),
+                        (int)DENEB_GCODE_MAX_NOZZLE_TEMP_C, nozzle_slider_cb,
+                        set_nozzle_btn_cb, &nozzle_slider, &nozzle_cur_label,
+                        &nozzle_target_label);
 
-    create_temp_control(temp_screen, locale_get("temp.bed"), BED_MAX_TEMP,
-                        bed_slider_cb, set_bed_btn_cb,
-                        &bed_slider, &bed_cur_label, &bed_target_label);
+    create_temp_control(temp_screen, locale_get("temp.bed"),
+                        (int)DENEB_GCODE_MAX_BED_TEMP_C, bed_slider_cb,
+                        set_bed_btn_cb, &bed_slider, &bed_cur_label,
+                        &bed_target_label);
 
     /* Cooldown button */
     lv_obj_t *cooldown_btn = lv_button_create(temp_screen);

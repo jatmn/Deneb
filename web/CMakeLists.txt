@@ -73,6 +73,7 @@ set(DENEB_API_SOURCES
     ../common/print/json_field.c
     ../common/print/json_file.c
     ../common/print/json_string.c
+    ../common/print/manual_motion.c
     ../common/print/material_catalog.c
     ../common/print/printer_identity.c
     ../common/print/print_backend_route.c

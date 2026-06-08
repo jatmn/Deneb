@@ -720,6 +720,18 @@ Completed implementation slices:
   target, cooldown, and material load/unload G-code string construction into
   `common/print/gcode_command.*` with host tests so remaining raw G-code
   commands used by UI/API safety gates share one Deneb-owned formatter.
+- [x] Move bed/nozzle temperature command limits into
+  `common/print/gcode_command.*` so web/API temperature writes, touchscreen
+  temperature sliders, and material-workflow target sliders clamp against one
+  shared native hardware limit owner.
+- [x] Move touchscreen material load/unload command sequencing into
+  `common/print/gcode_command.*` so reset-extruder, extrude/retract distance,
+  load/unload feedrates, and movement timeout math live with the shared native
+  material G-code owner instead of the LVGL screen.
+- [x] Move relative jog command sequencing into `common/print/gcode_command.*`
+  so touchscreen and web/API jog controls both send the same `G91`, bounded
+  move, and `G90` sequence instead of each preserving that safety ordering
+  locally.
 - [x] Move web/API manual motion bounds into `common/print/gcode_command.*`
   so jog distance, axis normalization, build-volume limits, and move-speed
   validation are owned beside the G-code formatter instead of inside the REST
@@ -727,14 +739,29 @@ Completed implementation slices:
 - [x] Move touchscreen frame-lighting `M142` command construction and
   brightness-to-PWM clamping into `common/print/gcode_command.*` so another
   UI-only stock-driver G-code formatter is owned by the shared native layer.
+- [x] Move diagnostics Air Manager fan `M12030` command construction into
+  `common/print/gcode_command.*` so maintenance diagnostics no longer embeds a
+  stock-driver raw G-code literal in the LVGL screen.
 - [x] Move native abort/finish motion-policy heater/fan/stepper cleanup onto
   shared G-code constants and heater-off helpers so print-service safety
   cleanup uses the same cooldown command owner as touchscreen/web controls.
+- [x] Move cooldown command sequencing into `common/print/gcode_command.*` so
+  touchscreen cooldown and native abort/finish motion policies share nozzle-off,
+  bed-off, and fan-off ordering instead of assembling those safety commands in
+  separate modules.
 - [x] Move stock macro filenames and remaining pending-job display reads into
   shared native helpers: touchscreen jog/leveling and web motion commands now
   use common macro-name constants, the shared print-state rules own transient
   macro-file filtering, and LCD/API job-name display reads pending-job metadata
   through `pending_job_file` instead of local JSON scans.
+- [x] Move touchscreen USB/local print-file browser roots and file candidate
+  filtering onto shared native print helpers so the LVGL print screen no longer
+  hand-checks `.gcode`/`.ufp` suffixes or embeds the stock `/mnt/sda1` and
+  `/home/3D` scan paths locally.
+- [x] Move manual motion action planning into `common/print/manual_motion.*`
+  so touchscreen jog buttons and web/API `home`/`z_home`/`bed_up`/`bed_down`
+  actions share one native owner for whether a motion action sends a macro or
+  direct G-code.
 - [x] Move pending-job display-name fallback rules into
   `common/print/pending_job_file.*` so LCD backend status retention,
   touchscreen status labels, native pending-job metadata, and web/API printer
@@ -778,6 +805,10 @@ Completed implementation slices:
 - [x] Move temperature-target readiness into shared native print-state rules so
   preheat logging, native heater waits, and material move readiness agree on
   bed-only, nozzle-only, combined-target, and tolerance behavior.
+- [x] Move material-move minimum temperature and ready-window policy into
+  `common/print/print_state_rules.*` so the touchscreen material workflow no
+  longer owns its own hotend movement safety threshold beside shared heat-state
+  rules.
 - [x] Move print elapsed-time calculation into shared native print-state rules
   so UM API, Deneb API, and Cura cluster API responses clamp `time_total` /
   `time_left` consistently instead of each computing elapsed seconds locally.

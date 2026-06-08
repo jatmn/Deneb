@@ -20,31 +20,27 @@ static void policy_add(deneb_motion_policy_t *policy, const char *command)
 
 void deneb_motion_policy_abort(deneb_motion_policy_t *policy)
 {
-    char nozzle_off[32] = "";
-    char bed_off[32] = "";
+    deneb_gcode_cooldown_sequence_t cooldown;
 
     policy_clear(policy);
-    deneb_gcode_format_nozzle_off(nozzle_off, sizeof(nozzle_off));
-    deneb_gcode_format_bed_off(bed_off, sizeof(bed_off));
     policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
-    policy_add(policy, nozzle_off);
-    policy_add(policy, bed_off);
-    policy_add(policy, DENEB_GCODE_FAN_OFF);
+    if (deneb_gcode_build_cooldown_sequence(&cooldown) == 0) {
+        for (size_t i = 0; i < 3; i++)
+            policy_add(policy, cooldown.lines[i]);
+    }
     policy_add(policy, DENEB_GCODE_DISABLE_EXTRUDER_STEPPER);
 }
 
 void deneb_motion_policy_finish(deneb_motion_policy_t *policy)
 {
-    char nozzle_off[32] = "";
-    char bed_off[32] = "";
+    deneb_gcode_cooldown_sequence_t cooldown;
 
     policy_clear(policy);
-    deneb_gcode_format_nozzle_off(nozzle_off, sizeof(nozzle_off));
-    deneb_gcode_format_bed_off(bed_off, sizeof(bed_off));
     policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
-    policy_add(policy, nozzle_off);
-    policy_add(policy, bed_off);
-    policy_add(policy, DENEB_GCODE_FAN_OFF);
+    if (deneb_gcode_build_cooldown_sequence(&cooldown) == 0) {
+        for (size_t i = 0; i < 3; i++)
+            policy_add(policy, cooldown.lines[i]);
+    }
     policy_add(policy, DENEB_GCODE_DISABLE_ALL_STEPPERS);
 }
 

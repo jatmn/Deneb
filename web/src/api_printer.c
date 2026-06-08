@@ -9,8 +9,8 @@
 #include "gcode_command.h"
 #include "json_field.h"
 #include "json_writer.h"
+#include "manual_motion.h"
 #include "pending_job_file.h"
-#include "print_macros.h"
 #include "print_profile.h"
 
 #include <math.h>
@@ -68,18 +68,11 @@ static int parse_temperature_target(const char *body, float max_temp,
 
 static int send_jog_command(char axis, float distance)
 {
-    char move_cmd[64];
-    if (backend_zmq_send_gcode(DENEB_GCODE_RELATIVE_MODE) < 0)
+    deneb_gcode_jog_sequence_t seq;
+
+    if (deneb_gcode_build_jog_sequence(axis, distance, &seq) < 0)
         return -1;
-    if (deneb_gcode_format_jog(axis, distance, move_cmd, sizeof(move_cmd)) < 0)
-        return -1;
-    if (backend_zmq_send_gcode(move_cmd) < 0) {
-        backend_zmq_send_gcode(DENEB_GCODE_ABSOLUTE_MODE);
-        return -1;
-    }
-    if (backend_zmq_send_gcode(DENEB_GCODE_ABSOLUTE_MODE) < 0)
-        return -1;
-    return 0;
+    return backend_zmq_send_gcodes(seq.lines, 3);
 }
 
 static int send_absolute_position_command(int has_x, float x, int has_y, float y, int has_z, float z, float speed)
@@ -98,18 +91,14 @@ static int send_absolute_position_command(int has_x, float x, int has_y, float y
 
 static int send_motion_action(const char *action)
 {
-    if (strcmp(action, "home") == 0) {
-        return backend_zmq_send_macro(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD);
-    }
-    if (strcmp(action, "z_home") == 0) {
-        return backend_zmq_send_gcode(DENEB_GCODE_HOME_Z);
-    }
-    if (strcmp(action, "bed_up") == 0) {
-        return backend_zmq_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_UP);
-    }
-    if (strcmp(action, "bed_down") == 0) {
-        return backend_zmq_send_macro(DENEB_PRINT_MACRO_MOVE_BUILDPLATE_DOWN);
-    }
+    deneb_manual_motion_plan_t plan;
+
+    if (deneb_manual_motion_plan_action(action, &plan) < 0)
+        return -2;
+    if (plan.kind == DENEB_MANUAL_MOTION_GCODE)
+        return backend_zmq_send_gcode(plan.command);
+    if (plan.kind == DENEB_MANUAL_MOTION_MACRO)
+        return backend_zmq_send_macro(plan.command);
     return -2;
 }
 
@@ -637,7 +626,8 @@ void api_printer_airmanager_get(const http_request_t *req, http_response_t *resp
 void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 {
     float temp = 0;
-    if (parse_temperature_target(req->body, 110.0f, &temp) < 0) {
+    if (parse_temperature_target(req->body, DENEB_GCODE_MAX_BED_TEMP_C,
+                                 &temp) < 0) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
         return;
@@ -659,7 +649,8 @@ void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 void api_printer_hotend_temp_put(const http_request_t *req, http_response_t *resp)
 {
     float temp = 0;
-    if (parse_temperature_target(req->body, 260.0f, &temp) < 0) {
+    if (parse_temperature_target(req->body, DENEB_GCODE_MAX_NOZZLE_TEMP_C,
+                                 &temp) < 0) {
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
         return;
