@@ -426,6 +426,48 @@ void deneb_print_stop_guard_clear(deneb_print_stop_guard_t *guard)
     guard->last_stop_ms = -1;
 }
 
+void deneb_print_preheat_tracker_init(deneb_print_preheat_tracker_t *tracker)
+{
+    if (!tracker)
+        return;
+    tracker->targets_seen = 0;
+    tracker->targets_ready_seen = 0;
+}
+
+int deneb_print_preheat_tracker_update(deneb_print_preheat_tracker_t *tracker,
+                                       float bed_current,
+                                       float bed_target,
+                                       float nozzle_current,
+                                       float nozzle_target)
+{
+    int events = DENEB_PRINT_PREHEAT_EVENT_NONE;
+    int has_targets = deneb_print_has_temp_targets(bed_target, nozzle_target);
+
+    if (!tracker)
+        return events;
+
+    if (!has_targets) {
+        if (tracker->targets_seen || tracker->targets_ready_seen)
+            events |= DENEB_PRINT_PREHEAT_EVENT_RESET;
+        deneb_print_preheat_tracker_init(tracker);
+        return events;
+    }
+
+    if (!tracker->targets_seen) {
+        tracker->targets_seen = 1;
+        events |= DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE;
+    }
+
+    if (!tracker->targets_ready_seen &&
+        deneb_print_temp_targets_ready(bed_current, bed_target,
+                                       nozzle_current, nozzle_target)) {
+        tracker->targets_ready_seen = 1;
+        events |= DENEB_PRINT_PREHEAT_EVENT_TARGETS_READY;
+    }
+
+    return events;
+}
+
 static void normalize_action_value(char *action)
 {
     char *start;

@@ -13,6 +13,7 @@
 #include "pending_job_file.h"
 #include "print_history.h"
 #include "print_job_summary.h"
+#include "system_language.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -272,14 +273,7 @@ void api_deneb_config_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char lang[16] = "en";
-    FILE *f = popen("uci -q get deneb.system.language 2>/dev/null", "r");
-    if (f) {
-        if (fgets(lang, sizeof(lang), f)) {
-            char *nl = strchr(lang, '\n');
-            if (nl) *nl = '\0';
-        }
-        pclose(f);
-    }
+    deneb_system_language_read(lang, sizeof(lang));
 
     char buf[256];
     json_writer_t w;

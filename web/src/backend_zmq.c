@@ -17,6 +17,7 @@
 #include "command_format.h"
 #include "json_field.h"
 #include "json_string.h"
+#include "pending_job_dispatch.h"
 #include "pending_job_file.h"
 #include "print_backend_route.h"
 #include "print_history.h"
@@ -123,22 +124,10 @@ static printer_state_t state;
 static char *status_json_cache = NULL;  /* pre-serialized JSON of last status */
 static int had_previous_status = 0;
 static printer_state_t previous_state;
-static int preheat_targets_logged = 0;
-static int preheat_reached_logged = 0;
+static deneb_print_preheat_tracker_t preheat_tracker;
 static time_t current_print_start_time = 0;
 static char retained_print_filename[128];
 static deneb_print_stop_guard_t stop_guard;
-
-static int has_temp_targets(const printer_state_t *s)
-{
-    return deneb_print_has_temp_targets(s->bed_temp_set, s->nozzle_temp_set);
-}
-
-static int have_jobs_targets(const printer_state_t *s)
-{
-    return deneb_print_temp_targets_ready(s->bed_temp_cur, s->bed_temp_set,
-                                          s->nozzle_temp_cur, s->nozzle_temp_set);
-}
 
 static void append_print_history(const printer_state_t *prev,
                                  const printer_state_t *curr);
@@ -214,8 +203,7 @@ static void log_status_transition(const printer_state_t *curr)
             fprintf(stderr, "deneb-api: print stopped before completion (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
 
         append_print_history(&previous_state, curr);
-        preheat_targets_logged = 0;
-        preheat_reached_logged = 0;
+        deneb_print_preheat_tracker_init(&preheat_tracker);
         if (deneb_pending_job_file_clear_default() == 0)
             fprintf(stderr, "deneb-api: removed pending job metadata after print end\n");
     }
@@ -227,21 +215,18 @@ static void log_status_transition(const printer_state_t *curr)
         current_print_start_time = time(NULL);
     }
 
-    if (!preheat_targets_logged && has_temp_targets(curr)) {
+    int preheat_events = deneb_print_preheat_tracker_update(
+        &preheat_tracker, curr->bed_temp_cur, curr->bed_temp_set,
+        curr->nozzle_temp_cur, curr->nozzle_temp_set);
+
+    if (preheat_events & DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE) {
         fprintf(stderr, "deneb-api: print preheating targets active: bed=%0.1fC(nozzle=%0.1fC)\n",
                 curr->bed_temp_set, curr->nozzle_temp_set);
-        preheat_targets_logged = 1;
     }
 
-    if (preheat_targets_logged && !preheat_reached_logged && have_jobs_targets(curr)) {
+    if (preheat_events & DENEB_PRINT_PREHEAT_EVENT_TARGETS_READY) {
         fprintf(stderr, "deneb-api: preheat targets reached: bed=%0.1fC(nozzle=%0.1fC)\n",
                 curr->bed_temp_cur, curr->nozzle_temp_cur);
-        preheat_reached_logged = 1;
-    }
-
-    if (!has_temp_targets(curr)) {
-        preheat_targets_logged = 0;
-        preheat_reached_logged = 0;
     }
 
     previous_state = *curr;
@@ -342,6 +327,7 @@ int backend_zmq_init(void)
 {
     memset(&state, 0, sizeof(state));
     deneb_print_stop_guard_init(&stop_guard, STOP_INFLIGHT_MS);
+    deneb_print_preheat_tracker_init(&preheat_tracker);
     backend_route = deneb_print_backend_route_detect();
 
     zmq_ctx = zmq_ctx_new();
@@ -635,42 +621,40 @@ int backend_zmq_send_job(const char *path, const char *source,
     return backend_zmq_send_frame(buf, (size_t)len);
 }
 
+static int pending_dispatch_start_allowed(void *ctx)
+{
+    (void)ctx;
+    return backend_zmq_print_start_allowed();
+}
+
+static int pending_dispatch_abort(void *ctx)
+{
+    (void)ctx;
+    return backend_zmq_abort();
+}
+
+static int pending_dispatch_job(void *ctx,
+                                const deneb_print_job_start_plan_t *plan)
+{
+    (void)ctx;
+    if (!plan)
+        return -1;
+    return backend_zmq_send_job(plan->path, plan->source, plan->uuid,
+                                plan->bed_target, plan->nozzle_target);
+}
+
 int backend_zmq_send_pending_instruction(const char *instruction)
 {
-    deneb_pending_job_file_t job;
-    deneb_pending_job_action_plan_t pending_plan;
-    deneb_print_job_start_plan_t start_plan;
+    deneb_pending_job_dispatch_ops_t ops = {
+        NULL,
+        pending_dispatch_start_allowed,
+        pending_dispatch_abort,
+        pending_dispatch_job
+    };
 
-    if (deneb_pending_job_file_load_pending_default(&job) < 0 ||
-        deneb_pending_job_file_plan_action(&job, instruction, &pending_plan) != 0) {
-        fprintf(stderr, "deneb-api: failed to plan pending job instruction=%s\n",
-                instruction ? instruction : "(none)");
-        return -1;
-    }
-
-    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d path=%s\n",
-            instruction ? instruction : "(none)",
-            pending_plan.tracker, pending_plan.path[0] ? pending_plan.path : "(none)");
-
-    if (pending_plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
-        if (backend_zmq_abort() < 0)
-            return -1;
-    } else if (pending_plan.kind == DENEB_PENDING_JOB_ACTION_START) {
-        if (!backend_zmq_print_start_allowed())
-            return -1;
-        if (deneb_print_job_start_plan_prepare(
-                pending_plan.path, pending_plan.source, pending_plan.uuid,
-                0.0f, 0.0f, &start_plan) < 0 ||
-            backend_zmq_send_job(start_plan.path, start_plan.source,
-                                 start_plan.uuid, start_plan.bed_target,
-                                 start_plan.nozzle_target) < 0)
-            return -1;
-    } else {
-        return -1;
-    }
-
-    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH,
-                                               &pending_plan);
+    fprintf(stderr, "deneb-api: sending pending job instruction=%s\n",
+            instruction ? instruction : "(none)");
+    return deneb_pending_job_dispatch_default(instruction, &ops);
 }
 
 int backend_zmq_pause(void)

@@ -115,7 +115,13 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   material/nozzle choices, labels, and UCI update command formatting now live in
   `common/print/print_profile.*`, keeping profile-selection policy out of the
   touchscreen material/nozzle screens while preserving the existing stock UCI
-  option names. Frame-light saved-state defaults, legacy fallback, output
+  option names. Deneb system language choices, validation, UCI read fallback,
+  and save-command formatting now live in `common/print/system_language.*`, so
+  touch UI language settings and web/Deneb config endpoints share one native
+  policy. The full web system payload also reads language through that helper
+  instead of hard-coding English, and the touchscreen About screen now reads its
+  stock host GUID/MAC fallback through `common/print/printer_identity.*`
+  instead of a local shell helper. Frame-light saved-state defaults, legacy fallback, output
   brightness selection, and UCI save command formatting now live in
   `common/print/frame_light.*`, leaving the touchscreen frame-light screen to
   render controls and dispatch the already-shared `M142` G-code. Diagnostics
@@ -138,7 +144,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   cleanup also goes through the shared helper for LCD/web stop, abort, cancel,
   delete, and print-end paths. Cura cluster pending-action handling and the
   touchscreen conflict prompt also use the shared pending-job presence
-  predicate instead of treating tracker values as local control-flow gates. LCD
+  predicate instead of treating tracker values as local control-flow gates.
+  Pending-job continue/cancel dispatch sequencing now lives in
+  `common/print/pending_job_dispatch.*`, so LCD and web backend adapters share
+  the load, plan, readiness, `JOB`/`ABORT` callback selection, and
+  finish-action timing while retaining only their transport send callbacks. LCD
   and web/API backends now select native
   `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
   while preserving the stock coordinator route as the default fallback. That
@@ -146,7 +156,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   each duplicate UCI/env parsing or endpoint constants. The same helper now
   formats route diagnostics exposed by web status JSON and LCD/web backend
   accessors, giving lab runs a native way to prove whether a process selected
-  stock coordinator or native `deneb-printsvc`. Deneb API route diagnostics now
+  stock coordinator or native `deneb-printsvc`. Backend preheat transition
+  tracking now lives in `common/print/print_state_rules.*`, so LCD and web/API
+  status clients share one tested owner for target-active and target-ready
+  transitions instead of carrying parallel local preheat log flags. Deneb API route diagnostics now
   use typed backend accessors instead of comparing route display strings, so
   backend identity classification stays with the shared route owner. Later slices should
   keep collapsing remaining

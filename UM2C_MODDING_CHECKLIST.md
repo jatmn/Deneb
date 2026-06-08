@@ -807,6 +807,10 @@ Completed implementation slices:
 - [x] Move pending-job continue/cancel backend dispatch behind LCD/web backend
   adapter helpers so touchscreen conflict prompts and Cura cluster actions no
   longer duplicate the load, plan, `JOB`/`ABORT` send, and finish-action flow.
+- [x] Move pending-job continue/cancel dispatch sequencing into
+  `common/print/pending_job_dispatch.*` so LCD and web backend adapters share
+  the load, plan, start-readiness check, `JOB`/`ABORT` callback selection, and
+  finish-action timing while keeping only the transport send callbacks local.
 - [x] Move pending-job presence/path/conflict predicates into
   `common/print/pending_job_file.*` so web upload dedupe, Cura cluster pending
   actions, and touchscreen conflict prompts use one tracker/path/conflict
@@ -841,6 +845,10 @@ Completed implementation slices:
 - [x] Move temperature-target readiness into shared native print-state rules so
   preheat logging, native heater waits, and material move readiness agree on
   bed-only, nozzle-only, combined-target, and tolerance behavior.
+- [x] Move backend preheat transition tracking into shared native print-state
+  rules so LCD and web/API ZMQ clients emit preheat-target-active and
+  targets-ready transitions from one tested tracker instead of separate local
+  `preheat_targets_logged` / `preheat_reached_logged` flags.
 - [x] Move material-move minimum temperature and ready-window policy into
   `common/print/print_state_rules.*` so the touchscreen material workflow no
   longer owns its own hotend movement safety threshold beside shared heat-state
@@ -858,6 +866,14 @@ Completed implementation slices:
 - [x] Move print progress percentage calculation into shared native print-state
   rules so LCD and web/API backend status parsing clamp weird `Tleft` values
   the same way during preheat, printing, completion, and abort cleanup.
+- [x] Move Deneb system language choices, UCI read fallback, validation, and
+  save-command formatting into `common/print/system_language.*` so touchscreen
+  language settings and web/Deneb config endpoints no longer duplicate local
+  language lists or raw UCI read strings.
+- [x] Move touchscreen About printer-id lookup into
+  `common/print/printer_identity.*` and route the full web system payload
+  through shared language reads so UI/API identity and language fields no
+  longer preserve one-off shell or hard-coded fallbacks.
 - [x] Move backend status time/progress normalization into shared native
   print-state rules so LCD and web/API ZMQ clients no longer carry separate
   inactive-job zeroing, `time_left` clamping, or progress recomputation logic.

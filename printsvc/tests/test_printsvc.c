@@ -36,6 +36,7 @@
 #include "pause_resume.h"
 #include "pause_resume_control.h"
 #include "pending_job.h"
+#include "pending_job_dispatch.h"
 #include "pending_job_file.h"
 #include "pending_job_registration.h"
 #include "printer_identity.h"
@@ -55,6 +56,7 @@
 #include "status.h"
 #include "status_payload.h"
 #include "status_parser.h"
+#include "system_language.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -759,6 +761,7 @@ static void test_print_state_rules(void)
 {
     deneb_print_observation_t obs = {0};
     deneb_print_stop_guard_t stop_guard;
+    deneb_print_preheat_tracker_t preheat_tracker;
     deneb_print_action_plan_t action_plan;
 
     assert(deneb_print_req_is_print(DENEB_COMMAND_VERB_JOB));
@@ -783,6 +786,36 @@ static void test_print_state_rules(void)
     assert(deneb_print_temp_targets_ready(59.2f, 60.0f, 0.0f, 0.0f));
     assert(!deneb_print_temp_targets_ready(0.0f, 0.0f, 0.0f, 0.0f));
     assert(!deneb_print_temp_targets_ready(59.2f, 60.0f, 190.0f, 200.0f));
+    deneb_print_preheat_tracker_init(&preheat_tracker);
+    assert(!preheat_tracker.targets_seen);
+    assert(!preheat_tracker.targets_ready_seen);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              0.0f, 0.0f, 0.0f, 0.0f) ==
+           DENEB_PRINT_PREHEAT_EVENT_NONE);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              20.0f, 60.0f, 30.0f, 210.0f) ==
+           DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE);
+    assert(preheat_tracker.targets_seen);
+    assert(!preheat_tracker.targets_ready_seen);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              40.0f, 60.0f, 150.0f, 210.0f) ==
+           DENEB_PRINT_PREHEAT_EVENT_NONE);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              59.0f, 60.0f, 209.0f, 210.0f) ==
+           DENEB_PRINT_PREHEAT_EVENT_TARGETS_READY);
+    assert(preheat_tracker.targets_ready_seen);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              60.0f, 60.0f, 210.0f, 210.0f) ==
+           DENEB_PRINT_PREHEAT_EVENT_NONE);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              30.0f, 0.0f, 40.0f, 0.0f) ==
+           DENEB_PRINT_PREHEAT_EVENT_RESET);
+    assert(!preheat_tracker.targets_seen);
+    assert(!preheat_tracker.targets_ready_seen);
+    assert(deneb_print_preheat_tracker_update(&preheat_tracker,
+                                              60.0f, 60.0f, 210.0f, 210.0f) ==
+           (DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE |
+            DENEB_PRINT_PREHEAT_EVENT_TARGETS_READY));
     assert(DENEB_PRINT_MATERIAL_MIN_MOVE_TEMP_C == 170.0f);
     assert(DENEB_PRINT_MATERIAL_READY_TOLERANCE_C == 2.0f);
     assert(!deneb_print_material_move_ready(210.0f, 160.0f));
@@ -1584,6 +1617,7 @@ static void test_printer_identity_helpers(void)
 {
     char value[64];
 
+    assert(strcmp(DENEB_PRINTER_UNAVAILABLE_ID, "Unavailable") == 0);
     deneb_printer_identity_copy_line_or_default("um2c-lab\n",
                                                 DENEB_PRINTER_DEFAULT_HOSTNAME,
                                                 value, sizeof(value));
@@ -1692,6 +1726,117 @@ static void test_pending_job_metadata_write_file(void)
     assert(strcmp(loaded.name, "write-test.gcode") == 0);
     assert(!deneb_pending_job_file_has_conflict(&loaded));
     assert(deneb_pending_job_file_clear(path) == 0);
+}
+
+typedef struct {
+    int start_allowed;
+    int fail_abort;
+    int fail_job;
+    int abort_calls;
+    int job_calls;
+    char job_path[256];
+    char job_source[32];
+    char job_uuid[64];
+} pending_dispatch_fake_t;
+
+static int pending_dispatch_fake_start_allowed(void *ctx)
+{
+    pending_dispatch_fake_t *fake = (pending_dispatch_fake_t *)ctx;
+    return fake && fake->start_allowed;
+}
+
+static int pending_dispatch_fake_abort(void *ctx)
+{
+    pending_dispatch_fake_t *fake = (pending_dispatch_fake_t *)ctx;
+    if (!fake || fake->fail_abort)
+        return -1;
+    fake->abort_calls++;
+    return 0;
+}
+
+static int pending_dispatch_fake_job(void *ctx,
+                                     const deneb_print_job_start_plan_t *plan)
+{
+    pending_dispatch_fake_t *fake = (pending_dispatch_fake_t *)ctx;
+    if (!fake || !plan || fake->fail_job)
+        return -1;
+    fake->job_calls++;
+    snprintf(fake->job_path, sizeof(fake->job_path), "%s", plan->path);
+    snprintf(fake->job_source, sizeof(fake->job_source), "%s", plan->source);
+    snprintf(fake->job_uuid, sizeof(fake->job_uuid), "%s", plan->uuid);
+    return 0;
+}
+
+static void write_pending_dispatch_fixture(const char *path,
+                                           const char *status)
+{
+    FILE *f = fopen(path, "wb");
+    assert(f != NULL);
+    fprintf(f, "[{\"name\":\"Cube\",\"path\":\"/home/3D/cube.gcode\","
+            "\"status\":\"%s\",\"deneb_tracker\":42,"
+            "\"configuration_changes_required\":["
+            "{\"type_of_change\":\"material_change\","
+            "\"origin_name\":\"PLA\",\"target_name\":\"PETG\"}]}]\n",
+            status);
+    fclose(f);
+}
+
+static void test_pending_job_dispatch_helpers(void)
+{
+    const char *path = "/tmp/deneb-pending-dispatch-test.json";
+    pending_dispatch_fake_t fake;
+    deneb_pending_job_dispatch_ops_t ops;
+    deneb_pending_job_file_t loaded;
+
+    memset(&fake, 0, sizeof(fake));
+    fake.start_allowed = 1;
+    ops.ctx = &fake;
+    ops.start_allowed = pending_dispatch_fake_start_allowed;
+    ops.send_abort = pending_dispatch_fake_abort;
+    ops.send_job = pending_dispatch_fake_job;
+
+    write_pending_dispatch_fixture(path, "wait_user_action");
+    assert(deneb_pending_job_dispatch_from_path(path, DENEB_PRINT_REQ_PREPARE,
+                                                &ops) == 0);
+    assert(fake.job_calls == 1);
+    assert(fake.abort_calls == 0);
+    assert(strcmp(fake.job_path, "/home/3D/cube.gcode") == 0);
+    assert(strcmp(fake.job_source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+    assert(strcmp(fake.job_uuid, DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
+    assert(deneb_pending_job_file_load(path, &loaded) == 0);
+    assert(!deneb_pending_job_file_has_conflict(&loaded));
+
+    assert(deneb_pending_job_dispatch_from_path(path, DENEB_COMMAND_VERB_ABORT,
+                                                &ops) == 0);
+    assert(fake.abort_calls == 1);
+    assert(deneb_pending_job_file_load(path, &loaded) != 0);
+
+    write_pending_dispatch_fixture(path, "wait_user_action");
+    fake.start_allowed = 0;
+    fake.job_calls = 0;
+    assert(deneb_pending_job_dispatch_from_path(path, DENEB_PRINT_REQ_PREPARE,
+                                                &ops) != 0);
+    assert(fake.job_calls == 0);
+    assert(deneb_pending_job_file_load(path, &loaded) == 0);
+    assert(deneb_pending_job_file_has_conflict(&loaded));
+
+    fake.start_allowed = 1;
+    fake.fail_job = 1;
+    assert(deneb_pending_job_dispatch_from_path(path, DENEB_PRINT_REQ_PREPARE,
+                                                &ops) != 0);
+    assert(deneb_pending_job_file_load(path, &loaded) == 0);
+    assert(deneb_pending_job_file_has_conflict(&loaded));
+
+    fake.fail_job = 0;
+    fake.fail_abort = 1;
+    assert(deneb_pending_job_dispatch_from_path(path, DENEB_COMMAND_VERB_ABORT,
+                                                &ops) != 0);
+    assert(deneb_pending_job_file_load(path, &loaded) == 0);
+
+    assert(deneb_pending_job_dispatch_from_path(path, "PAUSE", &ops) != 0);
+    assert(deneb_pending_job_dispatch_from_path(path, DENEB_PRINT_REQ_PREPARE,
+                                                NULL) != 0);
+    deneb_pending_job_file_clear(path);
 }
 
 static void test_pending_job_upload_default_check(void)
@@ -1971,6 +2116,37 @@ static void test_macro_safety(void)
     remove(override_path);
     rmdir(override_dir);
     rmdir(stock_dir);
+}
+
+static void test_system_language_helpers(void)
+{
+    char value[32];
+    char cmd[160];
+    const deneb_system_language_choice_t *choice;
+
+    assert(strcmp(DENEB_SYSTEM_LANGUAGE_DEFAULT, "en") == 0);
+    assert(strcmp(DENEB_SYSTEM_LANGUAGE_READ_COMMAND,
+                  "uci -q get deneb.system.language 2>/dev/null") == 0);
+    assert(deneb_system_language_choice_count() == 7);
+    choice = deneb_system_language_choice(4);
+    assert(choice != NULL);
+    assert(strcmp(choice->code, "zh-Hans") == 0);
+    assert(strcmp(choice->label_key, "language.zh_Hans") == 0);
+    assert(deneb_system_language_choice(99) == NULL);
+    assert(deneb_system_language_code_is_valid("en"));
+    assert(deneb_system_language_code_is_valid("en-1337"));
+    assert(!deneb_system_language_code_is_valid(""));
+    assert(!deneb_system_language_code_is_valid("en;reboot"));
+    deneb_system_language_copy_or_default("de\n", value, sizeof(value));
+    assert(strcmp(value, "de") == 0);
+    deneb_system_language_copy_or_default("missing", value, sizeof(value));
+    assert(strcmp(value, DENEB_SYSTEM_LANGUAGE_DEFAULT) == 0);
+    assert(deneb_system_language_format_save_command("fr", cmd,
+                                                     sizeof(cmd)) == 0);
+    assert(strstr(cmd, "deneb.system.language='fr'") != NULL);
+    assert(deneb_system_language_format_save_command("fr", cmd, 12) != 0);
+    assert(deneb_system_language_format_save_command("bad", cmd,
+                                                     sizeof(cmd)) != 0);
 }
 
 static void test_diagnostics_log_side_by_side_fields(void)
@@ -2617,6 +2793,7 @@ int main(void)
     test_print_backend_route_contract();
     test_pending_job_metadata();
     test_pending_job_metadata_write_file();
+    test_pending_job_dispatch_helpers();
     test_pending_job_upload_default_check();
     test_pending_job_registration_policy();
     test_print_job_file_metadata();
@@ -2624,6 +2801,7 @@ int main(void)
     test_status_frame();
     test_crc_and_packet();
     test_macro_safety();
+    test_system_language_helpers();
     test_diagnostics_log_side_by_side_fields();
     test_abort_clears_status();
     test_job_accepts_without_blocking();

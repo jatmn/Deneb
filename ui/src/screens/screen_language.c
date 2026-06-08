@@ -7,10 +7,9 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "lvgl.h"
+#include "system_language.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 static lv_obj_t *language_screen = NULL;
 static lv_obj_t *status_label = NULL;
@@ -18,46 +17,18 @@ static int show_saved_message = 0;
 
 extern const screen_ops_t screen_language;
 
-typedef struct {
-    const char *code;
-    const char *label_key;
-} language_choice_t;
-
-static const language_choice_t languages[] = {
-    {"en", "language.en"},
-    {"nl", "language.nl"},
-    {"de", "language.de"},
-    {"fr", "language.fr"},
-    {"zh-Hans", "language.zh_Hans"},
-    {"en-pirate", "language.en_pirate"},
-    {"en-1337", "language.en_1337"},
-};
-
 static int valid_lang_code(const char *lang)
 {
-    if (!lang)
-        return 0;
-
-    for (int i = 0; i < (int)(sizeof(languages) / sizeof(languages[0])); i++) {
-        if (strcmp(lang, languages[i].code) == 0)
-            return 1;
-    }
-
-    return 0;
+    return deneb_system_language_code_is_valid(lang);
 }
 
 static void persist_lang_code(const char *lang)
 {
     char cmd[128];
 
-    if (!valid_lang_code(lang))
+    if (deneb_system_language_format_save_command(lang, cmd,
+                                                  sizeof(cmd)) != 0)
         return;
-
-    snprintf(cmd, sizeof(cmd),
-             "uci -q set deneb.system=system; "
-             "uci -q set deneb.system.language='%s'; "
-             "uci -q commit deneb",
-             lang);
     system(cmd);
 }
 
@@ -90,7 +61,12 @@ static lv_obj_t *language_create(void)
     lv_obj_remove_flag(language_screen, LV_OBJ_FLAG_SCROLL_ELASTIC);
     lv_obj_remove_flag(language_screen, LV_OBJ_FLAG_SCROLL_MOMENTUM);
 
-    for (int i = 0; i < (int)(sizeof(languages) / sizeof(languages[0])); i++) {
+    for (int i = 0; i < (int)deneb_system_language_choice_count(); i++) {
+        const deneb_system_language_choice_t *choice =
+            deneb_system_language_choice((size_t)i);
+        if (!choice)
+            continue;
+
         lv_obj_t *btn = lv_button_create(language_screen);
         lv_obj_set_size(btn, 300, 34);
         lv_obj_set_style_bg_color(btn, lv_color_hex(0x16213e), 0);
@@ -98,10 +74,10 @@ static lv_obj_t *language_create(void)
                                   LV_STATE_PRESSED);
         lv_obj_set_style_radius(btn, 4, 0);
         lv_obj_add_event_cb(btn, lang_btn_cb, LV_EVENT_CLICKED,
-                            (void *)languages[i].code);
+                            (void *)choice->code);
 
         lv_obj_t *lbl = lv_label_create(btn);
-        lv_label_set_text(lbl, locale_get(languages[i].label_key));
+        lv_label_set_text(lbl, locale_get(choice->label_key));
         lv_obj_set_style_text_font(lbl, &deneb_font_12, 0);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
     }

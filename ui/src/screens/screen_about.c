@@ -7,9 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "lvgl.h"
-
-#include <stdio.h>
-#include <string.h>
+#include "printer_identity.h"
 
 static lv_obj_t *about_screen = NULL;
 
@@ -21,31 +19,10 @@ static lv_obj_t *about_screen = NULL;
 #define DENEB_STOCK_BASE_VERSION "UM2C 1.5.3 / UM2C_00100503"
 #endif
 
-static void read_command(char *dst, size_t dst_size, const char *cmd)
-{
-    if (dst_size == 0)
-        return;
-    dst[0] = '\0';
-
-    FILE *fp = popen(cmd, "r");
-    if (!fp)
-        return;
-
-    fgets(dst, dst_size, fp);
-    pclose(fp);
-
-    size_t len = strlen(dst);
-    while (len > 0 && (dst[len - 1] == '\n' || dst[len - 1] == '\r'))
-        dst[--len] = '\0';
-}
-
 static lv_obj_t *about_create(void)
 {
     char printer_id[80];
-    read_command(printer_id, sizeof(printer_id),
-                 "uci -q get ultimaker.option.host_guid 2>/dev/null || "
-                 "cat /sys/class/net/eth0/address 2>/dev/null || "
-                 "cat /sys/class/net/apcli0/address 2>/dev/null");
+    deneb_printer_identity_display_id(printer_id, sizeof(printer_id));
 
     about_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(about_screen, 320, 208);
@@ -106,7 +83,7 @@ static lv_obj_t *about_create(void)
     lv_obj_set_style_text_font(id_title, &deneb_font_14, 0);
 
     lv_obj_t *id_lbl = lv_label_create(about_screen);
-    lv_label_set_text(id_lbl, printer_id[0] ? printer_id : "Unavailable");
+    lv_label_set_text(id_lbl, printer_id);
     lv_obj_set_width(id_lbl, 280);
     lv_label_set_long_mode(id_lbl, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(id_lbl, LV_TEXT_ALIGN_CENTER, 0);

@@ -198,12 +198,14 @@ set(DENEB_SOURCES
     ../common/print/material_workflow.c
     ../common/print/printer_identity.c
     ../common/print/print_backend_route.c
+    ../common/print/pending_job_dispatch.c
     ../common/print/pending_job_file.c
     ../common/print/print_history.c
     ../common/print/print_job_file.c
     ../common/print/print_profile.c
     ../common/print/print_state_rules.c
     ../common/print/status_payload.c
+    ../common/print/system_language.c
     ${DRIVER_SOURCES}
     ${DF_BRIDGE_SOURCES}
 )

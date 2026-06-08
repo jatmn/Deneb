@@ -48,6 +48,18 @@ typedef struct {
     int cooldown_ms;
 } deneb_print_stop_guard_t;
 
+typedef struct {
+    int targets_seen;
+    int targets_ready_seen;
+} deneb_print_preheat_tracker_t;
+
+typedef enum {
+    DENEB_PRINT_PREHEAT_EVENT_NONE = 0,
+    DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE = 1,
+    DENEB_PRINT_PREHEAT_EVENT_TARGETS_READY = 2,
+    DENEB_PRINT_PREHEAT_EVENT_RESET = 4
+} deneb_print_preheat_event_t;
+
 typedef enum {
     DENEB_PRINT_ACTION_PLAN_NONE = 0,
     DENEB_PRINT_ACTION_PLAN_PAUSE,
@@ -133,6 +145,12 @@ int deneb_print_stop_guard_inflight(deneb_print_stop_guard_t *guard,
                                     long long now_ms,
                                     int has_active_context);
 void deneb_print_stop_guard_clear(deneb_print_stop_guard_t *guard);
+void deneb_print_preheat_tracker_init(deneb_print_preheat_tracker_t *tracker);
+int deneb_print_preheat_tracker_update(deneb_print_preheat_tracker_t *tracker,
+                                       float bed_current,
+                                       float bed_target,
+                                       float nozzle_current,
+                                       float nozzle_target);
 int deneb_print_action_parse(const char *body, char *out, size_t out_sz);
 int deneb_print_action_is_pause(const char *action);
 int deneb_print_action_is_resume_or_start(const char *action);

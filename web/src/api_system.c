@@ -7,6 +7,7 @@
 #include "api_system.h"
 #include "json_writer.h"
 #include "printer_identity.h"
+#include "system_language.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +18,10 @@ void api_system_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char hostname[64], guid[48];
+    char lang[16];
     deneb_printer_identity_hostname(hostname, sizeof(hostname));
     deneb_printer_identity_guid(guid, sizeof(guid));
+    deneb_system_language_read(lang, sizeof(lang));
 
     char buf[768];
     json_writer_t w;
@@ -39,7 +42,7 @@ void api_system_get(const http_request_t *req, http_response_t *resp)
     json_str(&w, "platform", "mipsel");
     json_str(&w, "type", "Ultimaker 2+ Connect");
     json_str(&w, "variant", "Deneb");
-    json_str(&w, "language", "en");
+    json_str(&w, "language", lang);
     json_str(&w, "country", "US");
     json_bool(&w, "is_country_locked", 0);
     json_key(&w, "time");
@@ -170,16 +173,8 @@ void api_system_uptime_get(const http_request_t *req, http_response_t *resp)
 void api_system_language_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    /* Try UCI */
     char lang[16] = "en";
-    FILE *f = popen("uci -q get deneb.system.language 2>/dev/null", "r");
-    if (f) {
-        if (fgets(lang, sizeof(lang), f)) {
-            char *nl = strchr(lang, '\n');
-            if (nl) *nl = '\0';
-        }
-        pclose(f);
-    }
+    deneb_system_language_read(lang, sizeof(lang));
     char buf[32];
     snprintf(buf, sizeof(buf), "\"%s\"", lang);
     api_http_set_body_str(resp, buf);
