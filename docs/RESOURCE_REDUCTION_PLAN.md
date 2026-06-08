@@ -141,12 +141,14 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   locally reinterpreting cached backend flags. Build-plate leveling macro-step
   selection now lives in `common/print/buildplate_level.*`, keeping stock macro
   filename ordering out of LVGL screen code while preserving macro-file
-  compatibility. Native macro resolution now rejects traversal and non-`.gcode`
-  names, and packages Deneb-owned macro defaults under
-  `/etc/deneb/marlindriver/gcode` so normal native macro execution no longer
-  depends on stock `/home/cygnus/marlindriver/gcode` files; resolver tests now
-  cover Deneb macro resolution with no stock directory. The stock macro
-  directory remains only as a recovery fallback. Material-profile USB import root/depth/suffix policy and the
+compatibility. Native macro resolution now rejects traversal and non-`.gcode`
+names, and packages Deneb-owned macro defaults under
+`/etc/deneb/marlindriver/gcode` so normal native macro execution no longer
+depends on stock `/home/cygnus/marlindriver/gcode` files; resolver tests now
+cover Deneb macro resolution with no stock directory. The compiled macro
+directory constants now name `/etc/deneb/marlindriver/gcode` as the default
+native macro source and `/home/cygnus/marlindriver/gcode` only as the stock
+recovery path. Material-profile USB import root/depth/suffix policy and the
   recursive import walker now live in `common/print/material_catalog.*` beside
   native material parser/storage helpers instead of inside the LVGL material
   screen. Stock
@@ -242,10 +244,17 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   parsing, G-code stream reader, macro registry, job queue, heater waits,
   pause/resume state, abort/finalize motion policy, diagnostics/logging, and
   test fakes. Avoid thousand-line catch-all files.
+- The service context now passes service-owned serial readiness into both the
+  motion runtime and job streamer by reference, so print streaming, finish
+  policy dispatch, and dry-run/test paths share one transport readiness state
+  instead of copying it into a single adapter.
 - Treat abort, pause, resume, and print-finish as intentional Deneb behavior,
   not line-for-line ports. The native replacement must remove unsafe abort
   cleanup behavior, avoid duplicate homing, and report clear cancellation
   status before it can replace stock `printserver` outside experimental builds.
+  Abort and finish cleanup policy dispatch now reports serial faults when
+  transport is marked ready but cleanup G-code cannot be sent, preventing false
+  successful abort/completion status on cleanup-send failure.
 - Native diagnostic logging now writes a low-volume comparison stream under
   `/var/log/ultimaker/deneb-printsvc.log` when the native service is running.
   Each status line places stock-shaped fields such as `stock.req`,

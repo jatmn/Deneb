@@ -784,9 +784,10 @@ Completed implementation slices:
   macro-file filtering, and LCD/API job-name display reads pending-job metadata
   through `pending_job_file` instead of local JSON scans.
 - [x] Add a safer native macro resolution policy: `deneb-printsvc` now rejects
-  path traversal and non-`.gcode` macro names, prefers Deneb-owned overrides
-  under `/etc/deneb/marlindriver/gcode`, and falls back to the stock
-  `/home/cygnus/marlindriver/gcode` directory for compatibility.
+  path traversal and non-`.gcode` macro names, treats the Deneb-owned
+  `/etc/deneb/marlindriver/gcode` directory as `DENEB_PRINTSVC_MACRO_DIR`,
+  and keeps `/home/cygnus/marlindriver/gcode` named as an explicit stock
+  recovery directory instead of the compiled normal macro source.
 - [x] Package original Deneb macro defaults for native `MACRO` execution:
   homing/parking, manual build-plate jogs, build-plate leveling positions,
   finish cleanup, material feed/retract helpers, and frame-light toggles now
@@ -1100,11 +1101,18 @@ Completed implementation slices:
   and storage-error transitions are not embedded directly in the service
   dispatcher/poller, with host tests covering source defaults, request labels,
   abort cleanup, and fault mapping.
+- [x] Make native abort/finish cleanup policy failures visible as serial faults
+  when motion transport is marked ready, so the driver no longer reports
+  successful abort or completion if the required cleanup G-code cannot be sent.
 - [x] Move native active-job streaming ownership into
   `printsvc/src/job_streamer.*` so preheat gating, paused/abort checks,
   bounded line streaming, finish policy dispatch, and planner-starvation
   accounting are one tested polling policy instead of inline service-loop
   logic.
+- [x] Keep native job-streamer motion output tied to the service-owned serial
+  readiness flag by reference, matching the motion-runtime adapter and avoiding
+  stale copied readiness state if motion transport opens or closes around job
+  polling.
 - [x] Move native runtime diagnostic counter projection into
   `printsvc/src/runtime_diagnostics.*` so flow in-flight/sent/ACK/resend/reject,
   queued job depth, streamed line number, and planner-starvation fields are not

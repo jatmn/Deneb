@@ -11,7 +11,8 @@ static int streamer_valid(const deneb_job_streamer_t *streamer)
 {
     return streamer && streamer->status && streamer->flow && streamer->stream &&
            streamer->heater_wait && streamer->serial && streamer->job_active &&
-           streamer->abort_requested && streamer->planner_starvation_count;
+           streamer->serial_ready && streamer->abort_requested &&
+           streamer->planner_starvation_count;
 }
 
 int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
@@ -55,12 +56,21 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
 
     if (rc == 0) {
         deneb_motion_policy_t finish_policy;
+        int policy_rc;
         deneb_gcode_stream_close(streamer->stream);
         *streamer->job_active = 0;
         deneb_motion_policy_finish(&finish_policy);
-        deneb_motion_sender_apply_policy(streamer->flow, streamer->serial,
-                                         streamer->serial_ready,
-                                         &finish_policy);
+        policy_rc = deneb_motion_sender_apply_policy(streamer->flow,
+                                                     streamer->serial,
+                                                     *streamer->serial_ready,
+                                                     &finish_policy);
+        if (policy_rc != 0 && *streamer->serial_ready) {
+            deneb_job_lifecycle_error(
+                streamer->status,
+                deneb_error_make(DENEB_ERROR_SERIAL,
+                                 "finish cleanup failed"));
+            return -1;
+        }
         deneb_job_lifecycle_complete(streamer->status);
         return 1;
     }
@@ -69,6 +79,6 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     if (deneb_flow_inflight(streamer->flow) == 0)
         (*streamer->planner_starvation_count)++;
     return deneb_motion_sender_send_gcode(streamer->flow, streamer->serial,
-                                          streamer->serial_ready, line) == 0 ?
+                                          *streamer->serial_ready, line) == 0 ?
         1 : -1;
 }

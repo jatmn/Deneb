@@ -44,10 +44,11 @@ scaffold:
 - `crc.*` owns CRC helpers.
 - `gcode_stream.*` streams job and macro G-code line by line without loading
   whole files.
-- `macro_registry.*` resolves Deneb-owned macro defaults under
-  `/etc/deneb/marlindriver/gcode/`, with the stock macro directory retained
-  only as an explicit recovery fallback. Deneb macro resolution does not
-  require the stock directory to exist.
+- `macro_registry.*` resolves Deneb-owned macro defaults from
+  `DENEB_PRINTSVC_MACRO_DIR` (`/etc/deneb/marlindriver/gcode/`), with
+  `DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR` retained only as an explicit
+  recovery fallback. Deneb macro resolution does not require the stock
+  directory to exist.
 - `macro_control.*` owns macro command execution against the service runtime:
   flow-window waiting, abort checks, motion polling, G-code send callbacks,
   and command error mapping.

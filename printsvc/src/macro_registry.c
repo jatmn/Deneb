@@ -63,8 +63,8 @@ int deneb_macro_resolve_from_dirs(const char *macro_name,
 int deneb_macro_resolve(const char *macro_name, char *path, size_t path_sz)
 {
     return deneb_macro_resolve_from_dirs(macro_name,
-                                         DENEB_PRINTSVC_MACRO_OVERRIDE_DIR,
                                          DENEB_PRINTSVC_MACRO_DIR,
+                                         DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR,
                                          path,
                                          path_sz);
 }

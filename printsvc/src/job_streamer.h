@@ -14,7 +14,7 @@ typedef struct {
     deneb_gcode_stream_t *stream;
     deneb_heater_wait_t *heater_wait;
     deneb_serial_transport_t *serial;
-    int serial_ready;
+    int *serial_ready;
     int *job_active;
     int *abort_requested;
     unsigned int *planner_starvation_count;

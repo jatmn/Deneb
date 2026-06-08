@@ -42,7 +42,7 @@ int deneb_service_context_job_streamer(deneb_print_service_t *svc,
     streamer->stream = &svc->job_stream;
     streamer->heater_wait = &svc->heater_wait;
     streamer->serial = &svc->serial;
-    streamer->serial_ready = svc->serial_ready;
+    streamer->serial_ready = &svc->serial_ready;
     streamer->job_active = &svc->job_active;
     streamer->abort_requested = &svc->abort_requested;
     streamer->planner_starvation_count = &svc->planner_starvation_count;

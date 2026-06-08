@@ -489,6 +489,13 @@ static void test_job_control_policy(void)
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
 
+    deneb_flow_init(&svc.flow);
+    svc.serial_ready = 1;
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "abort cleanup failed") != NULL);
+    assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(svc.status.error.code == DENEB_ERROR_SERIAL);
+
     remove(path);
 }
 
@@ -503,6 +510,7 @@ static void test_job_streamer_policy(void)
     deneb_job_streamer_t streamer;
     int job_active = 1;
     int abort_requested = 0;
+    int serial_ready = 0;
     unsigned int starvation = 0;
     FILE *f = fopen(path, "wb");
 
@@ -526,7 +534,7 @@ static void test_job_streamer_policy(void)
     streamer.stream = &stream;
     streamer.heater_wait = &wait;
     streamer.serial = &serial;
-    streamer.serial_ready = 0;
+    streamer.serial_ready = &serial_ready;
     streamer.job_active = &job_active;
     streamer.abort_requested = &abort_requested;
     streamer.planner_starvation_count = &starvation;
@@ -554,6 +562,23 @@ static void test_job_streamer_policy(void)
     abort_requested = 1;
     assert(deneb_job_streamer_poll(&streamer) == -2);
     assert(!job_active);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fclose(f);
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    deneb_heater_wait_init(&wait);
+    assert(deneb_gcode_stream_open(&stream, path) == 0);
+    deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
+                              "finish-fault", 0.0f, 0.0f);
+    job_active = 1;
+    abort_requested = 0;
+    serial_ready = 1;
+    assert(deneb_job_streamer_poll(&streamer) == -1);
+    assert(!job_active);
+    assert(status.state == DENEB_PRINT_STATE_ERROR);
+    assert(status.error.code == DENEB_ERROR_SERIAL);
 
     remove(path);
 }
@@ -2813,13 +2838,15 @@ static void test_macro_safety(void)
     const char *override_path = "/tmp/deneb-macro-override/init.gcode";
     FILE *f;
 
-    assert(strcmp(DENEB_PRINTSVC_MACRO_OVERRIDE_DIR,
+    assert(strcmp(DENEB_PRINTSVC_MACRO_DIR,
                   "/etc/deneb/marlindriver/gcode") == 0);
+    assert(strcmp(DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR,
+                  "/home/cygnus/marlindriver/gcode") == 0);
     assert(deneb_macro_resolve(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD,
                                path, sizeof(path)) == 0);
     assert(strstr(path, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) != NULL);
     assert(deneb_macro_resolve("init.gcode", path, sizeof(path)) == 0);
-    assert(strstr(path, DENEB_PRINTSVC_MACRO_DIR) == path);
+    assert(strstr(path, DENEB_PRINTSVC_STOCK_MACRO_RECOVERY_DIR) == path);
     assert(deneb_macro_name_is_safe("init.gcode"));
     assert(!deneb_macro_name_is_safe("init.gcode.bak"));
     assert(!deneb_macro_name_is_safe("gcode"));
@@ -3019,6 +3046,7 @@ static void test_service_context_policy(void)
     assert(streamer.stream == &svc.job_stream);
     assert(streamer.heater_wait == &svc.heater_wait);
     assert(streamer.serial == &svc.serial);
+    assert(streamer.serial_ready == &svc.serial_ready);
     assert(streamer.job_active == &svc.job_active);
     assert(streamer.abort_requested == &svc.abort_requested);
     assert(streamer.planner_starvation_count == &svc.planner_starvation_count);

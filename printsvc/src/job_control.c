@@ -46,6 +46,7 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
                             char *reply, size_t reply_sz)
 {
     deneb_motion_policy_t abort_policy;
+    int policy_rc;
 
     if (!svc || !reply || reply_sz == 0)
         return -1;
@@ -55,9 +56,18 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;
     }
-    deneb_motion_sender_apply_policy(&svc->flow, &svc->serial,
-                                     svc->serial_ready, &abort_policy);
     svc->abort_requested = 1;
+    policy_rc = deneb_motion_sender_apply_policy(&svc->flow, &svc->serial,
+                                                 svc->serial_ready,
+                                                 &abort_policy);
+    if (policy_rc != 0 && svc->serial_ready) {
+        deneb_job_lifecycle_error(&svc->status,
+                                  deneb_error_make(DENEB_ERROR_SERIAL,
+                                                   "abort cleanup failed"));
+        deneb_command_reply_error(reply, reply_sz, "abort cleanup failed");
+        return -1;
+    }
+
     deneb_job_lifecycle_abort(&svc->status);
     deneb_command_reply_ok(reply, reply_sz, "abort accepted");
     return 0;
