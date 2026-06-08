@@ -49,8 +49,14 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
 
 static int send_native_job_start(const char *path)
 {
-    return backend_zmq_send_job(path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
-                                DENEB_PRINT_DEFAULT_JOB_UUID, 0.0f, 0.0f);
+    deneb_print_job_start_plan_t plan;
+
+    if (deneb_print_job_start_plan_file(path, DENEB_PRINT_DEFAULT_JOB_SOURCE,
+                                        &plan) < 0)
+        return -1;
+
+    return backend_zmq_send_job(plan.path, plan.source, plan.uuid,
+                                plan.bed_target, plan.nozzle_target);
 }
 
 static int register_native_print(const char *path)
@@ -70,6 +76,11 @@ static int register_native_print(const char *path)
         fprintf(stderr, "deneb-api: pending print waits for user action changes=%d\n",
                 registration.change_count);
         return 0;
+    }
+
+    if (!backend_zmq_print_start_allowed()) {
+        fprintf(stderr, "deneb-api: native print start rejected because backend is busy\n");
+        return -1;
     }
 
     if (send_native_job_start(path) < 0) {

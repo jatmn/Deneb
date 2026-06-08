@@ -13,7 +13,22 @@ typedef struct {
     char nozzle_size[24];
 } deneb_print_job_file_metadata_t;
 
+typedef struct {
+    const char *path;
+    const char *source;
+    const char *uuid;
+    float bed_target;
+    float nozzle_target;
+} deneb_print_job_start_plan_t;
+
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta);
+void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan);
+int deneb_print_job_start_plan_prepare(const char *path, const char *source,
+                                       const char *uuid, float bed_target,
+                                       float nozzle_target,
+                                       deneb_print_job_start_plan_t *plan);
+int deneb_print_job_start_plan_file(const char *path, const char *source,
+                                    deneb_print_job_start_plan_t *plan);
 int deneb_print_job_file_metadata_extract_value(const char *buf,
                                                 const char *key,
                                                 char *out,

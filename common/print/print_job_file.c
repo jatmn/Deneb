@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "print_job_file.h"
 
+#include "print_state_rules.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -14,6 +16,41 @@ void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta)
     if (!meta)
         return;
     memset(meta, 0, sizeof(*meta));
+}
+
+void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan)
+{
+    if (!plan)
+        return;
+    memset(plan, 0, sizeof(*plan));
+    plan->source = DENEB_PRINT_DEFAULT_JOB_SOURCE;
+    plan->uuid = DENEB_PRINT_DEFAULT_JOB_UUID;
+}
+
+int deneb_print_job_start_plan_prepare(const char *path, const char *source,
+                                       const char *uuid, float bed_target,
+                                       float nozzle_target,
+                                       deneb_print_job_start_plan_t *plan)
+{
+    if (!plan || !path || !path[0]) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    deneb_print_job_start_plan_init(plan);
+    plan->path = path;
+    plan->source = deneb_print_job_source_or_default(source);
+    plan->uuid = deneb_print_job_uuid_or_default(uuid);
+    plan->bed_target = bed_target;
+    plan->nozzle_target = nozzle_target;
+    return 0;
+}
+
+int deneb_print_job_start_plan_file(const char *path, const char *source,
+                                    deneb_print_job_start_plan_t *plan)
+{
+    return deneb_print_job_start_plan_prepare(path, source, NULL, 0.0f, 0.0f,
+                                             plan);
 }
 
 int deneb_print_job_file_metadata_extract_value(const char *buf,

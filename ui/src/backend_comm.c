@@ -15,6 +15,7 @@
 #include "json_field.h"
 #include "pending_job_file.h"
 #include "print_backend_route.h"
+#include "print_job_file.h"
 #include "print_state_rules.h"
 #include "status_payload.h"
 
@@ -72,6 +73,11 @@ const char *backend_get_print_backend_name(void) { return deneb_print_backend_na
 const char *backend_get_print_backend_status_url(void) { return backend_route.status_url; }
 const char *backend_get_print_backend_command_url(void) { return backend_route.command_url; }
 int backend_is_ready(void) { return state.connected && !state.has_error; }
+int backend_print_start_allowed(void)
+{
+    return deneb_print_start_allowed(state.connected, state.has_error,
+                                     state.is_paused, state.is_printing);
+}
 int backend_manual_action_allowed(void)
 {
     return deneb_print_manual_action_allowed(state.connected, state.has_error,
@@ -562,6 +568,12 @@ int backend_is_ready(void)
     return state.connected && !state.has_error;
 }
 
+int backend_print_start_allowed(void)
+{
+    return deneb_print_start_allowed(state.connected, state.has_error,
+                                     state.is_paused, state.is_printing);
+}
+
 int backend_manual_action_allowed(void)
 {
     return deneb_print_manual_action_allowed(state.connected, state.has_error,
@@ -662,28 +674,38 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
 int backend_send_pending_instruction(const char *instruction)
 {
     deneb_pending_job_file_t job;
-    deneb_pending_job_action_plan_t plan;
+    deneb_pending_job_action_plan_t pending_plan;
+    deneb_print_job_start_plan_t start_plan;
 
     if (deneb_pending_job_file_load_pending_default(&job) != 0 ||
-        deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0)
+        deneb_pending_job_file_plan_action(&job, instruction,
+                                           &pending_plan) != 0)
         return -1;
 
     fprintf(stderr, "backend: send pending instruction=%s tracker=%d path=%s\n",
             instruction ? instruction : "(none)",
-            plan.tracker, plan.path[0] ? plan.path : "(none)");
+            pending_plan.tracker,
+            pending_plan.path[0] ? pending_plan.path : "(none)");
 
-    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
+    if (pending_plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
         if (backend_abort_print() != 0)
             return -1;
-    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
-        if (backend_send_job(plan.path, plan.source, plan.uuid,
-                             0.0f, 0.0f) != 0)
+    } else if (pending_plan.kind == DENEB_PENDING_JOB_ACTION_START) {
+        if (!backend_print_start_allowed())
+            return -1;
+        if (deneb_print_job_start_plan_prepare(
+                pending_plan.path, pending_plan.source, pending_plan.uuid,
+                0.0f, 0.0f, &start_plan) < 0 ||
+            backend_send_job(start_plan.path, start_plan.source,
+                             start_plan.uuid, start_plan.bed_target,
+                             start_plan.nozzle_target) != 0)
             return -1;
     } else {
         return -1;
     }
 
-    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
+    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH,
+                                               &pending_plan);
 }
 
 int backend_send_command(const char *cmd, const char *args_json)

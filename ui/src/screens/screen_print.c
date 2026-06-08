@@ -75,19 +75,23 @@ static void file_click_cb(lv_event_t *e)
 
 static void start_btn_cb(lv_event_t *e)
 {
+    deneb_print_job_start_plan_t plan;
+
     (void)e;
     if (!selected_path[0]) {
         lv_label_set_text(status_msg, locale_get("print.select_first"));
         return;
     }
-    if (!backend_is_ready()) {
+    if (!backend_print_start_allowed()) {
         lv_label_set_text(status_msg, locale_get("material.busy"));
         return;
     }
 
-    if (backend_send_job(selected_path, DENEB_PRINT_USB_JOB_SOURCE,
-                         deneb_print_job_uuid_or_default(NULL), 0.0f,
-                         0.0f) == 0) {
+    if (deneb_print_job_start_plan_file(selected_path,
+                                        DENEB_PRINT_USB_JOB_SOURCE,
+                                        &plan) == 0 &&
+        backend_send_job(plan.path, plan.source, plan.uuid, plan.bed_target,
+                         plan.nozzle_target) == 0) {
         lv_label_set_text_fmt(status_msg, locale_get("print.starting_fmt"),
                               selected_name);
         fprintf(stderr, "touch-ui: sent JOB command for %s\n", selected_path);

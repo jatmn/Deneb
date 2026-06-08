@@ -68,6 +68,7 @@ set(DENEB_API_SOURCES
     src/backend_zmq.c
     src/json_writer.c
     src/md5.c
+    ../common/print/buildplate_level.c
     ../common/print/command_format.c
     ../common/print/gcode_command.c
     ../common/print/json_field.c
@@ -75,6 +76,7 @@ set(DENEB_API_SOURCES
     ../common/print/json_string.c
     ../common/print/manual_motion.c
     ../common/print/material_catalog.c
+    ../common/print/material_workflow.c
     ../common/print/printer_identity.c
     ../common/print/print_backend_route.c
     ../common/print/pending_job_file.c

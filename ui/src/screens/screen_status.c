@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdio.h>
 
@@ -67,6 +68,25 @@ static void set_position_label(lv_obj_t *label, float x, float y, float z)
     lv_label_set_text(label, text);
 }
 
+static const char *display_state_locale_key(deneb_print_display_state_t state)
+{
+    switch (state) {
+        case DENEB_PRINT_DISPLAY_STATE_ERROR:
+            return "status.error";
+        case DENEB_PRINT_DISPLAY_STATE_COOLING:
+            return "status.cooling";
+        case DENEB_PRINT_DISPLAY_STATE_PAUSED:
+            return "status.paused";
+        case DENEB_PRINT_DISPLAY_STATE_PREPARING:
+            return "status.preparing";
+        case DENEB_PRINT_DISPLAY_STATE_PRINTING:
+            return "status.printing";
+        case DENEB_PRINT_DISPLAY_STATE_IDLE:
+        default:
+            return "status.idle";
+    }
+}
+
 static void update_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -98,16 +118,12 @@ static void update_timer_cb(lv_timer_t *timer)
         display_name = resolved_name;
 
     /* Printer state */
-    if (backend_has_abort_print_context())
-        lv_label_set_text(state_label, locale_get("status.cooling"));
-    else if (s->is_paused)
-        lv_label_set_text(state_label, locale_get("status.paused"));
-    else if (backend_has_preparing_print_context() && !s->time_total)
-        lv_label_set_text(state_label, locale_get("status.preparing"));
-    else if (s->is_printing)
-        lv_label_set_text(state_label, locale_get("status.printing"));
-    else
-        lv_label_set_text(state_label, locale_get("status.idle"));
+    lv_label_set_text(
+        state_label,
+        locale_get(display_state_locale_key(deneb_print_display_state(
+            s->connected, s->has_error, s->is_paused, s->is_printing,
+            backend_has_abort_print_context(),
+            backend_has_preparing_print_context(), s->time_total))));
 
     /* Temperatures */
     set_temp_label(nozzle_temp_label, s->nozzle_temp_cur, s->nozzle_temp_set);

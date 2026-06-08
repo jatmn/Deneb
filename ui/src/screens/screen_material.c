@@ -1,23 +1,15 @@
 /**
  * SPDX-License-Identifier: MPL-2.0
  *
- * Material screen - load/change workflow via coordinator macros. LVGL v9.
- *
- * Macro files on device (from /home/cygnus/marlindriver/gcode/):
- *   material_down.gcode        - Feed material into hotend (load)
- *   move_material_up.gcode     - Retract material from hotend (unload)
- *   move_material_finish.gcode - Finish material operation
- *   retract.gcode              - Retract filament
- *
- * Commands go through coordinator port 5566:
- *   MACRO<{"macro":"material_down.gcode"}
- *   GCODE<["M104 S210"]
+ * Material screen - load/change workflow. LVGL v9.
+ * Stock-driver command details are owned by common/print helpers.
  */
 
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
 #include "gcode_command.h"
+#include "material_workflow.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdint.h>
@@ -33,15 +25,13 @@ static lv_obj_t *workflow_load_btn = NULL;
 static lv_obj_t *workflow_unload_btn = NULL;
 static lv_obj_t *workflow_stop_btn = NULL;
 static lv_timer_t *workflow_timer = NULL;
-static int workflow_target_temp = 210;
+static int workflow_target_temp = DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C;
 static int workflow_moving = 0;
 static uint32_t workflow_move_done_at = 0;
 static int workflow_target_sent = 0;
 
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
-
-#define MATERIAL_DEFAULT_TEMP 210
 
 static int material_backend_ready(void)
 {
@@ -77,6 +67,28 @@ static void set_celsius_label(lv_obj_t *label, float temp)
     lv_label_set_text(label, text);
 }
 
+static const char *workflow_status_locale_key(
+    deneb_material_workflow_status_t status)
+{
+    switch (status) {
+        case DENEB_MATERIAL_WORKFLOW_STATUS_BUSY:
+            return "material.busy";
+        case DENEB_MATERIAL_WORKFLOW_STATUS_MOVING:
+            return "material.moving";
+        case DENEB_MATERIAL_WORKFLOW_STATUS_SET_TARGET:
+            return "material.set_target";
+        case DENEB_MATERIAL_WORKFLOW_STATUS_COOLING:
+            return "material.cooling";
+        case DENEB_MATERIAL_WORKFLOW_STATUS_TARGET_TOO_LOW:
+            return "material.target_too_low";
+        case DENEB_MATERIAL_WORKFLOW_STATUS_READY_TO_MOVE:
+            return "material.ready_to_move";
+        case DENEB_MATERIAL_WORKFLOW_STATUS_HEATING:
+        default:
+            return "material.heating";
+    }
+}
+
 static void workflow_update(void)
 {
     const printer_state_t *s = backend_get_state();
@@ -97,30 +109,13 @@ static void workflow_update(void)
         lv_label_set_text_fmt(workflow_target_label, "%d\u00b0C",
                               workflow_target_temp);
 
-    if (workflow_status_label) {
-        if (!backend_ready) {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.busy"));
-        } else if (workflow_moving) {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.moving"));
-        } else if (!workflow_target_sent && !ready) {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.set_target"));
-        } else if (workflow_target_temp == 0) {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.cooling"));
-        } else if (workflow_target_temp < DENEB_PRINT_MATERIAL_MIN_MOVE_TEMP_C) {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.target_too_low"));
-        } else if (ready) {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.ready_to_move"));
-        } else {
-            lv_label_set_text(workflow_status_label,
-                              locale_get("material.heating"));
-        }
-    }
+    if (workflow_status_label)
+        lv_label_set_text(
+            workflow_status_label,
+            locale_get(workflow_status_locale_key(
+                deneb_material_workflow_status(
+                    backend_ready, workflow_moving, workflow_target_sent,
+                    workflow_target_temp, ready))));
 
     set_btn_enabled(workflow_load_btn,
                     motion_allowed && ready && !workflow_moving);
@@ -207,13 +202,12 @@ static void workflow_unload_cb(lv_event_t *e)
 
 static void workflow_cooldown_nozzle(int update_ui)
 {
+    deneb_material_workflow_stop_plan_t plan;
+
     workflow_target_temp = 0;
-    {
-        char gcode[32];
-        if (deneb_gcode_format_nozzle_target(0.0f, gcode, sizeof(gcode)) == 0 &&
-            backend_send_gcode(gcode) == 0)
-            workflow_target_sent = 0;
-    }
+    if (deneb_material_workflow_stop_plan(0, &plan) == 0 &&
+        backend_send_gcode(plan.cooldown_gcode) == 0)
+        workflow_target_sent = 0;
     if (update_ui && workflow_slider)
         lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_ON);
     if (update_ui)
@@ -222,11 +216,21 @@ static void workflow_cooldown_nozzle(int update_ui)
 
 static void workflow_stop_material(int update_ui)
 {
-    if (workflow_moving)
-        backend_send_gcode(DENEB_GCODE_STOP_MATERIAL);
+    deneb_material_workflow_stop_plan_t plan;
+
+    if (deneb_material_workflow_stop_plan(workflow_moving, &plan) == 0) {
+        if (plan.stop_gcode)
+            backend_send_gcode(plan.stop_gcode);
+        if (backend_send_gcode(plan.cooldown_gcode) == 0)
+            workflow_target_sent = 0;
+    }
+    workflow_target_temp = 0;
     workflow_moving = 0;
     workflow_move_done_at = 0;
-    workflow_cooldown_nozzle(update_ui);
+    if (update_ui && workflow_slider)
+        lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_ON);
+    if (update_ui)
+        workflow_update();
 }
 
 static void workflow_stop_cb(lv_event_t *e)
@@ -328,7 +332,7 @@ static lv_obj_t *create_workflow_btn(lv_obj_t *parent, const char *label,
 
 static lv_obj_t *material_workflow_create(void)
 {
-    workflow_target_temp = MATERIAL_DEFAULT_TEMP;
+    workflow_target_temp = DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C;
     workflow_moving = 0;
     workflow_move_done_at = 0;
     workflow_target_sent = 0;

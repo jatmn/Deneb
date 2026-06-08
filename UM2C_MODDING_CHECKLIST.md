@@ -758,10 +758,21 @@ Completed implementation slices:
   filtering onto shared native print helpers so the LVGL print screen no longer
   hand-checks `.gcode`/`.ufp` suffixes or embeds the stock `/mnt/sda1` and
   `/home/3D` scan paths locally.
+- [x] Move native print-file start planning into
+  `common/print/print_job_file.*` so touchscreen USB starts and web/API
+  immediate Cura starts share path/source/UUID/default-temperature semantics
+  before sending a backend `JOB` command.
+- [x] Route pending-job continue dispatch through the same native print-file
+  start plan so touchscreen conflict continuation and Cura cluster continuation
+  preserve pending path/source/UUID metadata without each hard-coding zero
+  temperature targets beside the transport call.
 - [x] Move manual motion action planning into `common/print/manual_motion.*`
   so touchscreen jog buttons and web/API `home`/`z_home`/`bed_up`/`bed_down`
   actions share one native owner for whether a motion action sends a macro or
   direct G-code.
+- [x] Move build-plate leveling macro planning into
+  `common/print/buildplate_level.*` so the touchscreen leveling workflow no
+  longer owns the stock leveling macro filename sequence in LVGL screen code.
 - [x] Move pending-job display-name fallback rules into
   `common/print/pending_job_file.*` so LCD backend status retention,
   touchscreen status labels, native pending-job metadata, and web/API printer
@@ -798,6 +809,14 @@ Completed implementation slices:
   web/API motion controls, touchscreen jog controls, temperature actions,
   material moves, and frame-light startup apply all use one connected,
   not-printing, not-paused, not-error predicate.
+- [x] Move print-start readiness gating into shared native print-state rules so
+  touchscreen USB starts, Cura immediate starts, and pending-job continuation
+  all reject new `JOB` dispatch while disconnected, errored, paused, or already
+  printing through one Deneb-owned policy.
+- [x] Move touchscreen status-screen display-state selection into shared native
+  print-state rules so Cooling, Paused, Preparing, Printing, Error, and Idle
+  labels follow the same Deneb-owned status policy instead of a local LVGL
+  decision tree.
 - [x] Move LCD/web manual-action readiness checks behind backend adapter
   helpers so jog, temperature, material, frame-light startup, USB print start,
   and web motion endpoints no longer inspect cached connection/error/print
@@ -809,6 +828,13 @@ Completed implementation slices:
   `common/print/print_state_rules.*` so the touchscreen material workflow no
   longer owns its own hotend movement safety threshold beside shared heat-state
   rules.
+- [x] Move material workflow default temperature and stop/cooldown planning into
+  `common/print/material_workflow.*` so the touchscreen material screen no
+  longer owns stock-driver `M401` stop-material or nozzle-off command details.
+- [x] Move material workflow status selection into
+  `common/print/material_workflow.*` so Busy, Moving, Set Target, Cooling,
+  Target Too Low, Ready, and Heating labels follow one native policy instead of
+  a local LVGL decision tree.
 - [x] Move print elapsed-time calculation into shared native print-state rules
   so UM API, Deneb API, and Cura cluster API responses clamp `time_total` /
   `time_left` consistently instead of each computing elapsed seconds locally.

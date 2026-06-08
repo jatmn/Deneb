@@ -92,6 +92,26 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   labels. Web and touchscreen macro,
   multi-line G-code, and job-start callers now route through native backend
   helper functions instead of each hand-rolling stock command JSON. LCD/API
+  immediate print-file starts now share one native start-plan helper for
+  path/source/UUID/default-temperature semantics before dispatching backend
+  `JOB` commands, so touchscreen USB starts and web/Cura no-conflict starts do
+  not preserve separate driver defaults. Pending-job continue dispatch uses the
+  same helper while preserving queued path/source/UUID metadata, leaving only
+  the transport send in the LCD/web adapters. Print-start readiness now has one
+  shared native rule for connected/not-error/not-paused/not-printing checks
+  before any touchscreen, web/Cura, or pending-continue `JOB` dispatch. The
+  touchscreen status screen now also asks shared print-state rules for its
+  Cooling/Paused/Preparing/Printing/Error/Idle display state instead of
+  locally reinterpreting cached backend flags. Build-plate leveling macro-step
+  selection now lives in `common/print/buildplate_level.*`, keeping stock macro
+  filename ordering out of LVGL screen code while preserving macro-file
+  compatibility. Material workflow stop/cooldown planning now lives in
+  `common/print/material_workflow.*`, keeping default material temperature,
+  stock `M401` stop-material dispatch, and nozzle-off cooldown behavior out of
+  the touchscreen material screen. The same helper owns material workflow
+  status selection for Busy/Moving/Set Target/Cooling/Target Too Low/Ready/
+  Heating labels, avoiding another LVGL-only interpretation of heat/move state.
+  LCD/API
   job-name display also reads pending-job metadata through the shared helper
   instead of local JSON scans, and the pending display-name fallback has one
   shared owner for name/path-basename/`"none"` handling across native

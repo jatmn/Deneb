@@ -51,6 +51,7 @@ endif()
 option(BUILD_HOST_STUB "Build without libzmq or serial device dependencies" OFF)
 
 set(DENEB_PRINTSVC_LIB_SOURCES
+    ../common/print/buildplate_level.c
     ../common/print/command_format.c
     ../common/print/gcode_command.c
     ../common/print/json_field.c
@@ -58,6 +59,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/json_string.c
     ../common/print/manual_motion.c
     ../common/print/material_catalog.c
+    ../common/print/material_workflow.c
     ../common/print/printer_identity.c
     ../common/print/print_backend_route.c
     ../common/print/pending_job_file.c

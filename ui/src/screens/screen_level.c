@@ -7,27 +7,33 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
-#include "print_macros.h"
+#include "buildplate_level.h"
 #include "lvgl.h"
+#include <stdint.h>
 
 static lv_obj_t *level_screen = NULL;
 static lv_obj_t *status_label = NULL;
 
 static void macro_btn_cb(lv_event_t *e)
 {
-    const char *macro = (const char *)lv_event_get_user_data(e);
-    if (backend_send_macro(macro) == 0)
-        lv_label_set_text(status_label, macro);
+    deneb_buildplate_level_step_t step =
+        (deneb_buildplate_level_step_t)(int)(intptr_t)lv_event_get_user_data(e);
+    deneb_buildplate_level_plan_t plan;
+
+    if (deneb_buildplate_level_plan_step(step, &plan) == 0 &&
+        backend_send_macro(plan.macro) == 0)
+        lv_label_set_text(status_label, plan.macro);
 }
 
 static void create_macro_btn(lv_obj_t *parent, const char *label,
-                             const char *macro)
+                             deneb_buildplate_level_step_t step)
 {
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_size(btn, 300, 32);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_radius(btn, 4, 0);
-    lv_obj_add_event_cb(btn, macro_btn_cb, LV_EVENT_CLICKED, (void *)macro);
+    lv_obj_add_event_cb(btn, macro_btn_cb, LV_EVENT_CLICKED,
+                        (void *)(intptr_t)step);
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, label);
@@ -52,15 +58,15 @@ static lv_obj_t *level_create(void)
     lv_obj_remove_flag(level_screen, LV_OBJ_FLAG_SCROLL_MOMENTUM);
 
     create_macro_btn(level_screen, locale_get("level.step1"),
-                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP1);
+                     DENEB_BUILDPLATE_LEVEL_STEP_1);
     create_macro_btn(level_screen, locale_get("level.step2"),
-                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP2);
+                     DENEB_BUILDPLATE_LEVEL_STEP_2);
     create_macro_btn(level_screen, locale_get("level.step3"),
-                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP3);
+                     DENEB_BUILDPLATE_LEVEL_STEP_3);
     create_macro_btn(level_screen, locale_get("level.step4"),
-                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP4);
+                     DENEB_BUILDPLATE_LEVEL_STEP_4);
     create_macro_btn(level_screen, locale_get("level.finish"),
-                     DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_FINISH);
+                     DENEB_BUILDPLATE_LEVEL_STEP_FINISH);
 
     status_label = lv_label_create(level_screen);
     lv_label_set_text(status_label, locale_get("level.message"));

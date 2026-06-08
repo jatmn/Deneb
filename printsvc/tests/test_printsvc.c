@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+#include "buildplate_level.h"
 #include "command.h"
 #include "command_audit.h"
 #include "command_dispatch.h"
@@ -23,6 +24,7 @@
 #include "macro_runner.h"
 #include "manual_motion.h"
 #include "material_catalog.h"
+#include "material_workflow.h"
 #include "marlin_packet.h"
 #include "motion_firmware.h"
 #include "motion_observer.h"
@@ -871,6 +873,39 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_job_source_or_default("USB"), "USB") == 0);
     assert(strcmp(DENEB_PRINT_USB_JOB_SOURCE, "USB") == 0);
     {
+        deneb_print_job_start_plan_t plan;
+
+        deneb_print_job_start_plan_init(&plan);
+        assert(plan.path == NULL);
+        assert(strcmp(plan.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+        assert(strcmp(plan.uuid, DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
+        assert(plan.bed_target == 0.0f);
+        assert(plan.nozzle_target == 0.0f);
+
+        assert(deneb_print_job_start_plan_file(
+                   "/home/3D/cube.gcode", DENEB_PRINT_USB_JOB_SOURCE,
+                   &plan) == 0);
+        assert(strcmp(plan.path, "/home/3D/cube.gcode") == 0);
+        assert(strcmp(plan.source, DENEB_PRINT_USB_JOB_SOURCE) == 0);
+        assert(strcmp(plan.uuid, DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
+        assert(plan.bed_target == 0.0f);
+        assert(plan.nozzle_target == 0.0f);
+
+        assert(deneb_print_job_start_plan_file(
+                   "/home/3D/cura.gcode", "", &plan) == 0);
+        assert(strcmp(plan.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+        assert(deneb_print_job_start_plan_prepare(
+                   "/home/3D/pending.gcode", DENEB_PRINT_WEB_API_JOB_SOURCE,
+                   "pending-uuid", 55.0f, 205.0f, &plan) == 0);
+        assert(strcmp(plan.path, "/home/3D/pending.gcode") == 0);
+        assert(strcmp(plan.source, DENEB_PRINT_WEB_API_JOB_SOURCE) == 0);
+        assert(strcmp(plan.uuid, "pending-uuid") == 0);
+        assert(plan.bed_target == 55.0f);
+        assert(plan.nozzle_target == 205.0f);
+        assert(deneb_print_job_start_plan_file("", DENEB_PRINT_USB_JOB_SOURCE,
+                                               &plan) < 0);
+    }
+    {
         char action[16];
         assert(deneb_print_action_parse("\"Pause\"", action, sizeof(action)) == 0);
         assert(strcmp(action, DENEB_PRINT_ACTION_PAUSE_TEXT) == 0);
@@ -921,6 +956,25 @@ static void test_print_state_rules(void)
     assert(!deneb_print_manual_action_allowed(1, 1, 0, 0));
     assert(!deneb_print_manual_action_allowed(1, 0, 1, 0));
     assert(!deneb_print_manual_action_allowed(1, 0, 0, 1));
+    assert(deneb_print_start_allowed(1, 0, 0, 0));
+    assert(!deneb_print_start_allowed(0, 0, 0, 0));
+    assert(!deneb_print_start_allowed(1, 1, 0, 0));
+    assert(!deneb_print_start_allowed(1, 0, 1, 0));
+    assert(!deneb_print_start_allowed(1, 0, 0, 1));
+    assert(deneb_print_display_state(0, 0, 0, 0, 0, 0, 0) ==
+           DENEB_PRINT_DISPLAY_STATE_PREPARING);
+    assert(deneb_print_display_state(1, 1, 0, 0, 0, 0, 0) ==
+           DENEB_PRINT_DISPLAY_STATE_ERROR);
+    assert(deneb_print_display_state(1, 0, 0, 0, 1, 0, 0) ==
+           DENEB_PRINT_DISPLAY_STATE_COOLING);
+    assert(deneb_print_display_state(1, 0, 1, 1, 0, 0, 0) ==
+           DENEB_PRINT_DISPLAY_STATE_PAUSED);
+    assert(deneb_print_display_state(1, 0, 0, 0, 0, 1, 0) ==
+           DENEB_PRINT_DISPLAY_STATE_PREPARING);
+    assert(deneb_print_display_state(1, 0, 0, 1, 0, 1, 120) ==
+           DENEB_PRINT_DISPLAY_STATE_PRINTING);
+    assert(deneb_print_display_state(1, 0, 0, 0, 0, 0, 0) ==
+           DENEB_PRINT_DISPLAY_STATE_IDLE);
     assert(deneb_print_elapsed_seconds(120, 60) == 60);
     assert(deneb_print_elapsed_seconds(120, 0) == 120);
     assert(deneb_print_elapsed_seconds(120, -1) == 120);
@@ -1254,6 +1308,75 @@ static void test_manual_motion_helpers(void)
     assert(deneb_manual_motion_plan_action("unknown", &plan) != 0);
     assert(deneb_manual_motion_plan_action(
                DENEB_MANUAL_MOTION_ACTION_HOME, NULL) != 0);
+}
+
+static void test_buildplate_level_helpers(void)
+{
+    deneb_buildplate_level_plan_t plan;
+
+    deneb_buildplate_level_plan_init(&plan);
+    assert(plan.macro == NULL);
+
+    assert(deneb_buildplate_level_plan_step(
+               DENEB_BUILDPLATE_LEVEL_STEP_1, &plan) == 0);
+    assert(strcmp(plan.macro,
+                  DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP1) == 0);
+    assert(deneb_buildplate_level_plan_step(
+               DENEB_BUILDPLATE_LEVEL_STEP_2, &plan) == 0);
+    assert(strcmp(plan.macro,
+                  DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP2) == 0);
+    assert(deneb_buildplate_level_plan_step(
+               DENEB_BUILDPLATE_LEVEL_STEP_3, &plan) == 0);
+    assert(strcmp(plan.macro,
+                  DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP3) == 0);
+    assert(deneb_buildplate_level_plan_step(
+               DENEB_BUILDPLATE_LEVEL_STEP_4, &plan) == 0);
+    assert(strcmp(plan.macro,
+                  DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_STEP4) == 0);
+    assert(deneb_buildplate_level_plan_step(
+               DENEB_BUILDPLATE_LEVEL_STEP_FINISH, &plan) == 0);
+    assert(strcmp(plan.macro,
+                  DENEB_PRINT_MACRO_BUILDPLATE_LEVEL_FINISH) == 0);
+    assert(deneb_buildplate_level_plan_step(
+               (deneb_buildplate_level_step_t)99, &plan) != 0);
+    assert(deneb_buildplate_level_plan_step(
+               DENEB_BUILDPLATE_LEVEL_STEP_1, NULL) != 0);
+}
+
+static void test_material_workflow_helpers(void)
+{
+    deneb_material_workflow_stop_plan_t plan;
+
+    assert(DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C == 210);
+    deneb_material_workflow_stop_plan_init(&plan);
+    assert(plan.stop_gcode == NULL);
+    assert(plan.cooldown_gcode == NULL);
+    assert(plan.nozzle_off[0] == '\0');
+
+    assert(deneb_material_workflow_stop_plan(0, &plan) == 0);
+    assert(plan.stop_gcode == NULL);
+    assert(strcmp(plan.cooldown_gcode, "M104 S0") == 0);
+    assert(strcmp(plan.nozzle_off, "M104 S0") == 0);
+
+    assert(deneb_material_workflow_stop_plan(1, &plan) == 0);
+    assert(strcmp(plan.stop_gcode, DENEB_GCODE_STOP_MATERIAL) == 0);
+    assert(strcmp(plan.cooldown_gcode, "M104 S0") == 0);
+    assert(deneb_material_workflow_stop_plan(1, NULL) != 0);
+
+    assert(deneb_material_workflow_status(0, 0, 0, 210, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_BUSY);
+    assert(deneb_material_workflow_status(1, 1, 0, 210, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_MOVING);
+    assert(deneb_material_workflow_status(1, 0, 0, 210, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_SET_TARGET);
+    assert(deneb_material_workflow_status(1, 0, 1, 0, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_COOLING);
+    assert(deneb_material_workflow_status(1, 0, 1, 160, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_TARGET_TOO_LOW);
+    assert(deneb_material_workflow_status(1, 0, 1, 210, 1) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_READY_TO_MOVE);
+    assert(deneb_material_workflow_status(1, 0, 1, 210, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_HEATING);
 }
 
 static void test_json_string_helpers(void)
@@ -2290,6 +2413,8 @@ int main(void)
     test_status_payload_filename_resolution();
     test_gcode_command_helpers();
     test_manual_motion_helpers();
+    test_buildplate_level_helpers();
+    test_material_workflow_helpers();
     test_json_string_helpers();
     test_status_payload_helpers();
     test_print_profile_helpers();

@@ -338,10 +338,41 @@ int deneb_print_job_is_active(int has_error, int is_paused, int is_active)
     return has_error || is_paused || is_active;
 }
 
+int deneb_print_start_allowed(int connected, int has_error,
+                              int is_paused, int is_active)
+{
+    return connected && !has_error && !is_paused && !is_active;
+}
+
 int deneb_print_manual_action_allowed(int connected, int has_error,
                                       int is_paused, int is_active)
 {
-    return connected && !has_error && !is_paused && !is_active;
+    return deneb_print_start_allowed(connected, has_error, is_paused,
+                                     is_active);
+}
+
+deneb_print_display_state_t deneb_print_display_state(
+    int connected,
+    int has_error,
+    int is_paused,
+    int is_printing,
+    int has_abort_context,
+    int has_preparing_context,
+    int time_total)
+{
+    if (!connected)
+        return DENEB_PRINT_DISPLAY_STATE_PREPARING;
+    if (has_error)
+        return DENEB_PRINT_DISPLAY_STATE_ERROR;
+    if (has_abort_context)
+        return DENEB_PRINT_DISPLAY_STATE_COOLING;
+    if (is_paused)
+        return DENEB_PRINT_DISPLAY_STATE_PAUSED;
+    if (has_preparing_context && time_total <= 0)
+        return DENEB_PRINT_DISPLAY_STATE_PREPARING;
+    if (is_printing)
+        return DENEB_PRINT_DISPLAY_STATE_PRINTING;
+    return DENEB_PRINT_DISPLAY_STATE_IDLE;
 }
 
 void deneb_print_stop_guard_init(deneb_print_stop_guard_t *guard,

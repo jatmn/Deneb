@@ -80,6 +80,7 @@ const char *backend_get_print_backend_name(void);
 const char *backend_get_print_backend_status_url(void);
 const char *backend_get_print_backend_command_url(void);
 int backend_is_ready(void);
+int backend_print_start_allowed(void);
 int backend_manual_action_allowed(void);
 int backend_get_print_display_name(char *out, size_t out_sz);
 int backend_has_print_name(const char *display_name);

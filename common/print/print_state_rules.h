@@ -56,6 +56,15 @@ typedef enum {
     DENEB_PRINT_ACTION_PLAN_STOP
 } deneb_print_action_plan_kind_t;
 
+typedef enum {
+    DENEB_PRINT_DISPLAY_STATE_IDLE = 0,
+    DENEB_PRINT_DISPLAY_STATE_PRINTING,
+    DENEB_PRINT_DISPLAY_STATE_PAUSED,
+    DENEB_PRINT_DISPLAY_STATE_PREPARING,
+    DENEB_PRINT_DISPLAY_STATE_COOLING,
+    DENEB_PRINT_DISPLAY_STATE_ERROR
+} deneb_print_display_state_t;
+
 typedef struct {
     deneb_print_action_plan_kind_t kind;
     const char *command;
@@ -104,8 +113,18 @@ const char *deneb_print_job_source_or_default(const char *source);
 const char *deneb_print_completion_state_label(int has_error, int time_total,
                                                int time_left);
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active);
+int deneb_print_start_allowed(int connected, int has_error,
+                              int is_paused, int is_active);
 int deneb_print_manual_action_allowed(int connected, int has_error,
                                       int is_paused, int is_active);
+deneb_print_display_state_t deneb_print_display_state(
+    int connected,
+    int has_error,
+    int is_paused,
+    int is_printing,
+    int has_abort_context,
+    int has_preparing_context,
+    int time_total);
 void deneb_print_stop_guard_init(deneb_print_stop_guard_t *guard,
                                  int cooldown_ms);
 int deneb_print_stop_guard_begin(deneb_print_stop_guard_t *guard,

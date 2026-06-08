@@ -64,6 +64,7 @@ const printer_state_t *backend_zmq_get_state(void);
 const char *backend_zmq_get_status_label(void);
 void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary);
 int backend_zmq_has_active_job(void);
+int backend_zmq_print_start_allowed(void);
 int backend_zmq_manual_action_allowed(void);
 
 /* Send a command to the selected backend. Returns 0 on success. */
