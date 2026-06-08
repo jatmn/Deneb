@@ -5,6 +5,7 @@
 #include "config.h"
 #include "error_map.h"
 #include "macro_runner.h"
+#include "motion_send_error.h"
 #include "motion_sender.h"
 
 #include <time.h>
@@ -94,10 +95,9 @@ int deneb_macro_control_run(deneb_print_service_t *svc,
     io.poll_motion = macro_control_poll_motion_cb;
     int rc = deneb_macro_runner_run_macro(cmd->macro, &io);
     if (rc != 0) {
-        deneb_error_code_t code =
-            rc == DENEB_MOTION_SEND_SERIAL ? DENEB_ERROR_SERIAL :
-                                             DENEB_ERROR_COMMAND;
-        svc->status.error = deneb_error_make(code, "macro failed");
+        svc->status.error =
+            deneb_error_make(deneb_motion_send_error_code(rc),
+                             "macro failed");
         deneb_command_reply_error(reply, reply_sz, "macro failed");
         return -1;
     }

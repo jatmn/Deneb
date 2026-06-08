@@ -5,6 +5,7 @@
 #include "error_map.h"
 #include "job_lifecycle.h"
 #include "motion_policy.h"
+#include "motion_send_error.h"
 #include "motion_sender.h"
 
 static int streamer_valid(const deneb_job_streamer_t *streamer)
@@ -22,8 +23,11 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
 
     if (!streamer_valid(streamer))
         return -1;
-    if (!*streamer->job_active)
+    if (!*streamer->job_active) {
+        *streamer->abort_requested = 0;
+        streamer->heater_wait->active = 0;
         return 0;
+    }
 
     if (streamer->status->state == DENEB_PRINT_STATE_PAUSED)
         return 0;
@@ -32,6 +36,8 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         deneb_gcode_stream_close(streamer->stream);
         *streamer->job_active = 0;
         deneb_job_lifecycle_abort(streamer->status);
+        *streamer->abort_requested = 0;
+        streamer->heater_wait->active = 0;
         return -2;
     }
 
@@ -49,6 +55,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     if (rc < 0) {
         deneb_gcode_stream_close(streamer->stream);
         *streamer->job_active = 0;
+        streamer->heater_wait->active = 0;
         deneb_job_lifecycle_error(streamer->status,
                                   deneb_error_make(DENEB_ERROR_STORAGE,
                                                    "job stream read failed"));
@@ -60,15 +67,16 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         int policy_rc;
         deneb_gcode_stream_close(streamer->stream);
         *streamer->job_active = 0;
+        streamer->heater_wait->active = 0;
         deneb_motion_policy_finish(&finish_policy);
         policy_rc = deneb_motion_sender_apply_policy(streamer->flow,
                                                      streamer->serial,
                                                      *streamer->serial_ready,
                                                      &finish_policy);
-        if (policy_rc != 0 && *streamer->serial_ready) {
+        if (policy_rc != 0) {
             deneb_job_lifecycle_error(
                 streamer->status,
-                deneb_error_make(DENEB_ERROR_SERIAL,
+                deneb_error_make(deneb_motion_send_error_code(policy_rc),
                                  "finish cleanup failed"));
             return -1;
         }
@@ -82,14 +90,13 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     rc = deneb_motion_sender_send_gcode(streamer->flow, streamer->serial,
                                         *streamer->serial_ready, line);
     if (rc != 0) {
-        deneb_error_code_t code =
-            rc == DENEB_MOTION_SEND_SERIAL ? DENEB_ERROR_SERIAL :
-                                             DENEB_ERROR_COMMAND;
         deneb_gcode_stream_close(streamer->stream);
         *streamer->job_active = 0;
+        streamer->heater_wait->active = 0;
         deneb_job_lifecycle_error(streamer->status,
-                                  deneb_error_make(code,
-                                                   "job stream send failed"));
+                                  deneb_error_make(
+                                      deneb_motion_send_error_code(rc),
+                                      "job stream send failed"));
         return -1;
     }
     return 1;

@@ -2,7 +2,7 @@
 #include "gcode_control.h"
 
 #include "command_reply.h"
-#include "error_map.h"
+#include "motion_send_error.h"
 #include "motion_sender.h"
 
 int deneb_gcode_control_run(deneb_print_service_t *svc,
@@ -17,10 +17,9 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
                                                 svc->serial_ready,
                                                 cmd->gcode[i]);
         if (rc != 0) {
-            deneb_error_code_t code =
-                rc == DENEB_MOTION_SEND_SERIAL ? DENEB_ERROR_SERIAL :
-                                                  DENEB_ERROR_COMMAND;
-            svc->status.error = deneb_error_make(code, "gcode failed");
+            svc->status.error =
+                deneb_error_make(deneb_motion_send_error_code(rc),
+                                 "gcode failed");
             deneb_command_reply_error(reply, reply_sz, "gcode failed");
             return -1;
         }

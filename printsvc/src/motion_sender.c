@@ -60,12 +60,13 @@ int deneb_motion_sender_apply_policy(deneb_flow_control_t *flow,
                                      const deneb_motion_policy_t *policy)
 {
     if (!policy)
-        return -1;
+        return DENEB_MOTION_SEND_INVALID;
 
     for (size_t i = 0; i < policy->count; i++) {
-        if (deneb_motion_sender_send_gcode(flow, serial, serial_ready,
-                                           policy->commands[i]) != 0)
-            return -1;
+        int rc = deneb_motion_sender_send_gcode(flow, serial, serial_ready,
+                                                policy->commands[i]);
+        if (rc != 0)
+            return rc;
     }
     return 0;
 }

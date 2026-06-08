@@ -69,6 +69,8 @@ void deneb_service_context_close(deneb_print_service_t *svc)
 
     deneb_gcode_stream_close(&svc->job_stream);
     svc->job_active = 0;
+    svc->abort_requested = 0;
+    svc->heater_wait.active = 0;
 
     if (deneb_service_context_motion_runtime(svc, &runtime) == 0)
         deneb_motion_runtime_close(&runtime);

@@ -252,7 +252,11 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   lifecycle errors so clients do not keep seeing a stale printing state after
   native output fails. Job-streamer abort requests now also route through the
   shared lifecycle abort owner, clearing file identity and timing along with the
-  active-job flag.
+  active-job flag and consumed abort latch. Idle job-stream polling and service
+  close cleanup also clear stale abort latches so stop state cannot survive
+  after the active stream is gone. Terminal job paths also clear native
+  heater-wait/preheat state so later status observation cannot revive
+  `preparing` after abort, completion, or stream failure.
 - Treat abort, pause, resume, and print-finish as intentional Deneb behavior,
   not line-for-line ports. The native replacement must remove unsafe abort
   cleanup behavior, avoid duplicate homing, and report clear cancellation
@@ -264,13 +268,18 @@ recovery path. Material-profile USB import root/depth/suffix policy and the
   for a resend and the native runtime cannot write that resend while the serial
   transport is marked ready, the service records a serial error instead of
   hiding the transport failure. Motion-send return codes now distinguish
-  invalid commands, flow-window pressure, and serial transport failure so raw
-  `GCODE` command dispatch can report serial faults without preserving the
-  Python driver's generic command-error behavior. Macro execution preserves the
-  same callback failure reason through the bounded macro runner for both macro
-  line sends and motion polling, letting native `MACRO` command handling report
-  serial transport faults instead of flattening them into generic macro
-  failures.
+  invalid commands, flow-window pressure, and serial transport failure, and
+  policy dispatch preserves those named codes instead of flattening cleanup
+  failures into generic errors. A shared native mapping helper now classifies
+  raw `GCODE`, `MACRO`, active job-stream sends, abort cleanup, and finish
+  cleanup as command or serial faults without preserving the Python driver's
+  generic command-error behavior. Service-level idle abort commands now fail
+  explicitly without sending cleanup motion or keeping `abort_requested`
+  latched, while stale active status can still be cleaned back to idle. Macro
+  execution preserves the same callback
+  failure reason through the bounded macro runner for both macro line sends and
+  motion polling, letting native `MACRO` command handling report serial
+  transport faults instead of flattening them into generic macro failures.
 - Native diagnostic logging now writes a low-volume comparison stream under
   `/var/log/ultimaker/deneb-printsvc.log` when the native service is running.
   Each status line places stock-shaped fields such as `stock.req`,

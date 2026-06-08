@@ -43,14 +43,23 @@ scaffold:
 - `motion_sender.*` returns named negative failure codes for invalid commands,
   flow-window pressure, and serial transport writes so command handlers can map
   failures to the correct native error class.
+- `motion_send_error.*` owns the native mapping from motion-send return codes
+  to Deneb error classes so raw G-code, macro, job stream, abort cleanup, and
+  finish cleanup paths do not each duplicate serial-vs-command classification.
 - `heater_wait.*` owns native preheat target tracking and readiness checks.
 - `job_control.*` owns job acceptance and abort cleanup: active-job rejection,
   stream-open failures, heater-wait setup, and native abort state/motion policy.
+  Cleanup policy failures preserve the named motion-send return code before
+  mapping to command or serial errors. Idle aborts fail explicitly without
+  sending cleanup motion or leaving the abort flag latched.
 - `job_streamer.*` owns active-job polling: preheat gating, paused/abort
   checks, bounded line streaming, finish motion policy dispatch, and
   planner-starvation accounting. Stream-send failures close the active stream,
   clear active-job state, and record command or serial lifecycle errors; abort
-  requests are finalized through shared job lifecycle cleanup.
+  requests are finalized through shared job lifecycle cleanup and clear the
+  consumed abort latch. Idle polling clears stale abort latches when no active
+  job remains. Terminal stream paths clear heater-wait state so preheat status
+  cannot reappear after abort, completion, or stream failure.
 - `macro_runner.*` streams macro files through callbacks and preserves
   send/poll callback failure codes so `MACRO` command handling can distinguish
   serial transport errors from path/stream failures.

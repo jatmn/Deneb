@@ -98,6 +98,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/motion_observer.c
     src/motion_policy.c
     src/motion_runtime.c
+    src/motion_send_error.c
     src/motion_sender.c
     src/pause_resume.c
     src/pause_resume_control.c

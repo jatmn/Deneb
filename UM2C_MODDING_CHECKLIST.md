@@ -1105,6 +1105,9 @@ Completed implementation slices:
 - [x] Make native abort/finish cleanup policy failures visible as serial faults
   when motion transport is marked ready, so the driver no longer reports
   successful abort or completion if the required cleanup G-code cannot be sent.
+- [x] Reject native service-level abort commands while idle without sending
+  cleanup motion or leaving `abort_requested` latched, while still allowing
+  stale active status to be cleaned back to idle.
 - [x] Move native active-job streaming ownership into
   `printsvc/src/job_streamer.*` so preheat gating, paused/abort checks,
   bounded line streaming, finish policy dispatch, and planner-starvation
@@ -1116,7 +1119,14 @@ Completed implementation slices:
   the job is still printing.
 - [x] Route job-streamer abort requests through the shared native job lifecycle
   abort owner so a consumed abort clears active-job state, file identity, and
-  timing instead of leaving stale print status behind.
+  timing, and resets the consumed abort latch instead of leaving stale print
+  status or stop state behind.
+- [x] Clear stale native abort latches when job polling observes no active job
+  and when the service context closes, so the native driver cannot keep stop
+  state alive after the stream is gone.
+- [x] Clear native heater-wait/preheat state on abort, stream failure, finish
+  failure, completion, idle poll cleanup, and service close so preheat status
+  cannot reappear after a terminal job transition.
 - [x] Keep native job-streamer motion output tied to the service-owned serial
   readiness flag by reference, matching the motion-runtime adapter and avoiding
   stale copied readiness state if motion transport opens or closes around job
@@ -1177,6 +1187,11 @@ Completed implementation slices:
 - [x] Give native motion-send failures named return codes for invalid input,
   flow-window pressure, and serial transport failure, then map raw `GCODE`
   command send failures to serial faults when the transport write fails.
+- [x] Preserve named native motion-send failures through multi-command motion
+  policy dispatch and centralize the serial-vs-command error mapping in
+  `printsvc/src/motion_send_error.*` so raw G-code, macros, job streaming,
+  abort cleanup, and finish cleanup do not duplicate classification logic or
+  flatten cleanup-send failures.
 - [x] Move native macro/file streaming ownership into
   `printsvc/src/macro_runner.*` so macro path resolution, bounded G-code stream
   iteration, abort checks, flow-window waits, motion sends, and motion polling

@@ -5,7 +5,19 @@
 #include "error_map.h"
 #include "job_lifecycle.h"
 #include "motion_policy.h"
+#include "motion_send_error.h"
 #include "motion_sender.h"
+
+static int job_control_abortable(const deneb_print_service_t *svc)
+{
+    if (!svc)
+        return 0;
+    return svc->job_active ||
+           svc->status.state == DENEB_PRINT_STATE_PREPARING ||
+           svc->status.state == DENEB_PRINT_STATE_PRINTING ||
+           svc->status.state == DENEB_PRINT_STATE_PAUSED ||
+           svc->status.state == DENEB_PRINT_STATE_ABORTING;
+}
 
 int deneb_job_control_accept(deneb_print_service_t *svc,
                              const deneb_command_t *cmd,
@@ -51,6 +63,12 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     if (!svc || !reply || reply_sz == 0)
         return -1;
 
+    if (!job_control_abortable(svc)) {
+        svc->abort_requested = 0;
+        deneb_command_reply_error(reply, reply_sz, "no active print to abort");
+        return -1;
+    }
+
     deneb_motion_policy_abort(&abort_policy);
     if (svc->job_active) {
         deneb_gcode_stream_close(&svc->job_stream);
@@ -60,15 +78,20 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     policy_rc = deneb_motion_sender_apply_policy(&svc->flow, &svc->serial,
                                                  svc->serial_ready,
                                                  &abort_policy);
-    if (policy_rc != 0 && svc->serial_ready) {
+    if (policy_rc != 0) {
+        svc->abort_requested = 0;
+        svc->heater_wait.active = 0;
         deneb_job_lifecycle_error(&svc->status,
-                                  deneb_error_make(DENEB_ERROR_SERIAL,
-                                                   "abort cleanup failed"));
+                                  deneb_error_make(
+                                      deneb_motion_send_error_code(policy_rc),
+                                      "abort cleanup failed"));
         deneb_command_reply_error(reply, reply_sz, "abort cleanup failed");
         return -1;
     }
 
     deneb_job_lifecycle_abort(&svc->status);
+    svc->abort_requested = 0;
+    svc->heater_wait.active = 0;
     deneb_command_reply_ok(reply, reply_sz, "abort accepted");
     return 0;
 }

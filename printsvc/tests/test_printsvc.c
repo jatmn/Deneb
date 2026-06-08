@@ -33,6 +33,7 @@
 #include "motion_observer.h"
 #include "motion_policy.h"
 #include "motion_runtime.h"
+#include "motion_send_error.h"
 #include "motion_sender.h"
 #include "pause_resume.h"
 #include "pause_resume_control.h"
@@ -478,6 +479,12 @@ static void test_job_control_policy(void)
     assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "missing job file") != NULL);
 
+    svc.abort_requested = 1;
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "no active print to abort") != NULL);
+    assert(!svc.abort_requested);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
+
     snprintf(frame, sizeof(frame),
              "JOB<{\"file\":\"%s\",\"source\":\"Cura\",\"uuid\":\"job-1\","
              "\"bedTset\":60,\"headTset\":200}",
@@ -499,14 +506,19 @@ static void test_job_control_policy(void)
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
     assert(strstr(reply, "abort accepted") != NULL);
     assert(!svc.job_active);
-    assert(svc.abort_requested);
+    assert(!svc.abort_requested);
+    assert(!svc.heater_wait.active);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
 
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    snprintf(svc.status.file, sizeof(svc.status.file), "stale.gcode");
     deneb_flow_init(&svc.flow);
     svc.serial_ready = 1;
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "abort cleanup failed") != NULL);
+    assert(!svc.abort_requested);
+    assert(!svc.heater_wait.active);
     assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
     assert(svc.status.error.code == DENEB_ERROR_SERIAL);
 
@@ -554,6 +566,16 @@ static void test_job_streamer_policy(void)
     streamer.planner_starvation_count = &starvation;
 
     assert(deneb_job_streamer_poll(NULL) < 0);
+    job_active = 0;
+    abort_requested = 1;
+    wait.active = 1;
+    assert(deneb_job_streamer_poll(&streamer) == 0);
+    assert(!abort_requested);
+    assert(!wait.active);
+
+    job_active = 1;
+    abort_requested = 0;
+    deneb_heater_wait_start(&wait, status.bed_t_set, status.head_t_set, 1.0f);
     assert(deneb_job_streamer_poll(&streamer) == 0);
     assert(status.state == DENEB_PRINT_STATE_PREPARING);
     assert(stream.line_number == 0);
@@ -578,9 +600,11 @@ static void test_job_streamer_policy(void)
                               "stream-send-fault", 0.0f, 0.0f);
     job_active = 1;
     abort_requested = 0;
+    wait.active = 1;
     serial_ready = 1;
     assert(deneb_job_streamer_poll(&streamer) == -1);
     assert(!job_active);
+    assert(!wait.active);
     assert(status.state == DENEB_PRINT_STATE_ERROR);
     assert(status.error.code == DENEB_ERROR_SERIAL);
     assert(strstr(status.error.detail, "job stream send failed") != NULL);
@@ -593,8 +617,11 @@ static void test_job_streamer_policy(void)
     status.time_left = 90;
     job_active = 1;
     abort_requested = 1;
+    wait.active = 1;
     assert(deneb_job_streamer_poll(&streamer) == -2);
     assert(!job_active);
+    assert(!abort_requested);
+    assert(!wait.active);
     assert(status.state == DENEB_PRINT_STATE_IDLE);
     assert(strcmp(status.file, DENEB_PRINT_NONE_VALUE) == 0);
     assert(status.time_total == 0);
@@ -611,9 +638,11 @@ static void test_job_streamer_policy(void)
                               "finish-fault", 0.0f, 0.0f);
     job_active = 1;
     abort_requested = 0;
+    wait.active = 1;
     serial_ready = 1;
     assert(deneb_job_streamer_poll(&streamer) == -1);
     assert(!job_active);
+    assert(!wait.active);
     assert(status.state == DENEB_PRINT_STATE_ERROR);
     assert(status.error.code == DENEB_ERROR_SERIAL);
 
@@ -672,13 +701,29 @@ static void test_motion_sender_policy(void)
            DENEB_MOTION_SEND_FLOW_FULL);
     assert(deneb_motion_sender_send_gcode(&flow, &serial, 1, "M104 S0") ==
            DENEB_MOTION_SEND_SERIAL);
+    assert(deneb_motion_send_error_code(DENEB_MOTION_SEND_SERIAL) ==
+           DENEB_ERROR_SERIAL);
+    assert(deneb_motion_send_error_code(DENEB_MOTION_SEND_FLOW_FULL) ==
+           DENEB_ERROR_COMMAND);
 
     deneb_flow_init(&flow);
     deneb_motion_policy_abort(&policy);
     assert(deneb_motion_sender_apply_policy(&flow, &serial, 0, &policy) == 0);
     assert(flow.sent_count == policy.count);
     assert(deneb_flow_inflight(&flow) == policy.count);
-    assert(deneb_motion_sender_apply_policy(&flow, &serial, 0, NULL) < 0);
+    assert(deneb_motion_sender_apply_policy(&flow, &serial, 0, NULL) ==
+           DENEB_MOTION_SEND_INVALID);
+
+    deneb_flow_init(&flow);
+    assert(deneb_motion_sender_apply_policy(&flow, &serial, 1, &policy) ==
+           DENEB_MOTION_SEND_SERIAL);
+
+    deneb_flow_init(&flow);
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; i++)
+        assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, "M105") ==
+               0);
+    assert(deneb_motion_sender_apply_policy(&flow, &serial, 0, &policy) ==
+           DENEB_MOTION_SEND_FLOW_FULL);
 }
 
 typedef struct {
@@ -3067,10 +3112,15 @@ static void test_abort_clears_status(void)
     deneb_print_service_init(&svc);
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     snprintf(svc.status.file, sizeof(svc.status.file), "cube.gcode");
+    svc.abort_requested = 1;
     assert(deneb_command_parse("ABORT<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+    assert(!svc.abort_requested);
+
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "no active print to abort") != NULL);
 }
 
 static void test_job_accepts_without_blocking(void)
@@ -3150,8 +3200,12 @@ static void test_service_context_policy(void)
     assert(svc.status.planner_starvation_count == 3);
 
     svc.serial_ready = 1;
+    svc.abort_requested = 1;
+    svc.heater_wait.active = 1;
     deneb_service_context_close(&svc);
     assert(!svc.job_active);
+    assert(!svc.abort_requested);
+    assert(!svc.heater_wait.active);
     assert(!svc.serial_ready);
 }
 
