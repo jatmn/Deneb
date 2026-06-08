@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include "print_backend_route.h"
 #include "print_job_summary.h"
+#include "printer_status_response.h"
 
 /* Printer state, updated from ZMQ SUB status stream */
 typedef struct {
@@ -63,6 +64,8 @@ void backend_zmq_poll(void);
 const printer_state_t *backend_zmq_get_state(void);
 const char *backend_zmq_get_status_label(void);
 void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary);
+void backend_zmq_get_printer_status_response(
+    deneb_printer_status_response_t *status);
 int backend_zmq_has_active_job(void);
 int backend_zmq_print_start_allowed(void);
 int backend_zmq_manual_action_allowed(void);

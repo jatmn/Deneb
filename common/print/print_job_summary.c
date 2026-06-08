@@ -91,6 +91,157 @@ int deneb_print_job_summary_format_queued_response(const char *message,
     return n;
 }
 
+int deneb_print_job_summary_format_um_response(
+    const deneb_print_job_summary_t *summary,
+    char *out,
+    size_t out_sz)
+{
+    char name[256];
+    char uuid[128];
+    char source[80];
+    char state[64];
+    int n;
+
+    if (!summary || !summary->active || !out || out_sz == 0)
+        return -1;
+
+    deneb_json_escape_string(summary->name, name, sizeof(name));
+    deneb_json_escape_string(summary->uuid, uuid, sizeof(uuid));
+    deneb_json_escape_string(summary->source, source, sizeof(source));
+    deneb_json_escape_string(summary->state, state, sizeof(state));
+
+    n = snprintf(out, out_sz,
+                 "{\"name\":\"%s\",\"uuid\":\"%s\",\"source\":\"%s\","
+                 "\"state\":\"%s\",\"progress\":%.1f,"
+                 "\"time_elapsed\":%d,\"time_total\":%d,"
+                 "\"datetime_started\":\"\",\"datetime_finished\":\"\"}",
+                 name, uuid, source, state, summary->progress_fraction,
+                 summary->time_elapsed, summary->time_total);
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
+int deneb_print_job_summary_format_deneb_current_response(
+    const deneb_print_job_summary_t *summary,
+    char *out,
+    size_t out_sz)
+{
+    char name[256];
+    char uuid[128];
+    char source[80];
+    char state[64];
+    int n;
+
+    if (!summary || !summary->active || !out || out_sz == 0)
+        return -1;
+
+    deneb_json_escape_string(summary->name, name, sizeof(name));
+    deneb_json_escape_string(summary->uuid, uuid, sizeof(uuid));
+    deneb_json_escape_string(summary->source, source, sizeof(source));
+    deneb_json_escape_string(summary->state, state, sizeof(state));
+
+    n = snprintf(out, out_sz,
+                 "{\"name\":\"%s\",\"uuid\":\"%s\",\"source\":\"%s\","
+                 "\"state\":\"%s\",\"progress\":%.1f,\"time_total\":%d,"
+                 "\"time_elapsed\":%d,\"time_left\":%d}",
+                 name, uuid, source, state, summary->progress_percent,
+                 summary->time_total, summary->time_elapsed,
+                 summary->time_left);
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
+int deneb_print_job_summary_format_string_field(
+    const deneb_print_job_summary_t *summary,
+    deneb_print_job_summary_string_field_t field,
+    char *out,
+    size_t out_sz)
+{
+    char value[256];
+    const char *raw = "";
+    int n;
+
+    if (!summary || !out || out_sz == 0)
+        return -1;
+
+    switch (field) {
+    case DENEB_PRINT_JOB_SUMMARY_FIELD_NAME:
+        raw = summary->name;
+        break;
+    case DENEB_PRINT_JOB_SUMMARY_FIELD_UUID:
+        raw = summary->uuid;
+        break;
+    case DENEB_PRINT_JOB_SUMMARY_FIELD_SOURCE:
+        raw = summary->source;
+        break;
+    case DENEB_PRINT_JOB_SUMMARY_FIELD_STATE:
+        raw = summary->state;
+        break;
+    case DENEB_PRINT_JOB_SUMMARY_FIELD_DATETIME_STARTED:
+    case DENEB_PRINT_JOB_SUMMARY_FIELD_DATETIME_FINISHED:
+        raw = "";
+        break;
+    default:
+        return -1;
+    }
+
+    deneb_json_escape_string(raw, value, sizeof(value));
+    n = snprintf(out, out_sz, "\"%s\"", value);
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
+int deneb_print_job_summary_format_progress_fraction(
+    const deneb_print_job_summary_t *summary,
+    char *out,
+    size_t out_sz)
+{
+    int n;
+
+    if (!summary || !out || out_sz == 0)
+        return -1;
+
+    n = snprintf(out, out_sz, "%.1f", summary->progress_fraction);
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
+int deneb_print_job_summary_format_time_elapsed(
+    const deneb_print_job_summary_t *summary,
+    char *out,
+    size_t out_sz)
+{
+    int n;
+
+    if (!summary || !out || out_sz == 0)
+        return -1;
+
+    n = snprintf(out, out_sz, "%d", summary->time_elapsed);
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
+int deneb_print_job_summary_format_time_total(
+    const deneb_print_job_summary_t *summary,
+    char *out,
+    size_t out_sz)
+{
+    int n;
+
+    if (!summary || !out || out_sz == 0)
+        return -1;
+
+    n = snprintf(out, out_sz, "%d", summary->time_total);
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
 int deneb_print_job_summary_format_cluster_active_response(
     const deneb_print_job_summary_t *summary,
     const char *printer_uuid,

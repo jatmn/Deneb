@@ -7,7 +7,6 @@
 #include "api_print_job.h"
 #include "api_multipart.h"
 #include "backend_zmq.h"
-#include "json_writer.h"
 #include "pending_job_file.h"
 #include "pending_job_registration.h"
 #include "print_job_file.h"
@@ -111,20 +110,13 @@ void api_print_job_get(const http_request_t *req, http_response_t *resp)
     }
 
     char buf[512];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_str(&w, "name", summary.name);
-    json_str(&w, "uuid", summary.uuid);
-    json_str(&w, "source", summary.source);
-    json_str(&w, "state", summary.state);
-    json_float(&w, "progress", summary.progress_fraction);
-    json_int(&w, "time_elapsed", summary.time_elapsed);
-    json_int(&w, "time_total", summary.time_total);
-    json_str(&w, "datetime_started", "");
-    json_str(&w, "datetime_finished", "");
-    json_obj_close(&w);
-    json_len(&w);
+    if (deneb_print_job_summary_format_um_response(&summary, buf,
+                                                   sizeof(buf)) < 0) {
+        resp->status_code = 500;
+        api_http_set_body_str(resp,
+                              "{\"message\":\"Print job response too large\"}");
+        return;
+    }
     api_http_set_body_str(resp, buf);
 }
 
@@ -139,7 +131,8 @@ void api_print_job_state_get(const http_request_t *req, http_response_t *resp)
         return;
     }
     char buf[32];
-    snprintf(buf, sizeof(buf), "\"%s\"", summary.state);
+    deneb_print_job_summary_format_string_field(
+        &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_STATE, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
@@ -149,7 +142,8 @@ void api_print_job_progress_get(const http_request_t *req, http_response_t *resp
     deneb_print_job_summary_t summary;
     char buf[16];
     backend_zmq_get_job_summary(&summary);
-    snprintf(buf, sizeof(buf), "%.1f", summary.progress_fraction);
+    deneb_print_job_summary_format_progress_fraction(&summary, buf,
+                                                     sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
@@ -159,7 +153,7 @@ void api_print_job_time_elapsed_get(const http_request_t *req, http_response_t *
     deneb_print_job_summary_t summary;
     char buf[16];
     backend_zmq_get_job_summary(&summary);
-    snprintf(buf, sizeof(buf), "%d", summary.time_elapsed);
+    deneb_print_job_summary_format_time_elapsed(&summary, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
@@ -169,7 +163,7 @@ void api_print_job_time_total_get(const http_request_t *req, http_response_t *re
     deneb_print_job_summary_t summary;
     char buf[16];
     backend_zmq_get_job_summary(&summary);
-    snprintf(buf, sizeof(buf), "%d", summary.time_total);
+    deneb_print_job_summary_format_time_total(&summary, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
@@ -178,11 +172,9 @@ void api_print_job_name_get(const http_request_t *req, http_response_t *resp)
     (void)req;
     deneb_print_job_summary_t summary;
     char buf[196];
-    json_writer_t w;
     backend_zmq_get_job_summary(&summary);
-    json_init(&w, buf, sizeof(buf));
-    json_bare_str(&w, summary.name);
-    json_len(&w);
+    deneb_print_job_summary_format_string_field(
+        &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_NAME, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
@@ -191,11 +183,9 @@ void api_print_job_uuid_get(const http_request_t *req, http_response_t *resp)
     (void)req;
     deneb_print_job_summary_t summary;
     char buf[96];
-    json_writer_t w;
     backend_zmq_get_job_summary(&summary);
-    json_init(&w, buf, sizeof(buf));
-    json_bare_str(&w, summary.uuid);
-    json_len(&w);
+    deneb_print_job_summary_format_string_field(
+        &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_UUID, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
@@ -204,24 +194,34 @@ void api_print_job_source_get(const http_request_t *req, http_response_t *resp)
     (void)req;
     deneb_print_job_summary_t summary;
     char buf[64];
-    json_writer_t w;
     backend_zmq_get_job_summary(&summary);
-    json_init(&w, buf, sizeof(buf));
-    json_bare_str(&w, summary.source);
-    json_len(&w);
+    deneb_print_job_summary_format_string_field(
+        &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_SOURCE, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
 }
 
 void api_print_job_datetime_started_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "\"\"");
+    deneb_print_job_summary_t summary;
+    char buf[4];
+    backend_zmq_get_job_summary(&summary);
+    deneb_print_job_summary_format_string_field(
+        &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_DATETIME_STARTED, buf,
+        sizeof(buf));
+    api_http_set_body_str(resp, buf);
 }
 
 void api_print_job_datetime_finished_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "\"\"");
+    deneb_print_job_summary_t summary;
+    char buf[4];
+    backend_zmq_get_job_summary(&summary);
+    deneb_print_job_summary_format_string_field(
+        &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_DATETIME_FINISHED, buf,
+        sizeof(buf));
+    api_http_set_body_str(resp, buf);
 }
 
 /* ========== M7 Write Endpoints ========== */

@@ -40,6 +40,7 @@
 #include "pending_job_file.h"
 #include "pending_job_registration.h"
 #include "printer_identity.h"
+#include "printer_status_response.h"
 #include "print_history.h"
 #include "print_job_file.h"
 #include "print_job_summary.h"
@@ -1162,6 +1163,62 @@ static void test_print_job_summary(void)
     {
         char json[2048];
 
+        assert(deneb_print_job_summary_format_um_response(
+                   &summary, json, sizeof(json)) > 0);
+        assert(strstr(json, "\"name\":\"cube\\\"one.gcode\"") != NULL);
+        assert(strstr(json, "\"uuid\":\"uuid-1\"") != NULL);
+        assert(strstr(json, "\"source\":\"Cura\"") != NULL);
+        assert(strstr(json, "\"state\":\"printing\"") != NULL);
+        assert(strstr(json, "\"progress\":0.2") != NULL);
+        assert(strstr(json, "\"time_elapsed\":30") != NULL);
+        assert(strstr(json, "\"time_total\":120") != NULL);
+        assert(strstr(json, "\"datetime_started\":\"\"") != NULL);
+        assert(strstr(json, "\"datetime_finished\":\"\"") != NULL);
+
+        assert(deneb_print_job_summary_format_string_field(
+                   &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_NAME,
+                   json, sizeof(json)) > 0);
+        assert(strcmp(json, "\"cube\\\"one.gcode\"") == 0);
+        assert(deneb_print_job_summary_format_string_field(
+                   &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_UUID,
+                   json, sizeof(json)) > 0);
+        assert(strcmp(json, "\"uuid-1\"") == 0);
+        assert(deneb_print_job_summary_format_string_field(
+                   &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_SOURCE,
+                   json, sizeof(json)) > 0);
+        assert(strcmp(json, "\"Cura\"") == 0);
+        assert(deneb_print_job_summary_format_string_field(
+                   &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_STATE,
+                   json, sizeof(json)) > 0);
+        assert(strcmp(json, "\"printing\"") == 0);
+        assert(deneb_print_job_summary_format_string_field(
+                   &summary, DENEB_PRINT_JOB_SUMMARY_FIELD_DATETIME_STARTED,
+                   json, sizeof(json)) > 0);
+        assert(strcmp(json, "\"\"") == 0);
+        assert(deneb_print_job_summary_format_progress_fraction(
+                   &summary, json, sizeof(json)) > 0);
+        assert(strcmp(json, "0.2") == 0);
+        assert(deneb_print_job_summary_format_time_elapsed(
+                   &summary, json, sizeof(json)) > 0);
+        assert(strcmp(json, "30") == 0);
+        assert(deneb_print_job_summary_format_time_total(
+                   &summary, json, sizeof(json)) > 0);
+        assert(strcmp(json, "120") == 0);
+        assert(deneb_print_job_summary_format_string_field(
+                   &summary, (deneb_print_job_summary_string_field_t)99,
+                   json, sizeof(json)) != 0);
+
+        assert(deneb_print_job_summary_format_deneb_current_response(
+                   &summary, json, sizeof(json)) > 0);
+        assert(strstr(json, "\"name\":\"cube\\\"one.gcode\"") != NULL);
+        assert(strstr(json, "\"uuid\":\"uuid-1\"") != NULL);
+        assert(strstr(json, "\"source\":\"Cura\"") != NULL);
+        assert(strstr(json, "\"state\":\"printing\"") != NULL);
+        assert(strstr(json, "\"progress\":25.0") != NULL);
+        assert(strstr(json, "\"time_total\":120") != NULL);
+        assert(strstr(json, "\"time_elapsed\":30") != NULL);
+        assert(strstr(json, "\"time_left\":90") != NULL);
+
         assert(deneb_print_job_summary_format_cluster_active_response(
                    &summary, "printer-1", "12345", json,
                    sizeof(json)) > 0);
@@ -1182,10 +1239,140 @@ static void test_print_job_summary(void)
         assert(strstr(json, "\"impediments_to_printing\":[]") != NULL);
 
         summary.active = 0;
+        assert(deneb_print_job_summary_format_um_response(
+                   &summary, json, sizeof(json)) != 0);
+        assert(deneb_print_job_summary_format_deneb_current_response(
+                   &summary, json, sizeof(json)) != 0);
         assert(deneb_print_job_summary_format_cluster_active_response(
                    &summary, "printer-1", "12345", json,
                    sizeof(json)) != 0);
     }
+}
+
+static void test_printer_status_response(void)
+{
+    deneb_printer_status_response_t status;
+    char json[4096];
+
+    deneb_printer_status_response_init(&status);
+    status.nozzle_temp_cur = 201.25f;
+    status.nozzle_temp_set = 210.0f;
+    status.bed_temp_cur = 57.75f;
+    status.bed_temp_set = 60.0f;
+    status.pos_x = 12.0f;
+    status.pos_y = 34.0f;
+    status.pos_z = 5.5f;
+    status.connected = 1;
+    status.is_printing = 1;
+    status.is_paused = 0;
+    status.has_error = 0;
+    status.progress = 42.5f;
+    status.time_total = 1200;
+    status.time_left = 690;
+    status.filename = "cube\"one.gcode";
+    status.status_label = "printing";
+
+    assert(deneb_printer_status_response_format_status(
+               &status, json, sizeof(json)) > 0);
+    assert(strcmp(json, "\"printing\"") == 0);
+
+    assert(deneb_printer_status_response_format_um_root(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"bed\":{\"temperature\":{\"current\":57.8") != NULL);
+    assert(strstr(json, "\"target\":60.0") != NULL);
+    assert(strstr(json, "\"heads\":[{\"acceleration\":3000") != NULL);
+    assert(strstr(json, "\"hotend\":{\"id\":\"0.4 mm\"") != NULL);
+    assert(strstr(json, "\"current\":201.2") != NULL);
+    assert(strstr(json, "\"position\":{\"x\":12.0,\"y\":34.0,\"z\":5.5}") != NULL);
+    assert(strstr(json, "\"status\":\"printing\"") != NULL);
+    assert(strstr(json, "\"connected\":true") != NULL);
+    assert(strstr(json, "\"is_printing\":true") != NULL);
+    assert(strstr(json, "\"is_paused\":false") != NULL);
+    assert(strstr(json, "\"has_error\":false") != NULL);
+    assert(strstr(json, "\"progress\":42.5") != NULL);
+    assert(strstr(json, "\"time_total\":1200") != NULL);
+    assert(strstr(json, "\"time_left\":690") != NULL);
+    assert(strstr(json, "\"filename\":\"cube\\\"one.gcode\"") != NULL);
+    assert(strstr(json, "\"diagnostics\":{}") != NULL);
+
+    assert(deneb_printer_status_response_format_um_bed(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"temperature\":{\"current\":57.8") != NULL);
+    assert(strstr(json, "\"type\":\"glass\"") != NULL);
+    assert(strstr(json, "\"pre_heat\":{\"active\":false}") != NULL);
+    assert(deneb_printer_status_response_format_um_temperature(
+               status.bed_temp_cur, status.bed_temp_set,
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"current\":57.8,\"target\":60.0}") == 0);
+    assert(deneb_printer_status_response_format_um_position(
+               &status, json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"x\":12.0,\"y\":34.0,\"z\":5.5}") == 0);
+    assert(deneb_printer_status_response_format_um_head(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"acceleration\":3000") != NULL);
+    assert(strstr(json, "\"jerk\":{\"x\":20.0,\"y\":20.0,\"z\":1.0}") != NULL);
+    assert(deneb_printer_status_response_format_um_heads(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "[{\"acceleration\":3000") == json);
+    assert(deneb_printer_status_response_format_um_feeder(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"acceleration\":3000.0,\"jerk\":5.0,"
+                        "\"max_speed\":45.0}") == 0);
+    assert(deneb_printer_status_response_format_um_hotend(
+               &status, 1, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"id\":\"0.4 mm\"") != NULL);
+    assert(strstr(json, "\"offset\":{\"x\":0.0,\"y\":0.0,\"z\":0.0,"
+                        "\"state\":\"valid\"}") != NULL);
+    assert(deneb_printer_status_response_format_um_hotend(
+               &status, 0, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"offset\"") == NULL);
+    assert(deneb_printer_status_response_format_um_extruder(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"active_material\"") != NULL);
+    assert(strstr(json, "\"hotend\":{\"id\":\"0.4 mm\"") != NULL);
+    assert(deneb_printer_status_response_format_um_extruders(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "[{\"active_material\"") == json);
+    assert(deneb_printer_status_response_format_um_material(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"GUID\":\"\",\"guid\":\"\","
+                        "\"length_remaining\":-1}") == 0);
+    assert(deneb_printer_status_response_format_um_led(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"hue\":0.0,\"saturation\":0.0,"
+                        "\"brightness\":100.0}") == 0);
+    assert(deneb_printer_status_response_format_um_led_brightness(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "100") == 0);
+    assert(deneb_printer_status_response_format_um_led_hue(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "0") == 0);
+    assert(deneb_printer_status_response_format_um_led_saturation(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "0") == 0);
+    assert(deneb_printer_status_response_format_um_ambient(
+               json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"current\":0.0}") == 0);
+    status.topcap_present = 1;
+    assert(deneb_printer_status_response_format_um_airmanager(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"status\":\"connected\"") != NULL);
+    status.topcap_present = 0;
+    assert(deneb_printer_status_response_format_um_airmanager(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"status\":\"not_connected\"") != NULL);
+
+    status.filename = "";
+    status.status_label = "idle\"quoted";
+    assert(deneb_printer_status_response_format_status(
+               &status, json, sizeof(json)) > 0);
+    assert(strcmp(json, "\"idle\\\"quoted\"") == 0);
+    assert(deneb_printer_status_response_format_um_root(
+               &status, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"status\":\"idle\\\"quoted\"") != NULL);
+
+    assert(deneb_printer_status_response_format_um_root(
+               NULL, json, sizeof(json)) != 0);
 }
 
 static void test_json_field_helpers(void)
@@ -3084,6 +3271,7 @@ int main(void)
     test_macro_control_policy();
     test_print_state_rules();
     test_print_job_summary();
+    test_printer_status_response();
     test_json_field_helpers();
     test_status_payload_filename_resolution();
     test_gcode_command_helpers();

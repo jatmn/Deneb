@@ -62,6 +62,31 @@ void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)
                                  state.time_total, state.time_left,
                                  state.progress);
 }
+void backend_zmq_get_printer_status_response(
+    deneb_printer_status_response_t *status)
+{
+    deneb_printer_status_response_init(status);
+    if (!status)
+        return;
+
+    status->nozzle_temp_cur = state.nozzle_temp_cur;
+    status->nozzle_temp_set = state.nozzle_temp_set;
+    status->bed_temp_cur = state.bed_temp_cur;
+    status->bed_temp_set = state.bed_temp_set;
+    status->pos_x = state.pos_x;
+    status->pos_y = state.pos_y;
+    status->pos_z = state.pos_z;
+    status->connected = state.connected;
+    status->is_printing = state.is_printing;
+    status->is_paused = state.is_paused;
+    status->has_error = state.has_error;
+    status->topcap_present = state.topcap_present;
+    status->progress = state.progress;
+    status->time_total = state.time_total;
+    status->time_left = state.time_left;
+    status->filename = state.filename;
+    status->status_label = backend_zmq_get_status_label();
+}
 int backend_zmq_has_active_job(void)
 {
     deneb_print_job_summary_t summary;
@@ -486,6 +511,32 @@ void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)
                                  state.is_paused, state.is_printing,
                                  state.time_total, state.time_left,
                                  state.progress);
+}
+
+void backend_zmq_get_printer_status_response(
+    deneb_printer_status_response_t *status)
+{
+    deneb_printer_status_response_init(status);
+    if (!status)
+        return;
+
+    status->nozzle_temp_cur = state.nozzle_temp_cur;
+    status->nozzle_temp_set = state.nozzle_temp_set;
+    status->bed_temp_cur = state.bed_temp_cur;
+    status->bed_temp_set = state.bed_temp_set;
+    status->pos_x = state.pos_x;
+    status->pos_y = state.pos_y;
+    status->pos_z = state.pos_z;
+    status->connected = state.connected;
+    status->is_printing = state.is_printing;
+    status->is_paused = state.is_paused;
+    status->has_error = state.has_error;
+    status->topcap_present = state.topcap_present;
+    status->progress = state.progress;
+    status->time_total = state.time_total;
+    status->time_left = state.time_left;
+    status->filename = state.filename;
+    status->status_label = backend_zmq_get_status_label();
 }
 
 int backend_zmq_has_active_job(void)

@@ -10,17 +10,10 @@
 #include "json_field.h"
 #include "json_writer.h"
 #include "manual_motion.h"
-#include "pending_job_file.h"
-#include "print_profile.h"
+#include "printer_status_response.h"
 
 #include <stdio.h>
 #include <string.h>
-
-static int motion_allowed(const printer_state_t *s)
-{
-    (void)s;
-    return backend_zmq_manual_action_allowed();
-}
 
 static void set_motion_blocked(http_response_t *resp)
 {
@@ -79,190 +72,77 @@ static int send_motion_plan(const deneb_gcode_motion_plan_t *plan)
     return -1;
 }
 
+static void set_printer_response(http_response_t *resp,
+                                 int rc,
+                                 const char *body,
+                                 const char *message)
+{
+    if (rc < 0) {
+        resp->status_code = 500;
+        api_http_set_body_str(resp, message);
+        return;
+    }
+    api_http_set_body_str(resp, body);
+}
+
 void api_printer_status_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char buf[32];
-    snprintf(buf, sizeof(buf), "\"%s\"", backend_zmq_get_status_label());
+    deneb_printer_status_response_t status;
+    backend_zmq_get_printer_status_response(&status);
+    if (deneb_printer_status_response_format_status(&status, buf,
+                                                    sizeof(buf)) < 0) {
+        resp->status_code = 500;
+        api_http_set_body_str(resp,
+                              "{\"message\":\"Printer status too large\"}");
+        return;
+    }
     api_http_set_body_str(resp, buf);
 }
 
 void api_printer_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
-    char nozzle_id[24];
     char buf[2048];
-    json_writer_t w;
+    deneb_printer_status_response_t status;
 
-    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
-    json_init(&w, buf, sizeof(buf));
-
-    json_obj_open(&w);
-
-    /* bed */
-    json_key(&w, "bed");
-    json_obj_open(&w);
-    json_key(&w, "temperature");
-    json_obj_open(&w);
-    json_float(&w, "current", s->bed_temp_cur);
-    json_float(&w, "target", s->bed_temp_set);
-    json_obj_close(&w);
-    json_str(&w, "type", "glass");
-    json_key(&w, "pre_heat");
-    json_obj_open(&w);
-    json_bool(&w, "active", 0);
-    json_obj_close(&w);
-    json_obj_close(&w);
-
-    /* heads */
-    json_key(&w, "heads");
-    json_arr_open(&w);
-    json_obj_open(&w);
-    json_int(&w, "acceleration", 3000);
-
-    json_key(&w, "extruders");
-    json_arr_open(&w);
-    json_obj_open(&w);
-
-    /* active_material */
-    json_key(&w, "active_material");
-    json_obj_open(&w);
-    json_str(&w, "GUID", "");
-    json_str(&w, "guid", "");
-    json_float(&w, "length_remaining", -1.0);
-    json_obj_close(&w);
-
-    /* feeder */
-    json_key(&w, "feeder");
-    json_obj_open(&w);
-    json_float(&w, "acceleration", 3000);
-    json_float(&w, "jerk", 5.0);
-    json_float(&w, "max_speed", 45.0);
-    json_obj_close(&w);
-
-    /* hotend */
-    json_key(&w, "hotend");
-    json_obj_open(&w);
-    json_str(&w, "id", nozzle_id);
-    json_str(&w, "serial", "");
-    json_key(&w, "temperature");
-    json_obj_open(&w);
-    json_float(&w, "current", s->nozzle_temp_cur);
-    json_float(&w, "target", s->nozzle_temp_set);
-    json_obj_close(&w);
-    json_key(&w, "offset");
-    json_obj_open(&w);
-    json_float(&w, "x", 0);
-    json_float(&w, "y", 0);
-    json_float(&w, "z", 0);
-    json_str(&w, "state", "valid");
-    json_obj_close(&w);
-    json_key(&w, "statistics");
-    json_obj_open(&w);
-    json_str(&w, "last_material_guid", "");
-    json_int(&w, "material_extruded", 0);
-    json_int(&w, "max_temperature_exposed", 0);
-    json_int(&w, "time_spent_hot", 0);
-    json_obj_close(&w);
-    json_obj_close(&w);
-
-    json_obj_close(&w); /* extruder */
-    json_arr_close(&w); /* extruders */
-
-    json_key(&w, "position");
-    json_obj_open(&w);
-    json_float(&w, "x", s->pos_x);
-    json_float(&w, "y", s->pos_y);
-    json_float(&w, "z", s->pos_z);
-    json_obj_close(&w);
-
-    json_int(&w, "fan", 0);
-
-    json_key(&w, "jerk");
-    json_obj_open(&w);
-    json_float(&w, "x", 20.0);
-    json_float(&w, "y", 20.0);
-    json_float(&w, "z", 1.0);
-    json_obj_close(&w);
-
-    json_key(&w, "max_speed");
-    json_obj_open(&w);
-    json_float(&w, "x", 300.0);
-    json_float(&w, "y", 300.0);
-    json_float(&w, "z", 40.0);
-    json_obj_close(&w);
-
-    json_obj_close(&w); /* head */
-    json_arr_close(&w); /* heads */
-
-    /* status */
-    json_str(&w, "status", backend_zmq_get_status_label());
-    json_bool(&w, "connected", s->connected);
-    json_bool(&w, "is_printing", s->is_printing);
-    json_bool(&w, "is_paused", s->is_paused);
-    json_bool(&w, "has_error", s->has_error);
-    json_float(&w, "progress", s->progress);
-    json_int(&w, "time_total", s->time_total);
-    json_int(&w, "time_left", s->time_left);
-    {
-        const char *filename = s->filename;
-        char pending_name[128];
-        if (!filename[0] &&
-            deneb_pending_job_file_default_display_name(pending_name,
-                                                        sizeof(pending_name)) == 0 &&
-            pending_name[0]) {
-            filename = pending_name;
-        }
-        json_str(&w, "filename", filename);
+    backend_zmq_get_printer_status_response(&status);
+    if (deneb_printer_status_response_format_um_root(&status, buf,
+                                                     sizeof(buf)) < 0) {
+        resp->status_code = 500;
+        api_http_set_body_str(resp,
+                              "{\"message\":\"Printer response too large\"}");
+        return;
     }
-
-    /* diagnostics */
-    json_key(&w, "diagnostics");
-    json_obj_open(&w);
-    json_obj_close(&w);
-
-    json_obj_close(&w); /* root */
-    json_len(&w);
     api_http_set_body_str(resp, buf);
 }
 
 void api_printer_bed_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[256];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_key(&w, "temperature");
-    json_obj_open(&w);
-    json_float(&w, "current", s->bed_temp_cur);
-    json_float(&w, "target", s->bed_temp_set);
-    json_obj_close(&w);
-    json_str(&w, "type", "glass");
-    json_key(&w, "pre_heat");
-    json_obj_open(&w);
-    json_bool(&w, "active", 0);
-    json_obj_close(&w);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_bed(&status, buf,
+                                                    sizeof(buf)),
+        buf, "{\"message\":\"Printer bed response too large\"}");
 }
 
 void api_printer_bed_temp_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[128];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_float(&w, "current", s->bed_temp_cur);
-    json_float(&w, "target", s->bed_temp_set);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_temperature(
+            status.bed_temp_cur, status.bed_temp_set, buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer temperature response too large\"}");
 }
 
 void api_printer_bed_type_get(const http_request_t *req, http_response_t *resp)
@@ -280,266 +160,162 @@ void api_printer_bed_preheat_get(const http_request_t *req, http_response_t *res
 void api_printer_heads_get(const http_request_t *req, http_response_t *resp)
 {
     /* Return heads as an array with single element */
-    const printer_state_t *s = backend_zmq_get_state();
+    (void)req;
     char buf[640];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_arr_open(&w);
-    json_obj_open(&w);
-    json_int(&w, "acceleration", 3000);
-    json_key(&w, "position");
-    json_obj_open(&w);
-    json_float(&w, "x", s->pos_x);
-    json_float(&w, "y", s->pos_y);
-    json_float(&w, "z", s->pos_z);
-    json_obj_close(&w);
-    json_int(&w, "fan", 0);
-    json_key(&w, "jerk");
-    json_obj_open(&w);
-    json_float(&w, "x", 20.0);
-    json_float(&w, "y", 20.0);
-    json_float(&w, "z", 1.0);
-    json_obj_close(&w);
-    json_key(&w, "max_speed");
-    json_obj_open(&w);
-    json_float(&w, "x", 300.0);
-    json_float(&w, "y", 300.0);
-    json_float(&w, "z", 40.0);
-    json_obj_close(&w);
-    json_obj_close(&w);
-    json_arr_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_heads(&status, buf,
+                                                      sizeof(buf)),
+        buf, "{\"message\":\"Printer heads response too large\"}");
 }
 
 void api_printer_head_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[512];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_int(&w, "acceleration", 3000);
-    json_key(&w, "position");
-    json_obj_open(&w);
-    json_float(&w, "x", s->pos_x);
-    json_float(&w, "y", s->pos_y);
-    json_float(&w, "z", s->pos_z);
-    json_obj_close(&w);
-    json_int(&w, "fan", 0);
-    json_key(&w, "jerk");
-    json_obj_open(&w);
-    json_float(&w, "x", 20.0);
-    json_float(&w, "y", 20.0);
-    json_float(&w, "z", 1.0);
-    json_obj_close(&w);
-    json_key(&w, "max_speed");
-    json_obj_open(&w);
-    json_float(&w, "x", 300.0);
-    json_float(&w, "y", 300.0);
-    json_float(&w, "z", 40.0);
-    json_obj_close(&w);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_head(&status, buf,
+                                                     sizeof(buf)),
+        buf, "{\"message\":\"Printer head response too large\"}");
 }
 
 void api_printer_position_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[128];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_float(&w, "x", s->pos_x);
-    json_float(&w, "y", s->pos_y);
-    json_float(&w, "z", s->pos_z);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_position(&status, buf,
+                                                         sizeof(buf)),
+        buf, "{\"message\":\"Printer position response too large\"}");
 }
 
 void api_printer_extruders_get(const http_request_t *req, http_response_t *resp)
 {
     /* Return extruders as an array with single element */
-    const printer_state_t *s = backend_zmq_get_state();
-    char nozzle_id[24];
+    (void)req;
     char buf[640];
-    json_writer_t w;
+    deneb_printer_status_response_t status;
 
-    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
-    json_init(&w, buf, sizeof(buf));
-    json_arr_open(&w);
-    json_obj_open(&w);
-    json_key(&w, "active_material");
-    json_obj_open(&w);
-    json_str(&w, "GUID", "");
-    json_str(&w, "guid", "");
-    json_float(&w, "length_remaining", -1.0);
-    json_obj_close(&w);
-    json_key(&w, "feeder");
-    json_obj_open(&w);
-    json_float(&w, "acceleration", 3000);
-    json_float(&w, "jerk", 5.0);
-    json_float(&w, "max_speed", 45.0);
-    json_obj_close(&w);
-    json_key(&w, "hotend");
-    json_obj_open(&w);
-    json_str(&w, "id", nozzle_id);
-    json_str(&w, "serial", "");
-    json_key(&w, "temperature");
-    json_obj_open(&w);
-    json_float(&w, "current", s->nozzle_temp_cur);
-    json_float(&w, "target", s->nozzle_temp_set);
-    json_obj_close(&w);
-    json_obj_close(&w);
-    json_obj_close(&w);
-    json_arr_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_extruders(&status, buf,
+                                                          sizeof(buf)),
+        buf, "{\"message\":\"Printer extruders response too large\"}");
 }
 
 void api_printer_extruder_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
-    char nozzle_id[24];
     char buf[512];
-    json_writer_t w;
+    deneb_printer_status_response_t status;
 
-    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-
-    json_key(&w, "active_material");
-    json_obj_open(&w);
-    json_str(&w, "GUID", "");
-    json_str(&w, "guid", "");
-    json_float(&w, "length_remaining", -1.0);
-    json_obj_close(&w);
-
-    json_key(&w, "feeder");
-    json_obj_open(&w);
-    json_float(&w, "acceleration", 3000);
-    json_float(&w, "jerk", 5.0);
-    json_float(&w, "max_speed", 45.0);
-    json_obj_close(&w);
-
-    json_key(&w, "hotend");
-    json_obj_open(&w);
-    json_str(&w, "id", nozzle_id);
-    json_str(&w, "serial", "");
-    json_key(&w, "temperature");
-    json_obj_open(&w);
-    json_float(&w, "current", s->nozzle_temp_cur);
-    json_float(&w, "target", s->nozzle_temp_set);
-    json_obj_close(&w);
-    json_obj_close(&w);
-
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_extruder(&status, buf,
+                                                         sizeof(buf)),
+        buf, "{\"message\":\"Printer extruder response too large\"}");
 }
 
 void api_printer_hotend_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
-    char nozzle_id[24];
     char buf[384];
-    json_writer_t w;
+    deneb_printer_status_response_t status;
 
-    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_str(&w, "id", nozzle_id);
-    json_str(&w, "serial", "");
-    json_key(&w, "temperature");
-    json_obj_open(&w);
-    json_float(&w, "current", s->nozzle_temp_cur);
-    json_float(&w, "target", s->nozzle_temp_set);
-    json_obj_close(&w);
-    json_key(&w, "offset");
-    json_obj_open(&w);
-    json_float(&w, "x", 0);
-    json_float(&w, "y", 0);
-    json_float(&w, "z", 0);
-    json_str(&w, "state", "valid");
-    json_obj_close(&w);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_hotend(&status, 1, buf,
+                                                       sizeof(buf)),
+        buf, "{\"message\":\"Printer hotend response too large\"}");
 }
 
 void api_printer_hotend_temp_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[128];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_float(&w, "current", s->nozzle_temp_cur);
-    json_float(&w, "target", s->nozzle_temp_set);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_temperature(
+            status.nozzle_temp_cur, status.nozzle_temp_set, buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer temperature response too large\"}");
 }
 
 void api_printer_feeder_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char buf[128];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_float(&w, "acceleration", 3000);
-    json_float(&w, "jerk", 5.0);
-    json_float(&w, "max_speed", 45.0);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_feeder(buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer feeder response too large\"}");
 }
 
 void api_printer_material_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "{\"GUID\":\"\",\"guid\":\"\",\"length_remaining\":-1}");
+    char buf[80];
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_material(buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer material response too large\"}");
 }
 
 void api_printer_led_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char buf[128];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_float(&w, "hue", 0.0);
-    json_float(&w, "saturation", 0.0);
-    json_float(&w, "brightness", 100.0);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_led(buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer LED response too large\"}");
 }
 
 void api_printer_led_brightness_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "100");
+    char buf[8];
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_led_brightness(buf,
+                                                               sizeof(buf)),
+        buf, "{\"message\":\"Printer LED brightness response too large\"}");
 }
 
 void api_printer_led_hue_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "0");
+    char buf[8];
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_led_hue(buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer LED hue response too large\"}");
 }
 
 void api_printer_led_saturation_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "0");
+    char buf[8];
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_led_saturation(buf,
+                                                               sizeof(buf)),
+        buf, "{\"message\":\"Printer LED saturation response too large\"}");
 }
 
 void api_printer_network_get(const http_request_t *req, http_response_t *resp)
@@ -570,26 +346,25 @@ void api_printer_network_get(const http_request_t *req, http_response_t *resp)
 void api_printer_ambient_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "{\"current\":0.0}");
+    char buf[32];
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_ambient(buf, sizeof(buf)),
+        buf, "{\"message\":\"Ambient response too large\"}");
 }
 
 void api_printer_airmanager_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[256];
-    json_writer_t w;
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_str(&w, "firmware_version", "");
-    json_int(&w, "filter_age", 0);
-    json_int(&w, "filter_max_age", 0);
-    json_str(&w, "filter_status", "none");
-    json_str(&w, "status", s->topcap_present ? "connected" : "not_connected");
-    json_int(&w, "fan_speed", 0);
-    json_obj_close(&w);
-    json_len(&w);
-    api_http_set_body_str(resp, buf);
+    deneb_printer_status_response_t status;
+
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_airmanager(&status, buf,
+                                                           sizeof(buf)),
+        buf, "{\"message\":\"Air Manager response too large\"}");
 }
 
 /* ========== M7 Write Endpoints ========== */
@@ -638,11 +413,10 @@ void api_printer_bed_preheat_put(const http_request_t *req, http_response_t *res
 
 void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 {
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_gcode_motion_plan_t plan;
     int rc;
 
-    if (!motion_allowed(s)) {
+    if (!backend_zmq_manual_action_allowed()) {
         set_motion_blocked(resp);
         return;
     }
@@ -662,11 +436,10 @@ void api_printer_position_put(const http_request_t *req, http_response_t *resp)
 
 void api_printer_position_post(const http_request_t *req, http_response_t *resp)
 {
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_manual_motion_plan_t plan;
     int rc;
 
-    if (!motion_allowed(s)) {
+    if (!backend_zmq_manual_action_allowed()) {
         set_motion_blocked(resp);
         return;
     }

@@ -300,17 +300,15 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     deneb_print_job_summary_t summary;
     backend_zmq_get_job_summary(&summary);
     if (summary.active) {
-        json_key(&w, "current");
-        json_obj_open(&w);
-        json_str(&w, "name", summary.name);
-        json_str(&w, "uuid", summary.uuid);
-        json_str(&w, "source", summary.source);
-        json_str(&w, "state", summary.state);
-        json_float(&w, "progress", summary.progress_percent);
-        json_int(&w, "time_total", summary.time_total);
-        json_int(&w, "time_elapsed", summary.time_elapsed);
-        json_int(&w, "time_left", summary.time_left);
-        json_obj_close(&w);
+        char current_buf[512];
+        if (deneb_print_job_summary_format_deneb_current_response(
+                &summary, current_buf, sizeof(current_buf)) < 0) {
+            resp->status_code = 500;
+            api_http_set_body_str(
+                resp, "{\"message\":\"Print job response too large\"}");
+            return;
+        }
+        json_raw(&w, "current", current_buf);
     } else {
         json_null(&w, "current");
     }

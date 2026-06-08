@@ -956,6 +956,34 @@ Completed implementation slices:
   `common/print/print_job_summary.*` so UM API, Cura cluster API, Deneb API,
   and upload acceptance responses share one native owner for job activity,
   identity defaults, state, elapsed time, and progress scaling.
+- [x] Move UM API and Deneb API current-job JSON response formatting into
+  `common/print/print_job_summary.*` so the REST endpoints no longer
+  separately assemble active-job fields or diverge on escaping, elapsed time,
+  state, and UM fraction versus Deneb percent progress semantics.
+- [x] Move UM API current-job scalar response formatting into
+  `common/print/print_job_summary.*` so `/api/v1/print_job/name`, `uuid`,
+  `source`, `state`, `progress`, and time fields share the same escaping and
+  numeric formatting as the full current-job response.
+- [x] Move UM printer root/status response formatting into
+  `common/print/printer_status_response.*` so `api_printer` no longer owns
+  backend-status label quoting, top-level print flags, temperature/position
+  field layout, or pending-filename fallback beside the REST transport code.
+- [x] Move UM printer bed/head/extruder/hotend/position/feeder subresource
+  response formatting into `common/print/printer_status_response.*` so the
+  REST endpoint no longer repeats stock printer JSON fragments for every
+  resource path.
+- [x] Move UM printer material, LED, ambient, and Air Manager compatibility
+  response formatting into `common/print/printer_status_response.*` so
+  topcap-derived accessory state and stock-shaped printer constants are owned
+  beside the other native printer response helpers.
+- [x] Move web backend cached-printer-state adaptation behind
+  `backend_zmq_get_printer_status_response()` so `api_printer` no longer
+  copies backend temperature, position, print flags, topcap, filename, or
+  status-label fields into response structs itself before formatting UM
+  printer responses.
+- [x] Move UM LED scalar response bodies into
+  `common/print/printer_status_response.*` so LED brightness/hue/saturation
+  compatibility defaults share the same native owner as the full LED response.
 - [x] Move Cura cluster active print-job response formatting into
   `common/print/print_job_summary.*` so cluster job metadata, configuration,
   build-plate, owner/printer UUID, and compatible-family response shape are not

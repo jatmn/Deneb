@@ -89,6 +89,7 @@ set(DENEB_API_SOURCES
     ../common/print/print_job_summary.c
     ../common/print/print_profile.c
     ../common/print/print_state_rules.c
+    ../common/print/printer_status_response.c
     ../common/print/status_payload.c
     ../common/print/system_language.c
     ../printsvc/src/pending_job.c

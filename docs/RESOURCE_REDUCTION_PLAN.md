@@ -97,7 +97,21 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   LCD/API immediate print-file starts now share one native start-plan helper for
   path/source/UUID/default-temperature semantics before dispatching backend
   `JOB` commands, so touchscreen USB starts and web/Cura no-conflict starts do
-  not preserve separate driver defaults. Pending-job continue dispatch uses the
+  not preserve separate driver defaults. UM API and Deneb API current-job
+  response bodies now use shared native print-job summary formatters instead of
+  endpoint-local active-job JSON assembly, and UM API current-job scalar
+  endpoints use the same formatter owner for escaping and numeric fields.
+  UM printer root/status responses also moved to a shared native status
+  formatter so pending filename fallback and top-level print flags are not
+  preserved inside the REST endpoint. Bed, head, extruder, hotend, position,
+  and feeder subresource response bodies now use the same native formatter
+  owner instead of repeating stock printer JSON fragments in `api_printer`.
+  Material, LED, ambient, and Air Manager compatibility responses also moved
+  behind that formatter, including topcap-derived Air Manager status and LED
+  scalar defaults. The web backend adapter now exposes a native printer-status
+  response snapshot so REST endpoints do not copy cached backend state fields
+  before formatting printer responses.
+  Pending-job continue dispatch uses the
   same helper while preserving queued path/source/UUID metadata, leaving only
   the transport send in the LCD/web adapters. Cura upload registration now
   dispatches no-conflict immediate starts through

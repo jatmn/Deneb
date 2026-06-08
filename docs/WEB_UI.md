@@ -133,6 +133,20 @@ on real hardware remains open.
   Cura material uploads then hand the extracted file to the shared native
   material catalog helper, which owns default catalog persistence and temp-file
   cleanup.
+  UM API and Deneb API current-job responses now use shared native print-job
+  summary formatters, keeping active-job escaping, elapsed time, state, and
+  progress semantics out of endpoint-local JSON assembly. UM API current-job
+  scalar endpoints use the same native formatter owner for string escaping and
+  numeric response bodies.
+  UM printer root/status responses now delegate their top-level status fields,
+  temperature/position shape, and pending filename fallback to
+  `common/print/printer_status_response.*`. UM printer bed/head/extruder,
+  hotend, position, and feeder subresources use the same shared formatter
+  instead of endpoint-local JSON fragments. Material, LED, ambient, and Air
+  Manager compatibility responses now use the same native printer response
+  owner, including LED scalar defaults. `backend_zmq` now exposes a printer
+  status response snapshot for these endpoints so `api_printer` no longer maps
+  cached backend fields itself.
   Web temperature writes also delegate bounded target parsing and `M104`/`M140`
   command planning to the shared native G-code helper instead of clamping and
   formatting heater commands inside the REST endpoint.
