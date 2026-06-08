@@ -16,8 +16,6 @@
 static lv_obj_t *nozzle_screen = NULL;
 static lv_obj_t *status_label = NULL;
 static lv_obj_t *size_buttons[4] = {NULL, NULL, NULL, NULL};
-static const char *size_values[] = {"0.25", "0.4", "0.6", "0.8"};
-static const char *size_labels[] = {"0.25 mm", "0.40 mm", "0.60 mm", "0.80 mm"};
 static char selected_size[8] = "0.4";
 
 static void load_selected_size(void)
@@ -26,15 +24,6 @@ static void load_selected_size(void)
                                                 sizeof(selected_size));
     deneb_print_profile_normalize_nozzle_size(selected_size, selected_size,
                                               sizeof(selected_size));
-}
-
-static const char *display_label_for_size(const char *size)
-{
-    for (size_t i = 0; i < sizeof(size_values) / sizeof(size_values[0]); i++) {
-        if (strcmp(size_values[i], size) == 0)
-            return size_labels[i];
-    }
-    return "0.40 mm";
 }
 
 static void style_size_button(lv_obj_t *btn, int selected)
@@ -48,10 +37,13 @@ static void style_size_button(lv_obj_t *btn, int selected)
 
 static void update_button_highlights(void)
 {
-    for (size_t i = 0; i < sizeof(size_values) / sizeof(size_values[0]); i++) {
+    for (size_t i = 0; i < deneb_print_profile_nozzle_choice_count(); i++) {
+        const deneb_print_profile_nozzle_choice_t *choice =
+            deneb_print_profile_nozzle_choice(i);
         if (size_buttons[i])
             style_size_button(size_buttons[i],
-                              strcmp(selected_size, size_values[i]) == 0);
+                              choice &&
+                                  strcmp(selected_size, choice->size) == 0);
     }
 }
 
@@ -59,13 +51,16 @@ static void size_cb(lv_event_t *e)
 {
     const char *size = (const char *)lv_event_get_user_data(e);
     char cmd[128];
-    snprintf(cmd, sizeof(cmd),
-             "uci set ultimaker.option.nozzle_size=%s && uci commit ultimaker",
-             size);
+
+    if (deneb_print_profile_format_set_nozzle_command(size, cmd,
+                                                      sizeof(cmd)) < 0)
+        return;
+
     if (system(cmd) == 0) {
         snprintf(selected_size, sizeof(selected_size), "%s", size);
         update_button_highlights();
-        lv_label_set_text(status_label, display_label_for_size(size));
+        lv_label_set_text(status_label,
+                          deneb_print_profile_nozzle_label_from_size(size));
     } else {
         lv_label_set_text(status_label, locale_get("settings.save_failed"));
     }
@@ -73,15 +68,20 @@ static void size_cb(lv_event_t *e)
 
 static void make_btn(lv_obj_t *parent, size_t index)
 {
-    const char *size = size_values[index];
+    const deneb_print_profile_nozzle_choice_t *choice =
+        deneb_print_profile_nozzle_choice(index);
     lv_obj_t *btn = lv_button_create(parent);
+
+    if (!choice)
+        return;
+
     lv_obj_set_size(btn, 140, 36);
     size_buttons[index] = btn;
-    style_size_button(btn, strcmp(selected_size, size) == 0);
+    style_size_button(btn, strcmp(selected_size, choice->size) == 0);
     lv_obj_set_style_radius(btn, 4, 0);
-    lv_obj_add_event_cb(btn, size_cb, LV_EVENT_CLICKED, (void *)size);
+    lv_obj_add_event_cb(btn, size_cb, LV_EVENT_CLICKED, (void *)choice->size);
     lv_obj_t *lbl = lv_label_create(btn);
-    lv_label_set_text(lbl, size_labels[index]);
+    lv_label_set_text(lbl, choice->label);
     lv_obj_center(lbl);
 }
 
@@ -101,12 +101,13 @@ static lv_obj_t *nozzle_create(void)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(nozzle_screen, 8, 0);
 
-    for (size_t i = 0; i < sizeof(size_values) / sizeof(size_values[0]); i++)
+    for (size_t i = 0; i < deneb_print_profile_nozzle_choice_count(); i++)
         make_btn(nozzle_screen, i);
 
     status_label = lv_label_create(nozzle_screen);
     lv_obj_set_width(status_label, 280);
-    lv_label_set_text(status_label, display_label_for_size(selected_size));
+    lv_label_set_text(status_label,
+                      deneb_print_profile_nozzle_label_from_size(selected_size));
     lv_label_set_long_mode(status_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);

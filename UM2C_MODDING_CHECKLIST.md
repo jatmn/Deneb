@@ -697,6 +697,10 @@ Completed implementation slices:
   material-profile import, and diagnostics export: frame lighting sends native
   `M142` G-code directly, material import scans USB/profile XML in C, and log
   export archives with `tar` instead of Python `shutil`.
+- [x] Move diagnostics USB mount probing and support-export shell command
+  construction into `common/print/diagnostics_export.*` so the LVGL diagnostics
+  screen no longer owns stock log paths, Deneb log inclusion, redaction filters,
+  archive naming, or background export log redirection locally.
 - [x] Move native command formatting for stock `GCODE`, `MACRO`, `JOB`, and
   action frames into `common/print` with parser round-trip tests, and wire LCD
   `backend_comm`, web `backend_zmq`, and `deneb-printsvc` through that shared
@@ -739,6 +743,10 @@ Completed implementation slices:
 - [x] Move touchscreen frame-lighting `M142` command construction and
   brightness-to-PWM clamping into `common/print/gcode_command.*` so another
   UI-only stock-driver G-code formatter is owned by the shared native layer.
+- [x] Move touchscreen frame-light saved-state defaults, legacy UCI fallback,
+  output-brightness selection, and stock/Deneb UCI save command formatting into
+  `common/print/frame_light.*` so the LVGL settings screen no longer owns
+  frame-light persistence compatibility rules locally.
 - [x] Move diagnostics Air Manager fan `M12030` command construction into
   `common/print/gcode_command.*` so maintenance diagnostics no longer embeds a
   stock-driver raw G-code literal in the LVGL screen.
@@ -754,10 +762,19 @@ Completed implementation slices:
   use common macro-name constants, the shared print-state rules own transient
   macro-file filtering, and LCD/API job-name display reads pending-job metadata
   through `pending_job_file` instead of local JSON scans.
+- [x] Add a safer native macro resolution policy: `deneb-printsvc` now rejects
+  path traversal and non-`.gcode` macro names, prefers Deneb-owned overrides
+  under `/etc/deneb/marlindriver/gcode`, and falls back to the stock
+  `/home/cygnus/marlindriver/gcode` directory for compatibility.
 - [x] Move touchscreen USB/local print-file browser roots and file candidate
   filtering onto shared native print helpers so the LVGL print screen no longer
   hand-checks `.gcode`/`.ufp` suffixes or embeds the stock `/mnt/sda1` and
   `/home/3D` scan paths locally.
+- [x] Move material-profile USB import root, recursion-depth limit, candidate
+  suffix filtering, and recursive import scanning into
+  `common/print/material_catalog.*` so the LVGL material-set screen no longer
+  owns stock material import policy beside the native material catalog
+  parser/storage helpers.
 - [x] Move native print-file start planning into
   `common/print/print_job_file.*` so touchscreen USB starts and web/API
   immediate Cura starts share path/source/UUID/default-temperature semantics
@@ -863,6 +880,10 @@ Completed implementation slices:
   `common/print/print_profile.*` so the touchscreen settings screen and native
   Cura/print metadata paths share one default/fallback rule for UM2C nozzle
   sizes.
+- [x] Move stock material/nozzle selection choices, display labels, and UCI
+  write command formatting into `common/print/print_profile.*` so touchscreen
+  settings screens no longer embed profile GUID lists or stock option update
+  commands locally.
 - [x] Move UM API print progress fraction clamping into shared native
   print-state rules so API responses cannot drift from the backend percentage
   contract.

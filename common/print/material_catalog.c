@@ -9,6 +9,22 @@
 #include <string.h>
 #include <sys/stat.h>
 
+int deneb_material_catalog_file_is_candidate(const char *name)
+{
+    const char *dot;
+
+    if (!name || !*name)
+        return 0;
+
+    dot = strrchr(name, '.');
+    if (!dot)
+        return 0;
+
+    return strcmp(dot, ".xml") == 0 ||
+           strcmp(dot, ".fdm_material") == 0 ||
+           strcmp(dot, ".material") == 0;
+}
+
 int deneb_material_catalog_copy_tag_value(const char *xml, const char *tag,
                                           char *out, size_t out_sz)
 {
@@ -149,6 +165,56 @@ int deneb_material_catalog_store_file(const char *path,
     fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, *version);
     if (fclose(out) != 0)
         return -1;
+    return 0;
+}
+
+int deneb_material_catalog_import_tree(const char *root,
+                                       const char *catalog_dir,
+                                       int max_depth,
+                                       int *imported)
+{
+    DIR *dir;
+    struct dirent *ent;
+
+    if (!root || !catalog_dir || !imported || max_depth < 0)
+        return -1;
+
+    dir = opendir(root);
+    if (!dir)
+        return -1;
+
+    while ((ent = readdir(dir)) != NULL) {
+        char path[512];
+        struct stat st;
+
+        if (ent->d_name[0] == '.')
+            continue;
+
+        if (snprintf(path, sizeof(path), "%s/%s", root, ent->d_name) >=
+            (int)sizeof(path))
+            continue;
+        if (stat(path, &st) < 0)
+            continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            if (max_depth > 0) {
+                deneb_material_catalog_import_tree(path, catalog_dir,
+                                                   max_depth - 1, imported);
+            }
+        } else if (S_ISREG(st.st_mode) &&
+                   deneb_material_catalog_file_is_candidate(ent->d_name)) {
+            char guid[64];
+            int version = 0;
+
+            if (deneb_material_catalog_store_file(path, catalog_dir,
+                                                  guid, sizeof(guid),
+                                                  &version) == 0) {
+                (*imported)++;
+            }
+        }
+    }
+
+    closedir(dir);
     return 0;
 }
 

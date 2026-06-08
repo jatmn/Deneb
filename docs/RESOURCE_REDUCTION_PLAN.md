@@ -105,7 +105,25 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   locally reinterpreting cached backend flags. Build-plate leveling macro-step
   selection now lives in `common/print/buildplate_level.*`, keeping stock macro
   filename ordering out of LVGL screen code while preserving macro-file
-  compatibility. Material workflow stop/cooldown planning now lives in
+  compatibility. Native macro resolution now rejects traversal and non-`.gcode`
+  names, prefers Deneb-owned overrides under `/etc/deneb/marlindriver/gcode`,
+  and falls back to stock `/home/cygnus/marlindriver/gcode` macros for
+  compatibility. Material-profile USB import root/depth/suffix policy and the
+  recursive import walker now live in `common/print/material_catalog.*` beside
+  native material parser/storage helpers instead of inside the LVGL material
+  screen. Stock
+  material/nozzle choices, labels, and UCI update command formatting now live in
+  `common/print/print_profile.*`, keeping profile-selection policy out of the
+  touchscreen material/nozzle screens while preserving the existing stock UCI
+  option names. Frame-light saved-state defaults, legacy fallback, output
+  brightness selection, and UCI save command formatting now live in
+  `common/print/frame_light.*`, leaving the touchscreen frame-light screen to
+  render controls and dispatch the already-shared `M142` G-code. Diagnostics
+  USB mount probing and support-export command construction now live in
+  `common/print/diagnostics_export.*`, keeping stock/Deneb log inclusion,
+  redaction filters, archive naming, and background export logging out of LVGL
+  screen code. Material
+  workflow stop/cooldown planning now lives in
   `common/print/material_workflow.*`, keeping default material temperature,
   stock `M401` stop-material dispatch, and nozzle-off cooldown behavior out of
   the touchscreen material screen. The same helper owns material workflow

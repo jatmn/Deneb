@@ -70,6 +70,8 @@ set(DENEB_API_SOURCES
     src/md5.c
     ../common/print/buildplate_level.c
     ../common/print/command_format.c
+    ../common/print/diagnostics_export.c
+    ../common/print/frame_light.c
     ../common/print/gcode_command.c
     ../common/print/json_field.c
     ../common/print/json_file.c

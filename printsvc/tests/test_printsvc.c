@@ -7,9 +7,11 @@
 #include "command_reply.h"
 #include "config.h"
 #include "crc.h"
+#include "diagnostics_export.h"
 #include "diagnostics_log.h"
 #include "error_map.h"
 #include "flow_control.h"
+#include "frame_light.h"
 #include "gcode_control.h"
 #include "gcode_command.h"
 #include "heater_wait.h"
@@ -58,6 +60,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static void test_command_parse(void)
@@ -1277,6 +1280,87 @@ static void test_gcode_command_helpers(void)
     assert(deneb_gcode_format_air_manager_fan(1, NULL, 0) != 0);
 }
 
+static void test_frame_light_helpers(void)
+{
+    deneb_frame_light_state_t state;
+    char command[320];
+
+    assert(DENEB_FRAME_LIGHT_DEFAULT_BRIGHTNESS == 100);
+    assert(strcmp(DENEB_FRAME_LIGHT_LEGACY_UCI_KEY,
+                  "ultimaker.option.framelight") == 0);
+    assert(strcmp(DENEB_FRAME_LIGHT_ENABLED_UCI_KEY,
+                  "deneb.frame_light.enabled") == 0);
+    assert(strcmp(DENEB_FRAME_LIGHT_BRIGHTNESS_UCI_KEY,
+                  "deneb.frame_light.brightness") == 0);
+
+    assert(deneb_frame_light_clamp_brightness(-1) == 0);
+    assert(deneb_frame_light_clamp_brightness(101) == 100);
+    assert(deneb_frame_light_clamp_brightness(42) == 42);
+
+    deneb_frame_light_state_init(&state);
+    assert(!state.enabled);
+    assert(state.brightness == DENEB_FRAME_LIGHT_DEFAULT_BRIGHTNESS);
+    assert(deneb_frame_light_output_brightness(&state) == 0);
+
+    deneb_frame_light_state_from_values(75, -1, -1, &state);
+    assert(state.enabled);
+    assert(state.brightness == 75);
+    assert(deneb_frame_light_output_brightness(&state) == 75);
+
+    deneb_frame_light_state_from_values(75, 40, 0, &state);
+    assert(!state.enabled);
+    assert(state.brightness == 40);
+    assert(deneb_frame_light_output_brightness(&state) == 0);
+
+    deneb_frame_light_state_from_values(-1, 0, 1, &state);
+    assert(state.enabled);
+    assert(state.brightness == DENEB_FRAME_LIGHT_DEFAULT_BRIGHTNESS);
+    assert(deneb_frame_light_format_save_command(&state, command,
+                                                 sizeof(command)) == 0);
+    assert(strstr(command, "deneb.frame_light.enabled='1'") != NULL);
+    assert(strstr(command, "deneb.frame_light.brightness='100'") != NULL);
+    assert(strstr(command, "ultimaker.option.framelight='100'") != NULL);
+
+    state.enabled = 0;
+    state.brightness = 37;
+    assert(deneb_frame_light_format_save_command(&state, command,
+                                                 sizeof(command)) == 0);
+    assert(strstr(command, "deneb.frame_light.enabled='0'") != NULL);
+    assert(strstr(command, "deneb.frame_light.brightness='37'") != NULL);
+    assert(strstr(command, "ultimaker.option.framelight='0'") != NULL);
+    assert(deneb_frame_light_format_save_command(&state, command, 8) != 0);
+}
+
+static void test_diagnostics_export_helpers(void)
+{
+    const char *probe = deneb_diagnostics_export_usb_available_command();
+    char command[2048];
+
+    assert(strcmp(DENEB_DIAGNOSTICS_EXPORT_TMP_DIR,
+                  "/tmp/deneb-log-export") == 0);
+    assert(strcmp(DENEB_DIAGNOSTICS_EXPORT_LOG_PATH,
+                  "/tmp/deneb-log-export.log") == 0);
+    assert(strstr(probe, "/mnt/sda1") != NULL);
+    assert(strstr(probe, "/mnt/usb") != NULL);
+    assert(strstr(probe, "/media/usb") != NULL);
+    assert(strstr(probe, "[ -w \"$USB\" ]") != NULL);
+
+    assert(deneb_diagnostics_export_format_command(command,
+                                                   sizeof(command)) == 0);
+    assert(strstr(command, "No writable USB mount") != NULL);
+    assert(strstr(command, "UM2C_${NAME}_v${VER}_${STAMP}") != NULL);
+    assert(strstr(command, "logread.txt") != NULL);
+    assert(strstr(command, "digitalfactory_service_status.txt") != NULL);
+    assert(strstr(command, "cp /tmp/deneb*.log") != NULL);
+    assert(strstr(command, "grep -v ssid") != NULL);
+    assert(strstr(command, "grep -v key") != NULL);
+    assert(strstr(command, "grep -v encryption") != NULL);
+    assert(strstr(command, "tar -czf \"$OUT.tar.gz\"") != NULL);
+    assert(strstr(command, DENEB_DIAGNOSTICS_EXPORT_LOG_PATH) != NULL);
+    assert(deneb_diagnostics_export_format_command(command, 16) != 0);
+    assert(deneb_diagnostics_export_format_command(NULL, sizeof(command)) != 0);
+}
+
 static void test_manual_motion_helpers(void)
 {
     deneb_manual_motion_plan_t plan;
@@ -1435,11 +1519,43 @@ static void test_status_payload_helpers(void)
 static void test_print_profile_helpers(void)
 {
     char value[64];
+    char command[256];
+    const deneb_print_profile_material_choice_t *material;
+    const deneb_print_profile_nozzle_choice_t *nozzle;
 
     assert(strcmp(DENEB_PRINT_PROFILE_MACHINE_FAMILY,
                   "ultimaker2_plus_connect") == 0);
     assert(strcmp(DENEB_PRINT_PROFILE_MACHINE_VARIANT,
                   "Ultimaker 2+ Connect") == 0);
+
+    assert(deneb_print_profile_material_choice_count() == 10);
+    material = deneb_print_profile_material_choice(0);
+    assert(material != NULL);
+    assert(strcmp(material->label, "Generic PLA") == 0);
+    assert(strcmp(material->guid, DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID) == 0);
+    assert(deneb_print_profile_material_choice(10) == NULL);
+    assert(strcmp(deneb_print_profile_material_label_from_guid(material->guid),
+                  "Generic PLA") == 0);
+    assert(deneb_print_profile_material_label_from_guid("unknown") == NULL);
+    assert(deneb_print_profile_format_set_material_command(
+               material->guid, command, sizeof(command)) == 0);
+    assert(strstr(command, "material_guid='506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9'") != NULL);
+
+    assert(deneb_print_profile_nozzle_choice_count() == 4);
+    nozzle = deneb_print_profile_nozzle_choice(1);
+    assert(nozzle != NULL);
+    assert(strcmp(nozzle->size, DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_SIZE) == 0);
+    assert(strcmp(nozzle->label, "0.40 mm") == 0);
+    assert(deneb_print_profile_nozzle_choice(4) == NULL);
+    assert(strcmp(deneb_print_profile_nozzle_label_from_size("0.6"),
+                  "0.60 mm") == 0);
+    assert(strcmp(deneb_print_profile_nozzle_label_from_size("bad"),
+                  DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_ID) == 0);
+    assert(deneb_print_profile_format_set_nozzle_command("0.60", command,
+                                                         sizeof(command)) == 0);
+    assert(strstr(command, "nozzle_size=0.6") != NULL);
+    assert(deneb_print_profile_format_set_nozzle_command("1.2", command,
+                                                         sizeof(command)) != 0);
 
     deneb_print_profile_normalize_nozzle_id("0.6", value, sizeof(value));
     assert(strcmp(value, "0.6 mm") == 0);
@@ -1715,15 +1831,29 @@ static void test_material_catalog_helpers(void)
 {
     const char *material_path = "/tmp/deneb-material-catalog-test.xml";
     const char *catalog_dir = "/tmp/deneb-material-catalog";
+    const char *import_dir = "/tmp/deneb-material-import";
+    const char *import_nested_dir = "/tmp/deneb-material-import/nested";
+    const char *import_path = "/tmp/deneb-material-import/nested/profile.material";
+    const char *ignored_path = "/tmp/deneb-material-import/nested/readme.txt";
     const char *guid = "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9";
     char parsed_guid[64];
     char tag_value[64];
     char *body = NULL;
     size_t body_len = 0;
+    int imported = 0;
     int version = -1;
     FILE *f;
 
     assert(strcmp(DENEB_MATERIAL_CATALOG_DIR, "/home/3D/deneb-materials") == 0);
+    assert(strcmp(DENEB_MATERIAL_IMPORT_USB_ROOT, "/mnt/sda1") == 0);
+    assert(DENEB_MATERIAL_IMPORT_MAX_DEPTH == 4);
+    assert(deneb_material_catalog_file_is_candidate("profile.xml"));
+    assert(deneb_material_catalog_file_is_candidate("profile.fdm_material"));
+    assert(deneb_material_catalog_file_is_candidate("profile.material"));
+    assert(!deneb_material_catalog_file_is_candidate("profile.txt"));
+    assert(!deneb_material_catalog_file_is_candidate("profile"));
+    assert(!deneb_material_catalog_file_is_candidate(""));
+    assert(!deneb_material_catalog_file_is_candidate(NULL));
     assert(deneb_material_catalog_copy_tag_value("<GUID> abc </GUID>",
                                                  "GUID", tag_value,
                                                  sizeof(tag_value)) == 0);
@@ -1733,6 +1863,32 @@ static void test_material_catalog_helpers(void)
 
     remove("/tmp/deneb-material-catalog/506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9.json");
     rmdir(catalog_dir);
+    remove(import_path);
+    remove(ignored_path);
+    rmdir(import_nested_dir);
+    rmdir(import_dir);
+    assert(mkdir(import_dir, 0755) == 0);
+    assert(mkdir(import_nested_dir, 0755) == 0);
+    f = fopen(import_path, "wb");
+    assert(f != NULL);
+    fprintf(f, "<fdmmaterial><metadata><GUID>%s</GUID><version>7</version>"
+            "</metadata></fdmmaterial>", guid);
+    fclose(f);
+    f = fopen(ignored_path, "wb");
+    assert(f != NULL);
+    fputs("not a material profile", f);
+    fclose(f);
+    assert(deneb_material_catalog_import_tree(import_dir, catalog_dir,
+                                              DENEB_MATERIAL_IMPORT_MAX_DEPTH,
+                                              &imported) == 0);
+    assert(imported == 1);
+    remove("/tmp/deneb-material-catalog/506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9.json");
+    rmdir(catalog_dir);
+    remove(import_path);
+    remove(ignored_path);
+    rmdir(import_nested_dir);
+    rmdir(import_dir);
+
     f = fopen(material_path, "wb");
     assert(f != NULL);
     fprintf(f, "<fdmmaterial><metadata><GUID>%s</GUID><version>7</version>"
@@ -1770,14 +1926,51 @@ static void test_material_catalog_helpers(void)
 static void test_macro_safety(void)
 {
     char path[256];
+    const char *override_dir = "/tmp/deneb-macro-override";
+    const char *stock_dir = "/tmp/deneb-macro-stock";
+    const char *override_path = "/tmp/deneb-macro-override/init.gcode";
+    FILE *f;
 
+    assert(strcmp(DENEB_PRINTSVC_MACRO_OVERRIDE_DIR,
+                  "/etc/deneb/marlindriver/gcode") == 0);
     assert(deneb_macro_resolve(DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD,
                                path, sizeof(path)) == 0);
     assert(strstr(path, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) != NULL);
     assert(deneb_macro_resolve("init.gcode", path, sizeof(path)) == 0);
     assert(strstr(path, DENEB_PRINTSVC_MACRO_DIR) == path);
+    assert(deneb_macro_name_is_safe("init.gcode"));
+    assert(!deneb_macro_name_is_safe("init.gcode.bak"));
+    assert(!deneb_macro_name_is_safe("gcode"));
+    assert(!deneb_macro_name_is_safe("init.GCODE"));
     assert(deneb_macro_resolve("../init.gcode", path, sizeof(path)) != 0);
     assert(deneb_macro_resolve("/tmp/init.gcode", path, sizeof(path)) != 0);
+    assert(deneb_macro_resolve("dir\\init.gcode", path, sizeof(path)) != 0);
+
+    remove(override_path);
+    rmdir(override_dir);
+    rmdir(stock_dir);
+    assert(mkdir(override_dir, 0755) == 0);
+    assert(mkdir(stock_dir, 0755) == 0);
+    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, stock_dir,
+                                         path, sizeof(path)) == 0);
+    assert(strstr(path, stock_dir) == path);
+
+    f = fopen(override_path, "wb");
+    assert(f != NULL);
+    fputs("M105\n", f);
+    fclose(f);
+    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, stock_dir,
+                                         path, sizeof(path)) == 0);
+    assert(strcmp(path, override_path) == 0);
+    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, stock_dir,
+                                         path, 8) != 0);
+    assert(deneb_macro_resolve_from_dirs("../init.gcode", override_dir,
+                                         stock_dir, path, sizeof(path)) != 0);
+    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, "",
+                                         path, sizeof(path)) != 0);
+    remove(override_path);
+    rmdir(override_dir);
+    rmdir(stock_dir);
 }
 
 static void test_diagnostics_log_side_by_side_fields(void)
@@ -2412,6 +2605,8 @@ int main(void)
     test_json_field_helpers();
     test_status_payload_filename_resolution();
     test_gcode_command_helpers();
+    test_frame_light_helpers();
+    test_diagnostics_export_helpers();
     test_manual_motion_helpers();
     test_buildplate_level_helpers();
     test_material_workflow_helpers();

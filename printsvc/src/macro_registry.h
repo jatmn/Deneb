@@ -4,6 +4,12 @@
 
 #include <stddef.h>
 
+int deneb_macro_name_is_safe(const char *name);
+int deneb_macro_resolve_from_dirs(const char *macro_name,
+                                  const char *override_dir,
+                                  const char *stock_dir,
+                                  char *path,
+                                  size_t path_sz);
 int deneb_macro_resolve(const char *macro_name, char *path, size_t path_sz);
 
 #endif

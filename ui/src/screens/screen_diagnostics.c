@@ -7,6 +7,7 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "diagnostics_export.h"
 #include "gcode_command.h"
 #include "lvgl.h"
 
@@ -61,47 +62,25 @@ static void fan_toggle_cb(lv_event_t *e)
 
 static int usb_export_available(void)
 {
-    return system("USB=$(awk '($2==\"/mnt/sda1\" || $2==\"/mnt/usb\" || "
-                  "$2==\"/media/usb\") {print $2; exit}' /proc/mounts); "
-                  "[ -n \"$USB\" ] && [ -w \"$USB\" ]") == 0;
+    return system(deneb_diagnostics_export_usb_available_command()) == 0;
 }
 
 static void export_logs_cb(lv_event_t *e)
 {
+    char cmd[2048];
+
     (void)e;
     if (!usb_export_available()) {
         lv_label_set_text(status_label, locale_get("diagnostics.usb_required"));
         return;
     }
 
-    system("(USB=$(awk '($2==\"/mnt/sda1\" || $2==\"/mnt/usb\" || "
-           "$2==\"/media/usb\") {print $2; exit}' /proc/mounts); "
-           "[ -n \"$USB\" ] && [ -w \"$USB\" ] || "
-           "{ echo 'No writable USB mount' >&2; exit 1; }; "
-           "NAME=$(uci -q get ultimaker.option.printer_name || "
-           "uci -q get system.@system[0].hostname || echo Deneb); "
-           "VER=$(uci -q get ultimaker.version.nr || echo unknown); "
-           "STAMP=$(date -u +%Y-%m-%d_%H-%M); "
-           "OUT=\"$USB/UM2C_${NAME}_v${VER}_${STAMP}\"; export OUT; "
-           "TMP=/tmp/deneb-log-export; rm -rf \"$TMP\"; mkdir -p \"$TMP\"; "
-           "export TMP; "
-           "cp -R /var/log/ultimaker \"$TMP/\" 2>/dev/null || "
-           "cp -R /var/log \"$TMP/\" 2>/dev/null || true; "
-           "logread > \"$TMP/logread.txt\" 2>/dev/null || true; "
-           "dmesg > \"$TMP/dmesg.txt\" 2>/dev/null || true; "
-           "ps w > \"$TMP/processes.txt\" 2>/dev/null || true; "
-           "cat /proc/meminfo > \"$TMP/meminfo.txt\" 2>/dev/null || true; "
-           "uptime > \"$TMP/uptime.txt\" 2>/dev/null || true; "
-           "cp /var/log/ultimaker/digitalfactory.log* \"$TMP/\" 2>/dev/null || true; "
-           "/etc/init.d/digitalfactory status > \"$TMP/digitalfactory_service_status.txt\" 2>&1 || true; "
-           "uci -q show ultimaker | grep digitalfactory "
-           "> \"$TMP/digitalfactory_uci.txt\" 2>/dev/null || true; "
-           "cp /tmp/deneb*.log \"$TMP/\" 2>/dev/null || true; "
-           "cp /tmp/deneb-df-status \"$TMP/\" 2>/dev/null || true; "
-           "uci show | grep -v ssid | grep -v key | grep -v encryption "
-           "> \"$TMP/uci_dump\" 2>/dev/null || true; "
-           "tar -czf \"$OUT.tar.gz\" -C \"$TMP\" .) "
-           ">/tmp/deneb-log-export.log 2>&1 &");
+    if (deneb_diagnostics_export_format_command(cmd, sizeof(cmd)) < 0) {
+        lv_label_set_text(status_label, locale_get("settings.save_failed"));
+        return;
+    }
+
+    system(cmd);
     lv_label_set_text(status_label, locale_get("diagnostics.export_started"));
 }
 

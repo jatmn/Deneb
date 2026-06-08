@@ -187,6 +187,8 @@ set(DENEB_SOURCES
     src/fonts/deneb_font_i18n_16.c
     ../common/print/buildplate_level.c
     ../common/print/command_format.c
+    ../common/print/diagnostics_export.c
+    ../common/print/frame_light.c
     ../common/print/gcode_command.c
     ../common/print/json_field.c
     ../common/print/json_file.c

@@ -7,15 +7,13 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "frame_light.h"
 #include "gcode_command.h"
 #include "lvgl.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
-#define FRAME_LIGHT_DEFAULT_BRIGHTNESS 100
 
 static lv_obj_t *frame_screen = NULL;
 static lv_obj_t *status_label = NULL;
@@ -23,70 +21,24 @@ static lv_obj_t *brightness_label = NULL;
 static lv_obj_t *brightness_slider = NULL;
 static lv_timer_t *startup_apply_timer = NULL;
 
-static int saved_enabled = 0;
-static int saved_brightness = FRAME_LIGHT_DEFAULT_BRIGHTNESS;
+static deneb_frame_light_state_t saved_light;
 static int startup_apply_attempts = 0;
 
 #define STARTUP_APPLY_SETTLE_ATTEMPTS 5
 #define STARTUP_APPLY_MAX_ATTEMPTS    180
 
-static int clamp_brightness(int value)
-{
-    if (value < 0)
-        return 0;
-    if (value > 100)
-        return 100;
-    return value;
-}
-
-static int read_uci_int(const char *key, int fallback)
-{
-    char cmd[128];
-    char buf[32];
-    FILE *f;
-
-    snprintf(cmd, sizeof(cmd), "uci -q get %s 2>/dev/null", key);
-    f = popen(cmd, "r");
-    if (!f)
-        return fallback;
-    if (!fgets(buf, sizeof(buf), f)) {
-        pclose(f);
-        return fallback;
-    }
-    pclose(f);
-
-    return atoi(buf);
-}
-
 static void load_saved_light_state(void)
 {
-    int legacy = read_uci_int("ultimaker.option.framelight", -1);
-    int brightness =
-        read_uci_int("deneb.frame_light.brightness",
-                     legacy >= 0 ? legacy : FRAME_LIGHT_DEFAULT_BRIGHTNESS);
-    int enabled = read_uci_int("deneb.frame_light.enabled",
-                               legacy > 0 ? 1 : 0);
-
-    saved_brightness = clamp_brightness(brightness);
-    if (saved_brightness == 0)
-        saved_brightness = FRAME_LIGHT_DEFAULT_BRIGHTNESS;
-    saved_enabled = enabled ? 1 : 0;
+    deneb_frame_light_read_saved_state(&saved_light);
 }
 
 static void save_light_state(void)
 {
-    char cmd[256];
+    char cmd[320];
 
-    snprintf(cmd, sizeof(cmd),
-             "uci -q set deneb.frame_light=frame_light; "
-             "uci -q set deneb.frame_light.enabled='%d'; "
-             "uci -q set deneb.frame_light.brightness='%d'; "
-             "uci -q set ultimaker.option.framelight='%d'; "
-             "uci -q commit deneb; "
-             "uci -q commit ultimaker",
-             saved_enabled, saved_brightness,
-             saved_enabled ? saved_brightness : 0);
-    system(cmd);
+    if (deneb_frame_light_format_save_command(&saved_light, cmd,
+                                              sizeof(cmd)) == 0)
+        system(cmd);
 }
 
 static int apply_light_pwm(int brightness)
@@ -103,7 +55,7 @@ static void update_brightness_label(void)
     if (brightness_label)
         lv_label_set_text_fmt(brightness_label,
                               locale_get("frame_lighting.brightness_fmt"),
-                              saved_brightness);
+                              saved_light.brightness);
 }
 
 static void update_status_label(void)
@@ -113,9 +65,9 @@ static void update_status_label(void)
 
     lv_label_set_text_fmt(status_label,
                           locale_get("frame_lighting.status_fmt"),
-                          saved_enabled ? locale_get("diagnostics.on")
+                          saved_light.enabled ? locale_get("diagnostics.on")
                                         : locale_get("diagnostics.off"),
-                          saved_brightness);
+                          saved_light.brightness);
 }
 
 static void light_cb(lv_event_t *e)
@@ -123,8 +75,8 @@ static void light_cb(lv_event_t *e)
     int enabled = (int)(intptr_t)lv_event_get_user_data(e);
     int output_brightness;
 
-    saved_enabled = enabled ? 1 : 0;
-    output_brightness = saved_enabled ? saved_brightness : 0;
+    saved_light.enabled = enabled ? 1 : 0;
+    output_brightness = deneb_frame_light_output_brightness(&saved_light);
     if (apply_light_pwm(output_brightness) == 0) {
         save_light_state();
         update_status_label();
@@ -135,14 +87,16 @@ static void light_cb(lv_event_t *e)
 
 static void brightness_slider_cb(lv_event_t *e)
 {
-    saved_brightness = clamp_brightness(lv_slider_get_value(lv_event_get_target(e)));
+    saved_light.brightness = deneb_frame_light_clamp_brightness(
+        lv_slider_get_value(lv_event_get_target(e)));
     update_brightness_label();
 }
 
 static void brightness_slider_release_cb(lv_event_t *e)
 {
     (void)e;
-    if (saved_enabled && apply_light_pwm(saved_brightness) != 0) {
+    if (saved_light.enabled &&
+        apply_light_pwm(saved_light.brightness) != 0) {
         if (status_label)
             lv_label_set_text(status_label, locale_get("settings.save_failed"));
         return;
@@ -192,7 +146,7 @@ static lv_obj_t *frame_create(void)
     brightness_slider = lv_slider_create(frame_screen);
     lv_obj_set_size(brightness_slider, 280, 18);
     lv_slider_set_range(brightness_slider, 1, 100);
-    lv_slider_set_value(brightness_slider, saved_brightness, LV_ANIM_OFF);
+    lv_slider_set_value(brightness_slider, saved_light.brightness, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(brightness_slider, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_bg_color(brightness_slider, lv_color_hex(0x53a8b6),
                               LV_PART_INDICATOR);
@@ -250,7 +204,7 @@ static void startup_apply_timer_cb(lv_timer_t *timer)
     }
 
     load_saved_light_state();
-    if (apply_light_pwm(saved_enabled ? saved_brightness : 0) == 0 ||
+    if (apply_light_pwm(deneb_frame_light_output_brightness(&saved_light)) == 0 ||
         startup_apply_attempts >= STARTUP_APPLY_MAX_ATTEMPTS) {
         lv_timer_delete(timer);
         startup_apply_timer = NULL;
