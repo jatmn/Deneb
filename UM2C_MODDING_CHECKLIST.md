@@ -1308,9 +1308,11 @@ Completed implementation slices:
   requires that same native ownership proof. The verifier also checks
   active-job UI status
   transitions: `printing` while active, `paused` after pause, and `idle` after
-  abort or natural completion. Active, preheat, paused, resumed, aborted, and
-  completed snapshots must also prove native active/stop-allowed flags so the
-  LCD Stop safety state is checked from the native driver contract. Heat,
+  abort or natural completion, including the active `printing` status snapshot
+  before a short completion test is allowed to settle to idle. Active, preheat,
+  paused, resumed, aborted, and completed snapshots must also prove native
+  active/stop-allowed flags so the LCD Stop safety state is checked from the
+  native driver contract. Heat,
   motion, and macro phases must include their snapshot status/root API samples
   so command acceptance alone cannot satisfy those live checks. Its
   resource mode requires initial/final memory, uptime, CPU, load, process RSS,
@@ -1322,22 +1324,29 @@ Completed implementation slices:
   process RSS, raw CPU jiffies, initial-to-final CPU jiffies, boot-sync elapsed
   time, and print throughput, and fails if the stock summary lacks
   initial/final `print_service.py` process evidence, CPU or throughput
-  intervals are not positive, or the native summary lacks native-only route
-  evidence, contains any stock `print_service.py` process sample, lacks
-  `deneb-printsvc` process ownership, or lacks native active/stop-allowed
-  safety evidence.
+  intervals are not positive, or the native summary lacks per-lifecycle status
+  values with native-only route evidence, contains any stock `print_service.py`
+  process sample, lacks native local/USB IPC job acceptance, active-status,
+  abort, and idle-status evidence, lacks
+  `deneb-printsvc` process ownership, or lacks per-lifecycle native
+  active/stop-allowed safety evidence for each required active and inactive
+  printer-root snapshot.
 - [x] Add a shell-only synthetic selftest,
   `deneb-printsvc-smoke-selftest`, that builds stock/native summary fixtures
   and runs the full smoke verifier plus stock/native comparator without Python.
   The selftest also checks expected-failure fixtures for missing native
-  stop-allowed evidence, a route diagnostic that is not native-only, a stock
-  `print_service.py` process returning in a native run, missing stock
+  stop-allowed evidence, single missing active and inactive comparator
+  stop-safety phases, missing native local/USB job evidence, a route diagnostic
+  that is not native-only, a stock `print_service.py` process returning in a
+  native run, missing stock
   `print_service.py` baseline evidence, and zero-throughput records. This does
   not replace live hardware evidence, but it prevents the packaged
   verifier/comparator gates from drifting away from the Section 8 smoke and
   resource requirements, including rejection of summaries where status
   snapshots lose `native_only_route:true` in either verifier or comparator
-  paths, including a single missing comparator lifecycle status snapshot.
+  paths, including a single missing comparator lifecycle status snapshot,
+  missing natural-completion active status evidence, or reporting the wrong
+  lifecycle status during preheat/abort evidence.
 - [x] Add a shell-only native init handoff selftest,
   `deneb-printsvc-init-selftest`, that checks the packaged
   `deneb-printsvc.init`, installer source, installer-generated printserver

@@ -138,12 +138,41 @@ reject_pattern() {
     return 0
 }
 
-require_status_body_route_phase() {
+require_status_phase() {
     phase="$1"
+    status="$2"
 
     require_pattern "$NATIVE" \
-        " phase=status-${phase} .*rc=0 .*body=.*native_only_route:true" \
-        "native summary missing status-body native-only route evidence for ${phase}"
+        " phase=status-${phase} .*rc=0 .*status=${status} .*body=.*native_only_route:true" \
+        "native summary missing status/native-route evidence for ${phase}"
+}
+
+require_printer_stop_phase() {
+    phase="$1"
+    active="$2"
+    stop_allowed="$3"
+
+    require_pattern "$NATIVE" \
+        " phase=printer-${phase} .*rc=0 .*body=.*native_active:${active}.*native_stop_allowed:${stop_allowed}" \
+        "native summary missing printer native active/stop evidence for ${phase}"
+}
+
+require_local_job_evidence() {
+    require_pattern "$NATIVE" \
+        ' phase=local-job-native .*kind=printsvc-cli .*rc=0' \
+        "native summary missing native local/USB job IPC smoke evidence"
+    require_pattern "$NATIVE" \
+        ' phase=local-job-start .*source=USB .*rc=0' \
+        "native summary missing native local/USB job source evidence"
+    require_pattern "$NATIVE" \
+        ' phase=status-local-job-active .*status=printing .*rc=0' \
+        "native summary missing native local/USB active status evidence"
+    require_pattern "$NATIVE" \
+        ' phase=local-job-abort .*rc=0' \
+        "native summary missing native local/USB abort evidence"
+    require_pattern "$NATIVE" \
+        ' phase=status-local-job-aborted .*status=idle .*rc=0' \
+        "native summary missing native local/USB aborted status evidence"
 }
 
 delta_line() {
@@ -183,24 +212,30 @@ require_pattern "$NATIVE" \
 require_pattern "$NATIVE" \
     ' phase=boot-sync-ready .*route_body=.*native_only_route:true .*rc=0' \
     "native summary missing native-only boot-sync route evidence"
-for phase in initial native-enabled heating cooldown motion macro \
-    service-restarted job-running job-paused job-resumed job-aborted \
-    cura-job-running cura-job-aborted preheat-abort-active preheat-aborted \
-    job-completed; do
-    require_status_body_route_phase "$phase"
+require_local_job_evidence
+for phase in initial native-enabled cooldown motion macro service-restarted \
+    job-aborted cura-job-aborted preheat-aborted job-completed; do
+    require_status_phase "$phase" idle
 done
+for phase in heating job-running job-resumed cura-job-running \
+    preheat-abort-active complete-job-running; do
+    require_status_phase "$phase" printing
+done
+require_status_phase job-paused paused
 require_pattern "$STOCK" \
     'sample=initial .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing initial print_service.py process evidence"
 require_pattern "$STOCK" \
     'sample=final .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing final print_service.py process evidence"
-require_pattern "$NATIVE" \
-    ' phase=printer-(job-running|complete-job-running|preheat-abort-active|cura-job-running) .*native_active:true.*native_stop_allowed:true' \
-    "native summary missing active native stop-allowed evidence"
-require_pattern "$NATIVE" \
-    ' phase=printer-(job-aborted|preheat-aborted|cura-job-aborted|job-completed) .*native_active:false.*native_stop_allowed:false' \
-    "native summary missing inactive native stop-disabled evidence"
+for phase in heating job-running job-paused job-resumed cura-job-running \
+    preheat-abort-active complete-job-running; do
+    require_printer_stop_phase "$phase" true true
+done
+for phase in initial native-enabled cooldown motion macro service-restarted \
+    job-aborted cura-job-aborted preheat-aborted job-completed; do
+    require_printer_stop_phase "$phase" false false
+done
 
 stock_initial_mem="$(summary_value "$STOCK" initial mem_used_kb)"
 native_initial_mem="$(summary_value "$NATIVE" initial mem_used_kb)"

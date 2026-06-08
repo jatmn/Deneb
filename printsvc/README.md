@@ -184,6 +184,13 @@ Every snapshot records the selected print-backend route body, the
 the summary so preheat, pause/resume, abort, completion, and restart runs prove
 the native route, UI-visible state, and native active/stop-allowed safety flags
 instead of only proving HTTP reachability.
+The stock/native comparator requires those `/printer` root active/stop flags on
+each required active and inactive lifecycle phase, so a single missing
+preheat/Cura/completion safety snapshot fails the comparison.
+It also verifies the expected `/printer/status` lifecycle value for each phase
+while requiring `native_only_route:true`, so preheat must be reported as
+printing, pause as paused, and abort/completion as idle in the comparison
+evidence.
 `--boot-sync` waits for native-only print-backend route and printer-status
 readiness before the initial snapshot and records the bounded ready elapsed
 time.
@@ -226,9 +233,11 @@ deneb-printsvc-init-selftest
 ```
 
 For job runs the verifier requires `printing` while active, `paused` after a
-pause command, and `idle` after abort or natural completion. It also checks
-native active/stop-allowed flags during active, preheat, paused, and resumed
-snapshots, then requires those flags to be false after abort or completion.
+pause command, and `idle` after abort or natural completion, including the
+active `printing` snapshot before a completion run is allowed to settle to
+idle. It also checks native active/stop-allowed flags during active, preheat,
+paused, and resumed snapshots, then requires those flags to be false after
+abort or completion.
 Heat, motion, and macro verification require their snapshot status and printer
 root records so those phases prove backend state sampling, not only command
 acceptance.
@@ -244,16 +253,19 @@ jiffies, CPU jiffies consumed between initial/final samples, boot-sync elapsed
 time, and print throughput. It fails if the stock summary lacks
 initial/final `print_service.py` process evidence, if CPU or throughput
 intervals are not positive, or if the native summary lacks native-only route
-evidence in route diagnostics or any required status lifecycle body, contains a
-stock `print_service.py` process sample, lacks `deneb-printsvc` process
-ownership, or lacks native stop-safety flags.
+evidence in route diagnostics or any required status lifecycle body, reports a
+wrong lifecycle status value, contains a stock `print_service.py` process
+sample, lacks native local/USB IPC job evidence, lacks `deneb-printsvc`
+process ownership, or lacks per-lifecycle native stop-safety flags.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also checks that
 missing native stop-safety evidence, missing status-body native-route evidence
 in both verifier and comparator paths, missing native-route evidence in a
-single comparator lifecycle status snapshot, a non-native-only route
-diagnostic, a returned stock `print_service.py` process in a native run,
+single comparator lifecycle status snapshot, a wrong single-phase lifecycle
+status value, missing natural-completion active status evidence, missing native
+local/USB job evidence, a non-native-only route diagnostic, a returned stock
+`print_service.py` process in a native run,
 missing stock `print_service.py` baseline evidence, and zero-throughput records
 are rejected.
 The init selftest checks `deneb-printsvc.init`, installer source, the

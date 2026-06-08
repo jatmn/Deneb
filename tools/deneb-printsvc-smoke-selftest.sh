@@ -130,6 +130,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:15Z phase=printer-preheat-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:16Z phase=complete-job-start kind=multipart path=/tmp/complete.gcode rc=0
 2026-06-08T00:00:16Z snapshot=complete-job-running
+2026-06-08T00:00:16Z phase=status-complete-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
 2026-06-08T00:00:16Z phase=printer-complete-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:36Z phase=job-completion-wait elapsed=20 rc=0
 2026-06-08T00:00:36Z phase=job-throughput path=/tmp/complete.gcode bytes=9000 elapsed_seconds=18 bytes_per_second=500 rc=0
@@ -161,6 +162,24 @@ expect_failure compare_rejects_missing_active_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-stop.summary"
 
+sed '/phase=printer-cura-job-running /s/native_stop_allowed:true/native_stop_allowed:false/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-one-active-stop.summary"
+expect_failure compare_rejects_missing_one_active_stop \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-one-active-stop.summary"
+
+sed '/phase=printer-job-completed /s/native_stop_allowed:false/native_stop_allowed:true/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-one-inactive-stop.summary"
+expect_failure compare_rejects_missing_one_inactive_stop \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-one-inactive-stop.summary"
+
+grep -v 'phase=local-job-start ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-local-job.summary"
+expect_failure compare_rejects_missing_local_job \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-local-job.summary"
+
 sed 's/ body={status:[^}]*native_only_route:true}//g' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-status-route.summary"
 expect_failure verify_rejects_missing_status_native_route \
@@ -175,6 +194,21 @@ sed '/phase=status-job-running /s/ body={status:[^}]*native_only_route:true}//' 
 expect_failure compare_rejects_missing_one_status_native_route \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-one-status-route.summary"
+
+grep -v 'phase=status-complete-job-running ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-complete-running-status.summary"
+expect_failure verify_rejects_missing_complete_running_status \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-complete-running-status.summary"
+expect_failure compare_rejects_missing_complete_running_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-complete-running-status.summary"
+
+sed '/phase=status-preheat-abort-active /s/status=printing/status=idle/; /phase=status-preheat-abort-active /s/status:printing/status:idle/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-wrong-one-status.summary"
+expect_failure compare_rejects_wrong_one_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-wrong-one-status.summary"
 
 sed 's/native_only_route:true/native_only_route:false/g' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-route-not-exclusive.summary"

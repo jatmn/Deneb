@@ -296,6 +296,8 @@ fi
 if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
     require_pattern ' phase=complete-job-start .*rc=0' "completion job start passed"
     require_pattern ' snapshot=complete-job-running' "completion job-running snapshot present"
+    require_pattern ' phase=status-complete-job-running .*rc=0 .*status=printing' "completion job-running status is printing"
+    require_pattern ' phase=status-complete-job-running .*rc=0 .*body=.*native_only_route:true' "completion job-running status body has native-only route evidence"
     require_pattern ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "completion job-running native active/stop flags are true"
     require_pattern ' phase=job-completion-wait .*rc=0' "completion wait observed inactive job"
     require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[1-9][0-9]* .*rc=0' "completion throughput sample present"
