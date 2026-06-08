@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: MPL-2.0
 #
-# Device-side smoke/measurement harness for the lab-gated native print service.
+# Device-side smoke/measurement harness for the native print service.
 # Default mode is observe-only. Hardware-moving/heating phases require explicit
 # flags so the script can be shipped safely before live validation is allowed.
 
@@ -33,6 +33,7 @@ MACRO_ACTION=""
 COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-3600}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
 OLD_NATIVE=""
+OLD_NATIVE_SET=0
 ROUTE_RESTORED=0
 
 usage() {
@@ -445,15 +446,26 @@ restore_route() {
     if [ "$ROUTE_RESTORED" = "1" ]; then
         return
     fi
-    if [ "$ENABLE_NATIVE" = "1" ] && [ "$RESTORE_ROUTE" = "1" ] && [ -n "$OLD_NATIVE" ]; then
-        say "restoring deneb.printsvc.enabled=$OLD_NATIVE"
-        uci -q set deneb.printsvc.enabled="$OLD_NATIVE" 2>/dev/null || true
+    if [ "$ENABLE_NATIVE" = "1" ] && [ "$RESTORE_ROUTE" = "1" ]; then
+        if [ "$OLD_NATIVE_SET" = "1" ]; then
+            say "restoring deneb.printsvc.enabled=$OLD_NATIVE"
+            uci -q set deneb.printsvc.enabled="$OLD_NATIVE" 2>/dev/null || true
+            summary "phase=route-restored value=$OLD_NATIVE"
+        else
+            say "restoring deneb.printsvc.enabled to unset"
+            uci -q delete deneb.printsvc.enabled 2>/dev/null || true
+            summary "phase=route-restored value=unset"
+        fi
         uci -q commit deneb 2>/dev/null || true
-        /etc/init.d/deneb-printsvc stop >>"$LOG" 2>&1 || true
-        /etc/init.d/printserver restart >>"$LOG" 2>&1 || true
+        if [ "$OLD_NATIVE_SET" = "1" ] && [ "$OLD_NATIVE" = "0" ]; then
+            /etc/init.d/deneb-printsvc stop >>"$LOG" 2>&1 || true
+            /etc/init.d/printserver restart >>"$LOG" 2>&1 || true
+        else
+            /etc/init.d/printserver stop >>"$LOG" 2>&1 || true
+            /etc/init.d/deneb-printsvc restart >>"$LOG" 2>&1 || true
+        fi
         /etc/init.d/deneb-api restart >>"$LOG" 2>&1 || true
         ROUTE_RESTORED=1
-        summary "phase=route-restored value=$OLD_NATIVE"
     fi
 }
 
@@ -473,15 +485,25 @@ fi
 snapshot "initial"
 
 if [ "$ENABLE_NATIVE" = "1" ]; then
-    OLD_NATIVE="$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo 0)"
-    say "enabling native route, previous deneb.printsvc.enabled=$OLD_NATIVE"
+    if OLD_NATIVE="$(uci -q get deneb.printsvc.enabled 2>/dev/null)"; then
+        OLD_NATIVE_SET=1
+        say "enabling native route, previous deneb.printsvc.enabled=$OLD_NATIVE"
+    else
+        OLD_NATIVE=""
+        OLD_NATIVE_SET=0
+        say "enabling native route, previous deneb.printsvc.enabled unset"
+    fi
     append_cmd uci -q set deneb.printsvc.enabled=1 || true
     append_cmd uci -q commit deneb || true
     append_cmd /etc/init.d/printserver stop || true
     append_cmd /etc/init.d/deneb-printsvc restart || true
     append_cmd /etc/init.d/deneb-api restart || true
     sleep 3
-    summary "phase=native-route-enabled previous=$OLD_NATIVE"
+    if [ "$OLD_NATIVE_SET" = "1" ]; then
+        summary "phase=native-route-enabled previous=$OLD_NATIVE"
+    else
+        summary "phase=native-route-enabled previous=unset"
+    fi
     snapshot "native-enabled"
 fi
 

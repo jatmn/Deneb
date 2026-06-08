@@ -31,9 +31,11 @@ int deneb_print_backend_parse_override(const char *value,
 
 deneb_print_backend_t deneb_print_backend_from_flag_text(const char *value)
 {
-    return value && value[0] == '1' &&
-           (value[1] == '\0' || value[1] == '\n' || value[1] == '\r') ?
-        DENEB_PRINT_BACKEND_NATIVE : DENEB_PRINT_BACKEND_COORDINATOR;
+    if (value && value[0] == '0' &&
+        (value[1] == '\0' || value[1] == '\n' || value[1] == '\r'))
+        return DENEB_PRINT_BACKEND_COORDINATOR;
+
+    return DENEB_PRINT_BACKEND_NATIVE;
 }
 
 deneb_print_backend_route_t deneb_print_backend_route(deneb_print_backend_t backend)
@@ -68,10 +70,10 @@ deneb_print_backend_route_t deneb_print_backend_route_detect(void)
         if (fgets(buf, sizeof(buf), f))
             backend = deneb_print_backend_from_flag_text(buf);
         else
-            backend = DENEB_PRINT_BACKEND_COORDINATOR;
+            backend = DENEB_PRINT_BACKEND_NATIVE;
         pclose(f);
     } else {
-        backend = DENEB_PRINT_BACKEND_COORDINATOR;
+        backend = DENEB_PRINT_BACKEND_NATIVE;
     }
 
     return deneb_print_backend_route(backend);
@@ -96,7 +98,7 @@ int deneb_print_backend_route_json_fields(const deneb_print_backend_route_t *rou
         return -1;
 
     if (!route) {
-        fallback = deneb_print_backend_route(DENEB_PRINT_BACKEND_COORDINATOR);
+        fallback = deneb_print_backend_route(DENEB_PRINT_BACKEND_NATIVE);
         route = &fallback;
     }
 

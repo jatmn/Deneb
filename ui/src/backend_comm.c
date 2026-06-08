@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend communication implementation.
- * Connects to stock coordinator by default, or native deneb-printsvc when
- * the lab-gated native service is enabled.
+ * Connects to native deneb-printsvc by default, with the stock coordinator
+ * retained as an explicit recovery backend.
  *
  * Build note: requires libzmq (static link for MIPS target).
  * For host testing without libzmq, define BACKEND_COMM_STUB to

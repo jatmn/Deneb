@@ -1,8 +1,8 @@
 #!/bin/sh /etc/rc.common
 # SPDX-License-Identifier: MPL-2.0
 #
-# Lab-gated native print service. This init script installs with Deneb but does
-# not replace stock printserver unless explicitly enabled with UCI.
+# Native print service. Deneb enables this by default for the print backend;
+# setting deneb.printsvc.enabled=0 keeps the stock printserver recovery path.
 
 START=94
 STOP=16
@@ -11,7 +11,7 @@ PROG=/usr/bin/deneb-printsvc
 
 start_service() {
     local enabled
-    enabled=$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "0")
+    enabled=$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "1")
     [ "$enabled" = "1" ] || return 0
 
     if [ -x /etc/init.d/printserver ]; then

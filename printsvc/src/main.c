@@ -73,13 +73,22 @@ int main(int argc, char **argv)
 {
     deneb_print_service_t svc;
     int allow_programming = 0;
+    int dry_run = 0;
 
     if (argc > 1 && strcmp(argv[1], "--smoke-test") == 0)
         return smoke_test();
     if (argc > 2 && strcmp(argv[1], "--local-job-smoke") == 0)
         return local_job_smoke(argv[2]);
-    if (argc > 1 && strcmp(argv[1], "--program-motion-firmware") == 0)
-        allow_programming = 1;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--program-motion-firmware") == 0)
+            allow_programming = 1;
+        else if (strcmp(argv[i], "--dry-run") == 0)
+            dry_run = 1;
+        else {
+            fprintf(stderr, "deneb-printsvc: unknown option: %s\n", argv[i]);
+            return 2;
+        }
+    }
 
     deneb_print_service_init(&svc);
     deneb_diagnostics_log_open(NULL);
@@ -91,8 +100,13 @@ int main(int argc, char **argv)
     } else if (fw == DENEB_MOTION_FW_PROGRAM_REQUIRED) {
         fprintf(stderr, "deneb-printsvc: motion firmware programming required but not enabled\n");
     }
-    if (deneb_print_service_open_motion(&svc) != 0) {
-        fprintf(stderr, "deneb-printsvc: motion serial unavailable; running without serial writes\n");
+    if (!dry_run && deneb_print_service_open_motion(&svc) != 0) {
+        fprintf(stderr, "deneb-printsvc: motion serial unavailable\n");
+        deneb_print_service_close(&svc);
+        return 1;
+    }
+    if (dry_run) {
+        fprintf(stderr, "deneb-printsvc: dry-run mode; motion serial disabled\n");
     }
 
     return deneb_printsvc_ipc_run(&svc);

@@ -106,6 +106,10 @@ tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-compare.sh" > "${STAGING_D
 chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init"
 chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare"
 
+mkdir -p "${STAGING_DIR}/deneb-printsvc-macros"
+cp "${REPO_ROOT}/printsvc/macros/"*.gcode "${STAGING_DIR}/deneb-printsvc-macros/"
+chmod 0644 "${STAGING_DIR}"/deneb-printsvc-macros/*.gcode
+
 mkdir -p "${STAGING_DIR}/www"
 cp -r "${REPO_ROOT}/web/www/"* "${STAGING_DIR}/www/"
 
@@ -143,15 +147,16 @@ contents:
   deneb-df-bridge   - Symlink installed to deneb-ui C Digital Factory bridge entry point
   deneb-api         - Local REST API and web session service (MIPS)
   deneb-mdns        - Lightweight mDNS advertiser for Cura local discovery (MIPS)
-  deneb-printsvc    - Lab-gated native print service replacement scaffold (MIPS)
-  deneb-printsvc-smoke - Lab-only native print service smoke/resource harness
+  deneb-printsvc    - Native print service replacement (MIPS)
+  deneb-printsvc-smoke - Native print service smoke/resource harness
   deneb-printsvc-smoke-verify - Shell verifier for smoke summary evidence
   deneb-printsvc-smoke-compare - Shell stock/native smoke summary comparator
+  deneb-printsvc-macros/ - Deneb-owned native print-service macro defaults
   lighttpd          - Static web server and API reverse proxy (MIPS)
   deneb-api.init    - OpenWrt procd init script for deneb-api
   deneb-web.init    - OpenWrt procd init script for lighttpd
   deneb-mdns.init   - OpenWrt procd init script for deneb-mdns
-  deneb-printsvc.init - Lab-gated OpenWrt procd init script for deneb-printsvc
+  deneb-printsvc.init - OpenWrt procd init script for deneb-printsvc
   lighttpd.conf     - Deneb web server configuration
   www/              - Static Deneb web UI assets
   update.sh         - Installer script
@@ -169,7 +174,7 @@ EOF
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
-    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
+    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"

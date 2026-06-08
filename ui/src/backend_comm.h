@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MPL-2.0
  *
  * Backend communication module for Deneb UI.
- * Connects to the selected print backend via ZeroMQ. Stock coordinator remains
- * the default route; native deneb-printsvc is used when the lab gate is enabled.
+ * Connects to the selected print backend via ZeroMQ. Native deneb-printsvc is
+ * the default route; stock coordinator remains an explicit recovery route.
  *
  * Two sockets:
  *   1. SUB receives printer status on topic "10001"

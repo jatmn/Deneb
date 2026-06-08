@@ -47,6 +47,10 @@ validate_package() {
             missing=1
         fi
     done
+    if [ ! -d /tmp/update/deneb-printsvc-macros ]; then
+        log "ERROR: missing required directory: deneb-printsvc-macros"
+        missing=1
+    fi
     if [ ! -d /tmp/update/www ]; then
         log "ERROR: missing required directory: www"
         missing=1
@@ -108,6 +112,11 @@ install_web_runtime() {
     chmod 0755 /usr/bin/deneb-printsvc-smoke-compare
     log "installed deneb-printsvc-smoke-compare to /usr/bin/deneb-printsvc-smoke-compare"
 
+    mkdir -p /etc/deneb/marlindriver/gcode
+    cp /tmp/update/deneb-printsvc-macros/*.gcode /etc/deneb/marlindriver/gcode/
+    chmod 0644 /etc/deneb/marlindriver/gcode/*.gcode
+    log "installed Deneb print-service macro defaults"
+
     cp /tmp/update/lighttpd /usr/sbin/lighttpd
     chmod 0755 /usr/sbin/lighttpd
     log "installed lighttpd to /usr/sbin/lighttpd"
@@ -131,7 +140,8 @@ install_web_runtime() {
     uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
     uci -q set deneb.printsvc=printsvc 2>/dev/null || true
     if [ -z "$(uci -q get deneb.printsvc.enabled 2>/dev/null || true)" ]; then
-        uci -q set deneb.printsvc.enabled='0' 2>/dev/null || true
+        uci -q set deneb.printsvc.enabled='1' 2>/dev/null || true
+        log "defaulted native deneb-printsvc backend to enabled"
     fi
     if [ -z "$(uci -q get ultimaker.option.nozzle_size 2>/dev/null || true)" ]; then
         uci -q set ultimaker.option.nozzle_size='0.4' 2>/dev/null || true
@@ -379,49 +389,34 @@ START=95
 # shellcheck disable=SC2034
 STOP=15
 
-export LD_LIBRARY_PATH=/home/lib
-export PYTHONPATH=${PYTHONPATH}:/home
+STOCK_PRINTSERVER_INIT="/home/deneb/backups/deneb-ui/init/printserver.orig"
 
 native_printsvc_enabled() {
-    [ "$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "0")" = "1" ]
-}
-
-wait_for_printserver_socket() {
-    local pid="$1"
-    local waited=0
-
-    while [ "${waited}" -lt 35 ]; do
-        kill -0 "${pid}" 2>/dev/null || return 1
-        if netstat -ln 2>/dev/null | grep -q '127.0.0.1:5556'; then
-            return 0
-        fi
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    return 1
+    [ "$(uci -q get deneb.printsvc.enabled 2>/dev/null || echo "1")" = "1" ]
 }
 
 start() {
     if native_printsvc_enabled; then
-        logger -t deneb-printserver "native deneb-printsvc enabled; skipping stock print_service.py"
+        logger -t deneb-printserver "native deneb-printsvc owns the print backend"
         rm -f /var/run/printserver.pid
         return 0
     fi
 
-    echo Starting print server
-    /usr/bin/python3 /home/cygnus/marlindriver/print_service.py > /dev/null 2>&1 &
-    echo $! >/var/run/printserver.pid
-
-    if wait_for_printserver_socket "$(cat /var/run/printserver.pid)"; then
-        logger -t deneb-printserver "print service command socket is ready"
-    else
-        logger -t deneb-printserver "print service command socket was not ready before timeout"
+    if [ -x "${STOCK_PRINTSERVER_INIT}" ]; then
+        logger -t deneb-printserver "delegating to backed-up stock printserver init"
+        "${STOCK_PRINTSERVER_INIT}" start
+        return $?
     fi
+
+    logger -t deneb-printserver "stock printserver fallback unavailable"
+    return 1
 }
 
 stop() {
     echo Stopping print server
+    if ! native_printsvc_enabled && [ -x "${STOCK_PRINTSERVER_INIT}" ]; then
+        "${STOCK_PRINTSERVER_INIT}" stop 2>/dev/null || true
+    fi
     if [ -f /var/run/printserver.pid ]; then
         PID=$(cat /var/run/printserver.pid)
         kill -9 "${PID}" 2>/dev/null || true
@@ -430,7 +425,7 @@ stop() {
 }
 EOF
         chmod 0755 "${printserver_init}"
-        log "patched printserver boot wait"
+        log "installed native printserver handoff shim"
     fi
 
     if [ -f "${coordinator_init}" ] &&
@@ -449,46 +444,33 @@ START=96
 # shellcheck disable=SC2034
 STOP=14
 
-export LD_LIBRARY_PATH=/home/lib
-export PYTHONPATH=${PYTHONPATH}:/home/lib:/home
-
-wait_for_coordinator_socket() {
-    local pid="$1"
-    local waited=0
-
-    while [ "${waited}" -lt 35 ]; do
-        kill -0 "${pid}" 2>/dev/null || return 1
-        if netstat -ln 2>/dev/null | grep -q '127.0.0.1:5566'; then
-            return 0
-        fi
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    return 1
-}
+STOCK_COORDINATOR_INIT="/home/deneb/backups/deneb-ui/init/coordinator.orig"
 
 start() {
-    echo Starting coordinator
-    cd /home/cygnus/coordinator || exit 1
-    /usr/bin/python3 /home/cygnus/coordinator/coordinator.py > /dev/null 2>&1 &
-    echo $! >/var/run/coordinator.pid
-
-    if wait_for_coordinator_socket "$(cat /var/run/coordinator.pid)"; then
-        logger -t deneb-coordinator "coordinator command socket is ready"
-    else
-        logger -t deneb-coordinator "coordinator command socket was not ready before timeout"
+    if [ -x "${STOCK_COORDINATOR_INIT}" ]; then
+        logger -t deneb-coordinator "delegating to backed-up stock coordinator init"
+        "${STOCK_COORDINATOR_INIT}" start
+        return $?
     fi
+
+    logger -t deneb-coordinator "stock coordinator fallback unavailable"
+    return 1
 }
 
 stop() {
     echo Stopping coordinator
-    PID=$(cat /var/run/coordinator.pid)
-    kill -9 "${PID}"
+    if [ -x "${STOCK_COORDINATOR_INIT}" ]; then
+        "${STOCK_COORDINATOR_INIT}" stop 2>/dev/null || true
+    fi
+    if [ -f /var/run/coordinator.pid ]; then
+        PID=$(cat /var/run/coordinator.pid)
+        kill -9 "${PID}" 2>/dev/null || true
+        rm -f /var/run/coordinator.pid
+    fi
 }
 EOF
         chmod 0755 "${coordinator_init}"
-        log "patched coordinator boot wait"
+        log "installed coordinator recovery handoff shim"
     fi
 }
 

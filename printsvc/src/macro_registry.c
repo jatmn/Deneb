@@ -44,8 +44,7 @@ int deneb_macro_resolve_from_dirs(const char *macro_name,
 {
     char candidate[512];
 
-    if (!deneb_macro_name_is_safe(macro_name) || !stock_dir || !*stock_dir ||
-        !path || path_sz == 0)
+    if (!deneb_macro_name_is_safe(macro_name) || !path || path_sz == 0)
         return -1;
 
     if (override_dir && override_dir[0] &&
@@ -55,7 +54,10 @@ int deneb_macro_resolve_from_dirs(const char *macro_name,
         return macro_join_path(override_dir, macro_name, path, path_sz);
     }
 
-    return macro_join_path(stock_dir, macro_name, path, path_sz);
+    if (stock_dir && stock_dir[0])
+        return macro_join_path(stock_dir, macro_name, path, path_sz);
+
+    return -1;
 }
 
 int deneb_macro_resolve(const char *macro_name, char *path, size_t path_sz)

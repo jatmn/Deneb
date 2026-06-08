@@ -2233,7 +2233,8 @@ static void test_print_backend_route_contract(void)
 
     assert(deneb_print_backend_from_flag_text("1\n") == DENEB_PRINT_BACKEND_NATIVE);
     assert(deneb_print_backend_from_flag_text("0\n") == DENEB_PRINT_BACKEND_COORDINATOR);
-    assert(deneb_print_backend_from_flag_text(NULL) == DENEB_PRINT_BACKEND_COORDINATOR);
+    assert(deneb_print_backend_from_flag_text(NULL) == DENEB_PRINT_BACKEND_NATIVE);
+    assert(deneb_print_backend_from_flag_text("") == DENEB_PRINT_BACKEND_NATIVE);
 
     route = deneb_print_backend_route(DENEB_PRINT_BACKEND_COORDINATOR);
     assert(route.backend == DENEB_PRINT_BACKEND_COORDINATOR);
@@ -2253,6 +2254,9 @@ static void test_print_backend_route_contract(void)
     assert(strstr(fields, "\"print_backend\":\"native\"") != NULL);
     assert(strstr(fields, DENEB_PRINTSVC_STATUS_URL) != NULL);
     assert(strstr(fields, DENEB_PRINTSVC_COMMAND_URL) != NULL);
+
+    assert(deneb_print_backend_route_json_fields(NULL, fields, sizeof(fields)) > 0);
+    assert(strstr(fields, "\"print_backend\":\"native\"") != NULL);
 }
 
 static void test_pending_job_metadata(void)
@@ -2844,6 +2848,10 @@ static void test_macro_safety(void)
                                          path, 8) != 0);
     assert(deneb_macro_resolve_from_dirs("../init.gcode", override_dir,
                                          stock_dir, path, sizeof(path)) != 0);
+    assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, "",
+                                         path, sizeof(path)) == 0);
+    assert(strcmp(path, override_path) == 0);
+    remove(override_path);
     assert(deneb_macro_resolve_from_dirs("init.gcode", override_dir, "",
                                          path, sizeof(path)) != 0);
     remove(override_path);

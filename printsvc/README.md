@@ -44,8 +44,10 @@ scaffold:
 - `crc.*` owns CRC helpers.
 - `gcode_stream.*` streams job and macro G-code line by line without loading
   whole files.
-- `macro_registry.*` resolves stock macro names under
-  `/home/cygnus/marlindriver/gcode/`.
+- `macro_registry.*` resolves Deneb-owned macro defaults under
+  `/etc/deneb/marlindriver/gcode/`, with the stock macro directory retained
+  only as an explicit recovery fallback. Deneb macro resolution does not
+  require the stock directory to exist.
 - `macro_control.*` owns macro command execution against the service runtime:
   flow-window waiting, abort checks, motion polling, G-code send callbacks,
   and command error mapping.
@@ -74,7 +76,7 @@ scaffold:
 
 ## Diagnostics Log
 
-When the lab-gated service starts, it appends to
+When the native service starts, it appends to
 `/var/log/ultimaker/deneb-printsvc.log` and falls back to `/tmp` if that path
 is unavailable. Status lines intentionally keep stock-shaped keys beside native
 fields: `stock.req`, `stock.file`, heater temperatures, position, and fault
@@ -85,16 +87,21 @@ file or macro, result, and latency.
 
 ## Safety State
 
-The binary is packaged into Deneb update releases, but the init script is
-lab-gated by `deneb.printsvc.enabled=0` by default. Installing Deneb therefore
-does not disable or replace stock `printserver` yet. When lab testing sets
-`deneb.printsvc.enabled=1`, `deneb-printsvc.init` stops the stock `printserver`
-before starting the native service, and Deneb's patched stock `printserver`
-init script skips `print_service.py` while that flag remains enabled. Setting
-the flag back to `0` restores the stock print-service startup path without a
-reflash. The installer does not patch stock coordinator Python modules for the
-native route; Deneb-owned init scripts and C route helpers own the migration
-boundary.
+The binary is packaged into Deneb update releases and is now the default Deneb
+print backend when no explicit fallback flag exists. Missing
+`deneb.printsvc.enabled` values are treated the same as `1`, the installer sets
+`deneb.printsvc.enabled=1` on fresh installs, `deneb-printsvc.init` stops the
+stock `printserver` before starting the native service, and Deneb's patched
+stock `printserver` init shim no longer launches the old driver from Deneb
+code. Setting the flag back to `0` delegates to the backed-up stock init script
+as an explicit recovery path without a reflash. Generated Deneb init shims do
+not spell stock Python process entry points directly, and the installer does
+not patch stock coordinator Python modules for the native route; Deneb-owned
+init scripts and C route helpers own the migration boundary.
+
+Normal device startup fails closed if `/dev/ttyS1` cannot be opened. The
+`--dry-run` option is reserved for host/lab debugging and must not be used by
+the packaged init script.
 
 This scaffold is not complete enough to run unattended prints. It exists to
 make the de-python work buildable and testable while the remaining planner and

@@ -7,14 +7,14 @@ A lightweight web interface for the UltiMaker 2+ Connect running Deneb firmware.
 ```
 Browser/Cura  --->  lighttpd (:80)  --->  deneb-api (Unix socket)
      |                 |                         |
-     |            static files              ZMQ SUB :5565
-     |            /www/deneb/              ZMQ REQ :5566
+     |            static files              ZMQ SUB :5555
+     |            /www/deneb/              ZMQ REQ :5556
      |
      +-------->  deneb-mdns (:5353 UDP, _ultimaker._tcp.local.)
 ```
 
 - **lighttpd** serves static files and reverse-proxies `/api/v1/*` and `/cluster-api/v1/*` to deneb-api
-- **deneb-api** implements the UltiMaker REST API v1, connecting to the stock coordinator via ZeroMQ
+- **deneb-api** implements the UltiMaker REST API v1, connecting to native `deneb-printsvc` via ZeroMQ by default
 - **deneb-mdns** advertises the printer on `_ultimaker._tcp.local.` for Cura's local discovery browser
 - **Static web UI** is vanilla HTML/CSS/JS (~25 KB), no frameworks
 
@@ -114,10 +114,9 @@ on real hardware remains open.
   Cura upload registration also delegates pending-vs-immediate-start dispatch
   sequencing to the native pending-job registration helper, leaving the web
   layer responsible only for backend transport callbacks.
-  When `deneb.printsvc.enabled=1`, `deneb-api` selects native `deneb-printsvc`
-  status/command ports directly instead of routing print-service traffic
-  through the Python coordinator; the coordinator route remains the default
-  fallback while the native service is lab-gated. The cached Deneb status JSON
+  `deneb-api` selects native `deneb-printsvc` status/command ports directly
+  unless `deneb.printsvc.enabled=0` or a host override explicitly requests the
+  stock coordinator recovery route. The cached Deneb status JSON
   exposes `print_backend`, `print_backend_status_url`, and
   `print_backend_command_url` from the shared native route helper so lab checks
   can confirm which backend the API selected.

@@ -142,9 +142,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   selection now lives in `common/print/buildplate_level.*`, keeping stock macro
   filename ordering out of LVGL screen code while preserving macro-file
   compatibility. Native macro resolution now rejects traversal and non-`.gcode`
-  names, prefers Deneb-owned overrides under `/etc/deneb/marlindriver/gcode`,
-  and falls back to stock `/home/cygnus/marlindriver/gcode` macros for
-  compatibility. Material-profile USB import root/depth/suffix policy and the
+  names, and packages Deneb-owned macro defaults under
+  `/etc/deneb/marlindriver/gcode` so normal native macro execution no longer
+  depends on stock `/home/cygnus/marlindriver/gcode` files; resolver tests now
+  cover Deneb macro resolution with no stock directory. The stock macro
+  directory remains only as a recovery fallback. Material-profile USB import root/depth/suffix policy and the
   recursive import walker now live in `common/print/material_catalog.*` beside
   native material parser/storage helpers instead of inside the LVGL material
   screen. Stock
@@ -171,6 +173,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   the touchscreen material screen. The same helper owns material workflow
   status selection for Busy/Moving/Set Target/Cooling/Target Too Low/Ready/
   Heating labels, avoiding another LVGL-only interpretation of heat/move state.
+  Native `deneb-printsvc` startup now fails closed when the Marlin serial
+  device cannot be opened. Dry-run packet generation remains available only
+  behind the explicit `--dry-run` CLI flag for host/lab debugging, so packaged
+  device startup cannot silently accept print commands without a motion link.
   LCD/API
   job-name display also reads pending-job metadata through the shared helper
   instead of local JSON scans, and the pending display-name fallback has one
@@ -196,10 +202,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   `common/print/material_catalog.*`, keeping temp-file cleanup and default
   catalog persistence with the native material catalog owner. LCD and
   web/API backends now select native
-  `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
-  while preserving the stock coordinator route as the default fallback. That
-  route decision lives in `common/print/print_backend_route.*` so clients do not
-  each duplicate UCI/env parsing or endpoint constants. The same helper now
+  `deneb-printsvc` status/command ports directly unless
+  `deneb.printsvc.enabled=0` or a host override explicitly selects the stock
+  coordinator recovery route. That route decision lives in
+  `common/print/print_backend_route.*` so clients do not each duplicate UCI/env
+  parsing or endpoint constants. The same helper now
   formats route diagnostics exposed by web status JSON and LCD/web backend
   accessors, giving lab runs a native way to prove whether a process selected
   stock coordinator or native `deneb-printsvc`. Backend preheat transition
@@ -240,15 +247,15 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   cleanup behavior, avoid duplicate homing, and report clear cancellation
   status before it can replace stock `printserver` outside experimental builds.
 - Native diagnostic logging now writes a low-volume comparison stream under
-  `/var/log/ultimaker/deneb-printsvc.log` when the lab-gated service is
-  running. Each status line places stock-shaped fields such as `stock.req`,
+  `/var/log/ultimaker/deneb-printsvc.log` when the native service is running.
+  Each status line places stock-shaped fields such as `stock.req`,
   `stock.file`, temperatures, position, and fault state beside native phase,
   stop-allowed state, serial ACK/reject/resend counters, queue depth, streamed
   line number, command latency, and planner-starvation counters. This gives
   lab runs a stable artifact for comparing native behavior against captured
   stock `printserver` logs without adding Python.
 - The native replacement now has an initial buildable C source tree at
-  `printsvc/`, is included in release packages as a lab-gated binary, and has
+  `printsvc/`, is included in release packages as the default print backend, and has
   host tests for the command/status/packet/flow-control/heater-wait,
   G28/home-distance, nonblocking job streaming, motion-firmware verification,
   abort/finish policy, pause/resume state-machine behavior, shared print-control
@@ -304,17 +311,21 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   shared material load/unload command sequencing, shared manual motion action
   planning, shared diagnostics fan command formatting, shared bed/nozzle
   temperature command limits, native
-  error mapping, and native diagnostics slices. It is still disabled by default
-  and does not yet satisfy the release criteria for replacing stock
-  `printserver`.
-- The lab-only switch is explicit and reversible in the package scripts:
-  `deneb.printsvc.enabled` defaults to `0`, existing lab values are preserved
-  across Deneb updates, native `deneb-printsvc` stops stock `printserver` on
-  start, and the patched stock `printserver` init skips `print_service.py` only
-  while the native flag is `1`. The installer no longer rewrites the stock
-  coordinator's Python command-writer module; native route selection and
-  print-control cleanup now stay in Deneb-owned shell/C code while stock Python
-  files remain untouched fallback artifacts.
+  error mapping, and native diagnostics slices. It still needs live validation
+  before it can leave the experimental lane.
+- The native switch is explicit and reversible in the package scripts:
+  missing `deneb.printsvc.enabled` values are native, fresh installs default
+  the flag to `1`, existing values are preserved across Deneb updates, native
+  `deneb-printsvc` stops stock
+  `printserver` on start, and the patched stock `printserver` init shim no
+  longer launches the old driver from Deneb-authored code. Setting the flag to
+  `0` delegates to the backed-up stock init script as the manual recovery path.
+  The installer no longer rewrites the stock coordinator's Python
+  command-writer module; native route selection and print-control cleanup now
+  stay in Deneb-owned shell/C code while stock Python files remain untouched
+  fallback artifacts. Generated Deneb printserver/coordinator init shims also
+  avoid spelling Python entry points or Python runtime environment exports
+  directly; explicit recovery delegates to the backed-up stock init scripts.
 - Pending-job file ownership tightened further: default queued-job JSON-array
   reads and missing-file cleanup are now wrapped by
   `common/print/pending_job_file.*`, so Deneb/Cura REST surfaces no longer

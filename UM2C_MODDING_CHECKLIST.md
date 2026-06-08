@@ -528,14 +528,14 @@ Resource rationale and measurement guardrails live in
 this section is the milestone checklist for that same work.
 
 Current native replacement progress lives under [printsvc/](printsvc/). The
-first buildable slice now provides a lab-gated `deneb-printsvc` binary with
-separate modules for ZMQ IPC, command parsing, status serialization, Marlin
-status parsing, serial transport, packet/CRC helpers, flow control,
-G-code streaming, heater waits, macro lookup, and service state. It is
-packaged into `.deneb` releases but remains disabled by default through
-`deneb.printsvc.enabled=0` until full integration migration, side-by-side
-diagnostics, resource measurements, and live-device validation items are
-finished.
+current buildable slice provides a native-default experimental
+`deneb-printsvc` binary with separate modules for ZMQ IPC, command parsing,
+status serialization, Marlin status parsing, serial transport, packet/CRC
+helpers, flow control, G-code streaming, heater waits, macro lookup, and
+service state. It is packaged into `.deneb` releases and fresh installs default
+to `deneb.printsvc.enabled=1`, while `deneb.printsvc.enabled=0` remains the
+explicit stock recovery path until resource measurements and live-device
+validation prove it can ship outside experimental builds.
 
 - [x] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
 - [x] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
@@ -554,16 +554,18 @@ finished.
 - [x] Port the Marlin serial packet layer cleanly: `/dev/ttyS1`, 250000 baud, CRC16 packet generation, CRC8 sync parsing, sequence numbers, ACK/reject handling, resend queues, and flow-control limits.
 - [x] Port the status parser for M105, M114, G28 home-distance, M115 version data, Marlin log messages, and Marlin fault messages.
 - [x] Port bounded G-code streaming for `JOB`, `MACRO`, and raw `GCODE` without loading whole print jobs into RAM.
-- [x] Preserve macro-file compatibility with `/home/cygnus/marlindriver/gcode/` while allowing safer Deneb-owned macro overrides later.
+- [x] Ship Deneb-owned macro defaults under `/etc/deneb/marlindriver/gcode/`
+  while preserving `/home/cygnus/marlindriver/gcode/` only as a stock recovery
+  fallback.
 - [x] Re-design abort, pause, resume, and print-finish behavior deliberately instead of blindly copying stock motion sequences.
 - [x] Fix unsafe abort cleanup as part of the native design: no duplicate homing, no unsafe XY motion into unknown print geometry, and clear status transitions after cancellation.
 - [x] Preserve startup motion-controller firmware verification/programming behavior or document and test a safer replacement.
-- [x] Add a lab-only init switch so stock `printserver` can be restored without reflashing if native print service fails.
+- [x] Add an explicit init switch so stock `printserver` can be restored without reflashing if native print service fails.
 - [x] Add side-by-side logging for stock versus native service status fields, serial ACK/reject rates, resend counts, queue depth, planner starvation indicators, and command latency.
 - [x] Add host tests for CRC, packet framing, status parsing, G-code stream replacement, command parsing, and state transitions.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
-- [x] Do not disable stock `printserver` by default until the native service has rollback, diagnostics, and repeated live print validation.
+- [x] Keep stock `printserver` restorable through an explicit fallback flag until the native service has rollback, diagnostics, and repeated live print validation.
 
 Completed implementation slices:
 
@@ -785,6 +787,12 @@ Completed implementation slices:
   path traversal and non-`.gcode` macro names, prefers Deneb-owned overrides
   under `/etc/deneb/marlindriver/gcode`, and falls back to the stock
   `/home/cygnus/marlindriver/gcode` directory for compatibility.
+- [x] Package original Deneb macro defaults for native `MACRO` execution:
+  homing/parking, manual build-plate jogs, build-plate leveling positions,
+  finish cleanup, material feed/retract helpers, and frame-light toggles now
+  install under `/etc/deneb/marlindriver/gcode` so normal native macro
+  execution does not depend on stock `marlindriver` macro files, with tests
+  covering Deneb macro resolution when no stock macro directory is available.
 - [x] Move touchscreen USB/local print-file browser roots and file candidate
   filtering onto shared native print helpers so the LVGL print screen no longer
   hand-checks `.gcode`/`.ufp` suffixes or embeds the stock `/mnt/sda1` and
@@ -1068,12 +1076,13 @@ Completed implementation slices:
   lab-gated programming handoff without adding Python to the new driver path.
 - [x] Add deliberate native finish/abort motion-policy helpers with tests that
   guard against duplicate or unsafe XY homing during abort cleanup.
-- [x] Add the lab-only native print-service init handoff: Deneb preserves
-  `deneb.printsvc.enabled=0` by default, preserves an existing lab flag across
+- [x] Add the native print-service init handoff: Deneb defaults fresh installs
+  to `deneb.printsvc.enabled=1`, preserves an existing explicit flag across
   updates, stops stock `printserver` before starting native `deneb-printsvc`,
-  and patches the stock `printserver` init script to skip `print_service.py`
-  while native printsvc is enabled so the stock path can be restored by setting
-  the flag back to `0`.
+  and replaces the stock `printserver` init script with a Deneb-owned shim
+  that no longer launches the old driver from Deneb code. The stock path can
+  still be restored by setting the flag back to `0`, which delegates to the
+  backed-up stock init script.
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.
@@ -1118,6 +1127,10 @@ Completed implementation slices:
   `printsvc/src/gcode_control.*` so multi-line `GCODE` command dispatch,
   packet-send failures, command error mapping, and stock-compatible replies
   are not embedded in generic command routing.
+- [x] Make native device startup fail closed when Marlin serial cannot be
+  opened. Dry-run packet generation is available only through explicit
+  `deneb-printsvc --dry-run` host/lab use and is not used by the packaged init
+  script.
 - [x] Move REST heat-target parsing and raw heater G-code planning into
   `common/print/gcode_command.*` so web/API temperature endpoints no longer
   locally clamp targets or hand-select `M104`/`M140` command formatting.
@@ -1170,15 +1183,15 @@ Completed implementation slices:
   to native phase, stop-allowed, serial ACK/reject/resend, queue depth, job
   line, command latency, and planner-starvation fields, plus host tests for the
   emitted comparison keys.
-- [x] Add lab-gated direct native print-service routing for touchscreen and
-  web/API clients: LCD `backend_comm` and web `backend_zmq` keep the stock
-  coordinator route by default, but select native `deneb-printsvc` status
-  `5555` and command `5556` endpoints when `deneb.printsvc.enabled=1`, with an
-  environment override for host/lab debugging.
+- [x] Add direct native print-service routing for touchscreen and web/API
+  clients: LCD `backend_comm` and web `backend_zmq` select native
+  `deneb-printsvc` status `5555` and command `5556` endpoints by default, while
+  `deneb.printsvc.enabled=0` or a host override explicitly selects the stock
+  coordinator recovery route.
 - [x] Move the stock-vs-native print backend route decision into
   `common/print/print_backend_route.*` with host tests so LCD, web/API, and
   `deneb-printsvc` tests share the same coordinator/native endpoint constants
-  and lab-gate parsing instead of duplicating UCI/env logic.
+  and native-default UCI/env parsing instead of duplicating route logic.
 - [x] Publish the selected stock/coordinator versus native print backend route
   through shared native route diagnostics: LCD and web/API backend modules now
   expose route accessors, web status JSON includes the selected backend and
@@ -1192,12 +1205,18 @@ Completed implementation slices:
   presentation strings to decide whether the stock coordinator or native
   `deneb-printsvc` route is active.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
-  artifact without enabling it over stock `printserver` by default.
+  artifact and make it the default Deneb print backend while retaining an
+  explicit stock `printserver` recovery flag.
 - [x] Remove the installer-time stock coordinator Python patch from the
   de-Python path: Deneb no longer rewrites
   `/home/cygnus/coordinator/companion/printer_service_command.py` during
   install, leaving stock Python fallback files untouched while native
-  `deneb-printsvc` routing remains controlled by the reversible lab gate.
+  `deneb-printsvc` routing remains controlled by the reversible explicit
+  recovery flag.
+- [x] Remove Deneb-authored Python process launch lines from generated
+  printserver/coordinator init shims and drop their Python runtime environment
+  exports. Explicit recovery now delegates to the backed-up stock init scripts
+  instead of spelling Python entry points in Deneb installer code.
 - [x] Move default pending-job JSON-array reads and idempotent pending-file
   cleanup behind `common/print/pending_job_file.*` so Deneb and Cura REST
   endpoints no longer spell the bridge path directly when serving queued jobs,
@@ -1234,9 +1253,10 @@ Completed implementation slices:
   process RSS, CPU jiffies, boot-sync elapsed time, and print throughput.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
-  `dist/Deneb_Update_25766cc.deneb` contains `deneb-printsvc`,
+  `dist/Deneb_Update_411df36.deneb` contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
-  `deneb-printsvc-smoke-compare`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`.
+  `deneb-printsvc-smoke-compare`, `deneb-printsvc-macros/`, `manifest.txt`,
+  and `LVGL_LICENSE_TLSF.txt`.
 
 ## 9. Motion Controller / Marlin Firmware
 
