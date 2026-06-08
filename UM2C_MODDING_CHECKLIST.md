@@ -736,6 +736,23 @@ Completed implementation slices:
   `ABORT`, `PAUSE`, and `RESUME` into `common/print/command_format.h` so
   action-frame formatting, LCD backend commands, web backend commands, and
   native `print_control` do not each carry separate raw driver strings.
+- [x] Split shared print-state action parsing/planning into
+  `common/print/print_action_rules.*` and shared ASCII string matching into
+  `common/print/print_string.*`, keeping status/context rules separate from
+  REST/Cura action interpretation while preserving one native helper API for
+  touchscreen, web/API, and `deneb-printsvc` callers.
+- [x] Move field-level active/preparing/stoppable print-context derivation into
+  `common/print/print_state_rules.*` helpers so LCD and web/API backend ZMQ
+  clients no longer each rebuild the same observation wrapper before applying
+  shared native state rules.
+- [x] Move field-level active filename context construction into
+  `common/print/status_payload.*` so LCD and web/API backend ZMQ clients no
+  longer each open-code the same status filename retention context before
+  resolving transient macro names, pending-job names, or retained print names.
+- [x] Split print timing/progress math into
+  `common/print/print_timing_rules.*` so lifecycle/context rules, action
+  planning, filename retention, and progress normalization remain separate
+  named native source units.
 - [x] Move direct touchscreen/web macro, multi-line G-code, and job-start
   callers onto native backend helper functions so build-plate leveling, jog
   motion, material load/unload, touchscreen print start, touchscreen conflict

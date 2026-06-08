@@ -61,6 +61,16 @@ void deneb_status_filename_context_init(
     float nozzle_target,
     int is_printing,
     int is_paused);
+deneb_status_filename_context_t deneb_status_filename_context_from_fields(
+    const char *req,
+    const char *filename,
+    const char *uuid,
+    int time_total,
+    int time_left,
+    float bed_target,
+    float nozzle_target,
+    int is_printing,
+    int is_paused);
 int deneb_status_payload_should_hold_filename(
     const deneb_status_filename_context_t *curr,
     const deneb_status_filename_context_t *prev);

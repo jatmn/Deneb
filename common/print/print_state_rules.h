@@ -127,6 +127,26 @@ void deneb_print_context_flags_from_observation(
     int is_printing,
     int is_paused,
     int has_print_name);
+void deneb_print_context_flags_from_fields(
+    deneb_print_context_flags_t *flags,
+    const char *req,
+    const char *file,
+    int time_total,
+    int time_left,
+    float bed_target,
+    float nozzle_target,
+    int is_printing,
+    int is_paused,
+    int has_print_name);
+int deneb_print_fields_have_active_context(const char *req,
+                                           const char *file,
+                                           int time_total,
+                                           int time_left,
+                                           float bed_target,
+                                           float nozzle_target,
+                                           int is_printing,
+                                           int is_paused,
+                                           int has_print_name);
 const char *deneb_print_status_label(int connected, int has_error,
                                      int is_paused, int is_active);
 const char *deneb_print_job_status_label(int has_error, int is_paused,

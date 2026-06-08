@@ -66,12 +66,15 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/print_backend_route.c
     ../common/print/pending_job_dispatch.c
     ../common/print/pending_job_file.c
+    ../common/print/print_action_rules.c
     ../common/print/print_history.c
     ../common/print/print_action_dispatch.c
     ../common/print/print_job_file.c
     ../common/print/print_job_summary.c
     ../common/print/print_profile.c
     ../common/print/print_state_rules.c
+    ../common/print/print_string.c
+    ../common/print/print_timing_rules.c
     ../common/print/printer_status_response.c
     ../common/print/status_payload.c
     ../common/print/system_language.c

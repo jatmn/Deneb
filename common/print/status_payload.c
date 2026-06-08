@@ -41,6 +41,25 @@ void deneb_status_filename_context_init(
     ctx->is_paused = is_paused;
 }
 
+deneb_status_filename_context_t deneb_status_filename_context_from_fields(
+    const char *req,
+    const char *filename,
+    const char *uuid,
+    int time_total,
+    int time_left,
+    float bed_target,
+    float nozzle_target,
+    int is_printing,
+    int is_paused)
+{
+    deneb_status_filename_context_t ctx;
+
+    deneb_status_filename_context_init(&ctx, req, filename, uuid, time_total,
+                                       time_left, bed_target, nozzle_target,
+                                       is_printing, is_paused);
+    return ctx;
+}
+
 static void copy_json_value(const char *json, const char *key,
                             char *out, size_t out_sz)
 {

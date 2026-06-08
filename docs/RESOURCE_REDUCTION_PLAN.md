@@ -458,6 +458,21 @@ Material-profile USB import root/depth/suffix policy and the
   installer rejects update packages containing Python driver artifacts and runs
   the installed print-service smoke-tool, CLI, and init-handoff selftests before
   completing the update.
+- Shared print-state code has been split further by responsibility:
+  `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
+  `common/print/print_action_rules.*` owns REST/Cura action parsing and action
+  plans, and `common/print/print_string.*` owns small reusable ASCII matching
+  helpers used by both. This keeps the de-python rewrite from growing a single
+  catch-all state file while keeping touchscreen, web/API, and native
+  `deneb-printsvc` callers on one shared contract. The field-level context
+  helpers in `print_state_rules.*` also keep LCD and web/API backend ZMQ
+  clients from duplicating observation setup before computing active,
+  preparing, and stoppable print-context flags. `status_payload.*` also owns
+  field-level filename context construction now, so those clients share the
+  same native helper before resolving transient macro names, pending-job names,
+  or retained print filenames. Print elapsed-time, percentage, fraction, and
+  normalization math now lives in `common/print/print_timing_rules.*`, keeping
+  timing behavior separate from lifecycle/context classification.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

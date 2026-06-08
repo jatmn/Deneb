@@ -172,16 +172,13 @@ static int is_print_file_candidate(const char *file)
 
 static int state_has_print_context(const printer_state_t *s)
 {
-    deneb_print_observation_t obs;
-    deneb_print_context_flags_t flags;
+    if (!s)
+        return 0;
 
-    deneb_print_observation_init(&obs, s->current_req, s->filename,
-                                 s->time_total, s->time_left,
-                                 s->bed_temp_set, s->nozzle_temp_set);
-    deneb_print_context_flags_from_observation(
-        &flags, &obs, s->is_printing, s->is_paused,
+    return deneb_print_fields_have_active_context(
+        s->current_req, s->filename, s->time_total, s->time_left,
+        s->bed_temp_set, s->nozzle_temp_set, s->is_printing, s->is_paused,
         deneb_print_file_is_candidate(s->filename));
-    return flags.has_active_context;
 }
 
 static int state_has_print_name(const printer_state_t *s,
@@ -195,17 +192,13 @@ static deneb_print_context_flags_t context_flags_from_state(
     const printer_state_t *s, int has_print_name)
 {
     deneb_print_context_flags_t flags;
-    deneb_print_observation_t obs;
 
-    deneb_print_observation_init(&obs, s ? s->current_req : NULL,
-                                 s && has_print_name ? s->filename : NULL,
-                                 s ? s->time_total : 0,
-                                 s ? s->time_left : 0,
-                                 s ? s->bed_temp_set : 0.0f,
-                                 s ? s->nozzle_temp_set : 0.0f);
-    deneb_print_context_flags_from_observation(
-        &flags, &obs, s ? s->is_printing : 0, s ? s->is_paused : 0,
-        has_print_name);
+    deneb_print_context_flags_from_fields(
+        &flags, s ? s->current_req : NULL,
+        s && has_print_name ? s->filename : NULL,
+        s ? s->time_total : 0, s ? s->time_left : 0,
+        s ? s->bed_temp_set : 0.0f, s ? s->nozzle_temp_set : 0.0f,
+        s ? s->is_printing : 0, s ? s->is_paused : 0, has_print_name);
     return flags;
 }
 
@@ -224,18 +217,16 @@ static void retain_print_filename(const char *filename)
 static deneb_status_filename_context_t filename_context_from_state(
     const printer_state_t *s)
 {
-    deneb_status_filename_context_t ctx;
-
-    if (!s) {
-        deneb_status_filename_context_init(&ctx, NULL, NULL, NULL, 0, 0,
-                                           0.0f, 0.0f, 0, 0);
-        return ctx;
-    }
-    deneb_status_filename_context_init(&ctx, s->current_req, s->filename,
-                                       s->uuid, s->time_total, s->time_left,
-                                       s->bed_temp_set, s->nozzle_temp_set,
-                                       s->is_printing, s->is_paused);
-    return ctx;
+    return deneb_status_filename_context_from_fields(
+        s ? s->current_req : NULL,
+        s ? s->filename : NULL,
+        s ? s->uuid : NULL,
+        s ? s->time_total : 0,
+        s ? s->time_left : 0,
+        s ? s->bed_temp_set : 0.0f,
+        s ? s->nozzle_temp_set : 0.0f,
+        s ? s->is_printing : 0,
+        s ? s->is_paused : 0);
 }
 
 static void log_status_transition(const printer_state_t *curr)

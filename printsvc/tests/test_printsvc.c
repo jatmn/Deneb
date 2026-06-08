@@ -1081,6 +1081,23 @@ static void test_print_state_rules(void)
         assert(!flags.has_active_context);
         assert(!flags.has_preparing_context);
         assert(!flags.has_stoppable_context);
+
+        deneb_print_context_flags_from_fields(
+            &flags, DENEB_PRINT_REQ_PREHEATING, "/home/3D/cube.gcode",
+            0, 0, 60.0f, 210.0f, 0, 0, 1);
+        assert(flags.has_active_context);
+        assert(flags.has_preparing_context);
+        assert(flags.has_stoppable_context);
+
+        deneb_print_context_flags_from_fields(
+            &flags, DENEB_PRINT_REQ_PREHEATING, NULL, 0, 0,
+            60.0f, 210.0f, 0, 0, 0);
+        assert(flags.has_active_context);
+        assert(!flags.has_preparing_context);
+        assert(!flags.has_stoppable_context);
+
+        assert(deneb_print_fields_have_active_context(
+            "", "/home/3D/cube.gcode", 0, 0, 0.0f, 0.0f, 0, 0, 1));
     }
 
     deneb_print_observation_init(&obs, "HOME", NULL, 0, 0, 0.0f, 0.0f);
@@ -1109,6 +1126,16 @@ static void test_print_state_rules(void)
         assert(!flags.has_active_context);
         assert(!flags.has_preparing_context);
         assert(!flags.has_stoppable_context);
+
+        deneb_print_context_flags_from_fields(
+            &flags, DENEB_COMMAND_VERB_ABORT, "/home/3D/cube.gcode",
+            120, 100, 60.0f, 210.0f, 1, 1, 1);
+        assert(!flags.has_active_context);
+        assert(!flags.has_preparing_context);
+        assert(!flags.has_stoppable_context);
+        assert(!deneb_print_fields_have_active_context(
+            DENEB_COMMAND_VERB_ABORT, "/home/3D/cube.gcode",
+            120, 100, 60.0f, 210.0f, 1, 1, 1));
     }
 
     obs.req = DENEB_COMMAND_VERB_JOB;
@@ -1760,14 +1787,16 @@ static void test_status_payload_filename_resolution(void)
         "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
         "\"Ttot\":120,\"Tleft\":90}",
         &payload) == 0);
-    deneb_status_filename_context_init(
-        &curr, payload.req, "", payload.uuid, payload.time_total,
-        payload.time_left, payload.bed_temp_set, payload.nozzle_temp_set,
-        payload.is_printing, payload.is_paused);
+    curr = deneb_status_filename_context_from_fields(
+        payload.req, "", payload.uuid, payload.time_total, payload.time_left,
+        payload.bed_temp_set, payload.nozzle_temp_set, payload.is_printing,
+        payload.is_paused);
     assert(curr.req == payload.req);
     assert(curr.filename && curr.filename[0] == '\0');
     assert(curr.time_total == 120);
     assert(curr.time_left == 90);
+    assert(deneb_status_filename_context_from_fields(
+               NULL, NULL, NULL, 0, 0, 0.0f, 0.0f, 0, 0).req == NULL);
     deneb_status_payload_resolve_filename(&payload, &curr, &prev,
                                           retained, sizeof(retained),
                                           out, sizeof(out));
@@ -1785,10 +1814,10 @@ static void test_status_payload_filename_resolution(void)
     prev.time_total = 120;
     prev.time_left = 90;
     prev.is_printing = 1;
-    deneb_status_filename_context_init(
-        &curr, payload.req, "", payload.uuid, payload.time_total,
-        payload.time_left, payload.bed_temp_set, payload.nozzle_temp_set,
-        payload.is_printing, payload.is_paused);
+    curr = deneb_status_filename_context_from_fields(
+        payload.req, "", payload.uuid, payload.time_total, payload.time_left,
+        payload.bed_temp_set, payload.nozzle_temp_set, payload.is_printing,
+        payload.is_paused);
     deneb_status_payload_resolve_filename(&payload, &curr, &prev,
                                           retained, sizeof(retained),
                                           out, sizeof(out));
@@ -1804,8 +1833,8 @@ static void test_status_payload_filename_resolution(void)
     assert(deneb_status_payload_parse(
         "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"ABORT\"}",
         &payload) == 0);
-    deneb_status_filename_context_init(
-        &curr, payload.req, "cube.gcode", "", 120, 90, 0.0f, 0.0f, 0, 0);
+    curr = deneb_status_filename_context_from_fields(
+        payload.req, "cube.gcode", "", 120, 90, 0.0f, 0.0f, 0, 0);
     deneb_status_payload_resolve_filename(&payload, &curr, &prev,
                                           retained, sizeof(retained),
                                           out, sizeof(out));

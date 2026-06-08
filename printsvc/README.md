@@ -135,6 +135,11 @@ policy, and live-device validation are implemented.
 
 Abort handling is deliberately owned by `service.*`; the current native path
 clears print state without issuing duplicate homing or unsafe XY cleanup moves.
+Shared Deneb print-control helpers stay split by concern: status/context rules
+live in `common/print/print_state_rules.*`, REST/Cura action parsing and action
+plans live in `common/print/print_action_rules.*`, and reusable ASCII matching
+helpers live in `common/print/print_string.*`. Print elapsed-time, progress,
+and timing normalization math lives in `common/print/print_timing_rules.*`.
 
 ## Host Build
 

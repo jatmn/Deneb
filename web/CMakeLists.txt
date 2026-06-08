@@ -84,12 +84,15 @@ set(DENEB_API_SOURCES
     ../common/print/print_backend_route.c
     ../common/print/pending_job_dispatch.c
     ../common/print/pending_job_file.c
+    ../common/print/print_action_rules.c
     ../common/print/print_history.c
     ../common/print/print_action_dispatch.c
     ../common/print/print_job_file.c
     ../common/print/print_job_summary.c
     ../common/print/print_profile.c
     ../common/print/print_state_rules.c
+    ../common/print/print_string.c
+    ../common/print/print_timing_rules.c
     ../common/print/printer_status_response.c
     ../common/print/status_payload.c
     ../common/print/system_language.c
@@ -101,30 +104,33 @@ set(DENEB_API_SOURCES
 add_executable(deneb-api ${DENEB_API_SOURCES})
 target_include_directories(deneb-api PRIVATE src ../common/print ../printsvc/src)
 
+# Host stub build (no ZMQ)
+option(BUILD_HOST_STUB "Build with stub ZMQ for host testing" OFF)
+
 add_executable(deneb-mdns src/mdns_advertiser.c)
 target_compile_definitions(deneb-mdns PRIVATE DENEB_VERSION="${GIT_VERSION}")
 
 # ZMQ (static link for MIPS target)
-set(ZMQ_STATIC_PATH "" CACHE PATH "Path to static libzmq.a")
-set(ZMQ_INCLUDE_DIR "" CACHE PATH "Path to directory containing zmq.h")
-if(ZMQ_STATIC_PATH AND EXISTS "${ZMQ_STATIC_PATH}")
-    target_link_libraries(deneb-api PRIVATE ${ZMQ_STATIC_PATH} stdc++)
-    if(ZMQ_INCLUDE_DIR)
-        target_include_directories(deneb-api PRIVATE ${ZMQ_INCLUDE_DIR})
-    endif()
-else()
-    find_library(ZMQ_LIB zmq)
-    if(ZMQ_LIB)
-        target_link_libraries(deneb-api PRIVATE ${ZMQ_LIB})
+if(NOT BUILD_HOST_STUB)
+    set(ZMQ_STATIC_PATH "" CACHE PATH "Path to static libzmq.a")
+    set(ZMQ_INCLUDE_DIR "" CACHE PATH "Path to directory containing zmq.h")
+    if(ZMQ_STATIC_PATH AND EXISTS "${ZMQ_STATIC_PATH}")
+        target_link_libraries(deneb-api PRIVATE ${ZMQ_STATIC_PATH} stdc++)
+        if(ZMQ_INCLUDE_DIR)
+            target_include_directories(deneb-api PRIVATE ${ZMQ_INCLUDE_DIR})
+        endif()
     else()
-        message(WARNING "libzmq not found. Set -DZMQ_STATIC_PATH=/path/to/libzmq.a")
+        find_library(ZMQ_LIB zmq)
+        if(ZMQ_LIB)
+            target_link_libraries(deneb-api PRIVATE ${ZMQ_LIB})
+        else()
+            message(WARNING "libzmq not found. Set -DZMQ_STATIC_PATH=/path/to/libzmq.a")
+        endif()
     endif()
 endif()
 
 target_link_libraries(deneb-api PRIVATE m pthread dl crypt)
 
-# Host stub build (no ZMQ)
-option(BUILD_HOST_STUB "Build with stub ZMQ for host testing" OFF)
 if(BUILD_HOST_STUB)
     target_compile_definitions(deneb-api PRIVATE BACKEND_ZMQ_STUB)
 endif()
