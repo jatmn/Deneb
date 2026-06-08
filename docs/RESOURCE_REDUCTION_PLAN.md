@@ -451,15 +451,20 @@ Material-profile USB import root/depth/suffix policy and the
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
   `deneb-printsvc-smoke-selftest`, `deneb-printsvc-cli-selftest`,
-  `deneb-printsvc-init-selftest`,
+  `deneb-printsvc-init-selftest`, `deneb-printsvc-native-audit`,
+  `deneb-printsvc-native-audit-selftest`,
   `manifest.txt`, and the declared
   `LVGL_LICENSE_TLSF.txt` notice, with no packaged Python or `print_service.py`
   entries. The package builder fails closed if a Python driver artifact appears
   in the staging directory or final `.deneb` archive, and the PowerShell release
   builder now inspects the final `.deneb` archive for the same
-  no-Python-driver invariant while requiring `deneb-printsvc` and the smoke,
-  CLI, and init shell selftests to be present. The package builder and release
-  verifier run the shell-only smoke/init gates that do not execute the
+  no-Python-driver invariant while requiring `deneb-printsvc`, the smoke,
+  CLI, init shell selftests, `deneb-printsvc-native-audit`, and
+  `deneb-printsvc-native-audit-selftest` to be present.
+  The package builder and release verifier run the shell-only smoke/init/native
+  audit gates plus negative audit fixtures for source-route regressions,
+  stock Python launchers, package audit wiring, installer audit-selftest
+  wiring, packaged Python artifacts, and manifest-gate loss; none execute the
   cross-compiled target binary before accepting the artifact. Packages default
   to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` and `stable` package
   builds now require live stock/native smoke summary paths in
@@ -474,13 +479,15 @@ Material-profile USB import root/depth/suffix policy and the
   the release artifact carries the same boundary; both the shell package
   builder and PowerShell wrapper inspect the archived manifest for those fields
   before accepting the artifact. The printsvc CTest suite registers the smoke,
-  CLI, and init
-  selftests when `sh` is available, and the installer deploys them to `/usr/bin`
-  for target-side gate checks. The installer rejects update packages containing
-  Python driver artifacts, rejects manifests that lack the native-printsvc
-  experimental status or non-experimental evidence gate, preserves the accepted
-  manifest at `/etc/deneb/manifest.txt`, and runs the installed print-service
-  smoke-tool, CLI, and init-handoff selftests before completing the update.
+  CLI, init, native-route audit, and native-audit negative-fixture selftests when
+  `sh` is available, and the installer deploys them to `/usr/bin` for
+  target-side gate checks. The
+  installer rejects update packages containing Python driver artifacts, runs
+  the packaged native audit over `/tmp/update`, rejects manifests that lack the
+  native-printsvc experimental status or non-experimental evidence gate,
+  preserves the accepted manifest at `/etc/deneb/manifest.txt`, and runs the
+  installed print-service smoke-tool, CLI, native-audit selftest, and
+  init-handoff selftests before completing the update.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action

@@ -1395,12 +1395,27 @@ Completed implementation slices:
   marker, exact stock `/home/cygnus/marlindriver/print_service.py` cleanup,
   stale `/var/run/printserver.pid` cleanup, correct startup/stop cleanup
   ordering, and absence of Python driver launch commands.
+- [x] Add a shell-only native route/package audit,
+  `deneb-printsvc-native-audit`, that verifies Deneb source clients still
+  default to the native print-service route, no stock print backend selector has
+  returned, no Deneb runtime launches stock `print_service.py`, and unpacked or
+  archived update packages include the native print-service tools while
+  rejecting Python driver artifact names.
+- [x] Add a shell-only native audit negative-fixture selftest,
+  `deneb-printsvc-native-audit-selftest`, that proves the audit fails closed
+  when source reintroduces a stock print backend selector, source launches the
+  stock Python print driver, package-builder audit wiring is removed, an
+  installer audit-selftest handoff is removed, an unpacked package lacks the
+  audit tool, an unpacked package contains a Python driver artifact name, an
+  unpacked package omits the native-printsvc release gate, or when an archived
+  package contains a Python driver artifact name.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
-  `dist/Deneb_Update_bc2645c.deneb` contains `deneb-printsvc`,
+  contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
   `deneb-printsvc-smoke-compare`, `deneb-printsvc-smoke-selftest`,
   `deneb-printsvc-cli-selftest`, `deneb-printsvc-init-selftest`,
+  `deneb-printsvc-native-audit`, `deneb-printsvc-native-audit-selftest`,
   `deneb-printsvc-macros/`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`, with
   no packaged Python or `print_service.py` entries. The package builder now
   fails if a Python driver artifact is present in the staging directory or the
@@ -1408,15 +1423,18 @@ Completed implementation slices:
   produced `.deneb` archive so release automation fails closed if a Python
   driver artifact is packaged or `deneb-printsvc` /
   `deneb-printsvc-smoke-selftest` / `deneb-printsvc-cli-selftest` /
-  `deneb-printsvc-init-selftest` is missing.
+  `deneb-printsvc-init-selftest` / `deneb-printsvc-native-audit` /
+  `deneb-printsvc-native-audit-selftest` is missing.
   Both `ui/build-package.sh` and the PowerShell release verifier require the
-  packaged smoke, CLI, and init selftests to be present while running the
-  shell-only smoke/init gates that do not execute the cross-compiled target
-  binary. The print-service CTest suite runs the shell smoke, native CLI, and
-  init selftests against the host build, and the installer deploys them to
+  packaged smoke, CLI, init, and native audit tools to be present while running
+  the shell-only smoke/init/native-audit gates that do not execute the
+  cross-compiled target binary. The print-service CTest suite runs the shell
+  smoke, native CLI, init, route/package audit, and negative-fixture audit
+  selftests against the host build, and the installer deploys them to
   `/usr/bin/` beside the live smoke verifier and comparator. The installer also
-  rejects update packages that contain Python driver artifacts and runs the
-  installed print-service smoke-tool, CLI, and init-handoff selftests before
+  rejects update packages that contain Python driver artifacts, runs the
+  packaged native audit over the unpacked update, and runs the installed
+  print-service smoke-tool, CLI, native-audit, and init-handoff selftests before
   completing the update.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and

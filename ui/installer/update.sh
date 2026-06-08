@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -68,6 +68,12 @@ validate_package() {
         log "ERROR: Python driver artifact found in update package"
         find /tmp/update \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
             -print 2>/dev/null || true
+        missing=1
+    fi
+    if [ "$missing" -eq 0 ] &&
+       ! /tmp/update/deneb-printsvc-native-audit --package-dir /tmp/update >/tmp/deneb-printsvc-native-audit.log 2>&1; then
+        log "ERROR: native print-service de-Python audit failed"
+        cat /tmp/deneb-printsvc-native-audit.log 2>/dev/null || true
         missing=1
     fi
     [ "$missing" -eq 0 ] || exit 1
@@ -138,6 +144,14 @@ install_web_runtime() {
     cp /tmp/update/deneb-printsvc-init-selftest /usr/bin/deneb-printsvc-init-selftest
     chmod 0755 /usr/bin/deneb-printsvc-init-selftest
     log "installed deneb-printsvc-init-selftest to /usr/bin/deneb-printsvc-init-selftest"
+
+    cp /tmp/update/deneb-printsvc-native-audit /usr/bin/deneb-printsvc-native-audit
+    chmod 0755 /usr/bin/deneb-printsvc-native-audit
+    log "installed deneb-printsvc-native-audit to /usr/bin/deneb-printsvc-native-audit"
+
+    cp /tmp/update/deneb-printsvc-native-audit-selftest /usr/bin/deneb-printsvc-native-audit-selftest
+    chmod 0755 /usr/bin/deneb-printsvc-native-audit-selftest
+    log "installed deneb-printsvc-native-audit-selftest to /usr/bin/deneb-printsvc-native-audit-selftest"
 
     mkdir -p /etc/deneb/marlindriver/gcode
     cp /tmp/update/deneb-printsvc-macros/*.gcode /etc/deneb/marlindriver/gcode/
@@ -530,6 +544,13 @@ smoke_test_printsvc_tools() {
         exit 1
     fi
     log "deneb-printsvc CLI selftest passed"
+
+    if ! /usr/bin/deneb-printsvc-native-audit-selftest >/tmp/deneb-printsvc-native-audit-selftest.log 2>&1; then
+        log "ERROR: deneb-printsvc native audit selftest failed"
+        cat /tmp/deneb-printsvc-native-audit-selftest.log 2>/dev/null || true
+        exit 1
+    fi
+    log "deneb-printsvc native audit selftest passed"
 }
 
 smoke_test_printsvc_init_handoff() {

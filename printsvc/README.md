@@ -149,13 +149,19 @@ cmake --build /tmp/deneb-printsvc-host
 ctest --test-dir /tmp/deneb-printsvc-host --output-on-failure
 ```
 
-CTest also runs the shell smoke verifier selftest and native binary CLI
-selftest when `sh` is available, so local host tests cover the native C service
-tests, the shell evidence contract used by live Section 8 smoke runs, and the
-real `deneb-printsvc --smoke-test` / `--local-job-smoke` entry points. CTest also runs
-`deneb-printsvc-init-selftest`, which checks native init and installer handoff
-scripts, including the generated printserver shim body, for exact stock-driver
-cleanup ordering and no Python driver launch path.
+CTest also runs the shell smoke verifier selftest, native binary CLI selftest,
+static native-route audit, and native-audit negative-fixture selftest when `sh`
+is available, so local host tests cover the native C service tests, the shell
+evidence contract used by live Section 8 smoke runs, the real
+`deneb-printsvc --smoke-test` / `--local-job-smoke` entry points, source-level
+checks that Deneb clients still route directly to the native print service, and
+failing fixtures for stock route selectors, stock Python launchers, missing
+package audit wiring, missing installer audit-selftest wiring, missing audit
+artifacts, Python driver artifacts, and missing manifest evidence gates. CTest
+also runs `deneb-printsvc-init-selftest`,
+which checks native init and installer handoff scripts, including the generated
+printserver shim body, for exact stock-driver cleanup ordering and no Python
+driver launch path.
 
 The full release build also cross-compiles `deneb-printsvc` and packages
 `deneb-printsvc` plus `deneb-printsvc.init` into the `.deneb` artifact:
@@ -165,12 +171,13 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 
 The release builder verifies the produced `.deneb` archive after packaging: it
-must contain `deneb-printsvc` plus the shell smoke/CLI/init selftests and must not
-contain Python driver artifacts such as `*.py`, `*python*`, or
-`print_service.py`. The package builder runs the staged selftests before
-creating the archive, then inspects the archive for the same native/no-Python
-invariant; the PowerShell release builder extracts the archived copies and runs
-the shell-only smoke/init checks again before accepting the release package.
+must contain `deneb-printsvc` plus the shell smoke/CLI/init/native-audit
+selftests and `deneb-printsvc-native-audit`, and must not contain Python driver
+artifacts such as `*.py`, `*python*`, or `print_service.py`. The package builder
+runs the staged selftests and native audit before creating the archive, then
+inspects the archive for the same native/no-Python invariant; the PowerShell
+release builder extracts the archived copies and runs the shell-only
+smoke/init/native-audit checks again before accepting the release package.
 Packages default to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` or
 `stable` builds must provide `DENEB_PRINTSVC_STOCK_SUMMARY` and
 `DENEB_PRINTSVC_NATIVE_SUMMARY`, and the package builder verifies the native
@@ -182,10 +189,11 @@ Both the shell package builder and PowerShell wrapper inspect the archived
 manifest so the channel and native-printsvc evidence boundary travel with the
 artifact.
 During install, the update script rejects Python driver artifacts in
-`/tmp/update`, requires the packaged manifest to carry the native-printsvc
-experimental status plus non-experimental evidence gate, preserves that
-manifest at `/etc/deneb/manifest.txt`, and runs the installed smoke-tool,
-native binary CLI, and init-handoff selftests before completing the update.
+`/tmp/update`, runs the packaged native audit over the unpacked update,
+requires the packaged manifest to carry the native-printsvc experimental status
+plus non-experimental evidence gate, preserves that manifest at
+`/etc/deneb/manifest.txt`, and runs the installed smoke-tool, native binary
+CLI, and init-handoff selftests before completing the update.
 
 ## Device Smoke Harness
 
@@ -255,6 +263,7 @@ deneb-printsvc-smoke-compare --require-reduction /tmp/stock-printsvc.summary /tm
 deneb-printsvc-smoke-selftest
 deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc
 deneb-printsvc-init-selftest
+deneb-printsvc-native-audit-selftest
 ```
 
 For job runs the verifier requires `printing` while active, `paused` after a

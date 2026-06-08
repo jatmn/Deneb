@@ -176,6 +176,18 @@ if(SH_EXECUTABLE)
         COMMAND "${SH_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-init-selftest.sh"
     )
+    add_test(
+        NAME deneb-printsvc-depython-audit
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-native-audit.sh"
+                --source
+                "${CMAKE_SOURCE_DIR}/.."
+    )
+    add_test(
+        NAME deneb-printsvc-native-audit-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-native-audit-selftest.sh"
+    )
 else()
     message(WARNING "sh not found; deneb-printsvc shell selftests will not be registered with CTest.")
 endif()
