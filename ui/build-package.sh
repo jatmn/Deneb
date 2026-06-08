@@ -103,8 +103,9 @@ tr -d '\r' < "${REPO_ROOT}/printsvc/init/deneb-printsvc.init" > "${STAGING_DIR}/
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke.sh" > "${STAGING_DIR}/deneb-printsvc-smoke"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-verify.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-verify"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-compare.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-compare"
+tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-selftest.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-selftest"
 chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init"
-chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare"
+chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest"
 
 mkdir -p "${STAGING_DIR}/deneb-printsvc-macros"
 cp "${REPO_ROOT}/printsvc/macros/"*.gcode "${STAGING_DIR}/deneb-printsvc-macros/"
@@ -151,6 +152,7 @@ contents:
   deneb-printsvc-smoke - Native print service smoke/resource harness
   deneb-printsvc-smoke-verify - Shell verifier for smoke summary evidence
   deneb-printsvc-smoke-compare - Shell stock/native smoke summary comparator
+  deneb-printsvc-smoke-selftest - Shell synthetic verifier/comparator selftest
   deneb-printsvc-macros/ - Deneb-owned native print-service macro defaults
   lighttpd          - Static web server and API reverse proxy (MIPS)
   deneb-api.init    - OpenWrt procd init script for deneb-api
@@ -180,10 +182,21 @@ if find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_servi
     exit 1
 fi
 
+"${STAGING_DIR}/deneb-printsvc-smoke-selftest"
+
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
-    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
+    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
+
+tar tf "$OUTPUT_IMG" > "${STAGING_DIR}/package-files.txt"
+grep -Eq '(^|/)deneb-printsvc$' "${STAGING_DIR}/package-files.txt"
+grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' "${STAGING_DIR}/package-files.txt"
+if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' "${STAGING_DIR}/package-files.txt"; then
+    echo "ERROR: Python driver artifact found in Deneb package archive" >&2
+    exit 1
+fi
+rm -f "${STAGING_DIR}/package-files.txt"
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"

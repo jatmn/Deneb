@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -53,6 +53,13 @@ validate_package() {
     fi
     if [ ! -d /tmp/update/www ]; then
         log "ERROR: missing required directory: www"
+        missing=1
+    fi
+    if find /tmp/update \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
+        -print | grep . >/dev/null 2>&1; then
+        log "ERROR: Python driver artifact found in update package"
+        find /tmp/update \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
+            -print 2>/dev/null || true
         missing=1
     fi
     [ "$missing" -eq 0 ] || exit 1
@@ -111,6 +118,10 @@ install_web_runtime() {
     cp /tmp/update/deneb-printsvc-smoke-compare /usr/bin/deneb-printsvc-smoke-compare
     chmod 0755 /usr/bin/deneb-printsvc-smoke-compare
     log "installed deneb-printsvc-smoke-compare to /usr/bin/deneb-printsvc-smoke-compare"
+
+    cp /tmp/update/deneb-printsvc-smoke-selftest /usr/bin/deneb-printsvc-smoke-selftest
+    chmod 0755 /usr/bin/deneb-printsvc-smoke-selftest
+    log "installed deneb-printsvc-smoke-selftest to /usr/bin/deneb-printsvc-smoke-selftest"
 
     mkdir -p /etc/deneb/marlindriver/gcode
     cp /tmp/update/deneb-printsvc-macros/*.gcode /etc/deneb/marlindriver/gcode/
@@ -471,6 +482,15 @@ smoke_test_binary() {
     log "deneb-ui smoke test passed"
 }
 
+smoke_test_printsvc_tools() {
+    if ! /usr/bin/deneb-printsvc-smoke-selftest >/tmp/deneb-printsvc-smoke-selftest.log 2>&1; then
+        log "ERROR: deneb-printsvc smoke tool selftest failed"
+        cat /tmp/deneb-printsvc-smoke-selftest.log 2>/dev/null || true
+        exit 1
+    fi
+    log "deneb-printsvc smoke tool selftest passed"
+}
+
 # Install locale files
 install_locales() {
     mkdir -p /etc/deneb/locales
@@ -523,6 +543,7 @@ validate_package
 backup_stock
 install_binary
 install_web_runtime
+smoke_test_printsvc_tools
 install_motion_firmware_verify_cache
 patch_motion_stack_boot_order
 smoke_test_binary

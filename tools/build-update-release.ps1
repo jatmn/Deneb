@@ -172,3 +172,24 @@ $buildUi = "set -euo pipefail; " +
 if ($LASTEXITCODE -ne 0) {
     throw "update release build failed with exit code $LASTEXITCODE"
 }
+
+$verifyPackage = "set -euo pipefail; " +
+                 "rm -f /tmp/deneb-release-packages.txt; " +
+                 "ls -t '$repoWsl'/dist/Deneb_Update_*.deneb > /tmp/deneb-release-packages.txt 2>/dev/null || true; " +
+                 "test -s /tmp/deneb-release-packages.txt || { echo 'No Deneb update package found in dist' >&2; exit 1; }; " +
+                 "head -n 1 /tmp/deneb-release-packages.txt | xargs tar tf > /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' /tmp/deneb-release-package-files.txt; " +
+                 "if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' /tmp/deneb-release-package-files.txt; then " +
+                 "echo 'Python driver artifact found in release package:' >&2; " +
+                 "head -n 1 /tmp/deneb-release-packages.txt >&2; exit 1; " +
+                 "fi; " +
+                 "rm -rf /tmp/deneb-release-smoke-selftest; mkdir -p /tmp/deneb-release-smoke-selftest; " +
+                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar xf {} -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest; " +
+                 "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest >/tmp/deneb-release-smoke-selftest.log; " +
+                 "printf 'Verified native-only print service package: '; head -n 1 /tmp/deneb-release-packages.txt"
+
+& wsl -d $Distro -- bash -lc $verifyPackage
+if ($LASTEXITCODE -ne 0) {
+    throw "release package native print service verification failed with exit code $LASTEXITCODE"
+}

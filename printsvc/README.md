@@ -141,12 +141,26 @@ cmake --build /tmp/deneb-printsvc-host
 ctest --test-dir /tmp/deneb-printsvc-host --output-on-failure
 ```
 
+CTest also runs the shell smoke verifier selftest when `sh` is available, so
+local host tests cover both the native C service tests and the shell evidence
+contract used by live Section 8 smoke runs.
+
 The full release build also cross-compiles `deneb-printsvc` and packages
 `deneb-printsvc` plus `deneb-printsvc.init` into the `.deneb` artifact:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
+
+The release builder verifies the produced `.deneb` archive after packaging: it
+must contain `deneb-printsvc` plus the shell smoke selftest and must not
+contain Python driver artifacts such as `*.py`, `*python*`, or
+`print_service.py`. The package builder runs the staged selftest before
+creating the archive, then inspects the archive for the same native/no-Python
+invariant; the PowerShell release builder extracts the archived copy and runs
+it again before accepting the release package. During install, the update
+script rejects Python driver artifacts in `/tmp/update` and runs the installed
+smoke-tool selftest before completing the update.
 
 ## Device Smoke Harness
 
@@ -198,6 +212,7 @@ deneb-printsvc-smoke-verify /tmp/deneb-printsvc-smoke.summary
 deneb-printsvc-smoke-verify --native --heat --motion --macro --local-job --job --preheat-abort --cura-job --pause-resume /tmp/native-printsvc.summary
 deneb-printsvc-smoke-verify --native --complete-job --restart --resources --boot-sync /tmp/native-printsvc.summary
 deneb-printsvc-smoke-compare /tmp/stock-printsvc.summary /tmp/native-printsvc.summary
+deneb-printsvc-smoke-selftest
 ```
 
 For job runs the verifier requires `printing` while active, `paused` after a
@@ -219,3 +234,8 @@ time, and print throughput. It fails if the stock summary lacks
 initial/final `print_service.py` process evidence, if CPU or throughput
 intervals are not positive, or if the native summary lacks `deneb-printsvc`
 process ownership or native stop-safety flags.
+The selftest is synthetic and does not replace live hardware evidence; it
+builds stock/native summary fixtures and runs the full verifier plus comparator
+so the shell evidence gates can be tested without Python. It also checks that
+missing native stop-safety evidence, missing stock `print_service.py` baseline
+evidence, and zero-throughput records are rejected.

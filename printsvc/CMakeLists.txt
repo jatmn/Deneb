@@ -155,4 +155,15 @@ target_link_libraries(deneb-printsvc-tests PRIVATE deneb-printsvc-core)
 enable_testing()
 add_test(NAME deneb-printsvc-tests COMMAND deneb-printsvc-tests)
 
+find_program(SH_EXECUTABLE sh)
+if(SH_EXECUTABLE)
+    add_test(
+        NAME deneb-printsvc-smoke-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-smoke-selftest.sh"
+    )
+else()
+    message(WARNING "sh not found; deneb-printsvc-smoke-selftest will not be registered with CTest.")
+endif()
+
 install(TARGETS deneb-printsvc DESTINATION /usr/bin)

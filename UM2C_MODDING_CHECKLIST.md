@@ -1314,14 +1314,33 @@ Completed implementation slices:
   initial/final `print_service.py` process evidence, CPU or throughput
   intervals are not positive, or the native summary lacks `deneb-printsvc`
   process ownership or native active/stop-allowed safety evidence.
+- [x] Add a shell-only synthetic selftest,
+  `deneb-printsvc-smoke-selftest`, that builds stock/native summary fixtures
+  and runs the full smoke verifier plus stock/native comparator without Python.
+  The selftest also checks expected-failure fixtures for missing native
+  stop-allowed evidence, missing stock `print_service.py` baseline evidence,
+  and zero-throughput records. This does not replace live hardware evidence,
+  but it prevents the packaged verifier/comparator gates from drifting away
+  from the Section 8 smoke and resource requirements.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
-  `dist/Deneb_Update_6ef473e.deneb` contains `deneb-printsvc`,
+  `dist/Deneb_Update_bc2645c.deneb` contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
-  `deneb-printsvc-smoke-compare`, `deneb-printsvc-macros/`, `manifest.txt`,
-  and `LVGL_LICENSE_TLSF.txt`, with no packaged Python or `print_service.py`
-  entries. The package builder now fails if a Python driver artifact is present
-  in the staging directory.
+  `deneb-printsvc-smoke-compare`, `deneb-printsvc-smoke-selftest`,
+  `deneb-printsvc-macros/`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`, with
+  no packaged Python or `print_service.py` entries. The package builder now
+  fails if a Python driver artifact is present in the staging directory or the
+  final `.deneb` archive, and `tools/build-update-release.ps1` also inspects the
+  produced `.deneb` archive so release automation fails closed if a Python
+  driver artifact is packaged or `deneb-printsvc` /
+  `deneb-printsvc-smoke-selftest` is missing. Both
+  `ui/build-package.sh` and the PowerShell release verifier run the shell
+  selftest so the packaged smoke evidence gates must pass before the artifact
+  is accepted. The print-service CTest suite also runs the shell selftest, and
+  the installer deploys it to `/usr/bin/deneb-printsvc-smoke-selftest` beside
+  the live smoke verifier and comparator. The installer also rejects update
+  packages that contain Python driver artifacts and runs the installed
+  print-service smoke-tool selftest before completing the update.
 
 ## 9. Motion Controller / Marlin Firmware
 

@@ -133,7 +133,7 @@ if [ ! -s "$SUMMARY" ]; then
     exit 1
 fi
 
-require_pattern ' start .*native=' "start record present"
+require_pattern '(^| )start .*native=' "start record present"
 require_pattern ' phase=printsvc-self-test rc=0' "printsvc self-test passed"
 require_pattern ' snapshot=initial' "initial snapshot present"
 require_pattern ' snapshot=final' "final snapshot present"
@@ -213,7 +213,7 @@ if [ "$REQUIRE_RESOURCES" = "1" ]; then
     require_pattern 'sample=final .*load1=' "final load sample present"
     require_pattern 'sample=initial pid=[0-9]+ .*vmrss_kb=' "initial process RSS sample present"
     require_pattern 'sample=final pid=[0-9]+ .*vmrss_kb=' "final process RSS sample present"
-    require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[0-9]+ .*rc=0' "resource mode includes print throughput"
+    require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[1-9][0-9]* .*rc=0' "resource mode includes print throughput"
 fi
 
 if [ "$REQUIRE_JOB" = "1" ]; then
@@ -272,7 +272,7 @@ if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
     require_pattern ' snapshot=complete-job-running' "completion job-running snapshot present"
     require_pattern ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "completion job-running native active/stop flags are true"
     require_pattern ' phase=job-completion-wait .*rc=0' "completion wait observed inactive job"
-    require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[0-9]+ .*rc=0' "completion throughput sample present"
+    require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[1-9][0-9]* .*rc=0' "completion throughput sample present"
     require_pattern ' snapshot=job-completed' "job-completed snapshot present"
     require_pattern ' phase=status-job-completed .*rc=0 .*status=idle' "job-completed status is idle"
     require_pattern ' phase=printer-job-completed .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-completed native active/stop flags are false"

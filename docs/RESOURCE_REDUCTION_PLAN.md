@@ -394,12 +394,29 @@ Material-profile USB import root/depth/suffix policy and the
   stock summary lacks initial/final `print_service.py` process evidence, CPU
   or throughput intervals are not positive, or the native summary lacks
   `deneb-printsvc` process ownership or native active/stop-allowed evidence.
+  The package also carries `deneb-printsvc-smoke-selftest`, a shell-only
+  synthetic summary fixture runner that exercises the full verifier and
+  comparator gates locally, including expected failures for missing native
+  stop-safety evidence, missing stock `print_service.py` baseline evidence, and
+  zero-throughput records, so the evidence contract can be tested without
+  Python or live hardware.
   The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
-  `manifest.txt`, and the declared `LVGL_LICENSE_TLSF.txt` notice, with no
-  packaged Python or `print_service.py` entries. The package builder fails
-  closed if a Python driver artifact appears in the staging directory.
+  `deneb-printsvc-smoke-selftest`, `manifest.txt`, and the declared
+  `LVGL_LICENSE_TLSF.txt` notice, with no packaged Python or `print_service.py`
+  entries. The package builder fails closed if a Python driver artifact appears
+  in the staging directory or final `.deneb` archive, and the PowerShell release
+  builder now inspects the final `.deneb` archive for the same
+  no-Python-driver invariant while requiring `deneb-printsvc` and the shell
+  smoke selftest to be present. The
+  package builder runs the staged selftest, and the release verifier extracts
+  and runs the archived selftest before accepting the artifact. The printsvc
+  CTest suite also registers the selftest when `sh` is available, and the
+  installer deploys it to `/usr/bin/deneb-printsvc-smoke-selftest` for
+  target-side gate checks. The installer rejects update packages containing
+  Python driver artifacts and runs the installed print-service smoke-tool
+  selftest before completing the update.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API
