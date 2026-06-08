@@ -2298,6 +2298,7 @@ static void test_pending_job_metadata_write_file(void)
     deneb_pending_job_t job;
     deneb_pending_job_file_t loaded;
     deneb_pending_job_conflict_prompt_t prompt;
+    char pending_json[8192];
 
     deneb_pending_job_init(&job, "/home/3D/deneb-uploads/write-test.gcode");
     job.tracker = 77;
@@ -2332,6 +2333,20 @@ static void test_pending_job_metadata_write_file(void)
     assert(deneb_pending_job_file_conflict_prompt(NULL, &prompt) != 0);
     assert(deneb_pending_job_file_conflict_prompt(&loaded, NULL) != 0);
     assert(deneb_pending_job_file_clear(path) == 0);
+
+    assert(deneb_pending_job_file_clear_default() == 0);
+    deneb_pending_job_file_read_default_array_or_empty(pending_json,
+                                                       sizeof(pending_json));
+    assert(strcmp(pending_json, "[]") == 0);
+    job.tracker = 78;
+    assert(deneb_pending_job_write_default(&job) == 0);
+    assert(deneb_pending_job_file_read_default_raw_array(
+               pending_json, sizeof(pending_json), NULL) == 0);
+    assert(strstr(pending_json, "\"deneb_tracker\":78") != NULL);
+    deneb_pending_job_file_read_default_array_or_empty(pending_json,
+                                                       sizeof(pending_json));
+    assert(strstr(pending_json, "\"deneb_tracker\":78") != NULL);
+    assert(deneb_pending_job_file_clear_default() == 0);
 }
 
 typedef struct {

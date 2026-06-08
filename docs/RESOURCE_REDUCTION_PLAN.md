@@ -311,7 +311,29 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   `deneb.printsvc.enabled` defaults to `0`, existing lab values are preserved
   across Deneb updates, native `deneb-printsvc` stops stock `printserver` on
   start, and the patched stock `printserver` init skips `print_service.py` only
-  while the native flag is `1`.
+  while the native flag is `1`. The installer no longer rewrites the stock
+  coordinator's Python command-writer module; native route selection and
+  print-control cleanup now stay in Deneb-owned shell/C code while stock Python
+  files remain untouched fallback artifacts.
+- Pending-job file ownership tightened further: default queued-job JSON-array
+  reads and missing-file cleanup are now wrapped by
+  `common/print/pending_job_file.*`, so Deneb/Cura REST surfaces no longer
+  carry the pending metadata path or cleanup race behavior locally.
+- Deneb packages now include `/usr/bin/deneb-printsvc-smoke`, a no-Python
+  device-side smoke/resource harness for the native print-service milestone.
+  Its default mode only records route/status/process/resource snapshots; heat,
+  motion, native-route switching, and multipart job upload/abort phases require
+  explicit lab flags and are intended to generate the live evidence required by
+  Section 8 once SSH/hardware validation is allowed again. The harness writes a
+  full log and a compact summary with phase return codes plus `/proc`-sourced
+  process VmSize/VmRSS samples for stock and native print paths, including a
+  post-restore route/status snapshot after native-route tests. The local
+  release package also includes `deneb-printsvc-smoke-verify`, a shell-only
+  summary verifier for observe/native/heat/motion/job and restoration evidence,
+  so live runs can be checked on target without Python. The local release
+  package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
+  `deneb-printsvc-smoke-verify`, `manifest.txt`, and the declared
+  `LVGL_LICENSE_TLSF.txt` notice.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

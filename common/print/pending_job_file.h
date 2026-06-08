@@ -103,5 +103,10 @@ int deneb_pending_job_file_read_raw_array(const char *path,
                                           char *out,
                                           size_t out_sz,
                                           size_t *out_len);
+int deneb_pending_job_file_read_default_raw_array(char *out,
+                                                  size_t out_sz,
+                                                  size_t *out_len);
+void deneb_pending_job_file_read_default_array_or_empty(char *out,
+                                                        size_t out_sz);
 
 #endif

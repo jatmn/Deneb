@@ -44,8 +44,7 @@ static int serve_pending_cluster_job(http_response_t *resp)
     char buf[8192];
     size_t n = 0;
 
-    if (deneb_pending_job_file_read_raw_array(DENEB_PENDING_JOB_PATH,
-                                              buf, sizeof(buf), &n) < 0)
+    if (deneb_pending_job_file_read_default_raw_array(buf, sizeof(buf), &n) < 0)
         return 0;
     api_http_set_body(resp, buf, n);
     return 1;

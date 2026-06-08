@@ -7,7 +7,6 @@
 
 #include "api_deneb.h"
 #include "backend_zmq.h"
-#include "json_file.h"
 #include "json_field.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
@@ -314,7 +313,7 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     }
 
     /* Pending jobs */
-    deneb_json_file_read_array_or_empty(DENEB_PENDING_JOB_PATH, file_buf, sizeof(file_buf));
+    deneb_pending_job_file_read_default_array_or_empty(file_buf, sizeof(file_buf));
     json_raw(&w, "pending", file_buf);
 
     /* History */

@@ -2,9 +2,11 @@
 #include "pending_job_file.h"
 #include "command_format.h"
 #include "json_field.h"
+#include "json_file.h"
 #include "print_state_rules.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -95,6 +97,20 @@ int deneb_pending_job_file_read_raw_array(const char *path,
     if (out_len)
         *out_len = n;
     return 0;
+}
+
+int deneb_pending_job_file_read_default_raw_array(char *out,
+                                                  size_t out_sz,
+                                                  size_t *out_len)
+{
+    return deneb_pending_job_file_read_raw_array(DENEB_PENDING_JOB_PATH, out,
+                                                out_sz, out_len);
+}
+
+void deneb_pending_job_file_read_default_array_or_empty(char *out,
+                                                        size_t out_sz)
+{
+    deneb_json_file_read_array_or_empty(DENEB_PENDING_JOB_PATH, out, out_sz);
 }
 
 int deneb_pending_job_file_load(const char *path,
@@ -384,7 +400,9 @@ int deneb_pending_job_file_clear(const char *path)
 {
     if (!path || !*path)
         return -1;
-    return remove(path);
+    if (remove(path) == 0)
+        return 0;
+    return errno == ENOENT ? 0 : -1;
 }
 
 int deneb_pending_job_file_clear_default(void)

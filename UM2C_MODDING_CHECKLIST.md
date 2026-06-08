@@ -538,15 +538,15 @@ diagnostics, resource measurements, and live-device validation items are
 finished.
 
 - [x] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
-- [ ] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
+- [x] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
 - [x] Preserve the stock print-service IPC contract first: raw ZMQ status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, topic `10001`, and `COMMAND<json>` request framing.
-- [ ] Keep coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory assumptions compatible during the first replacement stage.
-- [ ] Audit every Deneb integration that currently patches around the stock Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`, `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata files, direct macro calls, direct raw G-code calls, and duplicated status classification.
-- [ ] Decide for each integration whether it remains a client of the native service, moves into `deneb-printsvc`, or becomes a shared Deneb print-control library/API.
-- [ ] Avoid preserving patchwork solely for compatibility with a bad stock-driver shape; use compatibility shims only as temporary migration boundaries with removal criteria.
-- [ ] Define one Deneb-owned print-control contract for web UI, touchscreen UI, Cura LAN/API, and future services so they do not each reinterpret print state, pending jobs, abort state, preheat state, and macro safety differently.
-- [ ] Deduplicate print-control logic as part of the rewrite: status classification, print/pending job metadata, command formatting, macro lookup, safe motion policy, heat-state decisions, pause/resume/abort semantics, and error mapping should each have one owner.
-- [ ] Prefer shared native helpers or a single `deneb-printsvc` API over copy-pasted logic between LCD UI, web UI, REST API, Cura cluster API, and diagnostics.
+- [x] Keep coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory assumptions compatible during the first replacement stage.
+- [x] Audit every Deneb integration that currently patches around the stock Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`, `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata files, direct macro calls, direct raw G-code calls, and duplicated status classification.
+- [x] Decide for each integration whether it remains a client of the native service, moves into `deneb-printsvc`, or becomes a shared Deneb print-control library/API.
+- [x] Avoid preserving patchwork solely for compatibility with a bad stock-driver shape; use compatibility shims only as temporary migration boundaries with removal criteria.
+- [x] Define one Deneb-owned print-control contract for web UI, touchscreen UI, Cura LAN/API, and future services so they do not each reinterpret print state, pending jobs, abort state, preheat state, and macro safety differently.
+- [x] Deduplicate print-control logic as part of the rewrite: status classification, print/pending job metadata, command formatting, macro lookup, safe motion policy, heat-state decisions, pause/resume/abort semantics, and error mapping should each have one owner.
+- [x] Prefer shared native helpers or a single `deneb-printsvc` API over copy-pasted logic between LCD UI, web UI, REST API, Cura cluster API, and diagnostics.
 - [x] Add tests around shared print-control helpers before removing duplicate callers so web/touch/API behavior stays aligned during migration.
 - [x] Keep the native driver source tree intentionally modular; do not create a few thousand-line catch-all files.
 - [x] Start with named source units for clear responsibilities, for example: service main/init, ZMQ IPC, print-control API, serial transport, Marlin packet framing, CRC, status parsing, command parsing, G-code stream reader, macro registry, job queue, heater waits, pause/resume state, abort/finalize motion policy, diagnostics/logging, and test fakes.
@@ -1193,6 +1193,34 @@ Completed implementation slices:
   `deneb-printsvc` route is active.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
   artifact without enabling it over stock `printserver` by default.
+- [x] Remove the installer-time stock coordinator Python patch from the
+  de-Python path: Deneb no longer rewrites
+  `/home/cygnus/coordinator/companion/printer_service_command.py` during
+  install, leaving stock Python fallback files untouched while native
+  `deneb-printsvc` routing remains controlled by the reversible lab gate.
+- [x] Move default pending-job JSON-array reads and idempotent pending-file
+  cleanup behind `common/print/pending_job_file.*` so Deneb and Cura REST
+  endpoints no longer spell the bridge path directly when serving queued jobs,
+  and duplicate cleanup paths do not fail if another native caller already
+  consumed or cleared the pending metadata.
+- [x] Add a packaged no-Python live smoke/resource harness,
+  `deneb-printsvc-smoke`, for supervised lab validation of native route
+  selection, idle status snapshots, heat/cool, Z-home, optional multipart job
+  upload, abort, process/resource samples, and route restoration. The harness
+  installs with Deneb but only observes unless a tester explicitly enables
+  native route, heat, motion, or job phases, and writes both a full log plus a
+  compact summary with phase results and `/proc`-sourced process RSS/VSZ
+  samples, including a post-restore route/status snapshot after native-route
+  tests.
+- [x] Add a packaged shell-only verifier,
+  `deneb-printsvc-smoke-verify`, so future live summary files can be checked
+  for observe-only, native-route, heat/cool, Z-home, and job-start/abort
+  evidence plus route restoration without Python or ad hoc log inspection.
+- [x] Verify the `.deneb` release package includes the native smoke harness,
+  `deneb-printsvc`, and its declared notices: local package build
+  `dist/Deneb_Update_78b02f1.deneb` contains `deneb-printsvc`,
+  `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`, `manifest.txt`, and
+  `LVGL_LICENSE_TLSF.txt`.
 
 ## 9. Motion Controller / Marlin Firmware
 

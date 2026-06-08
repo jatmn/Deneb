@@ -92,7 +92,9 @@ does not disable or replace stock `printserver` yet. When lab testing sets
 before starting the native service, and Deneb's patched stock `printserver`
 init script skips `print_service.py` while that flag remains enabled. Setting
 the flag back to `0` restores the stock print-service startup path without a
-reflash.
+reflash. The installer does not patch stock coordinator Python modules for the
+native route; Deneb-owned init scripts and C route helpers own the migration
+boundary.
 
 This scaffold is not complete enough to run unattended prints. It exists to
 make the de-python work buildable and testable while the remaining planner and
@@ -115,4 +117,33 @@ The full release build also cross-compiles `deneb-printsvc` and packages
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
+```
+
+## Device Smoke Harness
+
+Release packages install `/usr/bin/deneb-printsvc-smoke`, a no-Python lab
+harness for gathering the live Section 8 evidence. Running it with no flags is
+observe-only and records route/status/process/resource snapshots to
+`/tmp/deneb-printsvc-smoke.log`; it also writes compact phase and `/proc`
+memory evidence to `/tmp/deneb-printsvc-smoke.summary`. Native-route runs
+restore the previous route by default and record a post-restore snapshot.
+
+Risky phases are explicit:
+
+```sh
+deneb-printsvc-smoke --native
+deneb-printsvc-smoke --native --heat
+deneb-printsvc-smoke --native --motion
+deneb-printsvc-smoke --native --job /home/3D/test.gcode
+deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
+```
+
+The script restores the previous `deneb.printsvc.enabled` value by default.
+Use only under supervision with clear motion axes and a ready power cutoff.
+
+Verify a captured summary on-device without Python:
+
+```sh
+deneb-printsvc-smoke-verify /tmp/deneb-printsvc-smoke.summary
+deneb-printsvc-smoke-verify --native --heat --motion --job /tmp/native-printsvc.summary
 ```

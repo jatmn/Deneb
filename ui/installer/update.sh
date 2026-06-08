@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -96,6 +96,14 @@ install_web_runtime() {
     chmod 0755 /usr/bin/deneb-printsvc
     log "installed deneb-printsvc to /usr/bin/deneb-printsvc"
 
+    cp /tmp/update/deneb-printsvc-smoke /usr/bin/deneb-printsvc-smoke
+    chmod 0755 /usr/bin/deneb-printsvc-smoke
+    log "installed deneb-printsvc-smoke to /usr/bin/deneb-printsvc-smoke"
+
+    cp /tmp/update/deneb-printsvc-smoke-verify /usr/bin/deneb-printsvc-smoke-verify
+    chmod 0755 /usr/bin/deneb-printsvc-smoke-verify
+    log "installed deneb-printsvc-smoke-verify to /usr/bin/deneb-printsvc-smoke-verify"
+
     cp /tmp/update/lighttpd /usr/sbin/lighttpd
     chmod 0755 /usr/sbin/lighttpd
     log "installed lighttpd to /usr/sbin/lighttpd"
@@ -141,59 +149,6 @@ install_web_runtime() {
     /etc/init.d/deneb-mdns enable 2>/dev/null || true
     /etc/init.d/deneb-printsvc enable 2>/dev/null || true
     log "enabled Deneb web services for next boot"
-}
-
-patch_stock_coordinator() {
-    local command_file="/home/cygnus/coordinator/companion/printer_service_command.py"
-    local backup_file="${DENEB_BACKUP_DIR}/printer_service_command.py.orig"
-
-    # The stock CommandWriter registers a ZMQ POLLOUT watch before it has
-    # queued work. Writable sockets wake immediately, which can pin
-    # coordinator.py after Deneb updates/restarts.
-    if [ ! -f "${command_file}" ]; then
-        log "stock coordinator command writer not found; skipping coordinator patch"
-        return
-    fi
-
-    if [ ! -f "${backup_file}" ]; then
-        cp "${command_file}" "${backup_file}"
-        log "backed up stock coordinator command writer"
-    fi
-
-    python3 - <<'PY'
-from pathlib import Path
-
-path = Path("/home/cygnus/coordinator/companion/printer_service_command.py")
-src = path.read_text()
-changed = False
-
-add_watch = "        self.getManager().getSpinner().addWatch(self._socket, self._onPollIn, self._onPollOut, None)\n"
-add_watch_patched = (
-    add_watch
-    + "        self.getManager().getSpinner().setPollState(self._socket, zmq.POLLOUT, False)\n"
-)
-if add_watch_patched not in src:
-    if add_watch not in src:
-        raise SystemExit("missing coordinator addWatch pattern")
-    src = src.replace(add_watch, add_watch_patched, 1)
-    changed = True
-
-empty_queue = "        if len(self._send_queue) == 0:\n            return\n"
-empty_queue_patched = (
-    "        if len(self._send_queue) == 0:\n"
-    "            self.getManager().getSpinner().setPollState(self._socket, zmq.POLLOUT, False)\n"
-    "            return\n"
-)
-if empty_queue_patched not in src:
-    if empty_queue not in src:
-        raise SystemExit("missing coordinator empty-queue pattern")
-    src = src.replace(empty_queue, empty_queue_patched, 1)
-    changed = True
-
-if changed:
-    path.write_text(src)
-PY
-    log "patched stock coordinator command poll state"
 }
 
 prune_stock_wifi_portal() {
@@ -606,7 +561,6 @@ validate_package
 backup_stock
 install_binary
 install_web_runtime
-patch_stock_coordinator
 install_motion_firmware_verify_cache
 patch_motion_stack_boot_order
 smoke_test_binary
