@@ -138,6 +138,14 @@ reject_pattern() {
     return 0
 }
 
+require_status_body_route_phase() {
+    phase="$1"
+
+    require_pattern "$NATIVE" \
+        " phase=status-${phase} .*rc=0 .*body=.*native_only_route:true" \
+        "native summary missing status-body native-only route evidence for ${phase}"
+}
+
 delta_line() {
     name="$1"
     before="$2"
@@ -175,6 +183,12 @@ require_pattern "$NATIVE" \
 require_pattern "$NATIVE" \
     ' phase=boot-sync-ready .*route_body=.*native_only_route:true .*rc=0' \
     "native summary missing native-only boot-sync route evidence"
+for phase in initial native-enabled heating cooldown motion macro \
+    service-restarted job-running job-paused job-resumed job-aborted \
+    cura-job-running cura-job-aborted preheat-abort-active preheat-aborted \
+    job-completed; do
+    require_status_body_route_phase "$phase"
+done
 require_pattern "$STOCK" \
     'sample=initial .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing initial print_service.py process evidence"

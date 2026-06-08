@@ -48,8 +48,11 @@ int deneb_print_backend_route_json_fields(const deneb_print_backend_route_t *rou
     return snprintf(out, out_sz,
                     "\"print_backend\":\"%s\","
                     "\"print_backend_status_url\":\"%s\","
-                    "\"print_backend_command_url\":\"%s\"",
+                    "\"print_backend_command_url\":\"%s\","
+                    "\"native_only_route\":%s",
                     deneb_print_backend_name(route->backend),
                     route->status_url ? route->status_url : "",
-                    route->command_url ? route->command_url : "");
+                    route->command_url ? route->command_url : "",
+                    deneb_print_backend_is_native(route->backend) ? "true" :
+                                                                    "false");
 }

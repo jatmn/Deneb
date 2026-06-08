@@ -179,11 +179,11 @@ memory, CPU jiffy, load, and completed-job throughput evidence to
 `deneb-printsvc` instead of toggling a stock-driver route, and fail if the
 route diagnostic does not report `native_only_route:true` or if
 `print_service.py` is still running during native validation.
-Every snapshot records the selected print-backend route body, scalar
-`/printer/status` body, and `/printer` root body in the summary so preheat,
-pause/resume, abort, completion, and restart runs prove the native route,
-UI-visible state, and native active/stop-allowed safety flags instead of only
-proving HTTP reachability.
+Every snapshot records the selected print-backend route body, the
+`/printer/status` status value plus sanitized body, and `/printer` root body in
+the summary so preheat, pause/resume, abort, completion, and restart runs prove
+the native route, UI-visible state, and native active/stop-allowed safety flags
+instead of only proving HTTP reachability.
 `--boot-sync` waits for native-only print-backend route and printer-status
 readiness before the initial snapshot and records the bounded ready elapsed
 time.
@@ -236,22 +236,26 @@ acceptance.
 samples, and a bytes/elapsed/bytes-per-second throughput record.
 `--boot-sync` requires a successful native-only route/status readiness record
 with elapsed and uptime-delta seconds.
-`--native` also requires native-only route body evidence, native
-`deneb-printsvc` process evidence, and no captured native process sample with
-stock `print_service.py`.
+`--native` also requires native-only route body evidence, native-only route
+evidence in captured status bodies, native `deneb-printsvc` process evidence,
+and no captured native process sample with stock `print_service.py`.
 The compare tool reports before/after deltas for memory, process RSS, CPU
 jiffies, CPU jiffies consumed between initial/final samples, boot-sync elapsed
 time, and print throughput. It fails if the stock summary lacks
 initial/final `print_service.py` process evidence, if CPU or throughput
 intervals are not positive, or if the native summary lacks native-only route
-evidence, contains a stock `print_service.py` process sample, lacks
-`deneb-printsvc` process ownership, or lacks native stop-safety flags.
+evidence in route diagnostics or any required status lifecycle body, contains a
+stock `print_service.py` process sample, lacks `deneb-printsvc` process
+ownership, or lacks native stop-safety flags.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also checks that
-missing native stop-safety evidence, a non-native-only route diagnostic,
-a returned stock `print_service.py` process in a native run, missing stock
-`print_service.py` baseline evidence, and zero-throughput records are rejected.
+missing native stop-safety evidence, missing status-body native-route evidence
+in both verifier and comparator paths, missing native-route evidence in a
+single comparator lifecycle status snapshot, a non-native-only route
+diagnostic, a returned stock `print_service.py` process in a native run,
+missing stock `print_service.py` baseline evidence, and zero-throughput records
+are rejected.
 The init selftest checks `deneb-printsvc.init`, installer source, the
 installer-generated printserver heredoc, and generated printserver shims for
 exact stock `print_service.py` cleanup, stale PID cleanup, native ownership

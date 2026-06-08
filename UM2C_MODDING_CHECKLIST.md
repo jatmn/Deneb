@@ -529,13 +529,13 @@ this section is the milestone checklist for that same work.
 
 Current native replacement progress lives under [printsvc/](printsvc/). The
 current buildable slice provides a native-default experimental
-  `deneb-printsvc` binary with separate modules for ZMQ IPC, IPC command-frame
-  handling, command parsing,
-status serialization, Marlin status parsing, serial transport, packet/CRC
-helpers, flow control, G-code streaming, heater waits, macro lookup, and
-service state. It is packaged into `.deneb` releases, Deneb clients route
-directly to native `deneb-printsvc`, and the generated printserver handoff no
-longer delegates back to the stock driver through a Deneb config flag.
+`deneb-printsvc` binary with separate modules for ZMQ IPC, IPC command-frame
+handling, command parsing, status serialization, Marlin status parsing, serial
+transport, packet/CRC helpers, flow control, G-code streaming, heater waits,
+macro lookup, diagnostics, job lifecycle, and service state. It is packaged
+into `.deneb` releases, Deneb clients route directly to native
+`deneb-printsvc`, and the generated printserver handoff no longer delegates
+back to the stock driver through a Deneb config flag.
 
 - [x] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
 - [x] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
@@ -1247,7 +1247,9 @@ Completed implementation slices:
 - [x] Publish the selected native print backend route
   through shared native route diagnostics: LCD and web/API backend modules now
   expose route accessors, web status JSON includes the selected backend and
-  endpoint URLs, and host tests cover the shared formatter.
+  endpoint URLs plus `native_only_route:true`, and host tests cover the shared
+  formatter so regular status payloads carry the same native-only proof as the
+  dedicated route endpoint.
 - [x] Add a Deneb API route diagnostic endpoint,
   `GET /api/v1/deneb/print_backend`, so lab validation can query the selected
   native-printsvc route without parsing the full status
@@ -1297,12 +1299,14 @@ Completed implementation slices:
   macro-backed action, local/USB native job-start/abort, REST job-start/abort,
   explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
   service-restart, and native-route evidence without Python or ad hoc log
-  inspection. Native-route evidence now requires the route diagnostic body to
-  report `print_backend:native` plus `native_only_route:true`,
-  `deneb-printsvc` to be running with no stock `print_service.py` process, and
-  no captured native process sample to contain `print_service.py`; local/USB
-  job evidence now requires that same native ownership proof. The verifier also
-  checks active-job UI status
+  inspection. Native-route evidence now requires the route diagnostic body and
+  captured status bodies to report native-only route evidence
+  (`print_backend:native` plus `native_only_route:true` on route diagnostics,
+  and `native_only_route:true` on status bodies), `deneb-printsvc` to be
+  running with no stock `print_service.py` process, and no captured native
+  process sample to contain `print_service.py`; local/USB job evidence now
+  requires that same native ownership proof. The verifier also checks
+  active-job UI status
   transitions: `printing` while active, `paused` after pause, and `idle` after
   abort or natural completion. Active, preheat, paused, resumed, aborted, and
   completed snapshots must also prove native active/stop-allowed flags so the
@@ -1331,7 +1335,9 @@ Completed implementation slices:
   `print_service.py` baseline evidence, and zero-throughput records. This does
   not replace live hardware evidence, but it prevents the packaged
   verifier/comparator gates from drifting away from the Section 8 smoke and
-  resource requirements.
+  resource requirements, including rejection of summaries where status
+  snapshots lose `native_only_route:true` in either verifier or comparator
+  paths, including a single missing comparator lifecycle status snapshot.
 - [x] Add a shell-only native init handoff selftest,
   `deneb-printsvc-init-selftest`, that checks the packaged
   `deneb-printsvc.init`, installer source, installer-generated printserver
@@ -1400,7 +1406,7 @@ Completed implementation slices:
 - [ ] Milestone 10: Cura LAN upload/start print compatibility. (Upload/start/action paths exist; free-space, storage safety, and real Cura/hardware validation remain pending)
 - [ ] Milestone 11: generic slicer G-code support with thumbnails.
 - [ ] Milestone 12: print-quality degradation root-cause fix.
-- [ ] Milestone 13: de-python `marlindriver` with native `deneb-printsvc` experimental replacement. See [Section 8](#8-de-python-marlindriver--native-print-service) and [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets).
+- [ ] Milestone 13: de-python `marlindriver` with native `deneb-printsvc` experimental replacement. Native route, package, archive, init handoff, and synthetic verifier gates exist; live smoke/resource evidence remains required. See [Section 8](#8-de-python-marlindriver--native-print-service) and [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets).
 - [ ] Milestone 14: Marlin modernization feasibility branch.
 - [ ] Milestone 15: OS/service inventory, OpenWrt-specific security review, and resource-reduction plan.
 - [ ] Milestone 16: targeted OS/service updates or replacements with rollback.

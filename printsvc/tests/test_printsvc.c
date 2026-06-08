@@ -2415,9 +2415,11 @@ static void test_print_backend_route_contract(void)
     assert(strstr(fields, "\"print_backend\":\"native\"") != NULL);
     assert(strstr(fields, DENEB_PRINTSVC_STATUS_URL) != NULL);
     assert(strstr(fields, DENEB_PRINTSVC_COMMAND_URL) != NULL);
+    assert(strstr(fields, "\"native_only_route\":true") != NULL);
 
     assert(deneb_print_backend_route_json_fields(NULL, fields, sizeof(fields)) > 0);
     assert(strstr(fields, "\"print_backend\":\"native\"") != NULL);
+    assert(strstr(fields, "\"native_only_route\":true") != NULL);
 }
 
 static void test_pending_job_metadata(void)

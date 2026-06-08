@@ -8,11 +8,17 @@ directly to native `deneb-printsvc`.
 
 ## Port Map
 
-### Print Service (marlindriver/print_service.py, PID 1124)
+### Native Print Service (`deneb-printsvc`)
 - tcp://127.0.0.1:5555 - ZMQ PUB (publishes status, topic "10001")
 - tcp://127.0.0.1:5556 - ZMQ REP (receives commands)
 
-### Coordinator (coordinator/coordinator.py, PID 1129)
+These are the stock print-service IPC ports, but Deneb's current print route is
+owned by native `deneb-printsvc` rather than the Python
+`/home/cygnus/marlindriver/print_service.py` process. The installer-generated
+printserver shim stops any surviving exact stock driver process and removes its
+stale PID file before native startup.
+
+### Stock Coordinator (`coordinator/coordinator.py`)
 - tcp://127.0.0.1:5565 - ZMQ PUB (republishes aggregated status)
 - tcp://127.0.0.1:5566 - ZMQ REP (receives commands from menu/UI, proxies to print service)
 
@@ -22,8 +28,10 @@ directly to native `deneb-printsvc`.
 
 ## Data Flow
 
-  deneb-printsvc --[PUB 5555]--> deneb-ui / deneb-api
-  deneb-ui / deneb-api --[REQ 5556]--> deneb-printsvc
+```text
+deneb-printsvc --[PUB 5555]--> deneb-ui / deneb-api
+deneb-ui / deneb-api --[REQ 5556]--> deneb-printsvc
+```
 
 ## Status Protocol (SUB on port 5555)
 
@@ -84,7 +92,7 @@ The stock menu uses TWO communication paths:
 1. Raw ZMQ REQ on port 5566 - for GCODE/MACRO/JOB/ABORT/PAUSE/RESUME
 2. Gershwin IPC - for higher-level coordinator calls (prefixed with ::, ??, __)
 
-For our LVGL UI, the native print path uses raw ZMQ commands on port `5556`
+For Deneb's LVGL UI, the native print path uses raw ZMQ commands on port `5556`
 directly. Deneb print-control clients do not select the stock coordinator proxy
 on port `5566`.
 
@@ -109,9 +117,9 @@ print-service traffic. `common/print/print_backend_route.*` owns this
 native-only endpoint mapping for Deneb clients.
 The same helper publishes route diagnostics for native clients: web status JSON
 includes `print_backend`, `print_backend_status_url`, and
-`print_backend_command_url`, and both LCD and web/API backends expose accessors
-for the selected route so lab checks can confirm the process is talking to the
-expected native service endpoint. The Deneb API also exposes
+`print_backend_command_url`, plus `native_only_route`, and both LCD and web/API
+backends expose accessors for the selected route so lab checks can confirm the
+process is talking to the expected native service endpoint. The Deneb API also exposes
 `GET /api/v1/deneb/print_backend` for the same selected-route contract without
 requiring clients to parse the full status payload; that response includes
 `native_only_route` so lab checks can assert that no stock coordinator route is

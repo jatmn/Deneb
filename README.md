@@ -21,6 +21,7 @@ This repository is private while the project is being organized.
 - [x] Deneb Cura network discovery plugin package for mapping `deneb_um2c` to Cura's stock UM2+ Connect profile
 - [x] Cura/cluster upload-start path with pending-job metadata and conflict continue/cancel bridges
 - [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop availability, mismatch continue flow, and abort cleanup/status handling
+- [x] Experimental native `deneb-printsvc` replacement for the stock Python `marlindriver` print service, packaged with native-only route and no-Python archive gates
 - [x] Live device inspection (process list, memory, IPC ports, macros)
 - [x] Baseline measurements documented
 - [x] Initial on-device Deneb UI resource measurements
@@ -31,7 +32,7 @@ This repository is private while the project is being organized.
 - [ ] RAM/CPU benchmark comparisons while printing, uploading, updating, and exporting diagnostics
 - [ ] `.deneb` package manifest, rollback, signing, and release-channel hardening
 - [ ] Cura discovery/upload/start compatibility validation against current Cura builds and real printer behavior
-- [ ] De-python `marlindriver` / native `deneb-printsvc` planning, with current web/touch/API print-control shims to be audited and deduplicated
+- [ ] Native `deneb-printsvc` hardware smoke and before/after resource proof before the Python `marlindriver` replacement can move beyond experimental builds
 
 ### Planned
 - [ ] Generic slicer G-code support
@@ -57,7 +58,7 @@ The API includes UltiMaker REST API v1-shaped print/status/material endpoints an
 
 ## Optimization Notes
 
-Deneb's current optimization work is focused on removing dormant stock UI and setup paths while keeping the printer on the stock motion/backend services until clean-room replacements are ready.
+Deneb's current optimization work is focused on removing dormant stock UI and setup paths while moving print control onto original native services. The `printsvc/` tree now provides the experimental native `deneb-printsvc` path for the stock Python `marlindriver` service; remaining release blockers are live hardware smoke coverage and before/after RAM, CPU, boot-time, and print-throughput measurements.
 
 - The stock touchscreen UI no longer runs; Deneb starts the native LVGL UI instead.
 - The installer prunes the dormant stock Python touchscreen files after a successful Deneb UI smoke test.

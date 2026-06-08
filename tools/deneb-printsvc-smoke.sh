@@ -291,7 +291,7 @@ status_step() {
     status_value="$(sanitize_summary_value "$(cat "$body_file" 2>/dev/null || true)")"
     rm -f "$body_file"
     say "$label rc=$rc status=${status_value:-unknown}"
-    summary "phase=$label kind=api method=GET path=/printer/status rc=$rc status=${status_value:-unknown}"
+    summary "phase=$label kind=api method=GET path=/printer/status rc=$rc status=${status_value:-unknown} body=${status_value:-unknown}"
     return "$rc"
 }
 
