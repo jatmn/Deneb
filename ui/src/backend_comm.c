@@ -50,10 +50,34 @@ int backend_init(void) {
 
 void backend_poll(void) { /* no-op in stub */ }
 const printer_state_t *backend_get_state(void) { return &state; }
+int backend_get_print_display_name(char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+    return deneb_pending_job_file_display_value(state.filename, out, out_sz);
+}
+int backend_has_print_name(const char *display_name)
+{
+    return deneb_print_file_is_candidate(display_name) ||
+           deneb_print_file_is_candidate(state.filename);
+}
+int backend_has_active_print_context(void) { return 0; }
+int backend_has_preparing_print_context(void) { return 0; }
+int backend_has_stoppable_print_context(void) { return 0; }
+int backend_has_abort_print_context(void) { return 0; }
+void backend_clear_print_display_context_if_idle(void) {}
 deneb_print_backend_t backend_get_print_backend(void) { return backend_route.backend; }
 const char *backend_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
 const char *backend_get_print_backend_status_url(void) { return backend_route.status_url; }
 const char *backend_get_print_backend_command_url(void) { return backend_route.command_url; }
+int backend_is_ready(void) { return state.connected && !state.has_error; }
+int backend_manual_action_allowed(void)
+{
+    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+                                             state.is_paused,
+                                             state.is_printing);
+}
 int backend_is_stop_print_inflight(void) { return 0; }
 int backend_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
@@ -64,6 +88,7 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
     (void)path; (void)source; (void)uuid; (void)bed_target; (void)head_target;
     return 0;
 }
+int backend_send_pending_instruction(const char *instruction) { (void)instruction; return 0; }
 int backend_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_abort_print(void) { return 0; }
 int backend_stop_print(void) { return 0; }
@@ -153,6 +178,27 @@ static int state_has_print_context(const printer_state_t *s)
     return deneb_print_has_active_context(&obs, s->is_printing,
                                           s->is_paused,
                                           deneb_print_file_is_candidate(s->filename));
+}
+
+static deneb_print_observation_t print_observation_from_state(
+    const printer_state_t *s, int has_print_name)
+{
+    deneb_print_observation_t obs;
+
+    deneb_print_observation_init(&obs, s ? s->current_req : NULL,
+                                 s && has_print_name ? s->filename : NULL,
+                                 s ? s->time_total : 0,
+                                 s ? s->time_left : 0,
+                                 s ? s->bed_temp_set : 0.0f,
+                                 s ? s->nozzle_temp_set : 0.0f);
+    return obs;
+}
+
+static int state_has_print_name(const printer_state_t *s,
+                                const char *display_name)
+{
+    return deneb_print_file_is_candidate(display_name) ||
+           (s && deneb_print_file_is_candidate(s->filename));
 }
 
 static void set_filename_or_none(char *dst, const char *value)
@@ -402,6 +448,95 @@ const printer_state_t *backend_get_state(void)
     return &state;
 }
 
+int backend_get_print_display_name(char *out, size_t out_sz)
+{
+    deneb_status_filename_context_t curr;
+    deneb_status_filename_context_t prev;
+    const printer_state_t *prev_state;
+
+    if (!out || out_sz == 0)
+        return -1;
+
+    out[0] = '\0';
+    prev_state = had_previous_status ? &previous_state : &state;
+    curr = filename_context_from_state(&state);
+    prev = filename_context_from_state(prev_state);
+
+    deneb_status_payload_resolve_filename_value(
+        state.filename,
+        state.filename[0] && strcmp(state.filename, DENEB_PRINT_NONE_VALUE) != 0,
+        &curr, &prev, retained_print_filename,
+        sizeof(retained_print_filename), out, out_sz);
+    return out[0] ? 0 : -1;
+}
+
+int backend_has_print_name(const char *display_name)
+{
+    return state_has_print_name(&state, display_name);
+}
+
+int backend_has_active_print_context(void)
+{
+    char display_name[128];
+    int has_print_name;
+    deneb_print_observation_t obs;
+
+    backend_get_print_display_name(display_name, sizeof(display_name));
+    has_print_name = state_has_print_name(&state, display_name);
+    obs = print_observation_from_state(&state, has_print_name);
+    return deneb_print_has_active_context(&obs, state.is_printing,
+                                          state.is_paused, has_print_name);
+}
+
+int backend_has_preparing_print_context(void)
+{
+    char display_name[128];
+    int has_print_name;
+    deneb_print_observation_t obs;
+
+    backend_get_print_display_name(display_name, sizeof(display_name));
+    has_print_name = state_has_print_name(&state, display_name);
+    obs = print_observation_from_state(&state, has_print_name);
+    return deneb_print_has_preparing_context(&obs, has_print_name);
+}
+
+int backend_has_stoppable_print_context(void)
+{
+    char display_name[128];
+    int has_print_name;
+    deneb_print_observation_t obs;
+
+    backend_get_print_display_name(display_name, sizeof(display_name));
+    has_print_name = state_has_print_name(&state, display_name);
+    obs = print_observation_from_state(&state, has_print_name);
+    return deneb_print_has_stoppable_context(&obs, state.is_printing,
+                                             state.is_paused, has_print_name);
+}
+
+int backend_has_abort_print_context(void)
+{
+    return deneb_print_req_is_abort(state.current_req) ||
+           backend_is_stop_print_inflight();
+}
+
+void backend_clear_print_display_context_if_idle(void)
+{
+    char display_name[128];
+    int has_print_name;
+
+    backend_get_print_display_name(display_name, sizeof(display_name));
+    has_print_name = state_has_print_name(&state, display_name);
+
+    if (!backend_has_active_print_context() &&
+        !has_print_name &&
+        state.time_total <= 0 &&
+        state.time_left <= 0 &&
+        state.bed_temp_set <= 0.0f &&
+        state.nozzle_temp_set <= 0.0f) {
+        retained_print_filename[0] = '\0';
+    }
+}
+
 deneb_print_backend_t backend_get_print_backend(void)
 {
     return backend_route.backend;
@@ -420,6 +555,18 @@ const char *backend_get_print_backend_status_url(void)
 const char *backend_get_print_backend_command_url(void)
 {
     return backend_route.command_url;
+}
+
+int backend_is_ready(void)
+{
+    return state.connected && !state.has_error;
+}
+
+int backend_manual_action_allowed(void)
+{
+    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+                                             state.is_paused,
+                                             state.is_printing);
 }
 
 int backend_is_stop_print_inflight(void)
@@ -510,6 +657,33 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
     len = deneb_command_format_job(path, source, uuid, bed_target, head_target,
                                    msg, sizeof(msg));
     return send_formatted_rpc(msg, len, sizeof(msg));
+}
+
+int backend_send_pending_instruction(const char *instruction)
+{
+    deneb_pending_job_file_t job;
+    deneb_pending_job_action_plan_t plan;
+
+    if (deneb_pending_job_file_load_pending_default(&job) != 0 ||
+        deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0)
+        return -1;
+
+    fprintf(stderr, "backend: send pending instruction=%s tracker=%d path=%s\n",
+            instruction ? instruction : "(none)",
+            plan.tracker, plan.path[0] ? plan.path : "(none)");
+
+    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
+        if (backend_abort_print() != 0)
+            return -1;
+    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
+        if (backend_send_job(plan.path, plan.source, plan.uuid,
+                             0.0f, 0.0f) != 0)
+            return -1;
+    } else {
+        return -1;
+    }
+
+    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
 }
 
 int backend_send_command(const char *cmd, const char *args_json)

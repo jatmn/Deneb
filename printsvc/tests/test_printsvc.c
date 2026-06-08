@@ -32,6 +32,7 @@
 #include "pause_resume_control.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
+#include "pending_job_registration.h"
 #include "printer_identity.h"
 #include "print_history.h"
 #include "print_job_file.h"
@@ -975,6 +976,21 @@ static void test_print_job_summary(void)
     assert(strcmp(summary.state, DENEB_PRINT_PHASE_NAME_PRE_PRINT) == 0);
     assert(summary.time_elapsed == 0);
     assert(summary.progress_fraction == 0.0f);
+
+    {
+        char json[512];
+        assert(deneb_print_job_summary_format_queued_response(
+                   "Print job accepted", "queued\"job.gcode",
+                   json, sizeof(json)) > 0);
+        assert(strstr(json, "\"message\":\"Print job accepted\"") != NULL);
+        assert(strstr(json, "\"name\":\"queued\\\"job.gcode\"") != NULL);
+        assert(strstr(json, "\"uuid\":\"0\"") != NULL);
+        assert(strstr(json, "\"source\":\"WEB_API\"") != NULL);
+        assert(strstr(json, "\"state\":\"pre_print\"") != NULL);
+        assert(strstr(json, "\"progress\":0.0") != NULL);
+        assert(strstr(json, "\"time_elapsed\":0") != NULL);
+        assert(strstr(json, "\"time_total\":0") != NULL);
+    }
 }
 
 static void test_json_field_helpers(void)
@@ -1355,6 +1371,73 @@ static void test_pending_job_metadata_write_file(void)
     assert(strcmp(loaded.name, "write-test.gcode") == 0);
     assert(!deneb_pending_job_file_has_conflict(&loaded));
     assert(deneb_pending_job_file_clear(path) == 0);
+}
+
+static void test_pending_job_upload_default_check(void)
+{
+    deneb_pending_job_t job;
+    deneb_pending_job_upload_check_t check;
+
+    deneb_pending_job_file_clear_default();
+    assert(deneb_pending_job_file_check_upload_default(
+               "/home/3D/deneb-uploads/cube.gcode", "cube.gcode",
+               &check) == 0);
+    assert(check.status == DENEB_PENDING_JOB_UPLOAD_CLEAR);
+
+    deneb_pending_job_init(&job, "/home/3D/deneb-uploads/cube.gcode");
+    job.tracker = 88;
+    assert(deneb_pending_job_write_default(&job) == 0);
+
+    assert(deneb_pending_job_file_check_upload_default(
+               "/home/3D/deneb-uploads/cube.gcode", "cube.gcode",
+               &check) == 0);
+    assert(check.status == DENEB_PENDING_JOB_UPLOAD_DUPLICATE);
+    assert(check.tracker == 88);
+    assert(strcmp(check.display_name, "cube.gcode") == 0);
+
+    assert(deneb_pending_job_file_check_upload_default(
+               "/home/3D/deneb-uploads/other.gcode", "other.gcode",
+               &check) == 0);
+    assert(check.status == DENEB_PENDING_JOB_UPLOAD_BLOCKED);
+
+    deneb_pending_job_file_clear_default();
+}
+
+static void test_pending_job_registration_policy(void)
+{
+    const char *plain_path = "/tmp/deneb-registration-plain.gcode";
+    const char *conflict_path = "/tmp/deneb-registration-conflict.gcode";
+    deneb_pending_job_registration_t registration;
+    FILE *f;
+
+    f = fopen(plain_path, "wb");
+    assert(f != NULL);
+    fputs("G28\n", f);
+    fclose(f);
+
+    assert(deneb_pending_job_registration_prepare(
+               plain_path, 123, &registration) == 0);
+    assert(registration.job.tracker == 123);
+    assert(registration.change_count == 0);
+    assert(registration.should_start_immediately);
+    assert(strcmp(registration.job.path, plain_path) == 0);
+    assert(strcmp(registration.job.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+
+    f = fopen(conflict_path, "wb");
+    assert(f != NULL);
+    fputs("; material_guid='material-123'\n; nozzle_size=0.8\n", f);
+    fclose(f);
+
+    assert(deneb_pending_job_registration_prepare(
+               conflict_path, 456, &registration) == 0);
+    assert(registration.job.tracker == 456);
+    assert(strcmp(registration.job.material_guid, "material-123") == 0);
+    assert(strcmp(registration.job.nozzle_id, "0.8 mm") == 0);
+    assert(registration.change_count >= 1);
+    assert(!registration.should_start_immediately);
+
+    remove(plain_path);
+    remove(conflict_path);
 }
 
 static void test_print_job_file_metadata(void)
@@ -2129,6 +2212,8 @@ int main(void)
     test_print_backend_route_contract();
     test_pending_job_metadata();
     test_pending_job_metadata_write_file();
+    test_pending_job_upload_default_check();
+    test_pending_job_registration_policy();
     test_print_job_file_metadata();
     test_material_catalog_helpers();
     test_status_frame();

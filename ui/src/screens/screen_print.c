@@ -82,8 +82,7 @@ static void start_btn_cb(lv_event_t *e)
         lv_label_set_text(status_msg, locale_get("print.select_first"));
         return;
     }
-    const printer_state_t *s = backend_get_state();
-    if (!s || !s->connected || s->has_error) {
+    if (!backend_is_ready()) {
         lv_label_set_text(status_msg, locale_get("material.busy"));
         return;
     }

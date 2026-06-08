@@ -7,11 +7,8 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
-#include "print_state_rules.h"
-#include "status_payload.h"
 #include "lvgl.h"
 #include <stdio.h>
-#include <string.h>
 
 static lv_obj_t *status_screen = NULL;
 static lv_obj_t *state_label = NULL;
@@ -23,104 +20,8 @@ static lv_obj_t *file_label = NULL;
 static lv_obj_t *pos_label = NULL;
 static lv_obj_t *stop_btn = NULL;
 static int stop_inflight = 0;
-static char active_print_name[128];
-static printer_state_t previous_display_state;
-static int have_previous_display_state = 0;
 
 static lv_timer_t *update_timer = NULL;
-
-static deneb_print_observation_t print_observation_from_state(const printer_state_t *s,
-                                                              int has_print_name)
-{
-    deneb_print_observation_t obs;
-
-    deneb_print_observation_init(&obs, s->current_req,
-                                 has_print_name ? s->filename : NULL,
-                                 s->time_total, s->time_left,
-                                 s->bed_temp_set, s->nozzle_temp_set);
-
-    return obs;
-}
-
-static deneb_status_filename_context_t filename_context_from_state(
-    const printer_state_t *s)
-{
-    deneb_status_filename_context_t ctx;
-
-    if (!s) {
-        deneb_status_filename_context_init(&ctx, NULL, NULL, NULL, 0, 0,
-                                           0.0f, 0.0f, 0, 0);
-        return ctx;
-    }
-    deneb_status_filename_context_init(&ctx, s->current_req, s->filename,
-                                       s->uuid, s->time_total, s->time_left,
-                                       s->bed_temp_set, s->nozzle_temp_set,
-                                       s->is_printing, s->is_paused);
-    return ctx;
-}
-
-static void resolve_status_display_name(const printer_state_t *s,
-                                        char *out,
-                                        size_t out_sz)
-{
-    deneb_status_filename_context_t curr;
-    deneb_status_filename_context_t prev;
-    const printer_state_t *prev_state;
-
-    if (!out || out_sz == 0)
-        return;
-
-    out[0] = '\0';
-    if (!s)
-        return;
-
-    prev_state = have_previous_display_state ? &previous_display_state : s;
-    curr = filename_context_from_state(s);
-    prev = filename_context_from_state(prev_state);
-
-    deneb_status_payload_resolve_filename_value(
-        s->filename, s->filename[0] &&
-            strcmp(s->filename, DENEB_PRINT_NONE_VALUE) != 0,
-        &curr, &prev, active_print_name, sizeof(active_print_name),
-        out, out_sz);
-}
-
-static int state_has_print_name(const printer_state_t *s, const char *display_name)
-{
-    return deneb_print_file_is_candidate(display_name) ||
-           (s && deneb_print_file_is_candidate(s->filename));
-}
-
-static int has_active_print_context(const printer_state_t *s, int has_print_name)
-{
-    deneb_print_observation_t obs = print_observation_from_state(s, has_print_name);
-    return deneb_print_has_active_context(&obs, s->is_printing, s->is_paused,
-                                          has_print_name);
-}
-
-static int has_preparing_print_context(const printer_state_t *s, int has_print_name)
-{
-    deneb_print_observation_t obs = print_observation_from_state(s, has_print_name);
-    return deneb_print_has_preparing_context(&obs, has_print_name);
-}
-
-static int has_stoppable_print_context(const printer_state_t *s, int has_print_name)
-{
-    deneb_print_observation_t obs = print_observation_from_state(s, has_print_name);
-    return deneb_print_has_stoppable_context(&obs, s->is_printing,
-                                             s->is_paused, has_print_name);
-}
-
-static void clear_active_print_context_if_idle(const printer_state_t *s, int has_print_name)
-{
-    if (!has_active_print_context(s, has_print_name) &&
-        s->time_total <= 0 &&
-        s->time_left <= 0 &&
-        s->bed_temp_set == 0.0f &&
-        s->nozzle_temp_set == 0.0f) {
-        active_print_name[0] = '\0';
-    }
-}
 
 static void set_btn_enabled(lv_obj_t *btn, int enabled)
 {
@@ -136,12 +37,8 @@ static void set_btn_enabled(lv_obj_t *btn, int enabled)
 static void stop_btn_cb(lv_event_t *e)
 {
     (void)e;
-    const printer_state_t *s = backend_get_state();
-    char display_name[128];
 
-    resolve_status_display_name(s, display_name, sizeof(display_name));
-    if (!has_stoppable_print_context(s, state_has_print_name(s, display_name)) ||
-        backend_is_stop_print_inflight())
+    if (!backend_has_stoppable_print_context() || backend_is_stop_print_inflight())
         return;
 
     if (stop_inflight)
@@ -189,23 +86,23 @@ static void update_timer_cb(lv_timer_t *timer)
     }
 
     char resolved_name[128];
-    resolve_status_display_name(s, resolved_name, sizeof(resolved_name));
-    int has_print_name = state_has_print_name(s, resolved_name);
-    int job_active = has_active_print_context(s, has_print_name);
+    backend_get_print_display_name(resolved_name, sizeof(resolved_name));
+    int has_print_name = backend_has_print_name(resolved_name);
+    int job_active = backend_has_active_print_context();
 
     if (!job_active && !has_print_name)
-        clear_active_print_context_if_idle(s, has_print_name);
+        backend_clear_print_display_context_if_idle();
 
     const char *display_name = locale_get("status.no_file");
     if (job_active && resolved_name[0])
         display_name = resolved_name;
 
     /* Printer state */
-    if (deneb_print_req_is_abort(s->current_req))
+    if (backend_has_abort_print_context())
         lv_label_set_text(state_label, locale_get("status.cooling"));
     else if (s->is_paused)
         lv_label_set_text(state_label, locale_get("status.paused"));
-    else if (has_preparing_print_context(s, has_print_name) && !s->time_total)
+    else if (backend_has_preparing_print_context() && !s->time_total)
         lv_label_set_text(state_label, locale_get("status.preparing"));
     else if (s->is_printing)
         lv_label_set_text(state_label, locale_get("status.printing"));
@@ -234,18 +131,16 @@ static void update_timer_cb(lv_timer_t *timer)
         s->time_left <= 0 &&
         s->bed_temp_set <= 0.0f &&
         s->nozzle_temp_set <= 0.0f)
-        clear_active_print_context_if_idle(s, has_print_name);
+        backend_clear_print_display_context_if_idle();
 
     set_btn_enabled(stop_btn,
-                    has_stoppable_print_context(s, has_print_name) &&
+                    backend_has_stoppable_print_context() &&
                     !stop_inflight &&
                     !backend_is_stop_print_inflight());
 
     /* Position */
     set_position_label(pos_label, s->pos_x, s->pos_y, s->pos_z);
 
-    previous_display_state = *s;
-    have_previous_display_state = 1;
 }
 
 static lv_obj_t *create_temp_row(lv_obj_t *parent, const char *icon,
@@ -353,7 +248,6 @@ static lv_obj_t *status_create(void)
     lv_obj_set_style_text_font(stop_lbl, &deneb_font_12, 0);
     lv_obj_center(stop_lbl);
     set_btn_enabled(stop_btn, 0);
-    active_print_name[0] = '\0';
 
     /* Position */
     pos_label = lv_label_create(status_screen);
@@ -382,9 +276,6 @@ static void status_destroy(void)
     file_label = NULL;
     pos_label = NULL;
     stop_btn = NULL;
-    active_print_name[0] = '\0';
-    memset(&previous_display_state, 0, sizeof(previous_display_state));
-    have_previous_display_state = 0;
 }
 
 const screen_ops_t screen_status = {

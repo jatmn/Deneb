@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "print_backend_route.h"
+#include "print_job_summary.h"
 
 /* Printer state, updated from ZMQ SUB status stream */
 typedef struct {
@@ -60,6 +61,10 @@ void backend_zmq_poll(void);
 
 /* Get cached printer state. */
 const printer_state_t *backend_zmq_get_state(void);
+const char *backend_zmq_get_status_label(void);
+void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary);
+int backend_zmq_has_active_job(void);
+int backend_zmq_manual_action_allowed(void);
 
 /* Send a command to the selected backend. Returns 0 on success. */
 int backend_zmq_send_command(const char *cmd, const char *args);
@@ -71,6 +76,7 @@ int backend_zmq_send_macro(const char *macro);
 int backend_zmq_send_job(const char *path, const char *source,
                          const char *uuid, float bed_target,
                          float head_target);
+int backend_zmq_send_pending_instruction(const char *instruction);
 
 /* Convenience: pause/resume/abort print. */
 int backend_zmq_pause(void);

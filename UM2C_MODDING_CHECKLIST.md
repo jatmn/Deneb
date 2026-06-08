@@ -688,6 +688,11 @@ Completed implementation slices:
   native pending-job metadata from UCI/file hints, leaves conflict jobs waiting
   for user confirmation, and starts no-conflict jobs with a native `JOB`
   command.
+- [x] Move Cura upload pending-registration planning into
+  `printsvc/src/pending_job_registration.*` so web upload handling and future
+  native print-service entry points share one owner for profile comparison,
+  tracker assignment, pending metadata population, and immediate-start
+  decisions.
 - [x] Remove remaining native UI Python launchers from frame lighting, USB
   material-profile import, and diagnostics export: frame lighting sends native
   `M142` G-code directly, material import scans USB/profile XML in C, and log
@@ -744,6 +749,9 @@ Completed implementation slices:
   `common/print/pending_job_file.*` so Cura cluster actions and touchscreen
   conflict prompts share one native owner for mark-handled versus clear-after-
   abort behavior after their backend command succeeds.
+- [x] Move pending-job continue/cancel backend dispatch behind LCD/web backend
+  adapter helpers so touchscreen conflict prompts and Cura cluster actions no
+  longer duplicate the load, plan, `JOB`/`ABORT` send, and finish-action flow.
 - [x] Move pending-job presence/path/conflict predicates into
   `common/print/pending_job_file.*` so web upload dedupe, Cura cluster pending
   actions, and touchscreen conflict prompts use one tracker/path/conflict
@@ -755,10 +763,18 @@ Completed implementation slices:
   `common/print/pending_job_file.*` so the web print upload endpoint reuses the
   same native pending-job path/display-name comparison when accepting a
   duplicate Cura upload or rejecting a different queued job.
+- [x] Move default pending-upload lookup plus dedupe/block classification into
+  `common/print/pending_job_file.*` so upload callers no longer separately load
+  the default pending metadata before asking the shared helper for duplicate or
+  blocked decisions.
 - [x] Move manual-action safety gating into shared native print-state rules so
   web/API motion controls, touchscreen jog controls, temperature actions,
   material moves, and frame-light startup apply all use one connected,
   not-printing, not-paused, not-error predicate.
+- [x] Move LCD/web manual-action readiness checks behind backend adapter
+  helpers so jog, temperature, material, frame-light startup, USB print start,
+  and web motion endpoints no longer inspect cached connection/error/print
+  booleans directly before deciding whether hardware actions are allowed.
 - [x] Move temperature-target readiness into shared native print-state rules so
   preheat logging, native heater waits, and material move readiness agree on
   bed-only, nozzle-only, combined-target, and tolerance behavior.
@@ -819,6 +835,14 @@ Completed implementation slices:
   `common/print/print_job_summary.*` so UM API, Cura cluster API, Deneb API,
   and upload acceptance responses share one native owner for job activity,
   identity defaults, state, elapsed time, and progress scaling.
+- [x] Move Cura upload accepted/already-queued response JSON into
+  `common/print/print_job_summary.*` so web upload responses share the same
+  escaped queued-job body, progress fraction, elapsed time, and identity
+  defaults instead of hand-assembling those fields in the endpoint.
+- [x] Move web REST current-job/status adapter calls behind `backend_zmq`
+  helper accessors so UM API, Cura cluster API, Deneb API, and printer-status
+  endpoints no longer rebuild `printer_state_t` summaries or status labels in
+  each endpoint file.
 - [x] Move Cura/pending native job-start identity onto the shared print-state
   defaults so upload auto-start, Cura cluster continue, and touchscreen
   conflict continue no longer carry their own `"deneb-current-job"` literals.
@@ -837,6 +861,10 @@ Completed implementation slices:
   so LCD status rendering, LCD backend status parsing, web backend status
   parsing, and native status parsing do not each hand-build the same
   active/preheat/stoppable context input.
+- [x] Move LCD status-screen display-name and print-context access behind
+  `backend_comm` helper accessors so the screen no longer carries its own
+  retained-name cache, status-payload filename context, or active/preparing/
+  stoppable/aborting predicates.
 - [x] Move stock print-service request/status vocabulary for `PREPARE`,
   preheat/preheating, idle, printing, paused, aborting, complete, and error
   into shared native print-state rules so native status serialization,

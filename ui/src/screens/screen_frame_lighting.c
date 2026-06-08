@@ -8,7 +8,6 @@
 #include "locale.h"
 #include "backend_comm.h"
 #include "gcode_command.h"
-#include "print_state_rules.h"
 #include "lvgl.h"
 
 #include <stdint.h>
@@ -237,16 +236,11 @@ static void frame_destroy(void)
 
 static void startup_apply_timer_cb(lv_timer_t *timer)
 {
-    const printer_state_t *state = backend_get_state();
-
     startup_apply_attempts++;
     if (startup_apply_attempts < STARTUP_APPLY_SETTLE_ATTEMPTS)
         return;
 
-    if (!state ||
-        !deneb_print_manual_action_allowed(state->connected, state->has_error,
-                                           state->is_paused,
-                                           state->is_printing)) {
+    if (!backend_manual_action_allowed()) {
         if (startup_apply_attempts < STARTUP_APPLY_MAX_ATTEMPTS)
             return;
 

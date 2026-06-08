@@ -169,16 +169,21 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   shared job state-or-none naming,
   shared web/Cura print-job action parsing,
   shared current-job fallback identity,
+  web REST current-job/status adapter accessors,
   shared Cura/pending native job-start identity,
   shared print completion history labeling,
   shared active/preparing/stoppable print-context decisions,
+  LCD status-screen print-context adapter accessors,
+  LCD/web manual-action readiness adapter helpers,
   touchscreen/web macro and G-code command helper routing,
   shared backend route diagnostics,
   touchscreen conflict actions and Cura cluster pending-job actions through
-  native `JOB`/`ABORT` backend commands, native Cura upload registration and
-  no-conflict `JOB` startup, reversible native-vs-stock print service init
+  native `JOB`/`ABORT` backend adapter helpers, native Cura upload registration
+  planning, no-conflict `JOB` startup, reversible native-vs-stock print service init
   gating, low-volume side-by-side diagnostic logging, native
   frame-light/material-import/diagnostics UI helpers, native
+  default pending-upload classification, shared queued upload response formatting,
+  native
   error mapping, and native diagnostics slices. It is still disabled by default
   and does not yet satisfy the release criteria for replacing stock
   `printserver`.

@@ -79,6 +79,15 @@ deneb_print_backend_t backend_get_print_backend(void);
 const char *backend_get_print_backend_name(void);
 const char *backend_get_print_backend_status_url(void);
 const char *backend_get_print_backend_command_url(void);
+int backend_is_ready(void);
+int backend_manual_action_allowed(void);
+int backend_get_print_display_name(char *out, size_t out_sz);
+int backend_has_print_name(const char *display_name);
+int backend_has_active_print_context(void);
+int backend_has_preparing_print_context(void);
+int backend_has_stoppable_print_context(void);
+int backend_has_abort_print_context(void);
+void backend_clear_print_display_context_if_idle(void);
 
 /**
  * Send a G-code command to the printer.
@@ -90,6 +99,7 @@ int backend_send_gcodes(const char *const *gcodes, size_t count);
 int backend_send_macro(const char *macro);
 int backend_send_job(const char *path, const char *source, const char *uuid,
                      float bed_target, float head_target);
+int backend_send_pending_instruction(const char *instruction);
 
 /**
  * Send a command to the selected backend.

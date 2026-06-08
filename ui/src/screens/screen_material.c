@@ -52,15 +52,12 @@ extern const screen_ops_t screen_material_workflow;
 
 static int material_backend_ready(void)
 {
-    const printer_state_t *s = backend_get_state();
-    return s && s->connected && !s->has_error;
+    return backend_is_ready();
 }
 
 static int material_motion_allowed(void)
 {
-    const printer_state_t *s = backend_get_state();
-    return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
-                                                  s->is_paused, s->is_printing);
+    return backend_manual_action_allowed();
 }
 
 static int material_temp_ready(const printer_state_t *s)

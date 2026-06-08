@@ -27,32 +27,6 @@ int print_conflict_has_pending(void)
     return deneb_pending_job_file_load_conflict_default(&job) == 0;
 }
 
-static int send_pending_instruction(const char *instruction)
-{
-    deneb_pending_job_file_t job;
-    deneb_pending_job_action_plan_t plan;
-
-    if (deneb_pending_job_file_load_default(&job) != 0 ||
-        deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0)
-        return -1;
-
-    fprintf(stderr, "touch-ui: send_pending_instruction action=%s tracker=%d path=%s\n",
-            instruction, plan.tracker, plan.path[0] ? plan.path : "(none)");
-
-    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
-        if (backend_abort_print() != 0)
-            return -1;
-    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
-        if (backend_send_job(plan.path, plan.source, plan.uuid,
-                             0.0f, 0.0f) != 0)
-            return -1;
-    } else {
-        return -1;
-    }
-
-    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
-}
-
 static void finish_prompt(const char *status_key, int remove_pending)
 {
     if (remove_pending)
@@ -67,7 +41,7 @@ static void continue_btn_cb(lv_event_t *e)
     (void)e;
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
-    if (send_pending_instruction(DENEB_PRINT_REQ_PREPARE) == 0) {
+    if (backend_send_pending_instruction(DENEB_PRINT_REQ_PREPARE) == 0) {
         finish_prompt("print_conflict.continuing", 0);
     } else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
@@ -78,7 +52,7 @@ static void cancel_btn_cb(lv_event_t *e)
     (void)e;
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.cancelled"));
-    if (send_pending_instruction(DENEB_COMMAND_VERB_ABORT) == 0)
+    if (backend_send_pending_instruction(DENEB_COMMAND_VERB_ABORT) == 0)
         finish_prompt("print_conflict.cancelled", 0);
     else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));

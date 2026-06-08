@@ -303,11 +303,8 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     json_obj_open(&w);
 
     /* Current job */
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
-    deneb_print_job_summary_init(&summary, s->filename, s->uuid, s->source,
-                                 s->has_error, s->is_paused, s->is_printing,
-                                 s->time_total, s->time_left, s->progress);
+    backend_zmq_get_job_summary(&summary);
     if (summary.active) {
         json_key(&w, "current");
         json_obj_open(&w);

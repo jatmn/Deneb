@@ -27,21 +27,6 @@
 static int persist_uploaded_material(const http_request_t *req);
 static void write_cluster_materials_response(http_response_t *resp);
 
-static const char *cluster_printer_status(const printer_state_t *s)
-{
-    return deneb_print_status_label(s->connected, s->has_error,
-                                    s->is_paused, s->is_printing);
-}
-
-static int has_active_job(const printer_state_t *s)
-{
-    deneb_print_job_summary_t summary;
-    deneb_print_job_summary_init(&summary, s->filename, s->uuid, s->source,
-                                 s->has_error, s->is_paused, s->is_printing,
-                                 s->time_total, s->time_left, s->progress);
-    return summary.active;
-}
-
 static int serve_pending_cluster_job(http_response_t *resp)
 {
     char buf[8192];
@@ -65,41 +50,6 @@ static int has_pending_job(void)
 
     return load_pending_job(&job) == 0 &&
            deneb_pending_job_file_is_pending(&job);
-}
-
-static int send_pending_job_instruction(const char *instruction)
-{
-    deneb_pending_job_file_t job;
-    deneb_pending_job_action_plan_t plan;
-
-    if (load_pending_job(&job) < 0)
-        return -1;
-
-    if (deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0) {
-        fprintf(stderr, "deneb-api: failed to plan pending job instruction=%s\n",
-                instruction ? instruction : "(none)");
-        return -1;
-    }
-    if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
-        fprintf(stderr, "deneb-api: pending print path resolved to %s\n",
-                plan.path[0] ? plan.path : "(none)");
-    }
-
-    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d\n",
-            instruction, plan.tracker);
-
-    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
-        if (backend_zmq_abort() < 0)
-            return -1;
-    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
-        if (backend_zmq_send_job(plan.path, plan.source, plan.uuid,
-                                 0.0f, 0.0f) < 0)
-            return -1;
-    } else {
-        return -1;
-    }
-
-    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
 }
 
 static void write_configuration(json_writer_t *w)
@@ -190,7 +140,6 @@ static void write_cluster_materials_response(http_response_t *resp)
 void api_cluster_printers_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char hostname[64];
     char guid[48];
     char buf[2048];
@@ -205,7 +154,7 @@ void api_cluster_printers_get(const http_request_t *req, http_response_t *resp)
     json_bool(&w, "enabled", 1);
     json_str(&w, "friendly_name", hostname);
     json_str(&w, "machine_variant", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
-    json_str(&w, "status", cluster_printer_status(s));
+    json_str(&w, "status", backend_zmq_get_status_label());
     json_str(&w, "unique_name", hostname);
     json_str(&w, "uuid", guid);
     write_configuration(&w);
@@ -228,16 +177,13 @@ void api_cluster_printers_get(const http_request_t *req, http_response_t *resp)
 void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char guid[48];
     char created_at[32];
     char buf[2048];
     json_writer_t w;
     deneb_print_job_summary_t summary;
 
-    deneb_print_job_summary_init(&summary, s->filename, s->uuid, s->source,
-                                 s->has_error, s->is_paused, s->is_printing,
-                                 s->time_total, s->time_left, s->progress);
+    backend_zmq_get_job_summary(&summary);
     if (!summary.active) {
         if (serve_pending_cluster_job(resp))
             return;
@@ -323,13 +269,13 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
     log_cluster_action(action, pending_job, req->path);
 
     if (deneb_print_action_is_resume_or_start(action) && pending_job) {
-        if (send_pending_job_instruction(DENEB_PRINT_REQ_PREPARE) != 0) {
+        if (backend_zmq_send_pending_instruction(DENEB_PRINT_REQ_PREPARE) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
         }
     } else if (deneb_print_action_is_abort(action) && pending_job) {
-        if (send_pending_job_instruction(DENEB_COMMAND_VERB_ABORT) != 0) {
+        if (backend_zmq_send_pending_instruction(DENEB_COMMAND_VERB_ABORT) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
             return;
@@ -358,8 +304,7 @@ void api_cluster_print_job_put(const http_request_t *req, http_response_t *resp)
 void api_cluster_print_job_delete(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
-    if (!has_active_job(s)) {
+    if (!backend_zmq_has_active_job()) {
         deneb_pending_job_file_clear_default();
         resp->status_code = 204;
         return;

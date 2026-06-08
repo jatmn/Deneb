@@ -2,6 +2,8 @@
 #ifndef DENEB_PRINT_JOB_SUMMARY_H
 #define DENEB_PRINT_JOB_SUMMARY_H
 
+#include <stddef.h>
+
 typedef struct {
     const char *name;
     const char *uuid;
@@ -28,5 +30,9 @@ void deneb_print_job_summary_init(deneb_print_job_summary_t *summary,
                                   float progress_percent);
 void deneb_print_job_summary_init_queued(deneb_print_job_summary_t *summary,
                                          const char *name);
+int deneb_print_job_summary_format_queued_response(const char *message,
+                                                   const char *name,
+                                                   char *out,
+                                                   size_t out_sz);
 
 #endif

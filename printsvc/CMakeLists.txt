@@ -92,6 +92,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/pause_resume.c
     src/pause_resume_control.c
     src/pending_job.c
+    src/pending_job_registration.c
     src/print_control.c
     src/runtime_diagnostics.c
     src/serial_transport.c

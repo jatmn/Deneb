@@ -18,7 +18,6 @@
 #include "backend_comm.h"
 #include "gcode_command.h"
 #include "print_macros.h"
-#include "print_state_rules.h"
 #include "lvgl.h"
 #include <stdio.h>
 
@@ -34,9 +33,7 @@ static int current_step_idx = 1;
 
 static int motion_allowed(void)
 {
-    const printer_state_t *s = backend_get_state();
-    return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
-                                                  s->is_paused, s->is_printing);
+    return backend_manual_action_allowed();
 }
 
 static void set_position_label(lv_obj_t *label, const char *axis, float pos)

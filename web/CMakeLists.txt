@@ -84,6 +84,7 @@ set(DENEB_API_SOURCES
     ../common/print/print_state_rules.c
     ../common/print/status_payload.c
     ../printsvc/src/pending_job.c
+    ../printsvc/src/pending_job_registration.c
     ../printsvc/src/print_control.c
 )
 

@@ -7,11 +7,10 @@
 #include "api_print_job.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
-#include "pending_job.h"
 #include "pending_job_file.h"
+#include "pending_job_registration.h"
 #include "print_job_file.h"
 #include "print_job_summary.h"
-#include "print_profile.h"
 #include "print_state_rules.h"
 
 #include <errno.h>
@@ -41,22 +40,9 @@ static void set_message_response(http_response_t *resp, int status_code,
 static void write_pending_job_response(http_response_t *resp, const char *job_name, int status_code)
 {
     char buf[512];
-    json_writer_t w;
-    deneb_print_job_summary_t summary;
 
-    deneb_print_job_summary_init_queued(&summary, job_name);
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_str(&w, "message", "Print job already queued");
-    json_str(&w, "name", summary.name);
-    json_str(&w, "uuid", summary.uuid);
-    json_str(&w, "source", summary.source);
-    json_str(&w, "state", summary.state);
-    json_float(&w, "progress", summary.progress_fraction);
-    json_int(&w, "time_elapsed", summary.time_elapsed);
-    json_int(&w, "time_total", summary.time_total);
-    json_obj_close(&w);
-    json_len(&w);
+    deneb_print_job_summary_format_queued_response(
+        "Print job already queued", job_name, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
     resp->status_code = status_code;
 }
@@ -69,59 +55,20 @@ static int send_native_job_start(const char *path)
 
 static int register_native_print(const char *path)
 {
-    deneb_pending_job_t job;
-    char loaded_guid[64];
-    char loaded_nozzle[24];
-    char target_guid[64];
-    char target_nozzle_raw[24];
-    char target_nozzle[24];
-    char loaded_name[64];
-    char target_name[64];
-    deneb_print_job_file_metadata_t meta;
+    deneb_pending_job_registration_t registration;
 
     fprintf(stderr, "deneb-api: registering print path natively: %s\n", path);
 
-    deneb_print_profile_read_loaded_material_guid(loaded_guid, sizeof(loaded_guid));
-    deneb_print_profile_read_loaded_nozzle_size(loaded_nozzle, sizeof(loaded_nozzle));
-
-    snprintf(target_guid, sizeof(target_guid), "%s", loaded_guid);
-    snprintf(target_nozzle_raw, sizeof(target_nozzle_raw), "%s", loaded_nozzle);
-    deneb_print_job_file_metadata_init(&meta);
-    if (deneb_print_job_file_metadata_load(path, &meta) == 0) {
-        if (meta.material_guid[0])
-            snprintf(target_guid, sizeof(target_guid), "%s", meta.material_guid);
-        if (meta.nozzle_size[0])
-            snprintf(target_nozzle_raw, sizeof(target_nozzle_raw), "%s", meta.nozzle_size);
-    }
-    deneb_print_profile_normalize_nozzle_id(loaded_nozzle, loaded_nozzle, sizeof(loaded_nozzle));
-    deneb_print_profile_normalize_nozzle_id(target_nozzle_raw, target_nozzle, sizeof(target_nozzle));
-    deneb_print_profile_material_name_from_guid(loaded_guid, loaded_name, sizeof(loaded_name));
-    deneb_print_profile_material_name_from_guid(target_guid, target_name, sizeof(target_name));
-
-    deneb_pending_job_init(&job, path);
-    job.tracker = (int)(time(NULL) & 0x7fffffff);
-    snprintf(job.source, sizeof(job.source), "%s",
-             DENEB_PRINT_DEFAULT_JOB_SOURCE);
-    snprintf(job.material_guid, sizeof(job.material_guid), "%s", target_guid);
-    snprintf(job.origin_material_guid, sizeof(job.origin_material_guid), "%s", loaded_guid);
-    snprintf(job.origin_material_name, sizeof(job.origin_material_name), "%s", loaded_name);
-    snprintf(job.target_material_name, sizeof(job.target_material_name), "%s", target_name);
-    snprintf(job.material_type, sizeof(job.material_type), "%s", target_name);
-    snprintf(job.nozzle_id, sizeof(job.nozzle_id), "%s", target_nozzle);
-    snprintf(job.origin_nozzle_id, sizeof(job.origin_nozzle_id), "%s", loaded_nozzle);
-    job.material_change_required =
-        loaded_guid[0] && target_guid[0] && strcmp(loaded_guid, target_guid) != 0;
-    job.print_core_change_required =
-        loaded_nozzle[0] && target_nozzle[0] && strcmp(loaded_nozzle, target_nozzle) != 0;
-
-    if (deneb_pending_job_write_default(&job) < 0) {
+    if (deneb_pending_job_registration_prepare(
+            path, (long long)time(NULL), &registration) < 0 ||
+        deneb_pending_job_registration_write_default(&registration) < 0) {
         fprintf(stderr, "deneb-api: failed to write pending print metadata for %s\n", path);
         return -1;
     }
 
-    if (deneb_pending_job_change_count(&job) > 0) {
+    if (!registration.should_start_immediately) {
         fprintf(stderr, "deneb-api: pending print waits for user action changes=%d\n",
-                deneb_pending_job_change_count(&job));
+                registration.change_count);
         return 0;
     }
 
@@ -134,21 +81,12 @@ static int register_native_print(const char *path)
     return 0;
 }
 
-static void current_job_summary(const printer_state_t *s,
-                                deneb_print_job_summary_t *summary)
-{
-    deneb_print_job_summary_init(summary, s->filename, s->uuid, s->source,
-                                 s->has_error, s->is_paused, s->is_printing,
-                                 s->time_total, s->time_left, s->progress);
-}
-
 void api_print_job_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
 
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     if (!summary.active) {
         resp->status_code = 404;
         api_http_set_body_str(resp, "{\"message\":\"Not found\"}");
@@ -176,9 +114,8 @@ void api_print_job_get(const http_request_t *req, http_response_t *resp)
 void api_print_job_state_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     if (!summary.active) {
         resp->status_code = 404;
         api_http_set_body_str(resp, "{\"message\":\"Not found\"}");
@@ -192,10 +129,9 @@ void api_print_job_state_get(const http_request_t *req, http_response_t *resp)
 void api_print_job_progress_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
     char buf[16];
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     snprintf(buf, sizeof(buf), "%.1f", summary.progress_fraction);
     api_http_set_body_str(resp, buf);
 }
@@ -203,10 +139,9 @@ void api_print_job_progress_get(const http_request_t *req, http_response_t *resp
 void api_print_job_time_elapsed_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
     char buf[16];
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     snprintf(buf, sizeof(buf), "%d", summary.time_elapsed);
     api_http_set_body_str(resp, buf);
 }
@@ -214,10 +149,9 @@ void api_print_job_time_elapsed_get(const http_request_t *req, http_response_t *
 void api_print_job_time_total_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
     char buf[16];
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     snprintf(buf, sizeof(buf), "%d", summary.time_total);
     api_http_set_body_str(resp, buf);
 }
@@ -225,11 +159,10 @@ void api_print_job_time_total_get(const http_request_t *req, http_response_t *re
 void api_print_job_name_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
     char buf[196];
     json_writer_t w;
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     json_init(&w, buf, sizeof(buf));
     json_bare_str(&w, summary.name);
     json_len(&w);
@@ -239,11 +172,10 @@ void api_print_job_name_get(const http_request_t *req, http_response_t *resp)
 void api_print_job_uuid_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
     char buf[96];
     json_writer_t w;
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     json_init(&w, buf, sizeof(buf));
     json_bare_str(&w, summary.uuid);
     json_len(&w);
@@ -253,11 +185,10 @@ void api_print_job_uuid_get(const http_request_t *req, http_response_t *resp)
 void api_print_job_source_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     deneb_print_job_summary_t summary;
     char buf[64];
     json_writer_t w;
-    current_job_summary(s, &summary);
+    backend_zmq_get_job_summary(&summary);
     json_init(&w, buf, sizeof(buf));
     json_bare_str(&w, summary.source);
     json_len(&w);
@@ -378,11 +309,9 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         return;
     }
 
-    deneb_pending_job_file_t pending;
     deneb_pending_job_upload_check_t pending_upload;
-    if (deneb_pending_job_file_load_pending_default(&pending) == 0 &&
-        deneb_pending_job_file_check_upload(&pending, dest_path, filename,
-                                            &pending_upload) == 0 &&
+    if (deneb_pending_job_file_check_upload_default(dest_path, filename,
+                                                    &pending_upload) == 0 &&
         pending_upload.status != DENEB_PENDING_JOB_UPLOAD_CLEAR) {
         if (pending_upload.status == DENEB_PENDING_JOB_UPLOAD_DUPLICATE) {
             fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n",
@@ -422,24 +351,10 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     }
     fprintf(stderr, "deneb-api: native registration accepted and print metadata prepared for %s\n", filename);
 
-    /* Return print job info */
     char buf[512];
-    json_writer_t w;
-    deneb_print_job_summary_t summary;
 
-    deneb_print_job_summary_init_queued(&summary, filename);
-    json_init(&w, buf, sizeof(buf));
-    json_obj_open(&w);
-    json_str(&w, "message", "Print job accepted");
-    json_str(&w, "name", summary.name);
-    json_str(&w, "uuid", summary.uuid);
-    json_str(&w, "source", summary.source);
-    json_str(&w, "state", summary.state);
-    json_float(&w, "progress", summary.progress_fraction);
-    json_int(&w, "time_elapsed", summary.time_elapsed);
-    json_int(&w, "time_total", summary.time_total);
-    json_obj_close(&w);
-    json_len(&w);
+    deneb_print_job_summary_format_queued_response(
+        "Print job accepted", filename, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
     resp->status_code = 201;
 }

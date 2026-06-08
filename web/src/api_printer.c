@@ -12,7 +12,6 @@
 #include "pending_job_file.h"
 #include "print_macros.h"
 #include "print_profile.h"
-#include "print_state_rules.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -20,8 +19,8 @@
 
 static int motion_allowed(const printer_state_t *s)
 {
-    return s && deneb_print_manual_action_allowed(s->connected, s->has_error,
-                                                  s->is_paused, s->is_printing);
+    (void)s;
+    return backend_zmq_manual_action_allowed();
 }
 
 static void set_motion_blocked(http_response_t *resp)
@@ -120,18 +119,11 @@ static void set_motion_failed(http_response_t *resp)
     api_http_set_body_str(resp, "{\"message\":\"Failed to send motion command\"}");
 }
 
-static const char *get_status_string(const printer_state_t *s)
-{
-    return deneb_print_status_label(s->connected, s->has_error,
-                                    s->is_paused, s->is_printing);
-}
-
 void api_printer_status_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    const printer_state_t *s = backend_zmq_get_state();
     char buf[32];
-    snprintf(buf, sizeof(buf), "\"%s\"", get_status_string(s));
+    snprintf(buf, sizeof(buf), "\"%s\"", backend_zmq_get_status_label());
     api_http_set_body_str(resp, buf);
 }
 
@@ -245,7 +237,7 @@ void api_printer_get(const http_request_t *req, http_response_t *resp)
     json_arr_close(&w); /* heads */
 
     /* status */
-    json_str(&w, "status", get_status_string(s));
+    json_str(&w, "status", backend_zmq_get_status_label());
     json_bool(&w, "connected", s->connected);
     json_bool(&w, "is_printing", s->is_printing);
     json_bool(&w, "is_paused", s->is_paused);

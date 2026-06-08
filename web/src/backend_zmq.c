@@ -47,6 +47,32 @@ int backend_zmq_get_fd(void) { return -1; }
 void backend_zmq_poll(void) {}
 const printer_state_t *backend_zmq_get_state(void) { return &state; }
 const char *backend_zmq_get_status_json(void) { return "{}"; }
+const char *backend_zmq_get_status_label(void)
+{
+    return deneb_print_status_label(state.connected, state.has_error,
+                                    state.is_paused, state.is_printing);
+}
+void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)
+{
+    deneb_print_job_summary_init(summary, state.filename, state.uuid,
+                                 state.source, state.has_error,
+                                 state.is_paused, state.is_printing,
+                                 state.time_total, state.time_left,
+                                 state.progress);
+}
+int backend_zmq_has_active_job(void)
+{
+    deneb_print_job_summary_t summary;
+
+    backend_zmq_get_job_summary(&summary);
+    return summary.active;
+}
+int backend_zmq_manual_action_allowed(void)
+{
+    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+                                             state.is_paused,
+                                             state.is_printing);
+}
 deneb_print_backend_t backend_zmq_get_print_backend(void) { return backend_route.backend; }
 const char *backend_zmq_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
 const char *backend_zmq_get_print_backend_status_url(void) { return backend_route.status_url; }
@@ -60,6 +86,11 @@ int backend_zmq_send_job(const char *path, const char *source,
                          float head_target)
 {
     (void)path; (void)source; (void)uuid; (void)bed_target; (void)head_target;
+    return 0;
+}
+int backend_zmq_send_pending_instruction(const char *instruction)
+{
+    (void)instruction;
     return 0;
 }
 int backend_zmq_pause(void) { return 0; }
@@ -448,6 +479,36 @@ const char *backend_zmq_get_status_json(void)
     return "{}";
 }
 
+const char *backend_zmq_get_status_label(void)
+{
+    return deneb_print_status_label(state.connected, state.has_error,
+                                    state.is_paused, state.is_printing);
+}
+
+void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)
+{
+    deneb_print_job_summary_init(summary, state.filename, state.uuid,
+                                 state.source, state.has_error,
+                                 state.is_paused, state.is_printing,
+                                 state.time_total, state.time_left,
+                                 state.progress);
+}
+
+int backend_zmq_has_active_job(void)
+{
+    deneb_print_job_summary_t summary;
+
+    backend_zmq_get_job_summary(&summary);
+    return summary.active;
+}
+
+int backend_zmq_manual_action_allowed(void)
+{
+    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+                                             state.is_paused,
+                                             state.is_printing);
+}
+
 deneb_print_backend_t backend_zmq_get_print_backend(void)
 {
     return backend_route.backend;
@@ -560,6 +621,36 @@ int backend_zmq_send_job(const char *path, const char *source,
     }
     retain_backend_filename(path);
     return backend_zmq_send_frame(buf, (size_t)len);
+}
+
+int backend_zmq_send_pending_instruction(const char *instruction)
+{
+    deneb_pending_job_file_t job;
+    deneb_pending_job_action_plan_t plan;
+
+    if (deneb_pending_job_file_load_pending_default(&job) < 0 ||
+        deneb_pending_job_file_plan_action(&job, instruction, &plan) != 0) {
+        fprintf(stderr, "deneb-api: failed to plan pending job instruction=%s\n",
+                instruction ? instruction : "(none)");
+        return -1;
+    }
+
+    fprintf(stderr, "deneb-api: sending pending job instruction=%s tracker=%d path=%s\n",
+            instruction ? instruction : "(none)",
+            plan.tracker, plan.path[0] ? plan.path : "(none)");
+
+    if (plan.kind == DENEB_PENDING_JOB_ACTION_ABORT) {
+        if (backend_zmq_abort() < 0)
+            return -1;
+    } else if (plan.kind == DENEB_PENDING_JOB_ACTION_START) {
+        if (backend_zmq_send_job(plan.path, plan.source, plan.uuid,
+                                 0.0f, 0.0f) < 0)
+            return -1;
+    } else {
+        return -1;
+    }
+
+    return deneb_pending_job_file_finish_action(DENEB_PENDING_JOB_PATH, &plan);
 }
 
 int backend_zmq_pause(void)

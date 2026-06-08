@@ -213,6 +213,24 @@ int deneb_pending_job_file_check_upload(const deneb_pending_job_file_t *job,
     return 0;
 }
 
+int deneb_pending_job_file_check_upload_default(
+    const char *candidate_path,
+    const char *fallback_name,
+    deneb_pending_job_upload_check_t *check)
+{
+    deneb_pending_job_file_t job;
+
+    if (!check)
+        return -1;
+
+    deneb_pending_job_upload_check_init(check);
+    if (deneb_pending_job_file_load_pending_default(&job) != 0)
+        return 0;
+
+    return deneb_pending_job_file_check_upload(&job, candidate_path,
+                                               fallback_name, check);
+}
+
 int deneb_pending_job_file_display_value(const char *value, char *out, size_t out_sz)
 {
     const char *base;
