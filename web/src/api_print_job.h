@@ -8,6 +8,7 @@
 #define API_PRINT_JOB_H
 
 #include "api_http.h"
+#include "print_state_rules.h"
 
 void api_print_job_get(const http_request_t *req, http_response_t *resp);
 void api_print_job_state_get(const http_request_t *req, http_response_t *resp);
@@ -25,5 +26,7 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp);
 void api_print_job_post(const http_request_t *req, http_response_t *resp);
 int api_print_job_dispatch_action(const char *action, http_response_t *resp,
                                   const char *unknown_message);
+int api_print_job_dispatch_plan(const deneb_print_action_plan_t *plan,
+                                http_response_t *resp);
 
 #endif

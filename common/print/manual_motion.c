@@ -66,3 +66,14 @@ int deneb_manual_motion_plan_request(const char *json,
 
     return DENEB_MANUAL_MOTION_PLAN_OK;
 }
+
+const char *deneb_manual_motion_plan_error_response(int rc)
+{
+    switch (rc) {
+        case DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION:
+            return "{\"message\":\"Unknown motion action\"}";
+        case DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST:
+        default:
+            return "{\"message\":\"Expected {\\\"action\\\":\\\"home|z_home|bed_up|bed_down\\\"}\"}";
+    }
+}

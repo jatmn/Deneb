@@ -23,14 +23,11 @@ static int current_pending = 0;
 
 int print_conflict_has_pending(void)
 {
-    deneb_pending_job_file_t job;
-    return deneb_pending_job_file_load_conflict_default(&job) == 0;
+    return deneb_pending_job_file_has_conflict_default();
 }
 
-static void finish_prompt(const char *status_key, int remove_pending)
+static void finish_prompt(const char *status_key)
 {
-    if (remove_pending)
-        deneb_pending_job_file_clear_default();
     if (status_label)
         lv_label_set_text(status_label, locale_get(status_key));
     screen_mgr_pop();
@@ -42,7 +39,7 @@ static void continue_btn_cb(lv_event_t *e)
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.continuing"));
     if (backend_send_pending_instruction(DENEB_PRINT_REQ_PREPARE) == 0) {
-        finish_prompt("print_conflict.continuing", 0);
+        finish_prompt("print_conflict.continuing");
     } else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
 }
@@ -53,7 +50,7 @@ static void cancel_btn_cb(lv_event_t *e)
     if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.cancelled"));
     if (backend_send_pending_instruction(DENEB_COMMAND_VERB_ABORT) == 0)
-        finish_prompt("print_conflict.cancelled", 0);
+        finish_prompt("print_conflict.cancelled");
     else if (status_label)
         lv_label_set_text(status_label, locale_get("print_conflict.action_failed"));
 }
@@ -76,27 +73,18 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text,
 
 static void load_prompt_text(void)
 {
-    deneb_pending_job_file_t job_file;
-    char job[96] = "network print";
-    char loaded[96] = "loaded material";
-    char wanted[96] = "sliced material";
+    deneb_pending_job_conflict_prompt_t prompt;
     char msg[256];
     char detail[160];
 
     current_pending = 0;
-    if (deneb_pending_job_file_load_default(&job_file) == 0) {
-        if (job_file.name[0])
-            snprintf(job, sizeof(job), "%s", job_file.name);
-        if (job_file.origin_name[0])
-            snprintf(loaded, sizeof(loaded), "%s", job_file.origin_name);
-        if (job_file.target_name[0])
-            snprintf(wanted, sizeof(wanted), "%s", job_file.target_name);
-        current_pending = deneb_pending_job_file_is_pending(&job_file);
-    }
+    deneb_pending_job_file_conflict_prompt_default(&prompt);
+    current_pending = prompt.is_pending;
 
     snprintf(msg, sizeof(msg), locale_get("print_conflict.message_fmt"),
-             wanted, loaded);
-    snprintf(detail, sizeof(detail), locale_get("print_conflict.job_fmt"), job);
+             prompt.target_name, prompt.loaded_name);
+    snprintf(detail, sizeof(detail), locale_get("print_conflict.job_fmt"),
+             prompt.job_name);
 
     lv_label_set_text(message_label, msg);
     lv_label_set_text(detail_label, detail);

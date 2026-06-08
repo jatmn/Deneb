@@ -27,35 +27,34 @@ static void set_motion_failed(http_response_t *resp)
     api_http_set_body_str(resp, "{\"message\":\"Failed to send motion command\"}");
 }
 
+static void set_heater_target(const http_request_t *req,
+                              http_response_t *resp,
+                              deneb_gcode_heater_t heater)
+{
+    float temp = 0.0f;
+    char cmd[32];
+
+    if (deneb_gcode_plan_temperature_target_from_json(
+            heater, req->body, &temp, cmd, sizeof(cmd)) < 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp,
+                              deneb_gcode_temperature_target_error_response());
+        return;
+    }
+
+    if (backend_zmq_send_gcode(cmd) < 0) {
+        resp->status_code = 503;
+        api_http_set_body_str(resp, "{\"message\":\"Failed to set temperature\"}");
+        return;
+    }
+
+    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+}
+
 static void set_motion_plan_error(http_response_t *resp, int rc)
 {
     resp->status_code = 400;
-    switch (rc) {
-        case DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE:
-            api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}");
-            break;
-        case DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE:
-            api_http_set_body_str(resp, "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}");
-            break;
-        case DENEB_GCODE_MOTION_PLAN_ERR_X:
-            api_http_set_body_str(resp, "{\"message\":\"Invalid x position\"}");
-            break;
-        case DENEB_GCODE_MOTION_PLAN_ERR_Y:
-            api_http_set_body_str(resp, "{\"message\":\"Invalid y position\"}");
-            break;
-        case DENEB_GCODE_MOTION_PLAN_ERR_Z:
-            api_http_set_body_str(resp, "{\"message\":\"Invalid z position\"}");
-            break;
-        case DENEB_GCODE_MOTION_PLAN_ERR_VOLUME:
-            api_http_set_body_str(resp, "{\"message\":\"Position is outside the printable volume\"}");
-            break;
-        case DENEB_GCODE_MOTION_PLAN_ERR_SPEED:
-            api_http_set_body_str(resp, "{\"message\":\"Invalid movement speed\"}");
-            break;
-        default:
-            api_http_set_body_str(resp, "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}");
-            break;
-    }
+    api_http_set_body_str(resp, deneb_gcode_motion_plan_error_response(rc));
 }
 
 static int send_motion_plan(const deneb_gcode_motion_plan_t *plan)
@@ -371,38 +370,12 @@ void api_printer_airmanager_get(const http_request_t *req, http_response_t *resp
 
 void api_printer_bed_temp_put(const http_request_t *req, http_response_t *resp)
 {
-    float temp = 0;
-    char cmd[32];
-    if (deneb_gcode_plan_temperature_target_from_json(
-            DENEB_GCODE_HEATER_BED, req->body, &temp, cmd, sizeof(cmd)) < 0) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
-        return;
-    }
-    if (backend_zmq_send_gcode(cmd) < 0) {
-        resp->status_code = 503;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to set temperature\"}");
-        return;
-    }
-    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+    set_heater_target(req, resp, DENEB_GCODE_HEATER_BED);
 }
 
 void api_printer_hotend_temp_put(const http_request_t *req, http_response_t *resp)
 {
-    float temp = 0;
-    char cmd[32];
-    if (deneb_gcode_plan_temperature_target_from_json(
-            DENEB_GCODE_HEATER_NOZZLE, req->body, &temp, cmd, sizeof(cmd)) < 0) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Invalid temperature\"}");
-        return;
-    }
-    if (backend_zmq_send_gcode(cmd) < 0) {
-        resp->status_code = 503;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to set temperature\"}");
-        return;
-    }
-    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+    set_heater_target(req, resp, DENEB_GCODE_HEATER_NOZZLE);
 }
 
 void api_printer_bed_preheat_put(const http_request_t *req, http_response_t *resp)
@@ -445,14 +418,10 @@ void api_printer_position_post(const http_request_t *req, http_response_t *resp)
     }
 
     rc = deneb_manual_motion_plan_request(req->body, &plan);
-    if (rc == DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST) {
+    if (rc != DENEB_MANUAL_MOTION_PLAN_OK) {
         resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"home|z_home|bed_up|bed_down\\\"}\"}");
-        return;
-    }
-    if (rc == DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION) {
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Unknown motion action\"}");
+        api_http_set_body_str(resp,
+                              deneb_manual_motion_plan_error_response(rc));
         return;
     }
 

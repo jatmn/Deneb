@@ -96,6 +96,7 @@ int deneb_gcode_format_absolute_position(int has_x, float x,
 void deneb_gcode_motion_plan_init(deneb_gcode_motion_plan_t *plan);
 int deneb_gcode_plan_motion_from_json(const char *json,
                                       deneb_gcode_motion_plan_t *plan);
+const char *deneb_gcode_motion_plan_error_response(int rc);
 int deneb_gcode_format_nozzle_target(float temp_c, char *out, size_t out_sz);
 int deneb_gcode_format_bed_target(float temp_c, char *out, size_t out_sz);
 int deneb_gcode_format_heater_target(deneb_gcode_heater_t heater,
@@ -108,6 +109,7 @@ int deneb_gcode_plan_temperature_target_from_json(
     float *out_temp_c,
     char *out_gcode,
     size_t out_gcode_sz);
+const char *deneb_gcode_temperature_target_error_response(void);
 int deneb_gcode_format_nozzle_off(char *out, size_t out_sz);
 int deneb_gcode_format_bed_off(char *out, size_t out_sz);
 int deneb_gcode_build_cooldown_sequence(deneb_gcode_cooldown_sequence_t *seq);

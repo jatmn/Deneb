@@ -27,5 +27,6 @@ int deneb_manual_motion_plan_action(const char *action,
                                     deneb_manual_motion_plan_t *plan);
 int deneb_manual_motion_plan_request(const char *json,
                                      deneb_manual_motion_plan_t *plan);
+const char *deneb_manual_motion_plan_error_response(int rc);
 
 #endif

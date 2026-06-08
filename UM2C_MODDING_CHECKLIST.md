@@ -744,6 +744,9 @@ Completed implementation slices:
   `common/print/gcode_command.*` so web/API temperature writes, touchscreen
   temperature sliders, and material-workflow target sliders clamp against one
   shared native hardware limit owner.
+- [x] Deduplicate web/API bed and nozzle heater write dispatch and invalid
+  temperature response mapping so both REST endpoints use one native
+  heater-target planning path before sending the backend G-code command.
 - [x] Move touchscreen material load/unload command sequencing into
   `common/print/gcode_command.*` so reset-extruder, extrude/retract distance,
   load/unload feedrates, and movement timeout math live with the shared native
@@ -799,6 +802,29 @@ Completed implementation slices:
   start plan so touchscreen conflict continuation and Cura cluster continuation
   preserve pending path/source/UUID metadata without each hard-coding zero
   temperature targets beside the transport call.
+- [x] Move touchscreen conflict prompt metadata extraction into
+  `common/print/pending_job_file.*` so job/material display defaults,
+  pending-state detection, and conflict flags are not reinterpreted inside the
+  LVGL screen.
+- [x] Move default pending/conflict metadata existence checks into
+  `common/print/pending_job_file.*` so Cura cluster action routing and the
+  touchscreen conflict trigger do not each load and classify the pending file
+  locally.
+- [x] Move Cura cluster pending-job continue/cancel action planning into
+  `common/print/print_state_rules.*` so conflict-resolution dispatch commands,
+  failure messages, and pending-dispatch cleanup boundaries are owned by
+  shared native print-control/dispatch helpers instead of `api_cluster`.
+- [x] Move print-action parse/unknown response bodies into
+  `common/print/print_state_rules.*` so Cura cluster and UM print-job endpoints
+  do not preserve separate API message literals for the same native
+  pause/print/abort action contract.
+- [x] Move normal print-job pause/resume/abort/stop dispatch selection into
+  `common/print/print_action_dispatch.*` so REST endpoints provide only
+  backend transport callbacks while shared native code owns action-plan
+  execution and pending-cleanup triggering.
+- [x] Move Cura cluster print-job delete planning into shared native action
+  rules/dispatch so active-job abort versus idle pending-file cleanup is not
+  decided inside `api_cluster`.
 - [x] Move manual motion action planning into `common/print/manual_motion.*`
   so touchscreen jog buttons and web/API `home`/`z_home`/`bed_up`/`bed_down`
   actions share one native owner for whether a motion action sends a macro or
@@ -807,6 +833,10 @@ Completed implementation slices:
   `common/print/manual_motion.*` so action JSON shape, the legacy home
   fallback, unknown-action classification, and macro-vs-G-code selection are
   not split between REST endpoints and touchscreen helpers.
+- [x] Move web/API motion-plan and manual-motion error response mapping into
+  `common/print/gcode_command.*` and `common/print/manual_motion.*` so REST
+  endpoints no longer keep their own copies of jog, absolute-position, and
+  motion-action validation messages beside the native planners.
 - [x] Move build-plate leveling macro planning into
   `common/print/buildplate_level.*` so the touchscreen leveling workflow no
   longer owns the stock leveling macro filename sequence in LVGL screen code.

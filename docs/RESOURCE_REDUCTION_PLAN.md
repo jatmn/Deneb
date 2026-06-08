@@ -110,10 +110,27 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   behind that formatter, including topcap-derived Air Manager status and LED
   scalar defaults. The web backend adapter now exposes a native printer-status
   response snapshot so REST endpoints do not copy cached backend state fields
-  before formatting printer responses.
+  before formatting printer responses. Motion-plan and manual-motion error
+  responses now live beside the native G-code/manual-motion planners instead
+  of being duplicated in `api_printer`. Cura cluster pending-job continue/cancel
+  planning now lives in shared print-state rules, so conflict-resolution
+  dispatch commands, failure messages, and pending-dispatch cleanup boundaries
+  are no longer encoded in `api_cluster`. The same print-state owner now supplies
+  print-action parse/unknown response bodies for Cura cluster and UM print-job
+  endpoints. Normal print-job pause/resume/abort/stop dispatch selection now
+  lives in `common/print/print_action_dispatch.*`, leaving REST endpoints to
+  provide backend transport callbacks instead of switching over action-plan
+  kinds locally. Cura cluster print-job delete planning also moved into shared
+  action rules/dispatch, so active-job abort versus idle pending-file cleanup
+  is not decided inside `api_cluster`.
   Pending-job continue dispatch uses the
   same helper while preserving queued path/source/UUID metadata, leaving only
-  the transport send in the LCD/web adapters. Cura upload registration now
+  the transport send in the LCD/web adapters. Touchscreen conflict prompt
+  metadata extraction now also lives in `common/print/pending_job_file.*`, so
+  LVGL only renders localized copy for shared job/material defaults, pending
+  state, and conflict flags. Default pending/conflict existence checks moved
+  into the same helper so Cura cluster action routing and the touchscreen
+  conflict trigger no longer load/classify pending metadata locally. Cura upload registration now
   dispatches no-conflict immediate starts through
   `printsvc/src/pending_job_registration.*`, leaving only transport-specific
   callbacks in the web layer. Print-start readiness now has one

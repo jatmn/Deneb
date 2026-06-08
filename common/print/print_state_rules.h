@@ -71,7 +71,8 @@ typedef enum {
     DENEB_PRINT_ACTION_PLAN_PAUSE,
     DENEB_PRINT_ACTION_PLAN_RESUME,
     DENEB_PRINT_ACTION_PLAN_ABORT,
-    DENEB_PRINT_ACTION_PLAN_STOP
+    DENEB_PRINT_ACTION_PLAN_STOP,
+    DENEB_PRINT_ACTION_PLAN_CLEAR_PENDING
 } deneb_print_action_plan_kind_t;
 
 typedef enum {
@@ -169,6 +170,9 @@ int deneb_print_action_parse_or_pending_default(const char *body,
                                                 int has_pending_job,
                                                 char *out,
                                                 size_t out_sz);
+const char *deneb_print_action_parse_error_response(void);
+const char *deneb_print_action_unknown_response(void);
+const char *deneb_print_state_unknown_response(void);
 int deneb_print_action_is_pause(const char *action);
 int deneb_print_action_is_resume_or_start(const char *action);
 int deneb_print_action_is_abort(const char *action);
@@ -177,6 +181,10 @@ int deneb_print_action_is_force(const char *action);
 void deneb_print_action_plan_init(deneb_print_action_plan_t *plan);
 int deneb_print_action_plan(const char *action,
                             deneb_print_action_plan_t *plan);
+int deneb_print_pending_action_plan(const char *action,
+                                    deneb_print_action_plan_t *plan);
+int deneb_print_delete_action_plan(int has_active_job,
+                                   deneb_print_action_plan_t *plan);
 int deneb_print_elapsed_seconds(int time_total, int time_left);
 float deneb_print_progress_percent(int time_total, int time_left);
 float deneb_print_progress_fraction(float progress_percent);

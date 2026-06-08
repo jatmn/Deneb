@@ -27,6 +27,18 @@
 static int persist_uploaded_material(const http_request_t *req);
 static void write_cluster_materials_response(http_response_t *resp);
 
+static void set_json_message(http_response_t *resp,
+                             int status_code,
+                             const char *message)
+{
+    char buf[160];
+
+    resp->status_code = status_code;
+    snprintf(buf, sizeof(buf), "{\"message\":\"%s\"}",
+             message ? message : "");
+    api_http_set_body_str(resp, buf);
+}
+
 static int serve_pending_cluster_job(http_response_t *resp)
 {
     char buf[8192];
@@ -37,19 +49,6 @@ static int serve_pending_cluster_job(http_response_t *resp)
         return 0;
     api_http_set_body(resp, buf, n);
     return 1;
-}
-
-static int load_pending_job(deneb_pending_job_file_t *job)
-{
-    return deneb_pending_job_file_load_pending_default(job);
-}
-
-static int has_pending_job(void)
-{
-    deneb_pending_job_file_t job;
-
-    return load_pending_job(&job) == 0 &&
-           deneb_pending_job_file_is_pending(&job);
 }
 
 static void write_configuration(json_writer_t *w)
@@ -221,7 +220,8 @@ static void log_cluster_action(const char *action, int has_pending_job, const ch
 void api_cluster_print_job_action_put(const http_request_t *req, http_response_t *resp)
 {
     char action[16];
-    int pending_job = has_pending_job();
+    deneb_print_action_plan_t pending_plan;
+    int pending_job = deneb_pending_job_file_has_pending_default();
     if (!strstr(req->path, "/action")) {
         api_cluster_print_job_put(req, resp);
         return;
@@ -230,27 +230,22 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
     if (deneb_print_action_parse_or_pending_default(
             req->body, pending_job, action, sizeof(action)) < 0) {
         resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}");
+        api_http_set_body_str(resp,
+                              deneb_print_action_parse_error_response());
         return;
     }
 
     log_cluster_action(action, pending_job, req->path);
 
-    if (deneb_print_action_is_resume_or_start(action) && pending_job) {
-        if (backend_zmq_send_pending_instruction(DENEB_PRINT_REQ_PREPARE) != 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
-            return;
-        }
-    } else if (deneb_print_action_is_abort(action) && pending_job) {
-        if (backend_zmq_send_pending_instruction(DENEB_COMMAND_VERB_ABORT) != 0) {
-            resp->status_code = 503;
-            api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");
+    if (pending_job &&
+        deneb_print_pending_action_plan(action, &pending_plan) == 0) {
+        if (backend_zmq_send_pending_instruction(pending_plan.command) != 0) {
+            set_json_message(resp, 503, pending_plan.failure_message);
             return;
         }
     } else {
         api_print_job_dispatch_action(action, resp,
-                                      "{\"message\":\"Unknown print job action\"}");
+                                      deneb_print_action_unknown_response());
         return;
     }
 
@@ -271,18 +266,15 @@ void api_cluster_print_job_put(const http_request_t *req, http_response_t *resp)
 
 void api_cluster_print_job_delete(const http_request_t *req, http_response_t *resp)
 {
-    (void)req;
-    if (!backend_zmq_has_active_job()) {
-        deneb_pending_job_file_clear_default();
-        resp->status_code = 204;
-        return;
-    }
+    deneb_print_action_plan_t plan;
 
-    if (backend_zmq_abort() < 0) {
-        resp->status_code = 503;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to abort print\"}");
+    (void)req;
+
+    if (deneb_print_delete_action_plan(backend_zmq_has_active_job(),
+                                       &plan) != 0 ||
+        api_print_job_dispatch_plan(&plan, resp) != 0)
         return;
-    }
+
     resp->status_code = 204;
 }
 

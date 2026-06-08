@@ -47,14 +47,26 @@ typedef struct {
     int tracker;
 } deneb_pending_job_upload_check_t;
 
+typedef struct {
+    char job_name[96];
+    char loaded_name[96];
+    char target_name[96];
+    int is_pending;
+    int has_conflict;
+} deneb_pending_job_conflict_prompt_t;
+
 void deneb_pending_job_file_init(deneb_pending_job_file_t *job);
 void deneb_pending_job_action_plan_init(deneb_pending_job_action_plan_t *plan);
 void deneb_pending_job_upload_check_init(deneb_pending_job_upload_check_t *check);
+void deneb_pending_job_conflict_prompt_init(
+    deneb_pending_job_conflict_prompt_t *prompt);
 int deneb_pending_job_file_load(const char *path,
                                 deneb_pending_job_file_t *job);
 int deneb_pending_job_file_load_default(deneb_pending_job_file_t *job);
 int deneb_pending_job_file_load_pending_default(deneb_pending_job_file_t *job);
 int deneb_pending_job_file_load_conflict_default(deneb_pending_job_file_t *job);
+int deneb_pending_job_file_has_pending_default(void);
+int deneb_pending_job_file_has_conflict_default(void);
 int deneb_pending_job_file_plan_action(const deneb_pending_job_file_t *job,
                                        const char *instruction,
                                        deneb_pending_job_action_plan_t *plan);
@@ -69,6 +81,11 @@ int deneb_pending_job_file_check_upload_default(
     const char *candidate_path,
     const char *fallback_name,
     deneb_pending_job_upload_check_t *check);
+int deneb_pending_job_file_conflict_prompt(
+    const deneb_pending_job_file_t *job,
+    deneb_pending_job_conflict_prompt_t *prompt);
+int deneb_pending_job_file_conflict_prompt_default(
+    deneb_pending_job_conflict_prompt_t *prompt);
 int deneb_pending_job_file_display_name(const deneb_pending_job_file_t *job,
                                         char *out, size_t out_sz);
 int deneb_pending_job_file_display_value(const char *value,

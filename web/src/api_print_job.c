@@ -9,6 +9,7 @@
 #include "backend_zmq.h"
 #include "pending_job_file.h"
 #include "pending_job_registration.h"
+#include "print_action_dispatch.h"
 #include "print_job_file.h"
 #include "print_job_summary.h"
 #include "print_state_rules.h"
@@ -45,6 +46,36 @@ static void write_pending_job_response(http_response_t *resp, const char *job_na
         "Print job already queued", job_name, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
     resp->status_code = status_code;
+}
+
+static int dispatch_pause(void *ctx)
+{
+    (void)ctx;
+    return backend_zmq_pause();
+}
+
+static int dispatch_resume(void *ctx)
+{
+    (void)ctx;
+    return backend_zmq_resume();
+}
+
+static int dispatch_abort(void *ctx)
+{
+    (void)ctx;
+    return backend_zmq_abort();
+}
+
+static int dispatch_stop(void *ctx)
+{
+    (void)ctx;
+    return backend_zmq_stop_print();
+}
+
+static void dispatch_clear_pending(void *ctx)
+{
+    (void)ctx;
+    deneb_pending_job_file_clear_default();
 }
 
 static int registration_start_allowed(void *ctx)
@@ -226,39 +257,47 @@ void api_print_job_datetime_finished_get(const http_request_t *req, http_respons
 
 /* ========== M7 Write Endpoints ========== */
 
+int api_print_job_dispatch_plan(const deneb_print_action_plan_t *plan,
+                                http_response_t *resp)
+{
+    deneb_print_action_dispatch_ops_t ops = {
+        NULL,
+        dispatch_pause,
+        dispatch_resume,
+        dispatch_abort,
+        dispatch_stop,
+        dispatch_clear_pending
+    };
+
+    if (!plan) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, deneb_print_action_unknown_response());
+        return -1;
+    }
+
+    if (deneb_print_action_dispatch(plan, &ops) < 0) {
+        set_message_response(resp, 503, plan->failure_message);
+        return -1;
+    }
+
+    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
+    return 0;
+}
+
 int api_print_job_dispatch_action(const char *action, http_response_t *resp,
                                   const char *unknown_message)
 {
     deneb_print_action_plan_t plan;
-    int rc = -1;
 
     if (deneb_print_action_plan(action, &plan) != 0) {
         resp->status_code = 400;
         api_http_set_body_str(resp, unknown_message ?
                               unknown_message :
-                              "{\"message\":\"Unknown print job action\"}");
+                              deneb_print_action_unknown_response());
         return -1;
     }
 
-    if (plan.kind == DENEB_PRINT_ACTION_PLAN_PAUSE)
-        rc = backend_zmq_pause();
-    else if (plan.kind == DENEB_PRINT_ACTION_PLAN_RESUME)
-        rc = backend_zmq_resume();
-    else if (plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT)
-        rc = backend_zmq_abort();
-    else if (plan.kind == DENEB_PRINT_ACTION_PLAN_STOP)
-        rc = backend_zmq_stop_print();
-
-    if (rc < 0) {
-        set_message_response(resp, 503, plan.failure_message);
-        return -1;
-    }
-
-    if (plan.clear_pending_after_success)
-        deneb_pending_job_file_clear_default();
-
-    api_http_set_body_str(resp, "{\"message\":\"OK\"}");
-    return 0;
+    return api_print_job_dispatch_plan(&plan, resp);
 }
 
 void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
@@ -269,7 +308,8 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
         deneb_print_action_parse(req->body, cmd, sizeof(cmd)) == 0 ? cmd : NULL;
     log_print_job_state_cmd(action, req->body);
 
-    api_print_job_dispatch_action(action, resp, "{\"message\":\"Unknown state\"}");
+    api_print_job_dispatch_action(action, resp,
+                                  deneb_print_state_unknown_response());
 }
 
 void api_print_job_post(const http_request_t *req, http_response_t *resp)

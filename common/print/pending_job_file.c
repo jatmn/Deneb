@@ -34,6 +34,20 @@ void deneb_pending_job_upload_check_init(deneb_pending_job_upload_check_t *check
     check->tracker = -1;
 }
 
+void deneb_pending_job_conflict_prompt_init(
+    deneb_pending_job_conflict_prompt_t *prompt)
+{
+    if (!prompt)
+        return;
+    memset(prompt, 0, sizeof(*prompt));
+    snprintf(prompt->job_name, sizeof(prompt->job_name), "%s",
+             "network print");
+    snprintf(prompt->loaded_name, sizeof(prompt->loaded_name), "%s",
+             "loaded material");
+    snprintf(prompt->target_name, sizeof(prompt->target_name), "%s",
+             "sliced material");
+}
+
 static int read_file(const char *path, char *buf, size_t buf_sz, size_t *out_len)
 {
     FILE *f;
@@ -124,6 +138,18 @@ int deneb_pending_job_file_load_conflict_default(deneb_pending_job_file_t *job)
 {
     return deneb_pending_job_file_load_default(job) == 0 &&
            deneb_pending_job_file_has_conflict(job) ? 0 : -1;
+}
+
+int deneb_pending_job_file_has_pending_default(void)
+{
+    deneb_pending_job_file_t job;
+    return deneb_pending_job_file_load_pending_default(&job) == 0;
+}
+
+int deneb_pending_job_file_has_conflict_default(void)
+{
+    deneb_pending_job_file_t job;
+    return deneb_pending_job_file_load_conflict_default(&job) == 0;
 }
 
 int deneb_pending_job_file_plan_action(const deneb_pending_job_file_t *job,
@@ -229,6 +255,45 @@ int deneb_pending_job_file_check_upload_default(
 
     return deneb_pending_job_file_check_upload(&job, candidate_path,
                                                fallback_name, check);
+}
+
+int deneb_pending_job_file_conflict_prompt(
+    const deneb_pending_job_file_t *job,
+    deneb_pending_job_conflict_prompt_t *prompt)
+{
+    if (!prompt)
+        return -1;
+
+    deneb_pending_job_conflict_prompt_init(prompt);
+    if (!job)
+        return -1;
+
+    if (job->name[0])
+        snprintf(prompt->job_name, sizeof(prompt->job_name), "%s",
+                 job->name);
+    if (job->origin_name[0])
+        snprintf(prompt->loaded_name, sizeof(prompt->loaded_name), "%s",
+                 job->origin_name);
+    if (job->target_name[0])
+        snprintf(prompt->target_name, sizeof(prompt->target_name), "%s",
+                 job->target_name);
+
+    prompt->is_pending = deneb_pending_job_file_is_pending(job);
+    prompt->has_conflict = deneb_pending_job_file_has_conflict(job);
+    return prompt->has_conflict ? 0 : -1;
+}
+
+int deneb_pending_job_file_conflict_prompt_default(
+    deneb_pending_job_conflict_prompt_t *prompt)
+{
+    deneb_pending_job_file_t job;
+
+    if (!prompt)
+        return -1;
+    deneb_pending_job_conflict_prompt_init(prompt);
+    if (deneb_pending_job_file_load_default(&job) != 0)
+        return -1;
+    return deneb_pending_job_file_conflict_prompt(&job, prompt);
 }
 
 int deneb_pending_job_file_display_value(const char *value, char *out, size_t out_sz)

@@ -39,6 +39,7 @@
 #include "pending_job_dispatch.h"
 #include "pending_job_file.h"
 #include "pending_job_registration.h"
+#include "print_action_dispatch.h"
 #include "printer_identity.h"
 #include "printer_status_response.h"
 #include "print_history.h"
@@ -789,6 +790,49 @@ static void test_macro_control_policy(void)
     assert(strstr(reply, "macro failed") != NULL);
 }
 
+typedef struct {
+    int pause_count;
+    int resume_count;
+    int abort_count;
+    int stop_count;
+    int clear_count;
+    int fail_kind;
+} fake_print_action_dispatch_t;
+
+static int fake_dispatch_pause(void *ctx)
+{
+    fake_print_action_dispatch_t *fake = ctx;
+    fake->pause_count++;
+    return fake->fail_kind == DENEB_PRINT_ACTION_PLAN_PAUSE ? -1 : 0;
+}
+
+static int fake_dispatch_resume(void *ctx)
+{
+    fake_print_action_dispatch_t *fake = ctx;
+    fake->resume_count++;
+    return fake->fail_kind == DENEB_PRINT_ACTION_PLAN_RESUME ? -1 : 0;
+}
+
+static int fake_dispatch_abort(void *ctx)
+{
+    fake_print_action_dispatch_t *fake = ctx;
+    fake->abort_count++;
+    return fake->fail_kind == DENEB_PRINT_ACTION_PLAN_ABORT ? -1 : 0;
+}
+
+static int fake_dispatch_stop(void *ctx)
+{
+    fake_print_action_dispatch_t *fake = ctx;
+    fake->stop_count++;
+    return fake->fail_kind == DENEB_PRINT_ACTION_PLAN_STOP ? -1 : 0;
+}
+
+static void fake_dispatch_clear_pending(void *ctx)
+{
+    fake_print_action_dispatch_t *fake = ctx;
+    fake->clear_count++;
+}
+
 static void test_print_state_rules(void)
 {
     deneb_print_observation_t obs = {0};
@@ -1024,6 +1068,12 @@ static void test_print_state_rules(void)
                    "{}", 0, action, sizeof(action)) != 0);
         assert(deneb_print_action_parse_or_pending_default(
                    "{}", 1, action, 3) != 0);
+        assert(strcmp(deneb_print_action_parse_error_response(),
+                      "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}") == 0);
+        assert(strcmp(deneb_print_action_unknown_response(),
+                      "{\"message\":\"Unknown print job action\"}") == 0);
+        assert(strcmp(deneb_print_state_unknown_response(),
+                      "{\"message\":\"Unknown state\"}") == 0);
         assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_PRINT_TEXT));
         assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_RESUME_TEXT));
         assert(deneb_print_action_is_resume_or_start(DENEB_PRINT_ACTION_CONTINUE_TEXT));
@@ -1034,21 +1084,130 @@ static void test_print_state_rules(void)
         assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_PAUSE);
         assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_PAUSE) == 0);
         assert(!action_plan.clear_pending_after_success);
+        {
+            fake_print_action_dispatch_t fake = {0};
+            deneb_print_action_dispatch_ops_t ops = {
+                &fake,
+                fake_dispatch_pause,
+                fake_dispatch_resume,
+                fake_dispatch_abort,
+                fake_dispatch_stop,
+                fake_dispatch_clear_pending
+            };
+            assert(deneb_print_action_dispatch(&action_plan, &ops) == 0);
+            assert(fake.pause_count == 1);
+            assert(fake.resume_count == 0);
+            assert(fake.abort_count == 0);
+            assert(fake.stop_count == 0);
+            assert(fake.clear_count == 0);
+        }
         assert(deneb_print_action_plan(DENEB_PRINT_ACTION_CONTINUE_TEXT,
                                        &action_plan) == 0);
         assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_RESUME);
         assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_RESUME) == 0);
+        {
+            fake_print_action_dispatch_t fake = {0};
+            deneb_print_action_dispatch_ops_t ops = {
+                &fake,
+                fake_dispatch_pause,
+                fake_dispatch_resume,
+                fake_dispatch_abort,
+                fake_dispatch_stop,
+                fake_dispatch_clear_pending
+            };
+            assert(deneb_print_action_dispatch(&action_plan, &ops) == 0);
+            assert(fake.resume_count == 1);
+            assert(fake.clear_count == 0);
+        }
         assert(deneb_print_action_plan(DENEB_PRINT_ACTION_CANCEL_TEXT,
                                        &action_plan) == 0);
         assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT);
         assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_ABORT) == 0);
         assert(action_plan.clear_pending_after_success);
+        {
+            fake_print_action_dispatch_t fake = {0};
+            deneb_print_action_dispatch_ops_t ops = {
+                &fake,
+                fake_dispatch_pause,
+                fake_dispatch_resume,
+                fake_dispatch_abort,
+                fake_dispatch_stop,
+                fake_dispatch_clear_pending
+            };
+            assert(deneb_print_action_dispatch(&action_plan, &ops) == 0);
+            assert(fake.abort_count == 1);
+            assert(fake.clear_count == 1);
+        }
         assert(deneb_print_action_plan(DENEB_PRINT_ACTION_STOP_TEXT,
                                        &action_plan) == 0);
         assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_STOP);
         assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_ABORT) == 0);
         assert(action_plan.clear_pending_after_success);
+        {
+            fake_print_action_dispatch_t fake = {0};
+            deneb_print_action_dispatch_ops_t ops = {
+                &fake,
+                fake_dispatch_pause,
+                fake_dispatch_resume,
+                fake_dispatch_abort,
+                fake_dispatch_stop,
+                fake_dispatch_clear_pending
+            };
+            assert(deneb_print_action_dispatch(&action_plan, &ops) == 0);
+            assert(fake.stop_count == 1);
+            assert(fake.clear_count == 1);
+            fake.fail_kind = DENEB_PRINT_ACTION_PLAN_STOP;
+            assert(deneb_print_action_dispatch(&action_plan, &ops) != 0);
+            assert(fake.clear_count == 1);
+        }
         assert(deneb_print_action_plan("bogus", &action_plan) != 0);
+        assert(deneb_print_action_dispatch(NULL, NULL) != 0);
+        assert(deneb_print_pending_action_plan(
+                   DENEB_PRINT_ACTION_PRINT_TEXT, &action_plan) == 0);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_RESUME);
+        assert(strcmp(action_plan.command, DENEB_PRINT_REQ_PREPARE) == 0);
+        assert(strcmp(action_plan.failure_message,
+                      "Failed to continue print") == 0);
+        assert(!action_plan.clear_pending_after_success);
+        assert(deneb_print_pending_action_plan(
+                   DENEB_PRINT_ACTION_CANCEL_TEXT, &action_plan) == 0);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT);
+        assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_ABORT) == 0);
+        assert(strcmp(action_plan.failure_message,
+                      "Failed to cancel print") == 0);
+        assert(action_plan.clear_pending_after_success);
+        assert(deneb_print_pending_action_plan("pause", &action_plan) != 0);
+        assert(deneb_print_pending_action_plan(
+                   DENEB_PRINT_ACTION_PRINT_TEXT, NULL) != 0);
+        assert(deneb_print_delete_action_plan(1, &action_plan) == 0);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT);
+        assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_ABORT) == 0);
+        assert(strcmp(action_plan.failure_message,
+                      "Failed to abort print") == 0);
+        assert(!action_plan.clear_pending_after_success);
+        assert(deneb_print_delete_action_plan(0, &action_plan) == 0);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_CLEAR_PENDING);
+        assert(strcmp(action_plan.failure_message,
+                      "Failed to clear pending print") == 0);
+        assert(action_plan.clear_pending_after_success);
+        {
+            fake_print_action_dispatch_t fake = {0};
+            deneb_print_action_dispatch_ops_t ops = {
+                &fake,
+                fake_dispatch_pause,
+                fake_dispatch_resume,
+                fake_dispatch_abort,
+                fake_dispatch_stop,
+                fake_dispatch_clear_pending
+            };
+            assert(deneb_print_action_dispatch(&action_plan, &ops) == 0);
+            assert(fake.pause_count == 0);
+            assert(fake.resume_count == 0);
+            assert(fake.abort_count == 0);
+            assert(fake.stop_count == 0);
+            assert(fake.clear_count == 1);
+        }
+        assert(deneb_print_delete_action_plan(0, NULL) != 0);
         assert(deneb_print_action_parse("{}", action, sizeof(action)) != 0);
     }
     assert(deneb_print_job_is_active(1, 0, 0));
@@ -1602,6 +1761,30 @@ static void test_gcode_command_helpers(void)
                DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED);
         assert(deneb_gcode_plan_motion_from_json("{\"x\":1}", NULL) ==
                DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE),
+                      "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE),
+                      "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_X),
+                      "{\"message\":\"Invalid x position\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_Y),
+                      "{\"message\":\"Invalid y position\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_Z),
+                      "{\"message\":\"Invalid z position\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_VOLUME),
+                      "{\"message\":\"Position is outside the printable volume\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_SPEED),
+                      "{\"message\":\"Invalid movement speed\"}") == 0);
+        assert(strcmp(deneb_gcode_motion_plan_error_response(
+                          DENEB_GCODE_MOTION_PLAN_ERR_EXPECTED),
+                      "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}") == 0);
     }
 
     assert(deneb_gcode_format_nozzle_target(210.0f, value, sizeof(value)) == 0);
@@ -1655,6 +1838,8 @@ static void test_gcode_command_helpers(void)
         assert(deneb_gcode_plan_temperature_target_from_json(
                    DENEB_GCODE_HEATER_NOZZLE, "{\"temperature\":1}",
                    NULL, value, sizeof(value)) != 0);
+        assert(strcmp(deneb_gcode_temperature_target_error_response(),
+                      "{\"message\":\"Invalid temperature\"}") == 0);
     }
     assert(deneb_gcode_format_nozzle_off(value, sizeof(value)) == 0);
     assert(strcmp(value, "M104 S0") == 0);
@@ -1815,6 +2000,12 @@ static void test_manual_motion_helpers(void)
     assert(deneb_manual_motion_plan_request(
                "{\"action\":\"home\"}", NULL) ==
            DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST);
+    assert(strcmp(deneb_manual_motion_plan_error_response(
+                      DENEB_MANUAL_MOTION_PLAN_BAD_REQUEST),
+                  "{\"message\":\"Expected {\\\"action\\\":\\\"home|z_home|bed_up|bed_down\\\"}\"}") == 0);
+    assert(strcmp(deneb_manual_motion_plan_error_response(
+                      DENEB_MANUAL_MOTION_PLAN_UNKNOWN_ACTION),
+                  "{\"message\":\"Unknown motion action\"}") == 0);
 }
 
 static void test_buildplate_level_helpers(void)
@@ -2106,6 +2297,7 @@ static void test_pending_job_metadata_write_file(void)
     const char *path = "/tmp/deneb-pending-job-write-test.json";
     deneb_pending_job_t job;
     deneb_pending_job_file_t loaded;
+    deneb_pending_job_conflict_prompt_t prompt;
 
     deneb_pending_job_init(&job, "/home/3D/deneb-uploads/write-test.gcode");
     job.tracker = 77;
@@ -2115,6 +2307,30 @@ static void test_pending_job_metadata_write_file(void)
     assert(strcmp(loaded.path, "/home/3D/deneb-uploads/write-test.gcode") == 0);
     assert(strcmp(loaded.name, "write-test.gcode") == 0);
     assert(!deneb_pending_job_file_has_conflict(&loaded));
+    deneb_pending_job_conflict_prompt_init(&prompt);
+    assert(strcmp(prompt.job_name, "network print") == 0);
+    assert(strcmp(prompt.loaded_name, "loaded material") == 0);
+    assert(strcmp(prompt.target_name, "sliced material") == 0);
+    assert(!prompt.is_pending);
+    assert(!prompt.has_conflict);
+    assert(deneb_pending_job_file_conflict_prompt(&loaded, &prompt) != 0);
+    assert(strcmp(prompt.job_name, "write-test.gcode") == 0);
+    assert(prompt.is_pending);
+    assert(!prompt.has_conflict);
+    loaded.has_configuration_changes = 1;
+    loaded.has_material_change = 1;
+    snprintf(loaded.origin_name, sizeof(loaded.origin_name), "%s",
+             "Loaded PLA");
+    snprintf(loaded.target_name, sizeof(loaded.target_name), "%s",
+             "Target PETG");
+    assert(deneb_pending_job_file_conflict_prompt(&loaded, &prompt) == 0);
+    assert(strcmp(prompt.job_name, "write-test.gcode") == 0);
+    assert(strcmp(prompt.loaded_name, "Loaded PLA") == 0);
+    assert(strcmp(prompt.target_name, "Target PETG") == 0);
+    assert(prompt.is_pending);
+    assert(prompt.has_conflict);
+    assert(deneb_pending_job_file_conflict_prompt(NULL, &prompt) != 0);
+    assert(deneb_pending_job_file_conflict_prompt(&loaded, NULL) != 0);
     assert(deneb_pending_job_file_clear(path) == 0);
 }
 
@@ -2244,6 +2460,8 @@ static void test_pending_job_upload_default_check(void)
     deneb_pending_job_upload_check_t check;
 
     deneb_pending_job_file_clear_default();
+    assert(!deneb_pending_job_file_has_pending_default());
+    assert(!deneb_pending_job_file_has_conflict_default());
     assert(deneb_pending_job_file_check_upload_default(
                "/home/3D/deneb-uploads/cube.gcode", "cube.gcode",
                &check) == 0);
@@ -2252,6 +2470,8 @@ static void test_pending_job_upload_default_check(void)
     deneb_pending_job_init(&job, "/home/3D/deneb-uploads/cube.gcode");
     job.tracker = 88;
     assert(deneb_pending_job_write_default(&job) == 0);
+    assert(deneb_pending_job_file_has_pending_default());
+    assert(!deneb_pending_job_file_has_conflict_default());
 
     assert(deneb_pending_job_file_check_upload_default(
                "/home/3D/deneb-uploads/cube.gcode", "cube.gcode",
@@ -2264,6 +2484,11 @@ static void test_pending_job_upload_default_check(void)
                "/home/3D/deneb-uploads/other.gcode", "other.gcode",
                &check) == 0);
     assert(check.status == DENEB_PENDING_JOB_UPLOAD_BLOCKED);
+
+    job.material_change_required = 1;
+    assert(deneb_pending_job_write_default(&job) == 0);
+    assert(deneb_pending_job_file_has_pending_default());
+    assert(deneb_pending_job_file_has_conflict_default());
 
     deneb_pending_job_file_clear_default();
 }

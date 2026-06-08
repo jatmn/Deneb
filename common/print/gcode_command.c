@@ -261,6 +261,28 @@ int deneb_gcode_plan_motion_from_json(const char *json,
     return DENEB_GCODE_MOTION_PLAN_OK;
 }
 
+const char *deneb_gcode_motion_plan_error_response(int rc)
+{
+    switch (rc) {
+        case DENEB_GCODE_MOTION_PLAN_ERR_JOG_SHAPE:
+            return "{\"message\":\"Expected {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number}\"}";
+        case DENEB_GCODE_MOTION_PLAN_ERR_JOG_DISTANCE:
+            return "{\"message\":\"Distance must be a whole number from 1 to 50 mm\"}";
+        case DENEB_GCODE_MOTION_PLAN_ERR_X:
+            return "{\"message\":\"Invalid x position\"}";
+        case DENEB_GCODE_MOTION_PLAN_ERR_Y:
+            return "{\"message\":\"Invalid y position\"}";
+        case DENEB_GCODE_MOTION_PLAN_ERR_Z:
+            return "{\"message\":\"Invalid z position\"}";
+        case DENEB_GCODE_MOTION_PLAN_ERR_VOLUME:
+            return "{\"message\":\"Position is outside the printable volume\"}";
+        case DENEB_GCODE_MOTION_PLAN_ERR_SPEED:
+            return "{\"message\":\"Invalid movement speed\"}";
+        default:
+            return "{\"message\":\"Expected jog {\\\"axis\\\":\\\"X|Y|Z\\\",\\\"distance\\\":number} or position {\\\"x\\\":number,\\\"y\\\":number,\\\"z\\\":number}\"}";
+    }
+}
+
 int deneb_gcode_format_nozzle_target(float temp_c, char *out, size_t out_sz)
 {
     if (!out || out_sz == 0)
@@ -332,6 +354,11 @@ int deneb_gcode_plan_temperature_target_from_json(
     *out_temp_c = temp;
     return deneb_gcode_format_heater_target(heater, temp, out_gcode,
                                             out_gcode_sz);
+}
+
+const char *deneb_gcode_temperature_target_error_response(void)
+{
+    return "{\"message\":\"Invalid temperature\"}";
 }
 
 int deneb_gcode_format_nozzle_off(char *out, size_t out_sz)

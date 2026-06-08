@@ -596,6 +596,21 @@ int deneb_print_action_parse_or_pending_default(const char *body,
     return 0;
 }
 
+const char *deneb_print_action_parse_error_response(void)
+{
+    return "{\"message\":\"Expected {\\\"action\\\":\\\"pause|print|abort\\\"}\"}";
+}
+
+const char *deneb_print_action_unknown_response(void)
+{
+    return "{\"message\":\"Unknown print job action\"}";
+}
+
+const char *deneb_print_state_unknown_response(void)
+{
+    return "{\"message\":\"Unknown state\"}";
+}
+
 int deneb_print_action_is_pause(const char *action)
 {
     return str_eq_ci(action, DENEB_PRINT_ACTION_PAUSE_TEXT);
@@ -674,6 +689,51 @@ int deneb_print_action_plan(const char *action,
     }
 
     return -1;
+}
+
+int deneb_print_pending_action_plan(const char *action,
+                                    deneb_print_action_plan_t *plan)
+{
+    if (!plan)
+        return -1;
+
+    deneb_print_action_plan_init(plan);
+    if (deneb_print_action_is_resume_or_start(action)) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_RESUME;
+        plan->command = DENEB_PRINT_REQ_PREPARE;
+        plan->failure_message = "Failed to continue print";
+        return 0;
+    }
+
+    if (deneb_print_action_is_abort(action)) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_ABORT;
+        plan->command = DENEB_COMMAND_VERB_ABORT;
+        plan->failure_message = "Failed to cancel print";
+        plan->clear_pending_after_success = 1;
+        return 0;
+    }
+
+    return -1;
+}
+
+int deneb_print_delete_action_plan(int has_active_job,
+                                   deneb_print_action_plan_t *plan)
+{
+    if (!plan)
+        return -1;
+
+    deneb_print_action_plan_init(plan);
+    if (has_active_job) {
+        plan->kind = DENEB_PRINT_ACTION_PLAN_ABORT;
+        plan->command = DENEB_COMMAND_VERB_ABORT;
+        plan->failure_message = "Failed to abort print";
+        return 0;
+    }
+
+    plan->kind = DENEB_PRINT_ACTION_PLAN_CLEAR_PENDING;
+    plan->failure_message = "Failed to clear pending print";
+    plan->clear_pending_after_success = 1;
+    return 0;
 }
 
 int deneb_print_elapsed_seconds(int time_total, int time_left)
