@@ -19,7 +19,7 @@ static lv_obj_t *conflict_screen = NULL;
 static lv_obj_t *message_label = NULL;
 static lv_obj_t *detail_label = NULL;
 static lv_obj_t *status_label = NULL;
-static int current_tracker = -1;
+static int current_pending = 0;
 
 int print_conflict_has_pending(void)
 {
@@ -109,7 +109,7 @@ static void load_prompt_text(void)
     char msg[256];
     char detail[160];
 
-    current_tracker = -1;
+    current_pending = 0;
     if (deneb_pending_job_file_load_default(&job_file) == 0) {
         if (job_file.name[0])
             snprintf(job, sizeof(job), "%s", job_file.name);
@@ -117,7 +117,7 @@ static void load_prompt_text(void)
             snprintf(loaded, sizeof(loaded), "%s", job_file.origin_name);
         if (job_file.target_name[0])
             snprintf(wanted, sizeof(wanted), "%s", job_file.target_name);
-        current_tracker = job_file.tracker;
+        current_pending = deneb_pending_job_file_is_pending(&job_file);
     }
 
     snprintf(msg, sizeof(msg), locale_get("print_conflict.message_fmt"),
@@ -126,7 +126,7 @@ static void load_prompt_text(void)
 
     lv_label_set_text(message_label, msg);
     lv_label_set_text(detail_label, detail);
-    lv_label_set_text(status_label, current_tracker >= 0 ? "" :
+    lv_label_set_text(status_label, current_pending ? "" :
                       locale_get("print_conflict.action_failed"));
 }
 
@@ -194,7 +194,7 @@ static void conflict_destroy(void)
     message_label = NULL;
     detail_label = NULL;
     status_label = NULL;
-    current_tracker = -1;
+    current_pending = 0;
 }
 
 const screen_ops_t screen_print_conflict = {

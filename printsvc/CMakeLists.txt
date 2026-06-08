@@ -74,6 +74,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/diagnostics_log.c
     src/error_map.c
     src/flow_control.c
+    src/gcode_control.c
     src/gcode_stream.c
     src/heater_wait.c
     src/job_control.c
@@ -89,12 +90,15 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/motion_runtime.c
     src/motion_sender.c
     src/pause_resume.c
+    src/pause_resume_control.c
     src/pending_job.c
     src/print_control.c
     src/runtime_diagnostics.c
     src/serial_transport.c
     src/sha256.c
     src/service.c
+    src/service_command.c
+    src/service_context.c
     src/status.c
     src/status_parser.c
 )

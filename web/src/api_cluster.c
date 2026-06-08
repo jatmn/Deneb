@@ -59,10 +59,12 @@ static int load_pending_job(deneb_pending_job_file_t *job)
     return deneb_pending_job_file_load_pending_default(job);
 }
 
-static int pending_job_tracker(void)
+static int has_pending_job(void)
 {
     deneb_pending_job_file_t job;
-    return load_pending_job(&job) == 0 ? job.tracker : -1;
+
+    return load_pending_job(&job) == 0 &&
+           deneb_pending_job_file_is_pending(&job);
 }
 
 static int send_pending_job_instruction(const char *instruction)
@@ -301,14 +303,14 @@ static void log_cluster_action(const char *action, int has_pending_job, const ch
 void api_cluster_print_job_action_put(const http_request_t *req, http_response_t *resp)
 {
     char action[16];
-    int has_pending_job = pending_job_tracker() >= 0;
+    int pending_job = has_pending_job();
     if (!strstr(req->path, "/action")) {
         api_cluster_print_job_put(req, resp);
         return;
     }
 
     if (deneb_print_action_parse(req->body, action, sizeof(action)) < 0) {
-        if (has_pending_job) {
+        if (pending_job) {
             snprintf(action, sizeof(action), "%s",
                      DENEB_PRINT_ACTION_PRINT_TEXT);
         } else {
@@ -318,15 +320,15 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
         }
     }
 
-    log_cluster_action(action, has_pending_job, req->path);
+    log_cluster_action(action, pending_job, req->path);
 
-    if (deneb_print_action_is_resume_or_start(action) && has_pending_job) {
+    if (deneb_print_action_is_resume_or_start(action) && pending_job) {
         if (send_pending_job_instruction(DENEB_PRINT_REQ_PREPARE) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to continue print\"}");
             return;
         }
-    } else if (deneb_print_action_is_abort(action) && has_pending_job) {
+    } else if (deneb_print_action_is_abort(action) && pending_job) {
         if (send_pending_job_instruction(DENEB_COMMAND_VERB_ABORT) != 0) {
             resp->status_code = 503;
             api_http_set_body_str(resp, "{\"message\":\"Failed to cancel print\"}");

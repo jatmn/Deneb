@@ -111,6 +111,7 @@ void api_deneb_print_backend_get(const http_request_t *req, http_response_t *res
 {
     (void)req;
     char buf[512];
+    deneb_print_backend_t route_backend = backend_zmq_get_print_backend();
     const char *backend = backend_zmq_get_print_backend_name();
     json_writer_t w;
 
@@ -119,8 +120,10 @@ void api_deneb_print_backend_get(const http_request_t *req, http_response_t *res
     json_str(&w, "print_backend", backend);
     json_str(&w, "status_url", backend_zmq_get_print_backend_status_url());
     json_str(&w, "command_url", backend_zmq_get_print_backend_command_url());
-    json_bool(&w, "native_printsvc", strcmp(backend, "native") == 0);
-    json_bool(&w, "stock_coordinator_route", strcmp(backend, "coordinator") == 0);
+    json_bool(&w, "native_printsvc",
+              deneb_print_backend_is_native(route_backend));
+    json_bool(&w, "stock_coordinator_route",
+              !deneb_print_backend_is_native(route_backend));
     json_obj_close(&w);
     json_len(&w);
     api_http_set_body_str(resp, buf);

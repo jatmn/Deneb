@@ -59,8 +59,8 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   `deneb-printsvc` replacement for `print_service.py`; the working checklist
   is [UM2C_MODDING_CHECKLIST.md Section 8](../UM2C_MODDING_CHECKLIST.md#8-de-python-marlindriver--native-print-service).
   The live investigation shows it owns `/dev/ttyS1`, verifies/programs the
-  motion-controller firmware at startup, handles job/macro/G-code control,
-  publishes live status on ZMQ, and implements Marlin flow control,
+  motion-controller firmware at startup, handles job/macro/native raw-G-code
+  command control, publishes live status on ZMQ, and implements Marlin flow control,
   CRC/framing, resend handling, and pause/resume state. It is a meaningful RAM
   target, but high risk.
 - Keep the first native print-service stage compatible with the stock
@@ -74,8 +74,9 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   remaining status classifiers all need an ownership decision: keep as clients,
   move into `deneb-printsvc`, or replace with a shared Deneb print-control API.
   Conflict/preheat action bridges, pending-job metadata, print-profile defaults,
-  uploaded-file metadata parsing, and printer hostname/GUID identity reads have
-  started moving into shared native helpers instead of embedded
+  uploaded-file metadata parsing, command-level pause/resume control,
+  service-context runtime wiring, service-level command handling, and printer
+  hostname/GUID identity reads have started moving into shared native helpers instead of embedded
   Python/Gershwin launchers.
 - Do not preserve awkward compatibility layers just because they match the
   current Python driver's shape. Any shim kept for migration needs explicit
@@ -86,8 +87,9 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   lookup, safe motion policy, heat-state decisions, pause/resume/abort
   semantics, and error mapping should each have one owner. Shared native helpers
   now cover command formatting and stock command verbs, flat status JSON field
-  extraction, pending-job files, print-state rules, shared stock macro names,
-  and web/API status labels. Web and touchscreen macro,
+  extraction, pending-job files, print-state rules, backend status
+  time/progress normalization, shared stock macro names, and web/API status
+  labels. Web and touchscreen macro,
   multi-line G-code, and job-start callers now route through native backend
   helper functions instead of each hand-rolling stock command JSON. LCD/API
   job-name display also reads pending-job metadata through the shared helper
@@ -96,14 +98,19 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   pending-job metadata initialization, LCD backend status retention,
   touchscreen labels, and web/API printer responses. Pending-job metadata
   cleanup also goes through the shared helper for LCD/web stop, abort, cancel,
-  delete, and print-end paths. LCD and web/API backends now select native
+  delete, and print-end paths. Cura cluster pending-action handling and the
+  touchscreen conflict prompt also use the shared pending-job presence
+  predicate instead of treating tracker values as local control-flow gates. LCD
+  and web/API backends now select native
   `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
   while preserving the stock coordinator route as the default fallback. That
   route decision lives in `common/print/print_backend_route.*` so clients do not
   each duplicate UCI/env parsing or endpoint constants. The same helper now
   formats route diagnostics exposed by web status JSON and LCD/web backend
   accessors, giving lab runs a native way to prove whether a process selected
-  stock coordinator or native `deneb-printsvc`. Later slices should
+  stock coordinator or native `deneb-printsvc`. Deneb API route diagnostics now
+  use typed backend accessors instead of comparing route display strings, so
+  backend identity classification stays with the shared route owner. Later slices should
   keep collapsing remaining
   duplicate web/UI/API logic toward those helpers or a single
   `deneb-printsvc` API.

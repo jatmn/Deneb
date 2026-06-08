@@ -50,6 +50,7 @@ int backend_init(void) {
 
 void backend_poll(void) { /* no-op in stub */ }
 const printer_state_t *backend_get_state(void) { return &state; }
+deneb_print_backend_t backend_get_print_backend(void) { return backend_route.backend; }
 const char *backend_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
 const char *backend_get_print_backend_status_url(void) { return backend_route.status_url; }
 const char *backend_get_print_backend_command_url(void) { return backend_route.command_url; }
@@ -304,16 +305,9 @@ static void parse_status(const char *json)
         deneb_print_stop_guard_clear(&stop_guard);
     }
 
-    if (state.time_total > 0 && state.time_left >= 0 && !state.is_printing && !state.is_paused) {
-        state.time_total = 0;
-        state.time_left = 0;
-        state.progress = 0;
-    }
-
-    if (state.time_total > 0 && state.time_left > state.time_total)
-        state.time_left = state.time_total;
-    state.progress = deneb_print_progress_percent(state.time_total,
-                                                  state.time_left);
+    deneb_print_normalize_timing(state.is_printing, state.is_paused,
+                                 &state.time_total, &state.time_left,
+                                 &state.progress);
 
     state.has_error = payload.has_error != 0;
 
@@ -406,6 +400,11 @@ void backend_poll(void)
 const printer_state_t *backend_get_state(void)
 {
     return &state;
+}
+
+deneb_print_backend_t backend_get_print_backend(void)
+{
+    return backend_route.backend;
 }
 
 const char *backend_get_print_backend_name(void)

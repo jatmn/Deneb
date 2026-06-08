@@ -571,3 +571,28 @@ float deneb_print_progress_fraction(float progress_percent)
         return 1.0f;
     return progress_percent / 100.0f;
 }
+
+void deneb_print_normalize_timing(int is_printing,
+                                  int is_paused,
+                                  int *time_total,
+                                  int *time_left,
+                                  float *progress_percent)
+{
+    int total = time_total ? *time_total : 0;
+    int left = time_left ? *time_left : 0;
+
+    if (total > 0 && left >= 0 && !is_printing && !is_paused) {
+        total = 0;
+        left = 0;
+    }
+
+    if (total > 0 && left > total)
+        left = total;
+
+    if (time_total)
+        *time_total = total;
+    if (time_left)
+        *time_left = left;
+    if (progress_percent)
+        *progress_percent = deneb_print_progress_percent(total, left);
+}

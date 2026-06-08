@@ -9,6 +9,7 @@
 #include "diagnostics_log.h"
 #include "error_map.h"
 #include "flow_control.h"
+#include "gcode_control.h"
 #include "gcode_command.h"
 #include "heater_wait.h"
 #include "json_field.h"
@@ -28,6 +29,7 @@
 #include "motion_runtime.h"
 #include "motion_sender.h"
 #include "pause_resume.h"
+#include "pause_resume_control.h"
 #include "pending_job.h"
 #include "pending_job_file.h"
 #include "printer_identity.h"
@@ -42,6 +44,8 @@
 #include "runtime_diagnostics.h"
 #include "sha256.h"
 #include "service.h"
+#include "service_command.h"
+#include "service_context.h"
 #include "status.h"
 #include "status_payload.h"
 #include "status_parser.h"
@@ -163,6 +167,49 @@ static void test_command_dispatch_policy(void)
     assert(deneb_command_parse("JOB<{}", &cmd) == 0);
     assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "missing job file") != NULL);
+}
+
+static void test_gcode_control_policy(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_parse("GCODE<[\"M105\",\"G28 X Y\"]", &cmd) == 0);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "\"status\":\"ok\"") != NULL);
+    assert(deneb_flow_inflight(&svc.flow) == 2);
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = DENEB_COMMAND_GCODE;
+    cmd.gcode_count = 1;
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "gcode failed") != NULL);
+    assert(svc.status.error.code == DENEB_ERROR_COMMAND);
+}
+
+static void test_pause_resume_control_policy(void)
+{
+    deneb_print_service_t svc;
+    char reply[256];
+
+    deneb_print_service_init(&svc);
+    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "no active print to pause") != NULL);
+
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "pause accepted") != NULL);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
+
+    svc.heater_wait.active = 1;
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "resume accepted") != NULL);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "print is not paused") != NULL);
 }
 
 static int command_audit_fake_handler(void *ctx, const deneb_command_t *cmd,
@@ -782,6 +829,29 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_completion_state_label(0, 120, 30), "stopped") == 0);
     assert(strcmp(deneb_print_completion_state_label(1, 120, 0), "error") == 0);
     assert(strcmp(deneb_print_completion_state_label(0, 0, 0), "stopped") == 0);
+    {
+        int total = 120;
+        int left = 180;
+        float progress = 99.0f;
+        deneb_print_normalize_timing(1, 0, &total, &left, &progress);
+        assert(total == 120);
+        assert(left == 120);
+        assert(progress == 0.0f);
+
+        left = 60;
+        deneb_print_normalize_timing(1, 0, &total, &left, &progress);
+        assert(progress == 50.0f);
+
+        deneb_print_normalize_timing(0, 1, &total, &left, &progress);
+        assert(total == 120);
+        assert(left == 60);
+        assert(progress == 50.0f);
+
+        deneb_print_normalize_timing(0, 0, &total, &left, &progress);
+        assert(total == 0);
+        assert(left == 0);
+        assert(progress == 0.0f);
+    }
     assert(strcmp(deneb_print_job_name_or_default(""), DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
     assert(strcmp(deneb_print_job_name_or_default(DENEB_PRINT_NONE_VALUE),
                   DENEB_PRINT_DEFAULT_JOB_NAME) == 0);
@@ -1206,6 +1276,8 @@ static void test_print_backend_route_contract(void)
     assert(deneb_print_backend_parse_override("stock", &backend) == 0);
     assert(backend == DENEB_PRINT_BACKEND_COORDINATOR);
     assert(deneb_print_backend_parse_override("bad", &backend) != 0);
+    assert(deneb_print_backend_is_native(DENEB_PRINT_BACKEND_NATIVE));
+    assert(!deneb_print_backend_is_native(DENEB_PRINT_BACKEND_COORDINATOR));
 
     assert(deneb_print_backend_from_flag_text("1\n") == DENEB_PRINT_BACKEND_NATIVE);
     assert(deneb_print_backend_from_flag_text("0\n") == DENEB_PRINT_BACKEND_COORDINATOR);
@@ -1515,6 +1587,77 @@ static void test_job_accepts_without_blocking(void)
     assert(!svc.job_active);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     remove(job_path);
+}
+
+static void test_service_context_policy(void)
+{
+    deneb_print_service_t svc;
+    deneb_motion_runtime_t runtime;
+    deneb_job_streamer_t streamer;
+    uint8_t packet[128];
+    size_t written = 0;
+    uint8_t sequence = 0;
+
+    deneb_service_context_init(&svc);
+    assert(svc.serial.fd == -1);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+
+    assert(deneb_service_context_motion_runtime(NULL, &runtime) < 0);
+    assert(deneb_service_context_motion_runtime(&svc, NULL) < 0);
+    assert(deneb_service_context_motion_runtime(&svc, &runtime) == 0);
+    assert(runtime.status == &svc.status);
+    assert(runtime.heater_wait == &svc.heater_wait);
+    assert(runtime.flow == &svc.flow);
+    assert(runtime.serial == &svc.serial);
+    assert(runtime.serial_ready == &svc.serial_ready);
+
+    assert(deneb_service_context_job_streamer(NULL, &streamer) < 0);
+    assert(deneb_service_context_job_streamer(&svc, NULL) < 0);
+    assert(deneb_service_context_job_streamer(&svc, &streamer) == 0);
+    assert(streamer.status == &svc.status);
+    assert(streamer.flow == &svc.flow);
+    assert(streamer.stream == &svc.job_stream);
+    assert(streamer.heater_wait == &svc.heater_wait);
+    assert(streamer.serial == &svc.serial);
+    assert(streamer.job_active == &svc.job_active);
+    assert(streamer.abort_requested == &svc.abort_requested);
+    assert(streamer.planner_starvation_count == &svc.planner_starvation_count);
+
+    svc.job_active = 1;
+    svc.job_stream.line_number = 17;
+    svc.planner_starvation_count = 3;
+    assert(deneb_flow_prepare_packet(&svc.flow, "M105", packet,
+                                     sizeof(packet), &written,
+                                     &sequence) == 0);
+    deneb_service_context_refresh_diagnostics(&svc);
+    assert(svc.status.job_queue_depth == 1);
+    assert(svc.status.job_line_number == 17);
+    assert(svc.status.planner_starvation_count == 3);
+
+    svc.serial_ready = 1;
+    deneb_service_context_close(&svc);
+    assert(!svc.job_active);
+    assert(!svc.serial_ready);
+}
+
+static void test_service_command_policy(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_parse("GCODE<[\"M105\"]", &cmd) == 0);
+    assert(deneb_service_command_handle(NULL, &cmd, reply, sizeof(reply)) < 0);
+    assert(deneb_service_command_handle(&svc, &cmd, NULL, sizeof(reply)) < 0);
+    assert(deneb_service_command_handle(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "gcode accepted") != NULL);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = DENEB_COMMAND_UNKNOWN;
+    assert(deneb_service_command_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "unknown command") != NULL);
 }
 
 static void test_job_poll_streams_after_preheat(void)
@@ -1959,6 +2102,8 @@ int main(void)
     test_command_format_round_trip();
     test_command_reply_helpers();
     test_command_dispatch_policy();
+    test_gcode_control_policy();
+    test_pause_resume_control_policy();
     test_command_audit_policy();
     test_error_mapping();
     test_print_control_contract();
@@ -1992,6 +2137,8 @@ int main(void)
     test_diagnostics_log_side_by_side_fields();
     test_abort_clears_status();
     test_job_accepts_without_blocking();
+    test_service_context_policy();
+    test_service_command_policy();
     test_job_poll_streams_after_preheat();
     test_pause_gates_active_job_streaming();
     test_pause_during_preheat_resumes_to_preparing();

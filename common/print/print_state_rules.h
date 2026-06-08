@@ -122,5 +122,10 @@ int deneb_print_action_plan(const char *action,
 int deneb_print_elapsed_seconds(int time_total, int time_left);
 float deneb_print_progress_percent(int time_total, int time_left);
 float deneb_print_progress_fraction(float progress_percent);
+void deneb_print_normalize_timing(int is_printing,
+                                  int is_paused,
+                                  int *time_total,
+                                  int *time_left,
+                                  float *progress_percent);
 
 #endif

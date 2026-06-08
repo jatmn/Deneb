@@ -82,6 +82,11 @@ const char *deneb_print_backend_name(deneb_print_backend_t backend)
     return backend == DENEB_PRINT_BACKEND_NATIVE ? "native" : "coordinator";
 }
 
+int deneb_print_backend_is_native(deneb_print_backend_t backend)
+{
+    return backend == DENEB_PRINT_BACKEND_NATIVE;
+}
+
 int deneb_print_backend_route_json_fields(const deneb_print_backend_route_t *route,
                                           char *out, size_t out_sz)
 {

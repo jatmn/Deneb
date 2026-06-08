@@ -12,6 +12,8 @@ scaffold:
 - `command_dispatch.*` routes parsed `GCODE`, `MACRO`, `JOB`, `ABORT`,
   `PAUSE`, and `RESUME` commands into native driver policies and reply
   formatting.
+- `gcode_control.*` owns raw `GCODE` command execution, multi-line motion-send
+  loops, command error mapping, and stock-compatible replies.
 - `common/print/command_format.*` formats stock `GCODE`, `MACRO`, `JOB`, and
   action frames and owns the stock print-service command verbs for the service,
   web backend, and touchscreen backend.
@@ -36,9 +38,12 @@ scaffold:
 - `job_streamer.*` owns active-job polling: preheat gating, paused/abort
   checks, bounded line streaming, finish motion policy dispatch, and
   planner-starvation accounting.
+- `pause_resume_control.*` owns command-level pause/resume replies and routes
+  accepted requests into the native pause/resume state policy.
 - `marlin_packet.*` owns sequence-numbered packet formatting and CRC.
 - `crc.*` owns CRC helpers.
-- `gcode_stream.*` streams G-code line by line without loading whole files.
+- `gcode_stream.*` streams job and macro G-code line by line without loading
+  whole files.
 - `macro_registry.*` resolves stock macro names under
   `/home/cygnus/marlindriver/gcode/`.
 - `macro_control.*` owns macro command execution against the service runtime:
@@ -61,6 +66,10 @@ scaffold:
   touchscreen UI, and web/API callers.
 - `diagnostics_log.*` writes low-volume comparison lines that pair stock-shaped
   status fields with native counters and latency fields for lab validation.
+- `service_command.*` owns service-level command handling: audit wrapping,
+  dispatch handoff, and command reply propagation.
+- `service_context.*` owns service initialization, lower-level runtime
+  adapter wiring, diagnostics projection, and close cleanup.
 - `service.*` owns the print lifecycle state machine and command dispatch.
 
 ## Diagnostics Log

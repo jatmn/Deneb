@@ -47,6 +47,7 @@ int backend_zmq_get_fd(void) { return -1; }
 void backend_zmq_poll(void) {}
 const printer_state_t *backend_zmq_get_state(void) { return &state; }
 const char *backend_zmq_get_status_json(void) { return "{}"; }
+deneb_print_backend_t backend_zmq_get_print_backend(void) { return backend_route.backend; }
 const char *backend_zmq_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
 const char *backend_zmq_get_print_backend_status_url(void) { return backend_route.status_url; }
 const char *backend_zmq_get_print_backend_command_url(void) { return backend_route.command_url; }
@@ -398,11 +399,9 @@ void backend_zmq_poll(void)
                                                       state.filename,
                                                       sizeof(state.filename));
             }
-            if (!state.is_printing) {
-                state.time_total = 0;
-                state.time_left = 0;
-                state.progress = 0;
-            }
+            deneb_print_normalize_timing(state.is_printing, state.is_paused,
+                                         &state.time_total, &state.time_left,
+                                         &state.progress);
             state.has_error = payload.has_error != 0;
 
             {
@@ -447,6 +446,11 @@ const char *backend_zmq_get_status_json(void)
 {
     if (status_json_cache) return status_json_cache;
     return "{}";
+}
+
+deneb_print_backend_t backend_zmq_get_print_backend(void)
+{
+    return backend_route.backend;
 }
 
 const char *backend_zmq_get_print_backend_name(void)

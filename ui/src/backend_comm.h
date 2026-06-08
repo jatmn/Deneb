@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "print_backend_route.h"
 
 /* Printer state, updated from ZMQ SUB status stream */
 typedef struct {
@@ -74,6 +75,7 @@ void backend_poll(void);
  * Safe to call from any screen at any time.
  */
 const printer_state_t *backend_get_state(void);
+deneb_print_backend_t backend_get_print_backend(void);
 const char *backend_get_print_backend_name(void);
 const char *backend_get_print_backend_status_url(void);
 const char *backend_get_print_backend_command_url(void);

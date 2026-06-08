@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "print_backend_route.h"
 
 /* Printer state, updated from ZMQ SUB status stream */
 typedef struct {
@@ -79,6 +80,7 @@ int backend_zmq_stop_print(void);
 
 /* Get pre-serialized status JSON string. */
 const char *backend_zmq_get_status_json(void);
+deneb_print_backend_t backend_zmq_get_print_backend(void);
 const char *backend_zmq_get_print_backend_name(void);
 const char *backend_zmq_get_print_backend_status_url(void);
 const char *backend_zmq_get_print_backend_command_url(void);

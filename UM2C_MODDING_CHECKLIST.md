@@ -748,6 +748,9 @@ Completed implementation slices:
   `common/print/pending_job_file.*` so web upload dedupe, Cura cluster pending
   actions, and touchscreen conflict prompts use one tracker/path/conflict
   contract instead of local `tracker >= 0` and `path[0]` checks.
+- [x] Route Cura cluster pending-action detection and touchscreen conflict
+  prompt availability through the shared pending-job presence predicate so
+  tracker values remain metadata instead of duplicated control-flow gates.
 - [x] Move pending-upload dedupe/block decisions into
   `common/print/pending_job_file.*` so the web print upload endpoint reuses the
   same native pending-job path/display-name comparison when accepting a
@@ -765,6 +768,9 @@ Completed implementation slices:
 - [x] Move print progress percentage calculation into shared native print-state
   rules so LCD and web/API backend status parsing clamp weird `Tleft` values
   the same way during preheat, printing, completion, and abort cleanup.
+- [x] Move backend status time/progress normalization into shared native
+  print-state rules so LCD and web/API ZMQ clients no longer carry separate
+  inactive-job zeroing, `time_left` clamping, or progress recomputation logic.
 - [x] Move pending-job metadata persistence into the native pending-job module
   so Cura upload registration and future `deneb-printsvc` entry points share
   the same serialize, temp-write, atomic-rename, and cleanup contract instead
@@ -893,6 +899,14 @@ Completed implementation slices:
   `PAUSE`, and `RESUME` routing, command error replies, macro callback wiring,
   job acceptance, and abort policy dispatch are not embedded in the service
   shell, with direct host tests for dry-run G-code and invalid command states.
+- [x] Move native raw-G-code command ownership into
+  `printsvc/src/gcode_control.*` so multi-line `GCODE` command dispatch,
+  packet-send failures, command error mapping, and stock-compatible replies
+  are not embedded in generic command routing.
+- [x] Move native pause/resume command ownership into
+  `printsvc/src/pause_resume_control.*` so command-level pause/resume replies,
+  heater-wait-aware resume routing, and invalid-state errors are not embedded
+  in generic command dispatch.
 - [x] Move native motion-send ownership into
   `printsvc/src/motion_sender.*` so Marlin packet preparation, serial-ready
   behavior, resend packet writes, and multi-command motion-policy dispatch are
@@ -915,6 +929,15 @@ Completed implementation slices:
   `printsvc/src/motion_runtime.*` so serial open, readiness state, Marlin line
   polling, observer dispatch, resend handoff, and serial close are one tested
   runtime boundary instead of inline service shell logic.
+- [x] Move native service-context ownership into
+  `printsvc/src/service_context.*` so service initialization, motion-runtime
+  adapter wiring, job-streamer adapter wiring, diagnostics projection, and
+  close cleanup are one tested boundary instead of repeated service-shell
+  plumbing.
+- [x] Move native service-command ownership into
+  `printsvc/src/service_command.*` so audit wrapping, dispatch handoff, and
+  command reply propagation are a tested service-level boundary instead of a
+  private service-shell trampoline.
 - [x] Publish native diagnostics for flow in-flight depth, sent/ACK/resend/reject
   counters, queued job depth, streamed job line number, command latency, and a
   planner-starvation indicator so lab comparisons have one service-owned source.
@@ -940,6 +963,10 @@ Completed implementation slices:
   `GET /api/v1/deneb/print_backend`, so lab validation can query the selected
   stock-coordinator/native-printsvc route without parsing the full status
   payload or consulting Python/coordinator state.
+- [x] Move route identity checks behind typed native backend accessors so
+  Deneb API route diagnostics, web backend, and LCD backend no longer compare
+  presentation strings to decide whether the stock coordinator or native
+  `deneb-printsvc` route is active.
 - [x] Cross-compile and package `deneb-printsvc` into the `.deneb` release
   artifact without enabling it over stock `printserver` by default.
 
