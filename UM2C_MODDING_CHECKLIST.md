@@ -673,6 +673,15 @@ Completed implementation slices:
   `common/print/print_job_file.*`: filename sanitizing, Deneb spool-path
   construction, spool directory creation, and rename/copy fallback are shared
   native helpers instead of web-only Cura upload code.
+- [x] Move Cura upload storage planning into
+  `common/print/print_job_file.*` so the web upload endpoint receives one
+  sanitized filename and destination path from native print-file policy before
+  pending-job dedupe, file storage, registration, and accepted-response
+  formatting.
+- [x] Move multipart upload extraction out of `web/src/main.c` and into the
+  named native web API module `web/src/api_multipart.c` so Cura print uploads
+  and material uploads share upload parsing without making the server loop a
+  catch-all implementation file.
 - [x] Move printer hostname/GUID identity reads into
   `common/print/printer_identity.*` so Cura cluster printer/job responses and
   UM system endpoints use the same native fallback/default behavior instead of
@@ -896,6 +905,9 @@ Completed implementation slices:
   record storage, and dynamic material-list response assembly into
   `common/print/material_catalog.*` so cluster API uploads and USB material
   imports share native material persistence rules.
+- [x] Move Cura material-upload store-and-cleanup handling into
+  `common/print/material_catalog.*` so the cluster endpoint no longer owns
+  temp-file cleanup or default catalog persistence after multipart extraction.
 - [x] Tighten native material catalog version parsing so malformed Cura
   material XML versions are rejected by `common/print/material_catalog.*`
   instead of being silently coerced by local `atoi` behavior.
@@ -944,6 +956,10 @@ Completed implementation slices:
   `common/print/print_job_summary.*` so UM API, Cura cluster API, Deneb API,
   and upload acceptance responses share one native owner for job activity,
   identity defaults, state, elapsed time, and progress scaling.
+- [x] Move Cura cluster active print-job response formatting into
+  `common/print/print_job_summary.*` so cluster job metadata, configuration,
+  build-plate, owner/printer UUID, and compatible-family response shape are not
+  hand-assembled inside the REST endpoint.
 - [x] Move Cura upload accepted/already-queued response JSON into
   `common/print/print_job_summary.*` so web upload responses share the same
   escaped queued-job body, progress fraction, elapsed time, and identity

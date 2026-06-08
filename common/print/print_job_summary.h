@@ -34,5 +34,11 @@ int deneb_print_job_summary_format_queued_response(const char *message,
                                                    const char *name,
                                                    char *out,
                                                    size_t out_sz);
+int deneb_print_job_summary_format_cluster_active_response(
+    const deneb_print_job_summary_t *summary,
+    const char *printer_uuid,
+    const char *created_at,
+    char *out,
+    size_t out_sz);
 
 #endif

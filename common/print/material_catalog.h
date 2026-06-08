@@ -19,6 +19,14 @@ int deneb_material_catalog_store_file(const char *path,
                                       const char *catalog_dir,
                                       char *guid, size_t guid_sz,
                                       int *version);
+int deneb_material_catalog_store_uploaded_file_to_dir(const char *path,
+                                                      const char *catalog_dir,
+                                                      char *guid,
+                                                      size_t guid_sz,
+                                                      int *version);
+int deneb_material_catalog_store_uploaded_file(const char *path,
+                                               char *guid, size_t guid_sz,
+                                               int *version);
 int deneb_material_catalog_import_tree(const char *root,
                                        const char *catalog_dir,
                                        int max_depth,

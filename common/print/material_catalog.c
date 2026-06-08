@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 int deneb_material_catalog_file_is_candidate(const char *name)
 {
@@ -166,6 +167,31 @@ int deneb_material_catalog_store_file(const char *path,
     if (fclose(out) != 0)
         return -1;
     return 0;
+}
+
+int deneb_material_catalog_store_uploaded_file_to_dir(const char *path,
+                                                      const char *catalog_dir,
+                                                      char *guid,
+                                                      size_t guid_sz,
+                                                      int *version)
+{
+    int rc;
+
+    if (!path || !path[0])
+        return -1;
+
+    rc = deneb_material_catalog_store_file(path, catalog_dir, guid, guid_sz,
+                                           version);
+    unlink(path);
+    return rc;
+}
+
+int deneb_material_catalog_store_uploaded_file(const char *path,
+                                               char *guid, size_t guid_sz,
+                                               int *version)
+{
+    return deneb_material_catalog_store_uploaded_file_to_dir(
+        path, DENEB_MATERIAL_CATALOG_DIR, guid, guid_sz, version);
 }
 
 int deneb_material_catalog_import_tree(const char *root,

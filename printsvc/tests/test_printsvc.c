@@ -1156,6 +1156,36 @@ static void test_print_job_summary(void)
         assert(strstr(json, "\"time_elapsed\":0") != NULL);
         assert(strstr(json, "\"time_total\":0") != NULL);
     }
+
+    deneb_print_job_summary_init(&summary, "cube\"one.gcode", "uuid-1",
+                                 "Cura", 0, 0, 1, 120, 90, 25.0f);
+    {
+        char json[2048];
+
+        assert(deneb_print_job_summary_format_cluster_active_response(
+                   &summary, "printer-1", "12345", json,
+                   sizeof(json)) > 0);
+        assert(strstr(json, "\"created_at\":\"12345\"") != NULL);
+        assert(strstr(json, "\"force\":false") != NULL);
+        assert(strstr(json, "\"name\":\"cube\\\"one.gcode\"") != NULL);
+        assert(strstr(json, "\"started\":true") != NULL);
+        assert(strstr(json, "\"status\":\"printing\"") != NULL);
+        assert(strstr(json, "\"time_total\":120") != NULL);
+        assert(strstr(json, "\"time_elapsed\":30") != NULL);
+        assert(strstr(json, "\"configuration\":[{\"extruder_index\":0") != NULL);
+        assert(strstr(json, "\"print_core_id\":\"0.4 mm\"") != NULL);
+        assert(strstr(json, "\"material\":{\"guid\":\"506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9\"") != NULL);
+        assert(strstr(json, "\"owner\":\"Cura\"") != NULL);
+        assert(strstr(json, "\"printer_uuid\":\"printer-1\"") != NULL);
+        assert(strstr(json, "\"assigned_to\":\"printer-1\"") != NULL);
+        assert(strstr(json, "\"type\":\"glass\"") != NULL);
+        assert(strstr(json, "\"impediments_to_printing\":[]") != NULL);
+
+        summary.active = 0;
+        assert(deneb_print_job_summary_format_cluster_active_response(
+                   &summary, "printer-1", "12345", json,
+                   sizeof(json)) != 0);
+    }
 }
 
 static void test_json_field_helpers(void)
@@ -2141,6 +2171,7 @@ static void test_print_job_file_metadata(void)
 {
     const char *path = "/tmp/deneb-print-job-metadata-test.gcode";
     deneb_print_job_file_metadata_t meta;
+    deneb_print_job_upload_storage_plan_t upload_plan;
     char value[64];
     char safe[128];
     char spool_path[256];
@@ -2160,6 +2191,18 @@ static void test_print_job_file_metadata(void)
     assert(deneb_print_job_file_spool_path("../cube.gcode", spool_path,
                                            sizeof(spool_path)) == 0);
     assert(strcmp(spool_path, DENEB_PRINT_JOB_SPOOL_DIR "/cube.gcode") == 0);
+    assert(deneb_print_job_file_upload_storage_plan(
+               "..\\nested\\cura cube.gcode", &upload_plan) == 0);
+    assert(strcmp(upload_plan.filename, "cura cube.gcode") == 0);
+    assert(strcmp(upload_plan.dest_path,
+                  DENEB_PRINT_JOB_SPOOL_DIR "/cura cube.gcode") == 0);
+    assert(deneb_print_job_file_upload_storage_plan(
+               "", &upload_plan) == 0);
+    assert(strcmp(upload_plan.filename, "upload.gcode") == 0);
+    assert(strcmp(upload_plan.dest_path,
+                  DENEB_PRINT_JOB_SPOOL_DIR "/upload.gcode") == 0);
+    assert(deneb_print_job_file_upload_storage_plan(
+               "cube.gcode", NULL) != 0);
     assert(deneb_print_job_file_metadata_extract_value(
                "; material_guid = target-guid\n", "material_guid",
                value, sizeof(value)) == 0);
@@ -2205,7 +2248,7 @@ static void test_crc_and_packet(void)
 
 static void test_material_catalog_helpers(void)
 {
-    const char *material_path = "/tmp/deneb-material-catalog-test.xml";
+    char material_path[256] = "/tmp/deneb-material-catalog-test.xml";
     const char *catalog_dir = "/tmp/deneb-material-catalog";
     const char *import_dir = "/tmp/deneb-material-import";
     const char *import_nested_dir = "/tmp/deneb-material-import/nested";
@@ -2286,6 +2329,38 @@ static void test_material_catalog_helpers(void)
     assert(strstr(body, "\"guid\":\"stock\"") != NULL);
     assert(strstr(body, guid) != NULL);
     free(body);
+
+    snprintf(material_path, sizeof(material_path), "%s/uploaded.material",
+             import_dir);
+    assert(mkdir(import_dir, 0755) == 0);
+    f = fopen(material_path, "wb");
+    assert(f != NULL);
+    fputs("<GUID>abcdefabcdefabcdefabcdefabcdefab</GUID>"
+          "<version>7</version>", f);
+    fclose(f);
+    assert(deneb_material_catalog_store_uploaded_file_to_dir(
+               material_path, catalog_dir, parsed_guid, sizeof(parsed_guid),
+               &version) == 0);
+    assert(strcmp(parsed_guid, "abcdefabcdefabcdefabcdefabcdefab") == 0);
+    assert(version == 7);
+    assert(access(material_path, F_OK) != 0);
+
+    snprintf(material_path, sizeof(material_path), "%s/bad-upload.material",
+             import_dir);
+    f = fopen(material_path, "wb");
+    assert(f != NULL);
+    fputs("<GUID>bad</GUID><version>1</version>", f);
+    fclose(f);
+    assert(deneb_material_catalog_store_uploaded_file_to_dir(
+               material_path, catalog_dir, parsed_guid, sizeof(parsed_guid),
+               &version) != 0);
+    assert(access(material_path, F_OK) != 0);
+    remove("/tmp/deneb-material-catalog/abcdefabcdefabcdefabcdefabcdefab.json");
+    rmdir(catalog_dir);
+    rmdir(import_dir);
+
+    snprintf(material_path, sizeof(material_path),
+             "/tmp/deneb-material-catalog-test.xml");
     f = fopen(material_path, "wb");
     assert(f != NULL);
     fprintf(f, "<fdmmaterial><metadata><GUID>%s</GUID><version>7x</version>"

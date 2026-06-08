@@ -124,6 +124,15 @@ on real hardware remains open.
   Web motion macro names and pending-job display reads are shared with the
   native print-control helpers instead of being hard-coded/parsing JSON in this
   layer.
+  Cura upload storage preparation uses the shared native print-file helper for
+  sanitized filenames and Deneb spool destinations before web/API pending-job
+  dedupe, native registration, and response formatting.
+  Multipart upload extraction is also isolated in `web/src/api_multipart.c`,
+  shared by Cura print uploads and material uploads instead of living in the
+  HTTP server main loop.
+  Cura material uploads then hand the extracted file to the shared native
+  material catalog helper, which owns default catalog persistence and temp-file
+  cleanup.
   Web temperature writes also delegate bounded target parsing and `M104`/`M140`
   command planning to the shared native G-code helper instead of clamping and
   formatting heater commands inside the REST endpoint.
@@ -135,6 +144,9 @@ on real hardware remains open.
   Cura cluster action writes use the shared print-state action parser for the
   pending-job `print` default, keeping that compatibility behavior out of the
   endpoint.
+  Cura cluster active-job responses use the shared native print-job summary
+  formatter for job metadata, printer assignment, build plate, configuration,
+  and compatible-machine-family fields.
   UM API and cluster API status labels also share the native print-state helper
   instead of each REST surface owning its own active-job mapping.
   Remaining native-service work should keep collapsing web/API and touchscreen

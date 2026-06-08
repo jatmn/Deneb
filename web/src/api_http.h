@@ -84,9 +84,4 @@ void api_http_set_body_str(http_response_t *resp, const char *str);
 /* Check if request requires auth and validate it. Returns 1 if authorized. */
 int api_http_check_auth(const http_request_t *req);
 
-/* Extract file from multipart upload. Writes extracted file to out_path.
- * Returns 0 on success, -1 on failure. */
-int extract_multipart_file(const char *boundary, const char *upload_path,
-                           char *out_path, int out_sz, char *filename, int fn_sz);
-
 #endif /* API_HTTP_H */

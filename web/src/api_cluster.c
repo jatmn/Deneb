@@ -6,6 +6,7 @@
 
 #include "api_cluster.h"
 #include "api_cluster_materials.h"
+#include "api_multipart.h"
 #include "api_print_job.h"
 #include "backend_zmq.h"
 #include "command_format.h"
@@ -22,7 +23,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 static int persist_uploaded_material(const http_request_t *req);
 static void write_cluster_materials_response(http_response_t *resp);
@@ -108,15 +108,13 @@ static int persist_uploaded_material(const http_request_t *req)
         return -1;
     }
 
-    if (deneb_material_catalog_store_file(material_path,
-                                          DENEB_MATERIAL_CATALOG_DIR,
-                                          guid, sizeof(guid), &version) < 0) {
+    if (deneb_material_catalog_store_uploaded_file(material_path,
+                                                   guid, sizeof(guid),
+                                                   &version) < 0) {
         fprintf(stderr, "deneb-api: material upload rejected: failed to store %s: %s\n",
                 filename, strerror(errno));
-        unlink(material_path);
         return -1;
     }
-    unlink(material_path);
     fprintf(stderr, "deneb-api: accepted material %s version %d\n", guid, version);
     return 0;
 }
@@ -180,7 +178,6 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     char guid[48];
     char created_at[32];
     char buf[2048];
-    json_writer_t w;
     deneb_print_job_summary_t summary;
 
     backend_zmq_get_job_summary(&summary);
@@ -194,37 +191,12 @@ void api_cluster_print_jobs_get(const http_request_t *req, http_response_t *resp
     deneb_printer_identity_guid(guid, sizeof(guid));
     snprintf(created_at, sizeof(created_at), "%lld", (long long)time(NULL));
 
-    json_init(&w, buf, sizeof(buf));
-    json_arr_open(&w);
-    json_obj_open(&w);
-    json_str(&w, "created_at", created_at);
-    json_bool(&w, "force", 0);
-    json_str(&w, "machine_variant", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
-    json_str(&w, "name", summary.name);
-    json_bool(&w, "started", summary.started);
-    json_str(&w, "status", summary.state);
-    json_int(&w, "time_total", summary.time_total);
-    json_int(&w, "time_elapsed", summary.time_elapsed);
-    json_str(&w, "uuid", summary.uuid);
-    write_configuration(&w);
-    json_str(&w, "owner", summary.source);
-    json_str(&w, "printer_uuid", guid);
-    json_str(&w, "assigned_to", guid);
-    json_key(&w, "build_plate");
-    json_obj_open(&w);
-    json_str(&w, "type", "glass");
-    json_obj_close(&w);
-    json_key(&w, "compatible_machine_families");
-    json_arr_open(&w);
-    json_arr_str(&w, DENEB_PRINT_PROFILE_MACHINE_FAMILY);
-    json_arr_str(&w, DENEB_PRINT_PROFILE_MACHINE_VARIANT);
-    json_arr_close(&w);
-    json_key(&w, "impediments_to_printing");
-    json_arr_open(&w);
-    json_arr_close(&w);
-    json_obj_close(&w);
-    json_arr_close(&w);
-    json_len(&w);
+    if (deneb_print_job_summary_format_cluster_active_response(
+            &summary, guid, created_at, buf, sizeof(buf)) < 0) {
+        resp->status_code = 500;
+        api_http_set_body_str(resp, "{\"message\":\"Print job response too large\"}");
+        return;
+    }
     api_http_set_body_str(resp, buf);
 }
 

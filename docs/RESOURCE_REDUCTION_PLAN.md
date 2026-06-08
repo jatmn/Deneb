@@ -153,8 +153,18 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   Pending-job continue/cancel dispatch sequencing now lives in
   `common/print/pending_job_dispatch.*`, so LCD and web backend adapters share
   the load, plan, readiness, `JOB`/`ABORT` callback selection, and
-  finish-action timing while retaining only their transport send callbacks. LCD
-  and web/API backends now select native
+  finish-action timing while retaining only their transport send callbacks.
+  Cura upload storage planning now lives in `common/print/print_job_file.*`,
+  so filename sanitizing and destination spool-path selection happen before
+  pending dedupe, file storage, native registration, and accepted-response
+  formatting without preserving that path policy in the web endpoint.
+  Multipart upload extraction now lives in the named native web API module
+  `web/src/api_multipart.c`, keeping Cura print/material upload parsing shared
+  without growing the server main loop into another catch-all file. Cura
+  material-upload store-and-cleanup handling now lives in
+  `common/print/material_catalog.*`, keeping temp-file cleanup and default
+  catalog persistence with the native material catalog owner. LCD and
+  web/API backends now select native
   `deneb-printsvc` status/command ports directly when `deneb.printsvc.enabled=1`,
   while preserving the stock coordinator route as the default fallback. That
   route decision lives in `common/print/print_backend_route.*` so clients do not
@@ -179,7 +189,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   native owner as touchscreen motion helpers. Cura cluster action parsing now
   also uses the shared print-state helper for the pending-job `print` default,
   so a missing action body only turns into continue when pending metadata
-  exists. Deneb API route diagnostics now use typed backend accessors instead
+  exists. Cura cluster active-job response formatting now lives in
+  `common/print/print_job_summary.*`, so cluster job metadata, configuration,
+  build-plate, printer assignment, and compatible-family JSON shape share the
+  native print-summary owner instead of endpoint-local assembly. Deneb API
+  route diagnostics now use typed backend accessors instead
   of comparing route display strings, so backend identity classification stays
   with the shared route owner. Later slices should keep collapsing remaining
   duplicate web/UI/API logic toward those helpers or a single

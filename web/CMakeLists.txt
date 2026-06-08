@@ -57,6 +57,7 @@ endif()
 
 set(DENEB_API_SOURCES
     src/main.c
+    src/api_multipart.c
     src/api_http.c
     src/api_printer.c
     src/api_print_job.c

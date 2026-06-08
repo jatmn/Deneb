@@ -27,6 +27,14 @@ void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan)
     plan->uuid = DENEB_PRINT_DEFAULT_JOB_UUID;
 }
 
+void deneb_print_job_upload_storage_plan_init(
+    deneb_print_job_upload_storage_plan_t *plan)
+{
+    if (!plan)
+        return;
+    memset(plan, 0, sizeof(*plan));
+}
+
 int deneb_print_job_start_plan_prepare(const char *path, const char *source,
                                        const char *uuid, float bed_target,
                                        float nozzle_target,
@@ -167,6 +175,23 @@ int deneb_print_job_file_spool_path(const char *name, char *out,
     }
 
     return 0;
+}
+
+int deneb_print_job_file_upload_storage_plan(
+    const char *filename,
+    deneb_print_job_upload_storage_plan_t *plan)
+{
+    if (!plan) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    deneb_print_job_upload_storage_plan_init(plan);
+    if (deneb_print_job_file_sanitize_name(filename, plan->filename,
+                                           sizeof(plan->filename)) < 0)
+        return -1;
+    return deneb_print_job_file_spool_path(plan->filename, plan->dest_path,
+                                           sizeof(plan->dest_path));
 }
 
 static int copy_file(const char *src_path, const char *dest_path)

@@ -5,6 +5,7 @@
  */
 
 #include "api_print_job.h"
+#include "api_multipart.h"
 #include "backend_zmq.h"
 #include "json_writer.h"
 #include "pending_job_file.h"
@@ -294,7 +295,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     /* Extract file from multipart body */
     char gcode_path[256] = "";
     char filename[128] = "upload.gcode";
-    char dest_path[256];
+    deneb_print_job_upload_storage_plan_t storage;
 
     if (req->multipart_boundary[0] &&
         extract_multipart_file(req->multipart_boundary, req->upload_path,
@@ -313,10 +314,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         return;
     }
 
-    if (deneb_print_job_file_sanitize_name(filename, filename,
-                                           sizeof(filename)) < 0 ||
-        deneb_print_job_file_spool_path(filename, dest_path,
-                                        sizeof(dest_path)) < 0) {
+    if (deneb_print_job_file_upload_storage_plan(filename, &storage) < 0) {
         fprintf(stderr, "deneb-api: failed to prepare print spool path for %s: %s\n",
                 filename, strerror(errno));
         unlink(gcode_path);
@@ -326,7 +324,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     }
 
     deneb_pending_job_upload_check_t pending_upload;
-    if (deneb_pending_job_file_check_upload_default(dest_path, filename,
+    if (deneb_pending_job_file_check_upload_default(storage.dest_path,
+                                                    storage.filename,
                                                     &pending_upload) == 0 &&
         pending_upload.status != DENEB_PENDING_JOB_UPLOAD_CLEAR) {
         if (pending_upload.status == DENEB_PENDING_JOB_UPLOAD_DUPLICATE) {
@@ -346,31 +345,34 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         return;
     }
 
-    if (deneb_print_job_file_store_upload(gcode_path, dest_path) < 0) {
+    if (deneb_print_job_file_store_upload(gcode_path, storage.dest_path) < 0) {
         fprintf(stderr, "deneb-api: failed to save print file to %s: %s\n",
-                dest_path, strerror(errno));
+                storage.dest_path, strerror(errno));
         unlink(gcode_path);
         resp->status_code = 500;
         api_http_set_body_str(resp, "{\"message\":\"Failed to save file\"}");
         return;
     }
 
-    fprintf(stderr, "deneb-api: print file saved to %s\n", dest_path);
+    fprintf(stderr, "deneb-api: print file saved to %s\n", storage.dest_path);
 
-    fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n", filename, dest_path);
+    fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n",
+            storage.filename, storage.dest_path);
 
-    if (register_native_print(dest_path) < 0) {
-        fprintf(stderr, "deneb-api: failed to register print natively for %s\n", dest_path);
+    if (register_native_print(storage.dest_path) < 0) {
+        fprintf(stderr, "deneb-api: failed to register print natively for %s\n",
+                storage.dest_path);
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to start print\"}");
         return;
     }
-    fprintf(stderr, "deneb-api: native registration accepted and print metadata prepared for %s\n", filename);
+    fprintf(stderr, "deneb-api: native registration accepted and print metadata prepared for %s\n",
+            storage.filename);
 
     char buf[512];
 
     deneb_print_job_summary_format_queued_response(
-        "Print job accepted", filename, buf, sizeof(buf));
+        "Print job accepted", storage.filename, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
     resp->status_code = 201;
 }

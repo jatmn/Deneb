@@ -21,8 +21,15 @@ typedef struct {
     float nozzle_target;
 } deneb_print_job_start_plan_t;
 
+typedef struct {
+    char filename[128];
+    char dest_path[256];
+} deneb_print_job_upload_storage_plan_t;
+
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta);
 void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan);
+void deneb_print_job_upload_storage_plan_init(
+    deneb_print_job_upload_storage_plan_t *plan);
 int deneb_print_job_start_plan_prepare(const char *path, const char *source,
                                        const char *uuid, float bed_target,
                                        float nozzle_target,
@@ -39,6 +46,9 @@ int deneb_print_job_file_sanitize_name(const char *name, char *out,
                                        size_t out_sz);
 int deneb_print_job_file_spool_path(const char *name, char *out,
                                     size_t out_sz);
+int deneb_print_job_file_upload_storage_plan(
+    const char *filename,
+    deneb_print_job_upload_storage_plan_t *plan);
 int deneb_print_job_file_store_upload(const char *src_path,
                                       const char *dest_path);
 
