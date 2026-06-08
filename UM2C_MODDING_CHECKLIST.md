@@ -1418,6 +1418,25 @@ Completed implementation slices:
   rejects update packages that contain Python driver artifacts and runs the
   installed print-service smoke-tool, CLI, and init-handoff selftests before
   completing the update.
+- [x] Gate non-experimental native print-service packages on live evidence:
+  `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
+  refuses `nightly` or `stable` native-printsvc packages unless
+  `DENEB_PRINTSVC_STOCK_SUMMARY` and `DENEB_PRINTSVC_NATIVE_SUMMARY` point at
+  captured stock/native smoke summaries. The builder verifies the native
+  summary with `deneb-printsvc-smoke-verify --full` and then runs
+  `deneb-printsvc-smoke-compare --require-reduction` before creating the
+  archive. `tools/build-update-release.ps1` exposes the same boundary through
+  `-ReleaseChannel`, `-PrintsvcStockSummary`, and
+  `-PrintsvcNativeSummary`, failing before build work starts when a
+  non-experimental channel lacks both live summaries, while the package
+  manifest records the experimental native-printsvc status and the required
+  non-experimental evidence gate. Both the shell package builder and
+  PowerShell release wrapper inspect the archived manifest for that channel and
+  native-printsvc gate before accepting the artifact, and the installer now
+  rejects packages whose manifest omits the native-printsvc experimental status
+  or evidence gate, preserves accepted manifests at `/etc/deneb/manifest.txt`,
+  and statically selftests that handoff in
+  `tools/deneb-printsvc-init-selftest.sh`.
 
 ## 9. Motion Controller / Marlin Firmware
 

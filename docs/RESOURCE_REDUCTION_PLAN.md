@@ -460,12 +460,27 @@ Material-profile USB import root/depth/suffix policy and the
   no-Python-driver invariant while requiring `deneb-printsvc` and the smoke,
   CLI, and init shell selftests to be present. The package builder and release
   verifier run the shell-only smoke/init gates that do not execute the
-  cross-compiled target binary before accepting the artifact. The printsvc CTest
-  suite registers the smoke, CLI, and init selftests when `sh` is available, and
-  the installer deploys them to `/usr/bin` for target-side gate checks. The
-  installer rejects update packages containing Python driver artifacts and runs
-  the installed print-service smoke-tool, CLI, and init-handoff selftests before
-  completing the update.
+  cross-compiled target binary before accepting the artifact. Packages default
+  to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` and `stable` package
+  builds now require live stock/native smoke summary paths in
+  `DENEB_PRINTSVC_STOCK_SUMMARY` and `DENEB_PRINTSVC_NATIVE_SUMMARY`, then run
+  `deneb-printsvc-smoke-verify --full` and
+  `deneb-printsvc-smoke-compare --require-reduction` before the archive is
+  created. The PowerShell release entry point exposes the same boundary through
+  `-ReleaseChannel`, `-PrintsvcStockSummary`, and
+  `-PrintsvcNativeSummary`, and fails before building if a non-experimental
+  channel is requested without both live summaries. The manifest records the
+  experimental native-printsvc status and the non-experimental evidence gate so
+  the release artifact carries the same boundary; both the shell package
+  builder and PowerShell wrapper inspect the archived manifest for those fields
+  before accepting the artifact. The printsvc CTest suite registers the smoke,
+  CLI, and init
+  selftests when `sh` is available, and the installer deploys them to `/usr/bin`
+  for target-side gate checks. The installer rejects update packages containing
+  Python driver artifacts, rejects manifests that lack the native-printsvc
+  experimental status or non-experimental evidence gate, preserves the accepted
+  manifest at `/etc/deneb/manifest.txt`, and runs the installed print-service
+  smoke-tool, CLI, and init-handoff selftests before completing the update.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action

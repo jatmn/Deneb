@@ -41,12 +41,20 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
         fi
     done
+    if [ -f /tmp/update/manifest.txt ]; then
+        if ! grep -Eq '^channel: (experimental|nightly|stable)$' /tmp/update/manifest.txt ||
+           ! grep -Fx 'native_printsvc: experimental' /tmp/update/manifest.txt >/dev/null ||
+           ! grep -Fx 'native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction' /tmp/update/manifest.txt >/dev/null; then
+            log "ERROR: update manifest missing native print-service release gate"
+            missing=1
+        fi
+    fi
     if [ ! -d /tmp/update/deneb-printsvc-macros ]; then
         log "ERROR: missing required directory: deneb-printsvc-macros"
         missing=1
@@ -141,6 +149,10 @@ install_web_runtime() {
     log "installed lighttpd to /usr/sbin/lighttpd"
 
     mkdir -p /etc/deneb /www/deneb
+    cp /tmp/update/manifest.txt /etc/deneb/manifest.txt
+    chmod 0644 /etc/deneb/manifest.txt
+    log "installed Deneb package manifest"
+
     cp /tmp/update/lighttpd.conf /etc/deneb/lighttpd.conf
     cp -r /tmp/update/www/* /www/deneb/
     log "installed Deneb web assets"

@@ -7,6 +7,10 @@ param(
     [string]$WebBuildDirectory = "build-musl",
     [string]$ZmqRoot = "/root/deneb-build/zeromq-4.3.5",
     [string]$LighttpdRoot = "/root/deneb-build/lighttpd-1.4.76",
+    [ValidateSet("experimental", "nightly", "stable")]
+    [string]$ReleaseChannel = "experimental",
+    [string]$PrintsvcStockSummary = "",
+    [string]$PrintsvcNativeSummary = "",
     [switch]$RebuildZmq,
     [switch]$RebuildLighttpd
 )
@@ -28,7 +32,40 @@ function ConvertTo-WslPath {
     return "/mnt/$drive/$rest"
 }
 
+function ConvertTo-WslInputPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if ($Path -match '^/') {
+        return $Path
+    }
+
+    return ConvertTo-WslPath $Path
+}
+
 $repoWsl = ConvertTo-WslPath $repoRoot
+
+if ($ReleaseChannel -ne "experimental" -and
+    ([string]::IsNullOrWhiteSpace($PrintsvcStockSummary) -or
+     [string]::IsNullOrWhiteSpace($PrintsvcNativeSummary))) {
+    throw "Non-experimental release builds require -PrintsvcStockSummary and -PrintsvcNativeSummary."
+}
+
+$printsvcStockSummaryWsl = ""
+$printsvcNativeSummaryWsl = ""
+if (-not [string]::IsNullOrWhiteSpace($PrintsvcStockSummary)) {
+    $printsvcStockSummaryWsl = ConvertTo-WslInputPath $PrintsvcStockSummary
+}
+if (-not [string]::IsNullOrWhiteSpace($PrintsvcNativeSummary)) {
+    $printsvcNativeSummaryWsl = ConvertTo-WslInputPath $PrintsvcNativeSummary
+}
+
+$buildPackageEnv = "DENEB_RELEASE_CHANNEL='$ReleaseChannel'"
+if ($printsvcStockSummaryWsl) {
+    $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
+}
+if ($printsvcNativeSummaryWsl) {
+    $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
+}
 
 $toolchainCheck = "/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version >/dev/null"
 & wsl -d $Distro -- bash -lc $toolchainCheck
@@ -166,7 +203,7 @@ $buildUi = "set -euo pipefail; " +
            "fi; " +
            "make -j`$(nproc); " +
            "cd '$repoWsl'; " +
-           "bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc"
+           "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc"
 
 & wsl -d $Distro -- bash -lc $buildUi
 if ($LASTEXITCODE -ne 0) {
@@ -187,6 +224,10 @@ $verifyPackage = "set -euo pipefail; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-cli-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-init-selftest$' /tmp/deneb-release-package-files.txt; " +
+                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar -xOf {} manifest.txt > /tmp/deneb-release-manifest.txt; " +
+                 "grep -Eq '^channel: $ReleaseChannel$' /tmp/deneb-release-manifest.txt; " +
+                 "grep -Eq '^native_printsvc: experimental$' /tmp/deneb-release-manifest.txt; " +
+                 "grep -Eq '^native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction$' /tmp/deneb-release-manifest.txt; " +
                  "if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' /tmp/deneb-release-package-files.txt; then " +
                  "echo 'Python driver artifact found in release package:' >&2; " +
                  "head -n 1 /tmp/deneb-release-packages.txt >&2; exit 1; " +

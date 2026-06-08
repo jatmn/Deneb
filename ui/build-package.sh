@@ -19,6 +19,10 @@ WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-l
 LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc]}"
 MDNS_BINARY="${4:-$(dirname "$WEB_API_BINARY")/deneb-mdns}"
 PRINTSVC_BINARY="${5:-$(dirname "$WEB_API_BINARY")/../../printsvc/build-musl/deneb-printsvc}"
+DENEB_RELEASE_CHANNEL="${DENEB_RELEASE_CHANNEL:-experimental}"
+PRINTSVC_STOCK_SUMMARY="${DENEB_PRINTSVC_STOCK_SUMMARY:-}"
+PRINTSVC_NATIVE_SUMMARY="${DENEB_PRINTSVC_NATIVE_SUMMARY:-}"
+PRINTSVC_RELEASE_GATE="non-experimental packages require verified stock/native smoke summaries with strict resource reduction"
 
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: binary not found: $BINARY"
@@ -50,6 +54,14 @@ OUTPUT_DIR="${REPO_ROOT}/dist"
 OUTPUT_IMG="${OUTPUT_DIR}/${PACKAGE_NAME}.deneb"
 
 echo "Building ${PACKAGE_NAME}"
+
+case "$DENEB_RELEASE_CHANNEL" in
+    experimental|nightly|stable) ;;
+    *)
+        echo "ERROR: DENEB_RELEASE_CHANNEL must be experimental, nightly, or stable" >&2
+        exit 1
+        ;;
+esac
 
 # Clean staging
 rm -rf "$STAGING_DIR"
@@ -109,6 +121,23 @@ tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-init-selftest.sh" > "${STAGING_D
 chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init"
 chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest" "${STAGING_DIR}/deneb-printsvc-cli-selftest" "${STAGING_DIR}/deneb-printsvc-init-selftest"
 
+if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
+    if [ -z "$PRINTSVC_STOCK_SUMMARY" ] || [ -z "$PRINTSVC_NATIVE_SUMMARY" ]; then
+        echo "ERROR: non-experimental native printsvc builds require DENEB_PRINTSVC_STOCK_SUMMARY and DENEB_PRINTSVC_NATIVE_SUMMARY" >&2
+        exit 1
+    fi
+    if [ ! -f "$PRINTSVC_STOCK_SUMMARY" ]; then
+        echo "ERROR: stock printsvc smoke summary not found: $PRINTSVC_STOCK_SUMMARY" >&2
+        exit 1
+    fi
+    if [ ! -f "$PRINTSVC_NATIVE_SUMMARY" ]; then
+        echo "ERROR: native printsvc smoke summary not found: $PRINTSVC_NATIVE_SUMMARY" >&2
+        exit 1
+    fi
+    "${STAGING_DIR}/deneb-printsvc-smoke-verify" --full "$PRINTSVC_NATIVE_SUMMARY"
+    "${STAGING_DIR}/deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY"
+fi
+
 mkdir -p "${STAGING_DIR}/deneb-printsvc-macros"
 cp "${REPO_ROOT}/printsvc/macros/"*.gcode "${STAGING_DIR}/deneb-printsvc-macros/"
 chmod 0644 "${STAGING_DIR}"/deneb-printsvc-macros/*.gcode
@@ -143,7 +172,10 @@ cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
 cat > "${STAGING_DIR}/manifest.txt" <<EOF
 package: ${PACKAGE_NAME}
 version: ${VERSION}
+channel: ${DENEB_RELEASE_CHANNEL}
 date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+native_printsvc: experimental
+native_printsvc_release_gate: ${PRINTSVC_RELEASE_GATE}
 contents:
   deneb-ui          - LVGL touchscreen UI binary (MIPS)
   deneb-ui.init     - OpenWrt procd init script
@@ -207,11 +239,15 @@ grep -Eq '(^|/)deneb-printsvc-smoke-compare$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-cli-selftest$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-init-selftest$' "${STAGING_DIR}/package-files.txt"
+tar -xOf "$OUTPUT_IMG" manifest.txt > "${STAGING_DIR}/package-manifest.txt"
+grep -Eq "^channel: ${DENEB_RELEASE_CHANNEL}$" "${STAGING_DIR}/package-manifest.txt"
+grep -Eq '^native_printsvc: experimental$' "${STAGING_DIR}/package-manifest.txt"
+grep -Fx "native_printsvc_release_gate: ${PRINTSVC_RELEASE_GATE}" "${STAGING_DIR}/package-manifest.txt" >/dev/null
 if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' "${STAGING_DIR}/package-files.txt"; then
     echo "ERROR: Python driver artifact found in Deneb package archive" >&2
     exit 1
 fi
-rm -f "${STAGING_DIR}/package-files.txt"
+rm -f "${STAGING_DIR}/package-files.txt" "${STAGING_DIR}/package-manifest.txt"
 
 echo "Package: ${OUTPUT_IMG}"
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"

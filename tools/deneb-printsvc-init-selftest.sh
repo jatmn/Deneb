@@ -180,6 +180,14 @@ if [ "$failures" -eq 0 ]; then
         "installer shim cleans stock service during printserver stop"
     reject_pattern "$INSTALLER" '/usr/bin/python3 /home/cygnus/marlindriver/print_service\.py' \
         "installer does not launch stock print_service.py"
+    require_pattern "$INSTALLER" 'manifest\.txt' \
+        "installer requires package manifest"
+    require_pattern "$INSTALLER" 'native_printsvc: experimental' \
+        "installer checks native printsvc manifest status"
+    require_pattern "$INSTALLER" 'native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction' \
+        "installer checks native printsvc release gate"
+    require_pattern "$INSTALLER" 'cp /tmp/update/manifest\.txt /etc/deneb/manifest\.txt' \
+        "installer preserves package manifest"
 
     generated_shim="${TMP_DIR}/printserver.generated"
     if extract_printserver_shim "$INSTALLER" "$generated_shim"; then

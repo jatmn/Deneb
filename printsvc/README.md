@@ -171,9 +171,21 @@ contain Python driver artifacts such as `*.py`, `*python*`, or
 creating the archive, then inspects the archive for the same native/no-Python
 invariant; the PowerShell release builder extracts the archived copies and runs
 the shell-only smoke/init checks again before accepting the release package.
+Packages default to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` or
+`stable` builds must provide `DENEB_PRINTSVC_STOCK_SUMMARY` and
+`DENEB_PRINTSVC_NATIVE_SUMMARY`, and the package builder verifies the native
+summary with `deneb-printsvc-smoke-verify --full` plus the strict
+`deneb-printsvc-smoke-compare --require-reduction` resource gate before
+creating the archive. The PowerShell release entry point exposes the same gate
+as `-ReleaseChannel`, `-PrintsvcStockSummary`, and `-PrintsvcNativeSummary`.
+Both the shell package builder and PowerShell wrapper inspect the archived
+manifest so the channel and native-printsvc evidence boundary travel with the
+artifact.
 During install, the update script rejects Python driver artifacts in
-`/tmp/update` and runs the installed smoke-tool, native binary CLI, and
-init-handoff selftests before completing the update.
+`/tmp/update`, requires the packaged manifest to carry the native-printsvc
+experimental status plus non-experimental evidence gate, preserves that
+manifest at `/etc/deneb/manifest.txt`, and runs the installed smoke-tool,
+native binary CLI, and init-handoff selftests before completing the update.
 
 ## Device Smoke Harness
 
