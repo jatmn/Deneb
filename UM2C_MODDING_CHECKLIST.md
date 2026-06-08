@@ -1083,7 +1083,10 @@ Completed implementation slices:
 - [x] Add the native print-service init handoff: Deneb stops stock
   `printserver` before starting native `deneb-printsvc`, and replaces the
   stock `printserver` init script with a Deneb-owned shim that no longer
-  launches the old driver or delegates back through a Deneb config flag.
+  launches the old driver or delegates back through a Deneb config flag. The
+  native init and shim also clear stale `/var/run/printserver.pid` state and
+  terminate an exact `/home/cygnus/marlindriver/print_service.py` process if it
+  survived the stock init stop path.
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.
@@ -1294,9 +1297,12 @@ Completed implementation slices:
   macro-backed action, local/USB native job-start/abort, REST job-start/abort,
   explicit preheat abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
   service-restart, and native-route evidence without Python or ad hoc log
-  inspection. Native-route evidence now requires `deneb-printsvc` to be running
-  with no stock `print_service.py` process, and local/USB job evidence now
-  requires that same native ownership proof. The verifier also checks active-job UI status
+  inspection. Native-route evidence now requires the route diagnostic body to
+  report `print_backend:native` plus `native_only_route:true`,
+  `deneb-printsvc` to be running with no stock `print_service.py` process, and
+  no captured native process sample to contain `print_service.py`; local/USB
+  job evidence now requires that same native ownership proof. The verifier also
+  checks active-job UI status
   transitions: `printing` while active, `paused` after pause, and `idle` after
   abort or natural completion. Active, preheat, paused, resumed, aborted, and
   completed snapshots must also prove native active/stop-allowed flags so the
@@ -1312,35 +1318,47 @@ Completed implementation slices:
   process RSS, raw CPU jiffies, initial-to-final CPU jiffies, boot-sync elapsed
   time, and print throughput, and fails if the stock summary lacks
   initial/final `print_service.py` process evidence, CPU or throughput
-  intervals are not positive, or the native summary lacks `deneb-printsvc`
-  process ownership or native active/stop-allowed safety evidence.
+  intervals are not positive, or the native summary lacks native-only route
+  evidence, contains any stock `print_service.py` process sample, lacks
+  `deneb-printsvc` process ownership, or lacks native active/stop-allowed
+  safety evidence.
 - [x] Add a shell-only synthetic selftest,
   `deneb-printsvc-smoke-selftest`, that builds stock/native summary fixtures
   and runs the full smoke verifier plus stock/native comparator without Python.
   The selftest also checks expected-failure fixtures for missing native
-  stop-allowed evidence, missing stock `print_service.py` baseline evidence,
-  and zero-throughput records. This does not replace live hardware evidence,
-  but it prevents the packaged verifier/comparator gates from drifting away
-  from the Section 8 smoke and resource requirements.
+  stop-allowed evidence, a route diagnostic that is not native-only, a stock
+  `print_service.py` process returning in a native run, missing stock
+  `print_service.py` baseline evidence, and zero-throughput records. This does
+  not replace live hardware evidence, but it prevents the packaged
+  verifier/comparator gates from drifting away from the Section 8 smoke and
+  resource requirements.
+- [x] Add a shell-only native init handoff selftest,
+  `deneb-printsvc-init-selftest`, that checks the packaged
+  `deneb-printsvc.init`, installer source, installer-generated printserver
+  heredoc, and installed/generated printserver shim for the native ownership
+  marker, exact stock `/home/cygnus/marlindriver/print_service.py` cleanup,
+  stale `/var/run/printserver.pid` cleanup, correct startup/stop cleanup
+  ordering, and absence of Python driver launch commands.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
   `dist/Deneb_Update_bc2645c.deneb` contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
   `deneb-printsvc-smoke-compare`, `deneb-printsvc-smoke-selftest`,
+  `deneb-printsvc-init-selftest`,
   `deneb-printsvc-macros/`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`, with
   no packaged Python or `print_service.py` entries. The package builder now
   fails if a Python driver artifact is present in the staging directory or the
   final `.deneb` archive, and `tools/build-update-release.ps1` also inspects the
   produced `.deneb` archive so release automation fails closed if a Python
   driver artifact is packaged or `deneb-printsvc` /
-  `deneb-printsvc-smoke-selftest` is missing. Both
-  `ui/build-package.sh` and the PowerShell release verifier run the shell
-  selftest so the packaged smoke evidence gates must pass before the artifact
-  is accepted. The print-service CTest suite also runs the shell selftest, and
-  the installer deploys it to `/usr/bin/deneb-printsvc-smoke-selftest` beside
-  the live smoke verifier and comparator. The installer also rejects update
-  packages that contain Python driver artifacts and runs the installed
-  print-service smoke-tool selftest before completing the update.
+  `deneb-printsvc-smoke-selftest` / `deneb-printsvc-init-selftest` is missing.
+  Both `ui/build-package.sh` and the PowerShell release verifier run the shell
+  selftests so the packaged smoke evidence and init handoff gates must pass
+  before the artifact is accepted. The print-service CTest suite also runs both
+  shell selftests, and the installer deploys them to `/usr/bin/` beside the live
+  smoke verifier and comparator. The installer also rejects update packages
+  that contain Python driver artifacts and runs the installed print-service
+  smoke-tool and init-handoff selftests before completing the update.
 
 ## 9. Motion Controller / Marlin Firmware
 

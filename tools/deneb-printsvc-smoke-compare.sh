@@ -126,6 +126,18 @@ require_pattern() {
     return 1
 }
 
+reject_pattern() {
+    file="$1"
+    pattern="$2"
+    label="$3"
+
+    if grep -Eq "$pattern" "$file"; then
+        fail "$label"
+        return 1
+    fi
+    return 0
+}
+
 delta_line() {
     name="$1"
     before="$2"
@@ -154,6 +166,15 @@ fi
 require_pattern "$NATIVE" \
     ' phase=native-driver-process .*deneb_printsvc=1 .*print_service_py=0 .*rc=0' \
     "native summary missing deneb-printsvc process ownership evidence"
+reject_pattern "$NATIVE" \
+    'sample=[^ ]+ .*command="?.*print_service.py' \
+    "native summary contains stock print_service.py process sample"
+require_pattern "$NATIVE" \
+    ' phase=route-native-enabled .*rc=0 .*body=.*print_backend:native.*native_only_route:true' \
+    "native summary missing native-only route evidence"
+require_pattern "$NATIVE" \
+    ' phase=boot-sync-ready .*route_body=.*native_only_route:true .*rc=0' \
+    "native summary missing native-only boot-sync route evidence"
 require_pattern "$STOCK" \
     'sample=initial .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing initial print_service.py process evidence"

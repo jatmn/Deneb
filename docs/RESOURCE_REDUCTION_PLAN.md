@@ -350,7 +350,10 @@ Material-profile USB import root/depth/suffix policy and the
 - The native print-service handoff is owned by Deneb package scripts: native
   `deneb-printsvc` stops stock `printserver` on start, and the patched stock
   `printserver` init shim no longer launches the old driver from
-  Deneb-authored code or delegates back through a Deneb config flag.
+  Deneb-authored code or delegates back through a Deneb config flag. Both the
+  native init and the shim clear stale `/var/run/printserver.pid` state and
+  terminate an exact `/home/cygnus/marlindriver/print_service.py` process if it
+  survived the stock init stop path.
   The installer no longer rewrites the stock coordinator's Python
   command-writer module; native route selection and print-control cleanup now
   stay in Deneb-owned shell/C code while stock Python files remain untouched
@@ -372,7 +375,8 @@ Material-profile USB import root/depth/suffix policy and the
   generate the live evidence required by Section 8 once
   SSH/hardware validation is allowed again. The harness writes a full log and a
   compact summary with phase return codes, bounded boot-sync ready timing, the
-  scalar `/printer/status` body and `/printer` root body for every snapshot,
+  selected print-backend route body, scalar `/printer/status` body, and
+  `/printer` root body for every snapshot,
   `/proc`-sourced process VmSize/VmRSS samples, system CPU jiffies, load
   averages, uptime samples for boot/ready timing correlation, and completed-job
   bytes/elapsed/bytes-per-second throughput records for stock and native print
@@ -381,8 +385,10 @@ Material-profile USB import root/depth/suffix policy and the
   `deneb-printsvc-smoke-verify`, a shell-only summary verifier for
   observe/native/boot-sync/heat/motion/macro/local-job/REST-job/preheat-abort/Cura-job/
   pause-resume/completion/restart evidence, including native `deneb-printsvc`
-  process ownership with no running `print_service.py`, local/USB job evidence
-  tied to that native ownership, active-job status transitions from
+  process ownership with no running `print_service.py`, route diagnostics that
+  report `native_only_route:true`, rejection of any native process sample that
+  shows stock `print_service.py` returned, local/USB job evidence tied to that
+  native ownership, active-job status transitions from
   `printing` to `paused` and back to `idle`, native active/stop-allowed flags
   during preheat and active jobs, heat/motion/macro status-root snapshot
   evidence, and resource/throughput evidence, so live runs can be checked on
@@ -393,30 +399,39 @@ Material-profile USB import root/depth/suffix policy and the
   without exporting data to an external Python script. It also fails if the
   stock summary lacks initial/final `print_service.py` process evidence, CPU
   or throughput intervals are not positive, or the native summary lacks
-  `deneb-printsvc` process ownership or native active/stop-allowed evidence.
+  native-only route evidence, contains a stock `print_service.py` process
+  sample, lacks `deneb-printsvc` process ownership, or lacks native
+  active/stop-allowed evidence.
   The package also carries `deneb-printsvc-smoke-selftest`, a shell-only
   synthetic summary fixture runner that exercises the full verifier and
   comparator gates locally, including expected failures for missing native
-  stop-safety evidence, missing stock `print_service.py` baseline evidence, and
-  zero-throughput records, so the evidence contract can be tested without
-  Python or live hardware.
+  stop-safety evidence, a non-native-only route diagnostic, a returned stock
+  `print_service.py` process in a native run, missing stock `print_service.py`
+  baseline evidence, and zero-throughput records, so the evidence contract can
+  be tested without Python or live hardware. `deneb-printsvc-init-selftest`
+  statically checks the packaged native init, installer source,
+  installer-generated printserver heredoc, and installed printserver shim for
+  native ownership markers, exact stock
+  `/home/cygnus/marlindriver/print_service.py` cleanup, stale
+  `/var/run/printserver.pid` cleanup, correct startup/stop cleanup ordering,
+  and absence of Python driver launch commands.
   The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
-  `deneb-printsvc-smoke-selftest`, `manifest.txt`, and the declared
+  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-init-selftest`,
+  `manifest.txt`, and the declared
   `LVGL_LICENSE_TLSF.txt` notice, with no packaged Python or `print_service.py`
   entries. The package builder fails closed if a Python driver artifact appears
   in the staging directory or final `.deneb` archive, and the PowerShell release
   builder now inspects the final `.deneb` archive for the same
-  no-Python-driver invariant while requiring `deneb-printsvc` and the shell
-  smoke selftest to be present. The
-  package builder runs the staged selftest, and the release verifier extracts
-  and runs the archived selftest before accepting the artifact. The printsvc
-  CTest suite also registers the selftest when `sh` is available, and the
-  installer deploys it to `/usr/bin/deneb-printsvc-smoke-selftest` for
-  target-side gate checks. The installer rejects update packages containing
-  Python driver artifacts and runs the installed print-service smoke-tool
-  selftest before completing the update.
+  no-Python-driver invariant while requiring `deneb-printsvc` and both shell
+  selftests to be present. The package builder runs the staged selftests, and
+  the release verifier extracts and runs the archived selftests before
+  accepting the artifact. The printsvc CTest suite also registers both
+  selftests when `sh` is available, and the installer deploys them to `/usr/bin`
+  for target-side gate checks. The installer rejects update packages containing
+  Python driver artifacts and runs the installed print-service smoke-tool and
+  init-handoff selftests before completing the update.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

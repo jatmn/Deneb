@@ -9,10 +9,24 @@ STOP=16
 USE_PROCD=1
 PROG=/usr/bin/deneb-printsvc
 
+stop_stock_print_service() {
+    ps w | grep '/home/cygnus/marlindriver/print_service.py' |
+        grep -v grep | while read -r pid rest; do
+            case "$pid" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+            kill -9 "$pid" 2>/dev/null || true
+        done
+    rm -f /var/run/printserver.pid
+}
+
 start_service() {
     if [ -x /etc/init.d/printserver ]; then
         /etc/init.d/printserver stop 2>/dev/null || true
     fi
+    stop_stock_print_service
 
     procd_open_instance
     procd_set_param command "$PROG"

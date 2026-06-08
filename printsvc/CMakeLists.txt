@@ -162,8 +162,13 @@ if(SH_EXECUTABLE)
         COMMAND "${SH_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-smoke-selftest.sh"
     )
+    add_test(
+        NAME deneb-printsvc-init-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-init-selftest.sh"
+    )
 else()
-    message(WARNING "sh not found; deneb-printsvc-smoke-selftest will not be registered with CTest.")
+    message(WARNING "sh not found; deneb-printsvc shell selftests will not be registered with CTest.")
 endif()
 
 install(TARGETS deneb-printsvc DESTINATION /usr/bin)

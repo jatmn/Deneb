@@ -128,6 +128,16 @@ require_pattern() {
     fi
 }
 
+reject_pattern() {
+    pattern="$1"
+    label="$2"
+    if grep -Eq "$pattern" "$SUMMARY"; then
+        fail "$label"
+    else
+        pass "$label"
+    fi
+}
+
 if [ ! -s "$SUMMARY" ]; then
     echo "summary file missing or empty: $SUMMARY" >&2
     exit 1
@@ -137,7 +147,7 @@ require_pattern '(^| )start .*native=' "start record present"
 require_pattern ' phase=printsvc-self-test rc=0' "printsvc self-test passed"
 require_pattern ' snapshot=initial' "initial snapshot present"
 require_pattern ' snapshot=final' "final snapshot present"
-require_pattern ' phase=route-initial .*rc=0' "initial route query passed"
+require_pattern ' phase=route-initial .*rc=0 .*body=.*native_only_route:true' "initial native-only route query passed"
 require_pattern ' phase=status-initial .*rc=0 .*status=' "initial status query passed with body"
 require_pattern ' phase=printer-initial .*rc=0 .*body=' "initial printer root query passed with body"
 require_pattern 'sample=initial .*mem_total_kb=' "initial memory sample present"
@@ -154,8 +164,9 @@ fi
 if [ "$REQUIRE_NATIVE" = "1" ]; then
     require_pattern ' phase=native-route-enabled ' "native route enabled"
     require_pattern ' phase=native-driver-process .*deneb_printsvc=1 .*print_service_py=0 .*rc=0' "native driver process owns marlindriver route"
+    reject_pattern 'sample=[^ ]+ .*command="?.*print_service.py' "native summary has no stock print_service.py process samples"
     require_pattern ' snapshot=native-enabled' "native route snapshot present"
-    require_pattern ' phase=route-native-enabled .*rc=0' "native route query passed"
+    require_pattern ' phase=route-native-enabled .*rc=0 .*body=.*print_backend:native.*native_only_route:true' "native-only route query passed"
     require_pattern ' phase=printer-native-enabled .*rc=0' "native printer root query passed"
 fi
 
@@ -197,13 +208,13 @@ fi
 if [ "$REQUIRE_RESTART" = "1" ]; then
     require_pattern ' phase=service-restart .*rc=0' "service restart passed"
     require_pattern ' snapshot=service-restarted' "service restart snapshot present"
-    require_pattern ' phase=route-service-restarted .*rc=0' "post-restart route query passed"
+    require_pattern ' phase=route-service-restarted .*rc=0 .*body=.*native_only_route:true' "post-restart native-only route query passed"
     require_pattern ' phase=status-service-restarted .*rc=0' "post-restart status query passed"
     require_pattern ' phase=printer-service-restarted .*rc=0' "post-restart printer root query passed"
 fi
 
 if [ "$REQUIRE_BOOT_SYNC" = "1" ]; then
-    require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*status=(idle|printing|paused|error|offline|finished) .*rc=0' "boot sync reached route/status readiness"
+    require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*route_body=.*native_only_route:true .*status=(idle|printing|paused|error|offline|finished) .*rc=0' "boot sync reached native-only route/status readiness"
 fi
 
 if [ "$REQUIRE_RESOURCES" = "1" ]; then

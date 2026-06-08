@@ -45,7 +45,7 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
 2026-06-08T00:00:00Z sample=initial load1=0.20
 2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
-2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 status=idle rc=0
+2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle rc=0
 2026-06-08T00:01:00Z phase=job-throughput path=/home/3D/stock.gcode bytes=10000 elapsed_seconds=20 bytes_per_second=500 rc=0
 2026-06-08T00:02:00Z sample=final mem_total_kb=250000 mem_used_kb=122000
 2026-06-08T00:02:00Z sample=final uptime_seconds=220
@@ -58,7 +58,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z start api=http://127.0.0.1/api/v1 cluster_api=http://127.0.0.1 native=1 heat=1 motion=1 macro=1 local_job=1 job=1 cura_job=1 preheat_abort=1 complete_job=1 pause_resume=1 restart=1 boot_sync=1
 2026-06-08T00:00:00Z phase=printsvc-self-test rc=0
 2026-06-08T00:00:00Z snapshot=initial
-2026-06-08T00:00:00Z phase=route-initial kind=api method=GET path=/api/v1/deneb/print_backend rc=0
+2026-06-08T00:00:00Z phase=route-initial kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
 2026-06-08T00:00:00Z phase=status-initial kind=api method=GET path=/printer/status rc=0 status=idle
 2026-06-08T00:00:00Z phase=printer-initial kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:00Z sample=initial mem_total_kb=250000 mem_used_kb=100000
@@ -69,9 +69,9 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:01Z phase=native-route-enabled previous=native-only
 2026-06-08T00:00:01Z phase=native-driver-process kind=process deneb_printsvc=1 print_service_py=0 rc=0
 2026-06-08T00:00:01Z snapshot=native-enabled
-2026-06-08T00:00:01Z phase=route-native-enabled kind=api method=GET path=/api/v1/deneb/print_backend rc=0
+2026-06-08T00:00:01Z phase=route-native-enabled kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
 2026-06-08T00:00:01Z phase=printer-native-enabled kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
-2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 status=idle rc=0
+2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle rc=0
 2026-06-08T00:00:03Z phase=bed-low-heat kind=api rc=0
 2026-06-08T00:00:03Z phase=nozzle-low-heat kind=api rc=0
 2026-06-08T00:00:03Z snapshot=heating
@@ -137,7 +137,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:36Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:37Z phase=service-restart kind=service-restart rc=0
 2026-06-08T00:00:37Z snapshot=service-restarted
-2026-06-08T00:00:37Z phase=route-service-restarted kind=api method=GET path=/api/v1/deneb/print_backend rc=0
+2026-06-08T00:00:37Z phase=route-service-restarted kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
 2026-06-08T00:00:37Z phase=status-service-restarted kind=api method=GET path=/printer/status rc=0 status=idle
 2026-06-08T00:00:37Z phase=printer-service-restarted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:01:00Z sample=final mem_total_kb=250000 mem_used_kb=101000
@@ -159,6 +159,28 @@ expect_failure verify_rejects_missing_active_stop \
 expect_failure compare_rejects_missing_active_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-stop.summary"
+
+sed 's/native_only_route:true/native_only_route:false/g' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-route-not-exclusive.summary"
+expect_failure verify_rejects_non_native_only_route \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-route-not-exclusive.summary"
+expect_failure compare_rejects_non_native_only_route \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-route-not-exclusive.summary"
+
+awk '
+    { print }
+    /snapshot=service-restarted/ {
+        print "2026-06-08T00:00:38Z sample=service-restarted pid=333 vmsize_kb=33000 vmrss_kb=12100 command=\"/usr/bin/python3 /home/cygnus/marlindriver/print_service.py\""
+    }
+' "$NATIVE_SUMMARY" > "$TMP_DIR/native-stock-driver-returned.summary"
+expect_failure verify_rejects_returned_stock_driver \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-stock-driver-returned.summary"
+expect_failure compare_rejects_returned_stock_driver \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-stock-driver-returned.summary"
 
 grep -v 'print_service.py' "$STOCK_SUMMARY" > "$TMP_DIR/stock-missing-python.summary"
 expect_failure compare_rejects_missing_stock_python_baseline \

@@ -313,6 +313,24 @@ printer_root_step() {
     return "$rc"
 }
 
+route_step() {
+    label="$1"
+    body_file="/tmp/deneb-printsvc-smoke-route.$$"
+
+    say "$label: GET /deneb/print_backend"
+    http_get_capture /deneb/print_backend "$body_file"
+    rc=$?
+    if [ -s "$body_file" ]; then
+        cat "$body_file" >>"$LOG"
+        printf '\n' >>"$LOG"
+    fi
+    body_value="$(sanitize_summary_value "$(cat "$body_file" 2>/dev/null || true)")"
+    rm -f "$body_file"
+    say "$label rc=$rc body=${body_value:-unknown}"
+    summary "phase=$label kind=api method=GET path=/deneb/print_backend rc=$rc body=${body_value:-unknown}"
+    return "$rc"
+}
+
 monotonic_seconds() {
     awk '{printf("%d", $1)}' /proc/uptime 2>/dev/null || printf '0'
 }
@@ -389,6 +407,7 @@ wait_for_boot_sync() {
         route_rc=$?
         http_get_capture /printer/status "$status_file"
         status_rc=$?
+        route_value="$(sanitize_summary_value "$(cat "$route_file" 2>/dev/null || true)")"
         status_value="$(sanitize_summary_value "$(cat "$status_file" 2>/dev/null || true)")"
 
         if [ -s "$route_file" ]; then
@@ -402,11 +421,12 @@ wait_for_boot_sync() {
         rm -f "$route_file" "$status_file"
 
         if [ "$route_rc" = "0" ] && [ "$status_rc" = "0" ] && \
+           printf '%s' "$route_value" | grep -q 'native_only_route:true' && \
            [ -n "$status_value" ] && [ "$status_value" != "unknown" ]; then
             uptime_now="$(monotonic_seconds)"
             boot_elapsed=$((uptime_now - start_uptime))
             [ "$boot_elapsed" -ge 0 ] || boot_elapsed=0
-            summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=$boot_elapsed status=$status_value rc=0"
+            summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=$boot_elapsed route_body=${route_value:-unknown} status=$status_value rc=0"
             return 0
         fi
 
@@ -414,7 +434,7 @@ wait_for_boot_sync() {
         elapsed=$((elapsed + interval))
     done
 
-    summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=0 status=${status_value:-unknown} rc=1"
+    summary "phase=boot-sync-ready elapsed_seconds=$elapsed uptime_delta_seconds=0 route_body=${route_value:-unknown} status=${status_value:-unknown} rc=1"
     return 1
 }
 
@@ -476,7 +496,7 @@ snapshot() {
     append_cmd df -h || true
     append_cmd sh -c "ps w | grep -E 'deneb-printsvc|print_service.py|coordinator.py|deneb-api|deneb-ui' | grep -v grep" || true
     sample_processes "$label"
-    api_step "route-$label" GET /deneb/print_backend || true
+    route_step "route-$label" || true
     status_step "status-$label" || true
     printer_root_step "printer-$label" || true
 }

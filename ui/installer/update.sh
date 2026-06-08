@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-init-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -122,6 +122,10 @@ install_web_runtime() {
     cp /tmp/update/deneb-printsvc-smoke-selftest /usr/bin/deneb-printsvc-smoke-selftest
     chmod 0755 /usr/bin/deneb-printsvc-smoke-selftest
     log "installed deneb-printsvc-smoke-selftest to /usr/bin/deneb-printsvc-smoke-selftest"
+
+    cp /tmp/update/deneb-printsvc-init-selftest /usr/bin/deneb-printsvc-init-selftest
+    chmod 0755 /usr/bin/deneb-printsvc-init-selftest
+    log "installed deneb-printsvc-init-selftest to /usr/bin/deneb-printsvc-init-selftest"
 
     mkdir -p /etc/deneb/marlindriver/gcode
     cp /tmp/update/deneb-printsvc-macros/*.gcode /etc/deneb/marlindriver/gcode/
@@ -396,9 +400,22 @@ START=95
 # shellcheck disable=SC2034
 STOP=15
 
+stop_stock_print_service() {
+    ps w | grep '/home/cygnus/marlindriver/print_service.py' |
+        grep -v grep | while read -r PID REST; do
+            case "${PID}" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            kill "${PID}" 2>/dev/null || true
+            sleep 1
+            kill -9 "${PID}" 2>/dev/null || true
+        done
+    rm -f /var/run/printserver.pid
+}
+
 start() {
     logger -t deneb-printserver "native deneb-printsvc owns the print backend"
-    rm -f /var/run/printserver.pid
+    stop_stock_print_service
     return 0
 }
 
@@ -409,6 +426,7 @@ stop() {
         kill -9 "${PID}" 2>/dev/null || true
         rm -f /var/run/printserver.pid
     fi
+    stop_stock_print_service
 }
 EOF
         chmod 0755 "${printserver_init}"
@@ -491,6 +509,18 @@ smoke_test_printsvc_tools() {
     log "deneb-printsvc smoke tool selftest passed"
 }
 
+smoke_test_printsvc_init_handoff() {
+    if ! DENEB_PRINTSVC_INIT=/etc/init.d/deneb-printsvc \
+        DENEB_INSTALLER=/tmp/update/update.sh \
+        DENEB_PRINTSERVER_INIT=/etc/init.d/printserver \
+        /usr/bin/deneb-printsvc-init-selftest >/tmp/deneb-printsvc-init-selftest.log 2>&1; then
+        log "ERROR: deneb-printsvc init handoff selftest failed"
+        cat /tmp/deneb-printsvc-init-selftest.log 2>/dev/null || true
+        exit 1
+    fi
+    log "deneb-printsvc init handoff selftest passed"
+}
+
 # Install locale files
 install_locales() {
     mkdir -p /etc/deneb/locales
@@ -546,6 +576,7 @@ install_web_runtime
 smoke_test_printsvc_tools
 install_motion_firmware_verify_cache
 patch_motion_stack_boot_order
+smoke_test_printsvc_init_handoff
 smoke_test_binary
 install_config
 prune_stock_wifi_portal
