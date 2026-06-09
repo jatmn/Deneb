@@ -87,6 +87,8 @@ audit_source() {
     require_doc_row "$doc" 'native deneb-printsvc callers' 'native `deneb-printsvc` callers'
     require_pattern "$doc" 'LCD `backend_comm`.*Client via shared helpers' \
         "integration audit decides LCD remains client via shared helpers"
+    require_pattern "$doc" 'LCD `backend_comm`.*deneb_status_state_has_abort_context' \
+        "integration audit records shared LCD abort-display helper"
     require_pattern "$doc" 'web `backend_zmq`.*Client via shared helpers' \
         "integration audit decides web backend remains client via shared helpers"
     require_pattern "$doc" 'REST `api_print_job`.*Client via shared helpers' \
@@ -118,6 +120,7 @@ audit_source() {
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "command_format\.h"' "LCD backend uses shared command formatting"
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "print_state_rules\.h"' "LCD backend uses shared state rules"
     require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_context_flags' "LCD backend gets context flags from shared status helper"
+    require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_has_abort_context' "LCD backend gets abort display context from shared status helper"
 
     require_file "${repo}/web/src/backend_zmq.c" "web backend source exists"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_backend_route\.h"' "web backend uses shared route helper"

@@ -37,7 +37,7 @@ write_valid_source() {
     cat > "$root/docs/PRINTSVC_INTEGRATION_AUDIT.md" <<'EOF'
 | Integration | Placement decision | Native owner | Compatibility boundary | Removal condition | Evidence | Remaining proof |
 | --- | --- | --- | --- | --- | --- | --- |
-| LCD `backend_comm` | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| LCD `backend_comm` | Client via shared helpers | owner | boundary | removal | deneb_status_state_has_abort_context | proof |
 | web `backend_zmq` | Client via shared helpers | owner | boundary | removal | evidence | proof |
 | REST `api_print_job` | Client via shared helpers | owner | boundary | removal | evidence | proof |
 | Cura `api_cluster` | Client via shared helpers | owner | boundary | removal | evidence | proof |
@@ -58,6 +58,7 @@ EOF
 #include "command_format.h"
 #include "print_state_rules.h"
 int uses_flags(void) { return deneb_status_state_context_flags(0, 0).has_active_context; }
+int uses_abort_context(void) { return deneb_status_state_has_abort_context(0, 0); }
 EOF
     cat > "$root/web/src/backend_zmq.c" <<'EOF'
 #include "print_backend_route.h"
@@ -131,6 +132,12 @@ write_valid_source "$MISSING_HELPER"
 grep -v 'print_action_dispatch.h' "$MISSING_HELPER/web/src/api_print_job.c" > "$MISSING_HELPER/web/src/api_print_job.tmp"
 mv "$MISSING_HELPER/web/src/api_print_job.tmp" "$MISSING_HELPER/web/src/api_print_job.c"
 expect_failure rejects_missing_shared_helper "$AUDIT" --source "$MISSING_HELPER"
+
+MISSING_LCD_ABORT_HELPER="$TMP_DIR/source-missing-lcd-abort-helper"
+write_valid_source "$MISSING_LCD_ABORT_HELPER"
+grep -v 'deneb_status_state_has_abort_context' "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.c" > "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.tmp"
+mv "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.tmp" "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.c"
+expect_failure rejects_missing_lcd_abort_helper "$AUDIT" --source "$MISSING_LCD_ABORT_HELPER"
 
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"
