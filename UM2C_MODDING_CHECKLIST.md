@@ -652,7 +652,18 @@ deviation, not hidden under "stock parity."
   `native_stop_allowed:false`, blank filename, cleared temperature targets,
   and no stock `print_service.py`. Keep this open until the smoke harness also
   captures the intermediate native `aborting` state while cleanup drains and a
-  representative supervised print path repeats the result.
+  representative supervised print path repeats the result. A later June 9,
+  2026 run with the stricter abort-evidence harness first exposed the real API
+  bug behind this open item: preheat abort briefly collapsed to `idle` while
+  native cleanup was still active. The shared native status parser/API label
+  path now preserves native `aborting` for ABORT frames with
+  `denebActive:true`, keeps `is_printing:true` so clients block new actions
+  during cleanup, and keeps `native_stop_allowed:false` after the abort request
+  is accepted. On hardware, `/tmp/deneb-printsvc-smoke-status-fix-preheat.summary`
+  passed: preheat was `printing` with Stop allowed, immediate abort was
+  `aborting` with `native_active:true` / `native_stop_allowed:false`, cleanup
+  then settled to `idle` with active/stop false, blank filename, cleared heater
+  targets, and no manual cluster cleanup.
 - [x] Keep native print completion in an active printing state until finish
   cleanup drains in host lifecycle coverage. End-of-file no longer marks the
   job idle immediately; the streamer dispatches the finish policy, keeps
@@ -699,8 +710,14 @@ deviation, not hidden under "stock parity."
   allowed, `job_line_number` advanced to 50, API abort returned success, and
   the final state was `idle` with `native_active:false` /
   `native_stop_allowed:false`; Z ended at 197.8 after starting from homed
-  207.0. Keep this open for a representative supervised print path and explicit
-  no-unsafe-X/Y-cleanup log review.
+  207.0. The June 9 status-label fix reran that bounded Z-only fixture with
+  immediate abort evidence in
+  `/tmp/deneb-printsvc-smoke-status-fix-active.summary`: active print was
+  `printing` with Stop allowed, immediate and draining snapshots were
+  `aborting` with `native_active:true` / `native_stop_allowed:false`, final
+  state was `idle` with active/stop false and blank filename, and a log/summary
+  grep found no `G28 X/Y/Z` or X/Y cleanup moves. Keep this open for a
+  representative supervised print path.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or

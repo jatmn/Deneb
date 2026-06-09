@@ -524,7 +524,7 @@ extract_status_value() {
     fi
     if [ -z "$value" ]; then
         value="$(printf '%s' "$raw" | tr -d '\r\n" ' |
-            sed -n '/^\(idle\|printing\|paused\|error\|offline\|finished\)$/p' |
+            sed -n '/^\(idle\|printing\|paused\|aborting\|error\|offline\|finished\)$/p' |
             head -n 1)"
     fi
     sanitize_summary_value "$value"
@@ -927,6 +927,14 @@ snapshot() {
     printer_root_step "printer-$snapshot_label" || true
 }
 
+api_snapshot() {
+    snapshot_label="$1"
+    say "===== API snapshot: $snapshot_label ====="
+    summary "snapshot=$snapshot_label"
+    status_step "status-$snapshot_label" || true
+    printer_root_step "printer-$snapshot_label" || true
+}
+
 parser_selftest_case() {
     label="$1"
     raw="$2"
@@ -1110,7 +1118,10 @@ if [ "$RUN_JOB" = "1" ]; then
     fi
     api_step "job-abort" PUT /print_job/state '{"action":"abort"}' || \
         api_step "job-stop" PUT /print_job/state '{"action":"stop"}' || true
-    sleep 10
+    api_snapshot "job-abort-requested"
+    sleep 2
+    snapshot "job-abort-draining"
+    sleep 8
     snapshot "job-aborted"
 fi
 
@@ -1128,7 +1139,10 @@ if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
     snapshot "preheat-abort-active"
     api_step "preheat-abort" PUT /print_job/state '{"action":"abort"}' || \
         api_step "preheat-stop" PUT /print_job/state '{"action":"stop"}' || true
-    sleep 10
+    api_snapshot "preheat-abort-requested"
+    sleep 2
+    snapshot "preheat-abort-draining"
+    sleep 8
     snapshot "preheat-aborted"
 fi
 
@@ -1146,7 +1160,10 @@ if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
     snapshot "active-abort-printing"
     api_step "active-abort" PUT /print_job/state '{"action":"abort"}' || \
         api_step "active-stop" PUT /print_job/state '{"action":"stop"}' || true
-    sleep 10
+    api_snapshot "active-abort-requested"
+    sleep 2
+    snapshot "active-abort-draining"
+    sleep 8
     snapshot "active-aborted"
 fi
 
@@ -1172,7 +1189,10 @@ if [ "$RUN_CURA_JOB" = "1" ]; then
     say "cura-job-abort rc=$rc"
     summary "phase=cura-job-abort kind=cluster-api method=DELETE path=/print_jobs/current rc=$rc"
     [ "$rc" = "0" ] || exit "$rc"
-    sleep 10
+    api_snapshot "cura-job-abort-requested"
+    sleep 2
+    snapshot "cura-job-abort-draining"
+    sleep 8
     snapshot "cura-job-aborted"
 fi
 

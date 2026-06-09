@@ -118,6 +118,12 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:10Z phase=status-job-resumed kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:10Z phase=printer-job-resumed kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:11Z phase=job-abort kind=api rc=0
+2026-06-08T00:00:11Z snapshot=job-abort-requested
+2026-06-08T00:00:11Z phase=status-job-abort-requested kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:11Z phase=printer-job-abort-requested kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
+2026-06-08T00:00:11Z snapshot=job-abort-draining
+2026-06-08T00:00:11Z phase=status-job-abort-draining kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:11Z phase=printer-job-abort-draining kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
 2026-06-08T00:00:11Z snapshot=job-aborted
 2026-06-08T00:00:11Z phase=status-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:11Z phase=printer-job-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
@@ -127,6 +133,12 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:12Z phase=status-cura-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:12Z phase=printer-cura-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:13Z phase=cura-job-abort kind=cluster-api method=DELETE path=/print_jobs/current rc=0
+2026-06-08T00:00:13Z snapshot=cura-job-abort-requested
+2026-06-08T00:00:13Z phase=status-cura-job-abort-requested kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:13Z phase=printer-cura-job-abort-requested kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
+2026-06-08T00:00:13Z snapshot=cura-job-abort-draining
+2026-06-08T00:00:13Z phase=status-cura-job-abort-draining kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:13Z phase=printer-cura-job-abort-draining kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
 2026-06-08T00:00:13Z snapshot=cura-job-aborted
 2026-06-08T00:00:13Z phase=status-cura-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:13Z phase=printer-cura-job-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
@@ -136,6 +148,12 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:14Z phase=status-preheat-abort-active kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:14Z phase=printer-preheat-abort-active kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:15Z phase=preheat-abort kind=api rc=0
+2026-06-08T00:00:15Z snapshot=preheat-abort-requested
+2026-06-08T00:00:15Z phase=status-preheat-abort-requested kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:15Z phase=printer-preheat-abort-requested kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
+2026-06-08T00:00:15Z snapshot=preheat-abort-draining
+2026-06-08T00:00:15Z phase=status-preheat-abort-draining kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:15Z phase=printer-preheat-abort-draining kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
 2026-06-08T00:00:15Z snapshot=preheat-aborted
 2026-06-08T00:00:15Z phase=status-preheat-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:15Z phase=printer-preheat-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
@@ -145,6 +163,12 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:16Z phase=status-active-abort-printing kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:16Z phase=printer-active-abort-printing kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:17Z phase=active-abort kind=api rc=0
+2026-06-08T00:00:17Z snapshot=active-abort-requested
+2026-06-08T00:00:17Z phase=status-active-abort-requested kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:17Z phase=printer-active-abort-requested kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
+2026-06-08T00:00:17Z snapshot=active-abort-draining
+2026-06-08T00:00:17Z phase=status-active-abort-draining kind=api method=GET path=/printer/status rc=0 status=aborting body=aborting
+2026-06-08T00:00:17Z phase=printer-active-abort-draining kind=api method=GET path=/printer rc=0 body={status:aborting,native_active:true,native_stop_allowed:false}
 2026-06-08T00:00:17Z snapshot=active-aborted
 2026-06-08T00:00:17Z phase=status-active-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:17Z phase=printer-active-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
@@ -284,6 +308,33 @@ expect_failure verify_rejects_active_abort_missing_stop \
 expect_failure compare_rejects_active_abort_missing_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-active-abort-missing-stop.summary"
+
+grep -v 'phase=status-active-abort-requested ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-active-abort-requested-status.summary"
+expect_failure verify_rejects_missing_active_abort_requested_status \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-active-abort-requested-status.summary"
+expect_failure compare_rejects_missing_active_abort_requested_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-active-abort-requested-status.summary"
+
+sed '/phase=status-active-abort-draining /s/status=aborting/status=idle/; /phase=status-active-abort-draining /s/body=aborting/body=idle/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-active-abort-draining-idle.summary"
+expect_failure verify_rejects_active_abort_draining_idle \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-active-abort-draining-idle.summary"
+expect_failure compare_rejects_active_abort_draining_idle \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-active-abort-draining-idle.summary"
+
+sed '/phase=printer-preheat-abort-draining /s/native_stop_allowed:false/native_stop_allowed:true/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-preheat-abort-draining-stop-enabled.summary"
+expect_failure verify_rejects_preheat_abort_draining_stop_enabled \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-preheat-abort-draining-stop-enabled.summary"
+expect_failure compare_rejects_preheat_abort_draining_stop_enabled \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-preheat-abort-draining-stop-enabled.summary"
 
 sed '/phase=printer-active-aborted /s/native_stop_allowed:false/native_stop_allowed:true/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-active-aborted-stop-stuck.summary"

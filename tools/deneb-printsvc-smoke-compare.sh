@@ -215,6 +215,25 @@ require_printer_stop_phase() {
         "native summary missing printer native active/stop evidence for ${phase}"
 }
 
+require_abort_requested_phase() {
+    phase="$1"
+
+    require_status_phase "$phase" aborting
+    require_printer_stop_phase "$phase" true false
+}
+
+require_abort_draining_phase() {
+    phase="$1"
+
+    if grep -Eq " phase=status-${phase} .*rc=0 .*status=aborting" "$NATIVE"; then
+        require_printer_stop_phase "$phase" true false
+        return
+    fi
+
+    require_status_phase "$phase" idle
+    require_printer_stop_phase "$phase" false false
+}
+
 require_completion_runtime_evidence() {
     if grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=printing' "$NATIVE" &&
        grep -Eq ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "$NATIVE"; then
@@ -293,6 +312,12 @@ require_pattern "$NATIVE" \
     ' phase=boot-sync-ready .*status=(idle|printing|paused|error|offline|finished) ' \
     "native summary missing scalar boot-sync status evidence"
 require_local_job_evidence
+for snapshot in job-abort-requested job-abort-draining \
+    cura-job-abort-requested cura-job-abort-draining; do
+    require_pattern "$NATIVE" \
+        " snapshot=${snapshot}" \
+        "native summary missing ${snapshot} evidence"
+done
 for phase in initial native-enabled cooldown motion macro service-restarted \
     job-aborted cura-job-aborted preheat-aborted active-aborted \
     job-completed; do
@@ -301,6 +326,12 @@ done
 for phase in heating job-running job-resumed cura-job-running \
     preheat-abort-active active-abort-printing; do
     require_status_phase "$phase" printing
+done
+for phase in preheat-abort-requested active-abort-requested; do
+    require_abort_requested_phase "$phase"
+done
+for phase in preheat-abort-draining active-abort-draining; do
+    require_abort_draining_phase "$phase"
 done
 require_status_phase job-paused paused
 require_pattern "$NATIVE" \

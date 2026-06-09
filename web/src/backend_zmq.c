@@ -52,8 +52,9 @@ const printer_state_t *backend_zmq_get_state(void) { return &state; }
 const char *backend_zmq_get_status_json(void) { return "{}"; }
 const char *backend_zmq_get_status_label(void)
 {
-    return deneb_print_status_label(state.connected, state.has_error,
-                                    state.is_paused, state.is_printing);
+    return deneb_print_status_label_with_req(
+        state.connected, state.has_error, state.is_paused, state.is_printing,
+        state.current_req, state.has_native_active && state.native_active);
 }
 void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)
 {
@@ -547,8 +548,9 @@ const char *backend_zmq_get_status_json(void)
 
 const char *backend_zmq_get_status_label(void)
 {
-    return deneb_print_status_label(state.connected, state.has_error,
-                                    state.is_paused, state.is_printing);
+    return deneb_print_status_label_with_req(
+        state.connected, state.has_error, state.is_paused, state.is_printing,
+        state.current_req, state.has_native_active && state.native_active);
 }
 
 void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)

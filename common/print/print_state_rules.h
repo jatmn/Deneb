@@ -149,6 +149,10 @@ int deneb_print_fields_have_active_context(const char *req,
                                            int has_print_name);
 const char *deneb_print_status_label(int connected, int has_error,
                                      int is_paused, int is_active);
+const char *deneb_print_status_label_with_req(int connected, int has_error,
+                                              int is_paused, int is_active,
+                                              const char *req,
+                                              int native_active);
 const char *deneb_print_job_status_label(int has_error, int is_paused,
                                          int is_active);
 const char *deneb_print_job_state_or_none(int has_error, int is_paused,

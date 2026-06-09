@@ -291,6 +291,24 @@ const char *deneb_print_status_label(int connected, int has_error,
     return "idle";
 }
 
+const char *deneb_print_status_label_with_req(int connected, int has_error,
+                                              int is_paused, int is_active,
+                                              const char *req,
+                                              int native_active)
+{
+    if (has_error)
+        return "error";
+    if (is_paused)
+        return "paused";
+    if (!connected)
+        return "offline";
+    if (deneb_print_req_is_abort(req) && (native_active || is_active))
+        return "aborting";
+    if (is_active)
+        return "printing";
+    return "idle";
+}
+
 const char *deneb_print_job_status_label(int has_error, int is_paused,
                                          int is_active)
 {

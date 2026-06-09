@@ -1772,6 +1772,15 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_status_label(1, 0, 0, 1), "printing") == 0);
     assert(strcmp(deneb_print_status_label(1, 0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_status_label(1, 1, 1, 1), "error") == 0);
+    assert(strcmp(deneb_print_status_label_with_req(
+                      1, 0, 0, 1, DENEB_COMMAND_VERB_ABORT, 1),
+                  "aborting") == 0);
+    assert(strcmp(deneb_print_status_label_with_req(
+                      1, 0, 0, 0, DENEB_COMMAND_VERB_ABORT, 1),
+                  "aborting") == 0);
+    assert(strcmp(deneb_print_status_label_with_req(
+                      1, 0, 0, 0, DENEB_COMMAND_VERB_ABORT, 0),
+                  "idle") == 0);
     assert(strcmp(deneb_print_job_status_label(0, 0, 0), "finished") == 0);
     assert(strcmp(deneb_print_job_status_label(0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_job_status_label(1, 1, 1), "error") == 0);
@@ -3048,6 +3057,16 @@ static void test_status_payload_helpers(void)
     assert(payload.has_native_stop_allowed);
     assert(!payload.native_stop_allowed);
     assert(!payload.is_printing);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"ABORT\","
+               "\"denebActive\":true,\"denebStopAllowed\":false}",
+               &payload) == 0);
+    assert(payload.has_native_active);
+    assert(payload.native_active);
+    assert(payload.has_native_stop_allowed);
+    assert(!payload.native_stop_allowed);
+    assert(payload.is_printing);
 }
 
 static void test_print_profile_helpers(void)

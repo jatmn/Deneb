@@ -286,6 +286,8 @@ if [ "$REQUIRE_JOB" = "1" ]; then
     else
         fail "job abort/stop passed"
     fi
+    require_pattern ' snapshot=job-abort-requested' "job abort-requested snapshot present"
+    require_pattern ' snapshot=job-abort-draining' "job abort-draining snapshot present"
     require_pattern ' snapshot=job-aborted' "job-aborted snapshot present"
     require_pattern ' phase=status-job-aborted .*rc=0 .*status=idle' "job-aborted status is idle"
     require_pattern ' phase=printer-job-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-aborted native active/stop flags are false"
@@ -298,6 +300,8 @@ if [ "$REQUIRE_CURA_JOB" = "1" ]; then
     require_pattern ' phase=status-cura-job-running .*rc=0 .*status=printing' "Cura job-running status is printing"
     require_pattern ' phase=printer-cura-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "Cura job-running native active/stop flags are true"
     require_pattern ' phase=cura-job-abort .*rc=0' "Cura job abort passed"
+    require_pattern ' snapshot=cura-job-abort-requested' "Cura job abort-requested snapshot present"
+    require_pattern ' snapshot=cura-job-abort-draining' "Cura job abort-draining snapshot present"
     require_pattern ' snapshot=cura-job-aborted' "Cura job-aborted snapshot present"
     require_pattern ' phase=status-cura-job-aborted .*rc=0 .*status=idle' "Cura job-aborted status is idle"
     require_pattern ' phase=printer-cura-job-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "Cura job-aborted native active/stop flags are false"
@@ -314,6 +318,16 @@ if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
     else
         fail "preheat abort/stop passed"
     fi
+    require_pattern ' snapshot=preheat-abort-requested' "preheat-abort requested snapshot present"
+    require_pattern ' phase=status-preheat-abort-requested .*rc=0 .*status=aborting' "preheat-abort requested status is aborting"
+    require_pattern ' phase=printer-preheat-abort-requested .*rc=0 .*body=.*native_active:true.*native_stop_allowed:false' "preheat-abort requested native active stays true and stop is disabled"
+    require_pattern ' snapshot=preheat-abort-draining' "preheat-abort draining snapshot present"
+    if grep -Eq ' phase=status-preheat-abort-draining .*rc=0 .*status=aborting' "$SUMMARY"; then
+        require_pattern ' phase=printer-preheat-abort-draining .*rc=0 .*body=.*native_active:true.*native_stop_allowed:false' "preheat-abort draining abort state keeps native active and stop disabled"
+    else
+        require_pattern ' phase=status-preheat-abort-draining .*rc=0 .*status=idle' "preheat-abort draining status is aborting or idle after cleanup"
+        require_pattern ' phase=printer-preheat-abort-draining .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "preheat-abort draining idle state clears native active/stop flags"
+    fi
     require_pattern ' snapshot=preheat-aborted' "preheat-aborted snapshot present"
     require_pattern ' phase=status-preheat-aborted .*rc=0 .*status=idle' "preheat-aborted status is idle"
     require_pattern ' phase=printer-preheat-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "preheat-aborted native active/stop flags are false"
@@ -329,6 +343,16 @@ if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
         pass "active abort/stop passed"
     else
         fail "active abort/stop passed"
+    fi
+    require_pattern ' snapshot=active-abort-requested' "active-abort requested snapshot present"
+    require_pattern ' phase=status-active-abort-requested .*rc=0 .*status=aborting' "active-abort requested status is aborting"
+    require_pattern ' phase=printer-active-abort-requested .*rc=0 .*body=.*native_active:true.*native_stop_allowed:false' "active-abort requested native active stays true and stop is disabled"
+    require_pattern ' snapshot=active-abort-draining' "active-abort draining snapshot present"
+    if grep -Eq ' phase=status-active-abort-draining .*rc=0 .*status=aborting' "$SUMMARY"; then
+        require_pattern ' phase=printer-active-abort-draining .*rc=0 .*body=.*native_active:true.*native_stop_allowed:false' "active-abort draining abort state keeps native active and stop disabled"
+    else
+        require_pattern ' phase=status-active-abort-draining .*rc=0 .*status=idle' "active-abort draining status is aborting or idle after cleanup"
+        require_pattern ' phase=printer-active-abort-draining .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "active-abort draining idle state clears native active/stop flags"
     fi
     require_pattern ' snapshot=active-aborted' "active-aborted snapshot present"
     require_pattern ' phase=status-active-aborted .*rc=0 .*status=idle' "active-aborted status is idle"

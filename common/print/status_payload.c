@@ -208,8 +208,7 @@ int deneb_status_payload_parse(const char *json,
                                     &native_active) == 0) {
         payload->has_native_active = 1;
         payload->native_active = native_active;
-        if (!deneb_print_req_is_abort(payload->req))
-            payload->is_printing = native_active;
+        payload->is_printing = native_active;
     }
     if (deneb_json_get_truthy_value(json, "denebStopAllowed",
                                     &native_stop_allowed) == 0) {
