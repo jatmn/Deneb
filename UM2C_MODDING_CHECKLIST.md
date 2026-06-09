@@ -1700,8 +1700,9 @@ Completed implementation slices:
   satisfy the before/after measurement gate.
 - [x] Add a packaged shell-only comparator,
   `deneb-printsvc-smoke-compare`, so stock and native live summary files can be
-  compared on-device without Python. It emits before/after deltas for memory,
-  process RSS, raw CPU jiffies, initial-to-final CPU jiffies, boot-sync elapsed
+  compared on-device without Python. It emits before/after deltas for system
+  memory, driver-process RSS, raw CPU jiffies, initial-to-final CPU jiffies,
+  boot-sync elapsed
   time, and print throughput, and fails if the stock summary lacks
   initial/final `print_service.py` process evidence, CPU or throughput
   intervals are not positive, or the native summary lacks per-lifecycle status
@@ -1712,9 +1713,9 @@ Completed implementation slices:
   `deneb-printsvc` process ownership, or lacks per-lifecycle native
   active/stop-allowed safety evidence for each required active and inactive
   printer-root snapshot. Its `--require-reduction` mode turns the before/after
-  resource gate into a failing check by requiring native memory, print-service
-  RSS, CPU interval, and boot-sync elapsed time to be lower than stock while
-  keeping native print throughput at least stock.
+  resource gate into a failing check by requiring native system memory,
+  driver-process RSS, CPU interval, and boot-sync elapsed time to be lower than
+  stock while keeping native print throughput at least stock.
 - [x] Add a shell-only synthetic selftest,
   `deneb-printsvc-smoke-selftest`, that builds stock/native summary fixtures
   and runs the full smoke verifier plus stock/native comparator without Python.

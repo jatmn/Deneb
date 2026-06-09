@@ -97,11 +97,12 @@ phase_value() {
     ' "$file"
 }
 
-last_process_rss_total() {
+last_driver_rss_total() {
     file="$1"
     label="$2"
-    awk -v label="$label" '
-        index($0, "sample=" label " ") && index($0, " pid=") {
+    pattern="$3"
+    awk -v label="$label" -v pattern="$pattern" '
+        index($0, "sample=" label " ") && index($0, " pid=") && $0 ~ pattern {
             n = split($0, fields, " ");
             for (i = 1; i <= n; i++) {
                 if (index(fields[i], "vmrss_kb=") == 1) {
@@ -445,10 +446,10 @@ stock_initial_mem="$(summary_value "$STOCK" initial mem_used_kb)"
 native_initial_mem="$(summary_value "$NATIVE" initial mem_used_kb)"
 stock_final_mem="$(summary_value "$STOCK" final mem_used_kb)"
 native_final_mem="$(summary_value "$NATIVE" final mem_used_kb)"
-stock_initial_rss="$(last_process_rss_total "$STOCK" initial)"
-native_initial_rss="$(last_process_rss_total "$NATIVE" initial)"
-stock_final_rss="$(last_process_rss_total "$STOCK" final)"
-native_final_rss="$(last_process_rss_total "$NATIVE" final)"
+stock_initial_rss="$(last_driver_rss_total "$STOCK" initial 'print_service[.]py')"
+native_initial_rss="$(last_driver_rss_total "$NATIVE" initial 'deneb-printsvc')"
+stock_final_rss="$(last_driver_rss_total "$STOCK" final 'print_service[.]py')"
+native_final_rss="$(last_driver_rss_total "$NATIVE" final 'deneb-printsvc')"
 stock_initial_cpu="$(summary_value "$STOCK" initial cpu_total_jiffies)"
 native_initial_cpu="$(summary_value "$NATIVE" initial cpu_total_jiffies)"
 stock_final_cpu="$(summary_value "$STOCK" final cpu_total_jiffies)"
@@ -474,8 +475,8 @@ require_positive_integer "$native_bps" "native print throughput"
 
 delta_line mem_used_initial "$stock_initial_mem" "$native_initial_mem" kb
 delta_line mem_used_final "$stock_final_mem" "$native_final_mem" kb
-delta_line process_rss_initial "$stock_initial_rss" "$native_initial_rss" kb
-delta_line process_rss_final "$stock_final_rss" "$native_final_rss" kb
+delta_line driver_rss_initial "$stock_initial_rss" "$native_initial_rss" kb
+delta_line driver_rss_final "$stock_final_rss" "$native_final_rss" kb
 delta_line cpu_total_initial "$stock_initial_cpu" "$native_initial_cpu" jiffies
 delta_line cpu_total_final "$stock_final_cpu" "$native_final_cpu" jiffies
 delta_line cpu_total_interval "$stock_cpu_interval" "$native_cpu_interval" jiffies

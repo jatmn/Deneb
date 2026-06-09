@@ -49,6 +49,7 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
 2026-06-08T00:00:00Z sample=initial load1=0.20
 2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
+2026-06-08T00:00:00Z sample=initial pid=112 vmsize_kb=42000 vmrss_kb=30000 command="/usr/bin/python3 /home/cygnus/coordinator.py"
 2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
 2026-06-08T00:00:11Z snapshot=firmware-proof
 2026-06-08T00:00:11Z phase=firmware-proof kind=api root_rc=0 bed_rc=0 nozzle_rc=0 airmanager_rc=0 rc=0 firmware=Apr_30_2020 machine_type=E2 pcb_id=4 pcb_id_valid=true bed_current=29.5 bed_target=0.0 nozzle_current=31.2 nozzle_target=0.0 topcap_present=true topcap_current=30.1 status=idle
@@ -58,6 +59,7 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 2026-06-08T00:02:00Z sample=final cpu_total_jiffies=1500
 2026-06-08T00:02:00Z sample=final load1=0.30
 2026-06-08T00:02:00Z sample=final pid=111 vmsize_kb=33000 vmrss_kb=12100 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
+2026-06-08T00:02:00Z sample=final pid=112 vmsize_kb=42000 vmrss_kb=30000 command="/usr/bin/python3 /home/cygnus/coordinator.py"
 EOF
 
 cat > "$NATIVE_SUMMARY" <<'EOF'
@@ -72,6 +74,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
 2026-06-08T00:00:00Z sample=initial load1=0.10
 2026-06-08T00:00:00Z sample=initial pid=222 vmsize_kb=9000 vmrss_kb=3000 command="/usr/bin/deneb-printsvc"
+2026-06-08T00:00:00Z sample=initial pid=223 vmsize_kb=65000 vmrss_kb=50000 command="/usr/bin/deneb-api"
 2026-06-08T00:00:01Z phase=native-route-enabled previous=native-only
 2026-06-08T00:00:01Z phase=native-driver-process kind=process deneb_printsvc=1 print_service_py=0 rc=0
 2026-06-08T00:00:01Z snapshot=native-enabled
@@ -208,6 +211,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:01:00Z sample=final cpu_total_jiffies=1300
 2026-06-08T00:01:00Z sample=final load1=0.15
 2026-06-08T00:01:00Z sample=final pid=222 vmsize_kb=9000 vmrss_kb=3100 command="/usr/bin/deneb-printsvc"
+2026-06-08T00:01:00Z sample=final pid=223 vmsize_kb=65000 vmrss_kb=50000 command="/usr/bin/deneb-api"
 2026-06-08T00:01:00Z snapshot=final
 EOF
 
@@ -455,6 +459,11 @@ grep -v 'print_service.py' "$STOCK_SUMMARY" > "$TMP_DIR/stock-missing-python.sum
 expect_failure compare_rejects_missing_stock_python_baseline \
     sh "$COMPARE" \
     "$TMP_DIR/stock-missing-python.summary" "$NATIVE_SUMMARY"
+
+grep -v 'command="/usr/bin/deneb-printsvc"' "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-driver-rss.summary"
+expect_failure compare_rejects_missing_native_driver_rss \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-driver-rss.summary"
 
 sed 's/bytes_per_second=500/bytes_per_second=0/g' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-zero-throughput.summary"

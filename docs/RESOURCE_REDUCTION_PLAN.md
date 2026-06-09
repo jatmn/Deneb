@@ -525,8 +525,8 @@ Material-profile USB import root/depth/suffix policy and the
   resource/throughput evidence, so live runs can be checked on target without
   Python. Packages also include
   `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator
-  that emits before/after deltas for memory, process RSS, raw CPU jiffies,
-  initial-to-final CPU jiffies, boot-sync elapsed time, and print throughput
+  that emits before/after deltas for system memory, driver-process RSS, raw
+  CPU jiffies, initial-to-final CPU jiffies, boot-sync elapsed time, and print throughput
   without exporting data to an external Python script. It also fails if the
   stock summary lacks initial/final `print_service.py` process evidence, CPU
   or throughput intervals are not positive, or the native summary lacks
@@ -539,9 +539,9 @@ Material-profile USB import root/depth/suffix policy and the
   abort-requested/draining evidence with Stop disabled during cleanup, lacks
   `deneb-printsvc` process ownership, or lacks native active/stop-allowed
   evidence in any required active or inactive printer-root lifecycle body. Its
-  `--require-reduction` mode fails unless native memory, print-service RSS,
-  CPU interval, and boot-sync elapsed time are lower than stock while native
-  print throughput remains at least stock.
+  `--require-reduction` mode fails unless native system memory,
+  driver-process RSS, CPU interval, and boot-sync elapsed time are lower than
+  stock while native print throughput remains at least stock.
   The package also carries `deneb-printsvc-smoke-selftest`, a shell-only
   synthetic summary fixture runner that exercises the full verifier and
   comparator gates locally and invokes the live harness'

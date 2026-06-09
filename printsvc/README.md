@@ -418,9 +418,9 @@ proved native-only route, boot-sync readiness, service restart recovery, idle
 nonzero ambient bed/nozzle readings around 25.5 C / 28.3 C. It did not run
 physical heat, motion, Cura, pause/resume, abort, completion, or throughput
 phases.
-The compare tool reports before/after deltas for memory, process RSS, CPU
-jiffies, CPU jiffies consumed between initial/final samples, boot-sync elapsed
-time, and print throughput. It fails if the stock summary lacks
+The compare tool reports before/after deltas for system memory,
+driver-process RSS, CPU jiffies, CPU jiffies consumed between initial/final
+samples, boot-sync elapsed time, and print throughput. It fails if the stock summary lacks
 initial/final `print_service.py` process evidence, if CPU or throughput
 intervals are not positive, or if the native summary lacks native-only route
 evidence in route diagnostics or any required status lifecycle body, lacks
@@ -430,8 +430,8 @@ sample, lacks native local/USB IPC job acceptance and stop-state evidence,
 lacks active-print abort evidence, lacks `deneb-printsvc` process ownership,
 or lacks per-lifecycle native stop-safety flags.
 Use `--require-reduction` for the release-decision pass; it fails unless native
-memory, print-service RSS, CPU interval, and boot-sync elapsed time are lower
-than the stock summary, and unless native throughput is at least stock.
+system memory, driver-process RSS, CPU interval, and boot-sync elapsed time are
+lower than the stock summary, and unless native throughput is at least stock.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also runs the
