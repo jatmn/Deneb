@@ -1342,6 +1342,32 @@ static void test_motion_runtime_policy(void)
     serial_ready = 0;
 
     deneb_status_init(&status);
+    status.state = DENEB_PRINT_STATE_COMPLETE;
+    snprintf(status.req, sizeof(status.req), "%s", DENEB_PRINT_REQ_COMPLETE);
+    deneb_flow_init(&flow);
+    assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, "M105") == 0);
+    assert(deneb_flow_inflight(&flow) == 1);
+    {
+        const char *proto_error =
+            "Error:ProtoError:Sequence number is unexpected (received, expected): 0,7\n";
+        assert(pipe(pipefd) == 0);
+        assert(write(pipefd[1], proto_error, strlen(proto_error)) ==
+               (ssize_t)strlen(proto_error));
+        close(pipefd[1]);
+        serial.fd = pipefd[0];
+        serial_ready = 1;
+        runtime.allow_sequence_resync = 0;
+        assert(deneb_motion_runtime_poll(&runtime) == 1);
+        assert(status.state == DENEB_PRINT_STATE_COMPLETE);
+        assert(status.error.code == DENEB_ERROR_NONE);
+        assert(flow.next_sequence == 7);
+        assert(deneb_flow_inflight(&flow) == 0);
+        close(pipefd[0]);
+        serial.fd = -1;
+        serial_ready = 0;
+    }
+
+    deneb_status_init(&status);
     deneb_flow_init(&flow);
     assert(deneb_motion_sender_send_gcode(&flow, &serial, 0, "M105") == 0);
     assert(deneb_flow_inflight(&flow) == 1);
