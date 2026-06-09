@@ -71,6 +71,19 @@ is not proven by a parser or harness existing.
   the harness gap for firmware/version parity collection only; live stock and
   native runs still need to be captured on the same firmware before the
   Section 8 live parity item is checked.
+- June 9, 2026 installed `dist/Deneb_Update_34518e8.deneb` evidence:
+  observe-only
+  `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof
+  --firmware-proof` passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --boot-sync
+  --client-proof --firmware-proof
+  /tmp/deneb-printsvc-firmware-proof.summary`. The accepted summary showed
+  native route ownership, no stock `print_service.py`, final `idle` with
+  `native_active:false` and `native_stop_allowed:false`, `firmware=none`,
+  `machine_type=none`, `pcb_id=0`, `pcb_id_valid=false`, ambient bed/nozzle
+  temperatures around 30.1 C / 33.2 C, and topcap present/current around
+  30.0 C. This is native-side evidence only; the stock Python side still needs
+  a paired capture before firmware/version parity can be checked off.
 - Host-side smoke and native-audit selftests now prove full physical summaries
   must include `phase=*-safety kind=physical` records with axes, required
   homing, expected travel/range, and stop conditions. This closes the harness

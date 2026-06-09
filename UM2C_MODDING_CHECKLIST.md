@@ -636,7 +636,16 @@ deviation, not hidden under "stock parity."
   `--firmware-proof` mode plus verifier/comparer checks for firmware,
   machine/PCB metadata, nonzero ambient bed/nozzle temperatures, topcap
   telemetry, and scalar status; this is tooling only until a live stock/native
-  pair is captured on the same printer.
+  pair is captured on the same printer. On June 9, 2026,
+  `dist/Deneb_Update_34518e8.deneb` was installed and an observe-only native
+  run passed `/usr/bin/deneb-printsvc-smoke-verify --native --idle
+  --boot-sync --client-proof --firmware-proof
+  /tmp/deneb-printsvc-firmware-proof.summary`; it proved native route
+  ownership, no stock `print_service.py`, `firmware=none`,
+  `machine_type=none`, `pcb_id_valid=false`, live ambient bed/nozzle
+  temperatures around 30.1 C / 33.2 C, topcap present/current around 30.0 C,
+  and scalar `idle` status. This closes the native-side observe-only capture,
+  not the required stock/native comparison.
 - [x] Carry native firmware/version and topcap telemetry through the web/API
   backend state and shared printer response formatter, so clients consuming
   `/api/v1/printer`, `/api/v1/airmanager`, or Deneb's cached status JSON do not
