@@ -688,6 +688,22 @@ deviation, not hidden under "stock parity."
   the job in `printing`; lower-level runtime tests still prove resync remains
   fatal when the service context has not explicitly allowed it.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
+  Current evidence is partial, not full-matrix closure. June 9, 2026
+  `dist/Deneb_Update_d0b61f7.deneb` passed a supervised native
+  pause/resume/abort smoke using an all-axis prehome and a generated
+  absolute-mode bounded Z fixture:
+  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --job
+  /tmp/deneb-pause-z.gcode --pause-resume --prehome-action home`, verified by
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --job --pause-resume
+  /tmp/deneb-printsvc-smoke-pause-resume-home.summary`. The accepted run showed
+  native route ownership, no stock `print_service.py`, `printing` with Stop
+  allowed, `paused` with Stop allowed, resumed `printing`, `aborting` with Stop
+  disabled while cleanup drained, final `idle` with `native_active:false` and
+  `native_stop_allowed:false`, live ambient temperatures, and no
+  `POSITION_ERROR`, `macro failed`, or print-ended-with-error log lines. This
+  closes the bounded native pause/resume smoke slice only; Cura-started
+  pause/resume, representative slicer geometry, stock/native resource
+  comparison, and full smoke matrix remain open.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
   later live work exposed active/abort ProtoError desync and stale native
@@ -732,8 +748,10 @@ deviation, not hidden under "stock parity."
   completion-job now run a `z_home` pre-home step before continuing and write
   `reason=pre_physical_home` summary evidence. All-axis `home` is available
   only through an explicit `--prehome-action home` override for supervised
-  tests with a clear X/Y travel path. This is a harness guardrail, not proof
-  that every moving phase is physically safe.
+  tests with a clear X/Y travel path. Pause/resume job smoke now requires that
+  all-axis `home` override because the stock-derived pause/resume policy moves
+  X/Y while parking and restoring. This is a harness guardrail, not proof that
+  every moving phase is physically safe.
 - [x] Re-audit live smoke physical-motion safety per axis before accepting any
   more motion evidence. The smoke harness now records a mandatory
   `phase=*-safety kind=physical` line before each physical phase, including the

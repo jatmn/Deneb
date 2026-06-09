@@ -32,7 +32,7 @@ This repository is private while the project is being organized.
 - [ ] RAM/CPU benchmark comparisons while printing, uploading, updating, and exporting diagnostics
 - [ ] `.deneb` package manifest, rollback, signing, and release-channel hardening
 - [ ] Cura discovery/upload/start compatibility validation against current Cura builds and real printer behavior
-- [ ] Native `deneb-printsvc` hardware smoke and before/after resource proof before the Python `marlindriver` replacement can move beyond experimental builds
+- [ ] Full native `deneb-printsvc` hardware smoke matrix and before/after resource proof before the Python `marlindriver` replacement can move beyond experimental builds
 
 ### Planned
 - [ ] Generic slicer G-code support
@@ -58,7 +58,7 @@ The API includes UltiMaker REST API v1-shaped print/status/material endpoints an
 
 ## Optimization Notes
 
-Deneb's current optimization work is focused on removing dormant stock UI and setup paths while moving print control onto original native services. The `printsvc/` tree now provides the experimental native `deneb-printsvc` path for the stock Python `marlindriver` service; remaining release blockers are live hardware smoke coverage and before/after RAM, CPU, boot-time, and print-throughput measurements.
+Deneb's current optimization work is focused on removing dormant stock UI and setup paths while moving print control onto original native services. The `printsvc/` tree now provides the experimental native `deneb-printsvc` path for the stock Python `marlindriver` service. Bounded native hardware smoke now covers observe-only restart/boot sync, generated active/preheat abort slices, completion, and pause/resume/abort, but remaining release blockers are the full representative hardware smoke matrix and before/after RAM, CPU, boot-time, and print-throughput measurements.
 
 - The stock touchscreen UI no longer runs; Deneb starts the native LVGL UI instead.
 - The installer prunes the dormant stock Python touchscreen files after a successful Deneb UI smoke test.

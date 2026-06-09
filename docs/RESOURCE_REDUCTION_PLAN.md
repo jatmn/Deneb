@@ -649,6 +649,17 @@ Material-profile USB import root/depth/suffix policy and the
   Stop allowed, API abort success, and final idle with Z at 202.6 after homed
   207.0. These are first physical abort proofs for generated fixtures, not the
   full stock/native resource or representative print matrix.
+- June 9, 2026 installed `dist/Deneb_Update_d0b61f7.deneb` and verified a
+  corrected bounded native pause/resume/abort smoke on hardware. The live run
+  used all-axis prehome because pause/resume moves X/Y, and the active fixture
+  kept XYZ in absolute mode so the smoke matched Cura-style jobs instead of
+  leaving the firmware in `G91`. The accepted summary proved native route
+  ownership, no stock Python driver, `printing` and `paused` with Stop allowed,
+  resumed `printing`, `aborting` with Stop disabled during cleanup, and final
+  `idle` with `native_active:false`, `native_stop_allowed:false`, live ambient
+  temperatures, and no firmware error. This closes only the bounded generated
+  pause/resume smoke slice; representative Cura geometry and stock/native
+  resource comparison remain required before promotion beyond experimental.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action
