@@ -2854,6 +2854,34 @@ static void test_status_payload_helpers(void)
     assert(!payload.has_native_stop_allowed);
 
     assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
+               "\"denebState\":\"error\",\"denebErrorKey\":\"command_fault\","
+               "\"received_faults\":[1]}",
+               &payload) == 0);
+    assert(payload.has_error);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
+               "\"denebState\":\"idle\",\"denebErrorKey\":\"none\","
+               "\"received_faults\":[]}",
+               &payload) == 0);
+    assert(!payload.has_error);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
+               "\"denebState\":\"error\",\"denebErrorKey\":\"none\","
+               "\"received_faults\":[]}",
+               &payload) == 0);
+    assert(payload.has_error);
+
+    assert(deneb_status_payload_parse(
+               "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"JOB\","
+               "\"denebState\":\"idle\",\"denebErrorKey\":\"serial_fault\","
+               "\"received_faults\":[]}",
+               &payload) == 0);
+    assert(payload.has_error);
+
+    assert(deneb_status_payload_parse(
                "{\"file\":\"/home/3D/cube.gcode\",\"req\":\"PAUSE\","
                "\"Ttot\":120,\"Tleft\":80,\"topcapIsPresent\":\"no\"}",
                &payload) == 0);

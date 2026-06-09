@@ -69,6 +69,69 @@ static void copy_json_value(const char *json, const char *key,
         out[0] = '\0';
 }
 
+static int string_equals_ci(const char *a, const char *b)
+{
+    unsigned char ca;
+    unsigned char cb;
+
+    if (!a || !b)
+        return 0;
+
+    while (*a && *b) {
+        ca = (unsigned char)*a++;
+        cb = (unsigned char)*b++;
+        if (ca >= 'A' && ca <= 'Z')
+            ca = (unsigned char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z')
+            cb = (unsigned char)(cb - 'A' + 'a');
+        if (ca != cb)
+            return 0;
+    }
+
+    return *a == '\0' && *b == '\0';
+}
+
+static int json_value_has_faults(const char *value)
+{
+    const char *p;
+
+    if (!value || !*value)
+        return 0;
+
+    if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 ||
+        strcmp(value, "none") == 0 || strcmp(value, DENEB_PRINT_NONE_VALUE) == 0)
+        return 0;
+
+    if (value[0] != '[')
+        return 1;
+
+    p = value + 1;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+        p++;
+    return *p != ']';
+}
+
+static int payload_has_native_error(const char *json)
+{
+    char value[64];
+
+    if (deneb_json_get_value(json, "received_faults",
+                             value, sizeof(value)) == 0 &&
+        json_value_has_faults(value))
+        return 1;
+
+    if (deneb_json_get_value(json, "denebState", value, sizeof(value)) == 0 &&
+        string_equals_ci(value, "error"))
+        return 1;
+
+    if (deneb_json_get_value(json, "denebErrorKey",
+                             value, sizeof(value)) == 0 &&
+        value[0] && !string_equals_ci(value, DENEB_PRINT_NONE_VALUE))
+        return 1;
+
+    return 0;
+}
+
 int deneb_status_payload_parse(const char *json,
                                deneb_status_payload_t *payload)
 {
@@ -139,7 +202,7 @@ int deneb_status_payload_parse(const char *json,
         payload->has_native_stop_allowed = 1;
         payload->native_stop_allowed = native_stop_allowed;
     }
-    payload->has_error = deneb_json_get_int(json, "received_faults", 0) != 0;
+    payload->has_error = payload_has_native_error(json);
     return 0;
 }
 
