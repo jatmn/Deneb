@@ -405,6 +405,79 @@ if ! grep -Eq 'phase=make-complete-fixture .*rc=0 .*command=G1_Z' \
 fi
 echo "PASS: generated bounded Z completion fixture"
 
+sh "$SMOKE" --make-active-fixture "$TMP_DIR/z-active.gcode" 36 \
+    --summary "$TMP_DIR/z-active.summary" \
+    --log "$TMP_DIR/z-active.log"
+if [ "$(grep -c '^G1 Z' "$TMP_DIR/z-active.gcode")" != "36" ]; then
+    cat "$TMP_DIR/z-active.gcode"
+    echo "FAIL: generated active fixture did not contain 36 Z move commands" >&2
+    exit 1
+fi
+if grep -Eq '^(G28|G4|M400|M104|M109|M140|M190|M105)([[:space:]]|$)' \
+    "$TMP_DIR/z-active.gcode"; then
+    cat "$TMP_DIR/z-active.gcode"
+    echo "FAIL: generated active fixture contains home, dwell, sync, heat, or polling commands" >&2
+    exit 1
+fi
+if grep -Eq '^G1 [XYE]' "$TMP_DIR/z-active.gcode"; then
+    cat "$TMP_DIR/z-active.gcode"
+    echo "FAIL: generated active fixture moves X/Y/E axes" >&2
+    exit 1
+fi
+if [ "$(grep -c '^G1 Z-0\.20 F30$' "$TMP_DIR/z-active.gcode")" != "36" ]; then
+    cat "$TMP_DIR/z-active.gcode"
+    echo "FAIL: generated active fixture does not move away from homed Z max" >&2
+    exit 1
+fi
+if ! grep -qx 'G91' "$TMP_DIR/z-active.gcode" ||
+   ! grep -qx 'G90' "$TMP_DIR/z-active.gcode"; then
+    cat "$TMP_DIR/z-active.gcode"
+    echo "FAIL: generated active fixture missing relative/absolute guards" >&2
+    exit 1
+fi
+if ! grep -Eq 'phase=make-active-fixture .*rc=0 .*command=G1_Z' \
+    "$TMP_DIR/z-active.summary"; then
+    cat "$TMP_DIR/z-active.summary"
+    echo "FAIL: generated active fixture summary missing success evidence" >&2
+    exit 1
+fi
+echo "PASS: generated bounded Z active fixture"
+
+expect_failure smoke_rejects_oversized_active_fixture \
+    sh "$SMOKE" --make-active-fixture "$TMP_DIR/z-active-too-large.gcode" 481 \
+    --summary "$TMP_DIR/z-active-too-large.summary" \
+    --log "$TMP_DIR/z-active-too-large.log"
+
+sh "$SMOKE" --make-preheat-abort-fixture "$TMP_DIR/preheat-abort.gcode" \
+    --summary "$TMP_DIR/preheat-abort-fixture.summary" \
+    --log "$TMP_DIR/preheat-abort-fixture.log"
+if ! grep -qx 'M140 S35' "$TMP_DIR/preheat-abort.gcode" ||
+   ! grep -qx 'M109 S45' "$TMP_DIR/preheat-abort.gcode" ||
+   ! grep -qx 'M104 S0' "$TMP_DIR/preheat-abort.gcode" ||
+   ! grep -qx 'M140 S0' "$TMP_DIR/preheat-abort.gcode"; then
+    cat "$TMP_DIR/preheat-abort.gcode"
+    echo "FAIL: generated preheat-abort fixture missing low heat/cooldown commands" >&2
+    exit 1
+fi
+if grep -Eq '^G1 [XYE]' "$TMP_DIR/preheat-abort.gcode"; then
+    cat "$TMP_DIR/preheat-abort.gcode"
+    echo "FAIL: generated preheat-abort fixture moves X/Y/E axes" >&2
+    exit 1
+fi
+if grep -Eq '^(G4|M400|M190|M105)([[:space:]]|$)' \
+    "$TMP_DIR/preheat-abort.gcode"; then
+    cat "$TMP_DIR/preheat-abort.gcode"
+    echo "FAIL: generated preheat-abort fixture contains dwell/sync/poll commands" >&2
+    exit 1
+fi
+if ! grep -Eq 'phase=make-preheat-abort-fixture .*rc=0 .*command=M109_low_target' \
+    "$TMP_DIR/preheat-abort-fixture.summary"; then
+    cat "$TMP_DIR/preheat-abort-fixture.summary"
+    echo "FAIL: generated preheat-abort fixture summary missing success evidence" >&2
+    exit 1
+fi
+echo "PASS: generated low-temperature preheat-abort fixture"
+
 cat > "$TMP_DIR/dwell-only.gcode" <<'EOF'
 ; Bad completion fixture: this can sit in firmware dwell/sync behavior.
 G4 P1000

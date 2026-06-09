@@ -672,6 +672,12 @@ deviation, not hidden under "stock parity."
   active `printing` with Stop allowed, native `aborting` while cleanup drains,
   final idle with `native_active:false` and `native_stop_allowed:false`, no
   unsafe XY-home cleanup lines, no fault markers, and no manual recovery.
+  June 9, 2026 `Deneb_Update_be6a5b7` evidence now covers a bounded Z-only
+  active-abort fixture: native route owned the driver, active `printing` had
+  Stop allowed, API abort returned success, and final state was `idle` with
+  `native_active:false` / `native_stop_allowed:false`; Z ended at 202.6 after
+  starting from homed 207.0. Keep this open until a representative supervised
+  print path also proves no unsafe X/Y cleanup or fault markers.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or
@@ -1482,8 +1488,21 @@ Completed implementation slices:
   `--make-complete-fixture`: it homes Z once, performs up to 480 small relative
   `G1 Z-0.20 F30` moves away from homed Z max, avoids heat/extrusion/dwell/newer
   commands and avoids moving farther into the Z max endstop, with total travel
-  capped to 96 mm away from homed Z max. The shell selftest covers that
-  generator plus the dwell-only rejection path.
+  capped to 96 mm away from homed Z max. The harness now also generates a
+  bounded Z-only active-job fixture with `--make-active-fixture` and a
+  low-temperature heater-wait fixture with `--make-preheat-abort-fixture`, so
+  active-abort, Cura-upload, pause/resume, and preheat-abort smoke runs can use
+  fresh, known fixtures instead of stale printer-side test files. The shell
+  selftest covers those generators plus the dwell-only rejection path, and the
+  native audit rejects packages missing the safe fixture generators.
+- [x] Deploy `Deneb_Update_be6a5b7` and collect first generated-fixture physical
+  abort evidence on native `deneb-printsvc`: installed selftests passed, on-device
+  active/preheat fixture generation passed, observe-only native restart/boot-sync
+  passed, low-temperature preheat-abort smoke verified Stop allowed during
+  preparation and final idle, and bounded Z-only active-abort smoke verified
+  Stop allowed during printing and final idle. This evidence is deliberately
+  narrow and does not close representative Cura, pause/resume, completion, or
+  stock/native resource gates.
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
   for observe-only, native-route, explicit idle status, boot-sync readiness,

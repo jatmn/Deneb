@@ -304,10 +304,12 @@ deneb-printsvc-smoke --physical-ok --native --heat
 deneb-printsvc-smoke --physical-ok --native --motion
 deneb-printsvc-smoke --physical-ok --native --macro bed_down
 deneb-printsvc-smoke --physical-ok --native --local-job /mnt/usb/local-test.gcode
+deneb-printsvc-smoke --make-active-fixture /tmp/deneb-active-z.gcode 120
+deneb-printsvc-smoke --make-preheat-abort-fixture /tmp/deneb-preheat-abort.gcode
 deneb-printsvc-smoke --physical-ok --native --job /home/3D/test.gcode --pause-resume
-deneb-printsvc-smoke --physical-ok --native --preheat-abort /home/3D/preheat-test.gcode
-deneb-printsvc-smoke --physical-ok --native --active-abort /home/3D/active-test.gcode --active-abort-delay 120
-deneb-printsvc-smoke --physical-ok --native --cura-job /home/3D/cura-test.gcode
+deneb-printsvc-smoke --physical-ok --native --preheat-abort /tmp/deneb-preheat-abort.gcode
+deneb-printsvc-smoke --physical-ok --native --active-abort /tmp/deneb-active-z.gcode --active-abort-delay 20
+deneb-printsvc-smoke --physical-ok --native --cura-job /tmp/deneb-active-z.gcode
 deneb-printsvc-smoke --make-complete-fixture /tmp/deneb-complete-z.gcode 80
 deneb-printsvc-smoke --physical-ok --native --complete-job /tmp/deneb-complete-z.gcode
 deneb-printsvc-smoke --native --restart
@@ -334,6 +336,12 @@ it runs. The plan names the axes involved, required homing, expected
 travel/range, and stop conditions; the verifier and native audit selftests
 reject full evidence that omits these records. These records describe the
 intended safety envelope and do not replace supervised live observation.
+Use the built-in fixture generators for Section 8 physical evidence whenever a
+job body is not supplied by the exact workflow under test. `--make-active-fixture`
+writes a bounded Z-only, no-heat, no-extrusion job that relies on the harness
+pre-home step and moves only away from homed Z max. `--make-preheat-abort-fixture`
+writes low bed/nozzle targets followed by a heater wait so Stop behavior can be
+checked during preparation before any print motion is expected.
 `--local-job` requires `--native`, runs the native
 `deneb-printsvc --local-job-smoke` path through the shared IPC frame helper, and
 proves native route ownership, local/USB job acceptance with native `pre_print`

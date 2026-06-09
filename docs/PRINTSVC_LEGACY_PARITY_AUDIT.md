@@ -51,10 +51,23 @@ is not proven by a parser or harness existing.
   must include `phase=*-safety kind=physical` records with axes, required
   homing, expected travel/range, and stop conditions. This closes the harness
   safety-audit contract, not the live physical proof.
+- The smoke harness now generates fresh bounded Z-only active/completion
+  fixtures and a low-temperature preheat-abort fixture. These are safer inputs
+  for live evidence collection than stale ad hoc files, but generated fixtures
+  still do not prove physical behavior until run under supervision.
+- June 9, 2026 installed `dist/Deneb_Update_be6a5b7.deneb` evidence: installed
+  package selftests passed, generated `/tmp/deneb-active-z.gcode` and
+  `/tmp/deneb-preheat-abort.gcode` on-device, observe-only native
+  restart/boot-sync smoke passed, low-temperature preheat-abort smoke passed,
+  and bounded Z-only active-abort smoke passed. Both physical abort summaries
+  showed active `printing` with `native_active:true` and
+  `native_stop_allowed:true`, then final `idle` with `native_active:false` and
+  `native_stop_allowed:false`. The active-abort fixture moved Z from 207.0 to
+  202.6, away from homed Z max; it did not exercise X/Y print geometry.
 
 ## Open Parity Work
 
 - `G280`, `M109`, `M190`, raw multi-line `GCODE` wait sequencing, stock-order pause position capture, completion active-identity cleanup, and abort cleanup-before-idle timing have host-tested native coverage but still need hardware proof where they drive physical heat or motion.
 - Prove native client behavior on hardware for coordinator, LCD UI, web/API, Cura LAN, and Digital Factory without stock Python fallback or stale pending-job state.
-- Regenerate supervised live active-abort, preheat-abort, pause/resume, completion, Cura, and resource comparison evidence using the new physical safety-plan records.
+- Regenerate supervised live pause/resume, completion, Cura, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort with a real representative print before broad parity is claimed; the current evidence is bounded Z-only plus low-temperature preheat.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

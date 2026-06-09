@@ -196,6 +196,12 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
         'axes=\$axes required_home=\$required_home travel=\$travel stop_conditions=\$stop_conditions' \
         "live smoke harness records axes, homing, travel, and stop conditions"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'write_active_fixture' \
+        "live smoke harness generates bounded active-job fixtures"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'write_preheat_abort_fixture' \
+        "live smoke harness generates low-temperature preheat-abort fixtures"
     require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
         'smoke_requires_physical_ack' \
         "smoke selftest covers physical safety gate"
@@ -205,6 +211,12 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
         'verify_rejects_missing_physical_safety' \
         "smoke selftest covers missing physical safety plan"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
+        'generated bounded Z active fixture' \
+        "smoke selftest covers bounded active-job fixture generation"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
+        'generated low-temperature preheat-abort fixture' \
+        "smoke selftest covers preheat-abort fixture generation"
     require_pattern "${repo}/web/init/deneb-web.init" \
         'procd_open_instance api' \
         "web init supervises API dependency before lighttpd"
@@ -290,6 +302,12 @@ audit_package_dir() {
     require_pattern "${root}/deneb-printsvc-smoke" \
         'axes=\$axes required_home=\$required_home travel=\$travel stop_conditions=\$stop_conditions' \
         "packaged smoke harness records axes, homing, travel, and stop conditions"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'write_active_fixture' \
+        "packaged smoke harness generates bounded active-job fixtures"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'write_preheat_abort_fixture' \
+        "packaged smoke harness generates low-temperature preheat-abort fixtures"
 
     require_pattern "${root}/manifest.txt" '^native_printsvc: experimental$' \
         "package manifest marks native printsvc experimental"

@@ -26,6 +26,8 @@ RUN_RESTART=0
 RUN_BOOT_SYNC=0
 RUN_PARSER_SELFTEST=0
 MAKE_COMPLETE_FIXTURE=0
+MAKE_ACTIVE_FIXTURE=0
+MAKE_PREHEAT_ABORT_FIXTURE=0
 PHYSICAL_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_OK:-0}"
 PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
 JOB_PATH=""
@@ -36,6 +38,9 @@ ACTIVE_ABORT_PATH=""
 COMPLETE_JOB_PATH=""
 MAKE_COMPLETE_FIXTURE_PATH=""
 MAKE_COMPLETE_FIXTURE_CYCLES=80
+MAKE_ACTIVE_FIXTURE_PATH=""
+MAKE_ACTIVE_FIXTURE_CYCLES=120
+MAKE_PREHEAT_ABORT_FIXTURE_PATH=""
 MACRO_ACTION=""
 COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-300}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
@@ -65,6 +70,10 @@ Observe-only by default:
                         Max seconds to wait for --complete-job, default 300
   --make-complete-fixture PATH [CYCLES]
                         Write a bounded old-Marlin Z-move completion fixture and exit
+  --make-active-fixture PATH [CYCLES]
+                        Write a bounded Z-only active-job fixture and exit
+  --make-preheat-abort-fixture PATH
+                        Write a low-temperature preheat-abort fixture and exit
   --restart             Restart deneb-printsvc and deneb-api, then sample recovery
   --boot-sync           Wait for print backend route/status readiness evidence
   --summary-parser-selftest
@@ -174,6 +183,22 @@ while [ "$#" -gt 0 ]; do
                 MAKE_COMPLETE_FIXTURE_CYCLES="$1"
             fi
             ;;
+        --make-active-fixture)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing path after --make-active-fixture" >&2; exit 2; }
+            MAKE_ACTIVE_FIXTURE=1
+            MAKE_ACTIVE_FIXTURE_PATH="$1"
+            if [ "$#" -gt 1 ] && printf '%s' "$2" | grep -Eq '^[0-9]+$'; then
+                shift
+                MAKE_ACTIVE_FIXTURE_CYCLES="$1"
+            fi
+            ;;
+        --make-preheat-abort-fixture)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing path after --make-preheat-abort-fixture" >&2; exit 2; }
+            MAKE_PREHEAT_ABORT_FIXTURE=1
+            MAKE_PREHEAT_ABORT_FIXTURE_PATH="$1"
+            ;;
         --restart) RUN_RESTART=1 ;;
         --boot-sync) RUN_BOOT_SYNC=1 ;;
         --summary-parser-selftest) RUN_PARSER_SELFTEST=1 ;;
@@ -282,6 +307,57 @@ write_complete_fixture() {
     return 0
 }
 
+write_active_fixture() {
+    path="$1"
+    cycle_count="$2"
+
+    case "$cycle_count" in
+        ''|*[!0-9]*) echo "invalid fixture cycle count: $cycle_count" >&2; return 2 ;;
+    esac
+    if [ "$cycle_count" -lt 1 ]; then
+        echo "fixture cycle count must be greater than zero" >&2
+        return 2
+    fi
+    if [ "$cycle_count" -gt 480 ]; then
+        echo "fixture cycle count must be 480 or lower to keep Z travel bounded" >&2
+        return 2
+    fi
+
+    mkdir -p "$(dirname "$path")" 2>/dev/null || true
+    {
+        printf '; Deneb native print-service active smoke fixture\n'
+        printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
+        printf '; Requires the smoke harness pre-home step; moves only away from homed Z max.\n'
+        printf 'G91\n'
+        i=1
+        while [ "$i" -le "$cycle_count" ]; do
+            printf 'G1 Z-0.20 F30\n'
+            i=$((i + 1))
+        done
+        printf 'G90\n'
+        printf 'M114\n'
+    } >"$path" || return 1
+    return 0
+}
+
+write_preheat_abort_fixture() {
+    path="$1"
+
+    mkdir -p "$(dirname "$path")" 2>/dev/null || true
+    {
+        printf '; Deneb native print-service preheat-abort smoke fixture\n'
+        printf '; Low targets only; abort this during heater wait before motion.\n'
+        printf 'M140 S35\n'
+        printf 'M109 S45\n'
+        printf 'G91\n'
+        printf 'G1 Z-0.20 F30\n'
+        printf 'G90\n'
+        printf 'M104 S0\n'
+        printf 'M140 S0\n'
+    } >"$path" || return 1
+    return 0
+}
+
 if [ "$MAKE_COMPLETE_FIXTURE" = "1" ]; then
     write_complete_fixture "$MAKE_COMPLETE_FIXTURE_PATH" "$MAKE_COMPLETE_FIXTURE_CYCLES"
     rc=$?
@@ -291,6 +367,30 @@ if [ "$MAKE_COMPLETE_FIXTURE" = "1" ]; then
     fi
     summary "phase=make-complete-fixture path=$MAKE_COMPLETE_FIXTURE_PATH cycles=$MAKE_COMPLETE_FIXTURE_CYCLES rc=0 command=G1_Z"
     say "wrote complete-job fixture: $MAKE_COMPLETE_FIXTURE_PATH cycles=$MAKE_COMPLETE_FIXTURE_CYCLES"
+    exit 0
+fi
+
+if [ "$MAKE_ACTIVE_FIXTURE" = "1" ]; then
+    write_active_fixture "$MAKE_ACTIVE_FIXTURE_PATH" "$MAKE_ACTIVE_FIXTURE_CYCLES"
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        summary "phase=make-active-fixture path=$MAKE_ACTIVE_FIXTURE_PATH cycles=$MAKE_ACTIVE_FIXTURE_CYCLES rc=$rc"
+        exit "$rc"
+    fi
+    summary "phase=make-active-fixture path=$MAKE_ACTIVE_FIXTURE_PATH cycles=$MAKE_ACTIVE_FIXTURE_CYCLES rc=0 command=G1_Z"
+    say "wrote active-job fixture: $MAKE_ACTIVE_FIXTURE_PATH cycles=$MAKE_ACTIVE_FIXTURE_CYCLES"
+    exit 0
+fi
+
+if [ "$MAKE_PREHEAT_ABORT_FIXTURE" = "1" ]; then
+    write_preheat_abort_fixture "$MAKE_PREHEAT_ABORT_FIXTURE_PATH"
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        summary "phase=make-preheat-abort-fixture path=$MAKE_PREHEAT_ABORT_FIXTURE_PATH rc=$rc"
+        exit "$rc"
+    fi
+    summary "phase=make-preheat-abort-fixture path=$MAKE_PREHEAT_ABORT_FIXTURE_PATH rc=0 command=M109_low_target"
+    say "wrote preheat-abort fixture: $MAKE_PREHEAT_ABORT_FIXTURE_PATH"
     exit 0
 fi
 

@@ -579,10 +579,13 @@ Material-profile USB import root/depth/suffix policy and the
   `--make-complete-fixture` and rejects dwell/M400-only completion fixtures
   before upload, keeping local completion-test tooling from confusing firmware
   wait commands, minimum-Z safety trips, or temperature polling loops with real
-  stream completion evidence. The generated fixture cap is 480 relative
-  `G1 Z-0.20 F30` moves, keeping total travel to 96 mm away from homed Z max
-  while providing enough runtime for pause/resume, Cura-running, completion,
-  and sequence-wrap smoke evidence. Packages default
+  stream completion evidence. It now also generates bounded Z-only active-job
+  fixtures and low-temperature preheat-abort fixtures, so active-abort,
+  pause/resume, Cura, and preheat smoke evidence can use fresh known inputs
+  instead of stale device-side files. The generated Z fixture cap is 480
+  relative `G1 Z-0.20 F30` moves, keeping total travel to 96 mm away from homed
+  Z max while providing enough runtime for pause/resume, Cura-running,
+  completion, and sequence-wrap smoke evidence. Packages default
   to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` and `stable` package
   builds now require live stock/native smoke summary paths in
   `DENEB_PRINTSVC_STOCK_SUMMARY` and `DENEB_PRINTSVC_NATIVE_SUMMARY`, then run
@@ -626,6 +629,16 @@ Material-profile USB import root/depth/suffix policy and the
   sampler was tightened to ignore its own shell wrapper. This evidence is
   observe-only; it does not close physical heat, motion, job, Cura, pause/resume,
   completion, active-abort, preheat-abort, or stock/native throughput gates.
+- June 9, 2026 installed `dist/Deneb_Update_be6a5b7.deneb` and verified the
+  packaged safe fixture generators on-device. The installed observe-only smoke
+  again passed native restart/boot-sync with nonzero ambient temperatures and no
+  stock Python driver. A low-temperature preheat-abort run showed `printing`
+  with bed/nozzle targets 35/45 C, `native_active:true`,
+  `native_stop_allowed:true`, then final idle with both native flags false and
+  targets back to 0. A bounded Z-only active-abort run showed `printing` with
+  Stop allowed, API abort success, and final idle with Z at 202.6 after homed
+  207.0. These are first physical abort proofs for generated fixtures, not the
+  full stock/native resource or representative print matrix.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action

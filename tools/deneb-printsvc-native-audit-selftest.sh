@@ -54,6 +54,12 @@ guarded_prehome() {
 physical_safety_plan() {
     summary "phase=$1-safety kind=physical axes=$axes required_home=$required_home travel=$travel stop_conditions=$stop_conditions rc=0"
 }
+write_active_fixture() {
+    :
+}
+write_preheat_abort_fixture() {
+    :
+}
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
 EOF
@@ -134,6 +140,12 @@ guarded_prehome() {
 physical_safety_plan() {
     summary "phase=$1-safety kind=physical axes=$axes required_home=$required_home travel=$travel stop_conditions=$stop_conditions rc=0"
 }
+write_active_fixture() {
+    :
+}
+write_preheat_abort_fixture() {
+    :
+}
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
 EOF
@@ -142,6 +154,8 @@ EOF
 smoke_requires_physical_ack
 smoke_rejects_physical_bundle
 verify_rejects_missing_physical_safety
+generated bounded Z active fixture
+generated low-temperature preheat-abort fixture
 EOF
 cat > "$root/ui/installer/update.sh" <<'EOF'
 #!/bin/sh
@@ -353,6 +367,13 @@ grep -v 'physical_safety_plan' "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke" |
     grep -v 'axes=\$axes required_home=\$required_home travel=\$travel stop_conditions=\$stop_conditions' > "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke.tmp"
 mv "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke.tmp" "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke"
 expect_failure rejects_missing_physical_plan "$AUDIT" --package-dir "$MISSING_PHYSICAL_PLAN"
+
+MISSING_SAFE_FIXTURES="$TMP_DIR/missing-safe-fixtures"
+write_valid_package "$MISSING_SAFE_FIXTURES"
+grep -v 'write_active_fixture' "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke" |
+    grep -v 'write_preheat_abort_fixture' > "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke.tmp"
+mv "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke.tmp" "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke"
+expect_failure rejects_missing_safe_fixtures "$AUDIT" --package-dir "$MISSING_SAFE_FIXTURES"
 
 MISSING_CLI_SELFTEST="$TMP_DIR/missing-cli-selftest"
 write_valid_package "$MISSING_CLI_SELFTEST"
