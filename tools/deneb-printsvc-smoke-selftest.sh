@@ -77,6 +77,17 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:01Z phase=status-native-enabled kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:01Z phase=printer-native-enabled kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
+2026-06-08T00:00:02Z snapshot=client-proof
+2026-06-08T00:00:02Z phase=client-deneb-route kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
+2026-06-08T00:00:02Z phase=client-um-status kind=api method=GET path=/printer/status rc=0 status=idle body=idle
+2026-06-08T00:00:02Z phase=client-um-printer kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:02Z optional_phase=client-um-print-job kind=client-get method=GET path=/print_job optional_rc=8 body=unknown
+2026-06-08T00:00:02Z phase=client-um-system kind=client-get method=GET path=/system rc=0 body={hostname:deneb}
+2026-06-08T00:00:02Z phase=client-cura-printers kind=client-get method=GET path=/printers rc=0 body=[{status:idle}]
+2026-06-08T00:00:02Z phase=client-cura-print-jobs kind=client-get method=GET path=/print_jobs rc=0 body=[]
+2026-06-08T00:00:02Z phase=client-cura-materials kind=client-get method=GET path=/materials rc=0 body=[]
+2026-06-08T00:00:02Z phase=client-digital-factory-status kind=digital-factory command=deneb-df-bridge_status installed=1 rc=0 body=status_timeout
+2026-06-08T00:00:02Z phase=client-proof-complete rc=0
 2026-06-08T00:00:03Z phase=heat-safety kind=physical axes=none required_home=none travel=bed_to_40C_nozzle_to_50C_then_cooldown stop_conditions=temperature_sensor_fault_or_runaway rc=0
 2026-06-08T00:00:03Z phase=bed-low-heat kind=api rc=0
 2026-06-08T00:00:03Z phase=nozzle-low-heat kind=api rc=0
@@ -359,6 +370,12 @@ expect_failure verify_rejects_non_native_only_route \
 expect_failure compare_rejects_non_native_only_route \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-route-not-exclusive.summary"
+
+grep -v 'phase=client-cura-printers ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-client-proof.summary"
+expect_failure verify_rejects_missing_client_proof \
+    sh "$VERIFY" --client-proof \
+    "$TMP_DIR/native-missing-client-proof.summary"
 
 sed '/phase=boot-sync-ready /s/status=idle/status={status:idle,native_only_route:true}/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-boot-sync-json-status.summary"

@@ -24,6 +24,7 @@ RUN_MACRO=0
 RUN_PAUSE_RESUME=0
 RUN_RESTART=0
 RUN_BOOT_SYNC=0
+RUN_CLIENT_PROOF=0
 RUN_PARSER_SELFTEST=0
 MAKE_COMPLETE_FIXTURE=0
 MAKE_ACTIVE_FIXTURE=0
@@ -76,6 +77,8 @@ Observe-only by default:
                         Write a low-temperature preheat-abort fixture and exit
   --restart             Restart deneb-printsvc and deneb-api, then sample recovery
   --boot-sync           Wait for print backend route/status readiness evidence
+  --client-proof        Observe-only proof for local UM API, Cura cluster API,
+                        Deneb route diagnostics, and Digital Factory bridge status
   --summary-parser-selftest
                         Exercise summary status/body parsing without hardware
   --physical-ok        Required for any phase that heats, homes, moves axes,
@@ -201,6 +204,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         --restart) RUN_RESTART=1 ;;
         --boot-sync) RUN_BOOT_SYNC=1 ;;
+        --client-proof) RUN_CLIENT_PROOF=1 ;;
         --summary-parser-selftest) RUN_PARSER_SELFTEST=1 ;;
         --physical-ok) PHYSICAL_OK=1 ;;
         --physical-bundle-ok) PHYSICAL_BUNDLE_OK=1 ;;
@@ -557,6 +561,25 @@ http_get_capture() {
     return 0
 }
 
+http_get_capture_base() {
+    base="$1"
+    path="$2"
+    out="$3"
+    url="${base}${path}"
+
+    : >"$out" || return 1
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS -X GET "$url" >"$out" 2>>"$LOG"
+        return $?
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        wget -q -O "$out" "$url" 2>>"$LOG"
+        return $?
+    fi
+    say "SKIP: no curl/wget available for GET $url"
+    return 0
+}
+
 multipart_post() {
     url="$1"
     file_path="$2"
@@ -761,6 +784,73 @@ route_step() {
     rm -f "$body_file"
     say "$label rc=$rc body=${body_value:-unknown}"
     summary "phase=$label kind=api method=GET path=/deneb/print_backend rc=$rc body=${body_value:-unknown}"
+    return "$rc"
+}
+
+client_get_step() {
+    label="$1"
+    base="$2"
+    path="$3"
+    required="${4:-required}"
+    body_file="/tmp/deneb-printsvc-smoke-client.$$"
+
+    say "$label: GET ${base}${path}"
+    http_get_capture_base "$base" "$path" "$body_file"
+    rc=$?
+    if [ -s "$body_file" ]; then
+        cat "$body_file" >>"$LOG"
+        printf '\n' >>"$LOG"
+    fi
+    body_value="$(sanitize_summary_value "$(cat "$body_file" 2>/dev/null || true)")"
+    rm -f "$body_file"
+    say "$label rc=$rc body=${body_value:-unknown}"
+    if [ "$required" = "optional" ]; then
+        summary "optional_phase=$label kind=client-get method=GET path=$path optional_rc=$rc body=${body_value:-unknown}"
+    else
+        summary "phase=$label kind=client-get method=GET path=$path rc=$rc body=${body_value:-unknown}"
+    fi
+    return "$rc"
+}
+
+digital_factory_status_step() {
+    label="$1"
+    out="/tmp/deneb-printsvc-smoke-df.$$"
+
+    if ! command -v deneb-df-bridge >/dev/null 2>&1; then
+        say "$label: deneb-df-bridge not installed"
+        summary "phase=$label kind=digital-factory command=deneb-df-bridge_status installed=0 rc=1 body=missing"
+        return 1
+    fi
+
+    say "$label: deneb-df-bridge status"
+    deneb-df-bridge status --timeout 3 >"$out" 2>>"$LOG"
+    rc=$?
+    if [ -s "$out" ]; then
+        cat "$out" >>"$LOG"
+        printf '\n' >>"$LOG"
+    fi
+    body_value="$(sanitize_summary_value "$(cat "$out" 2>/dev/null || true)")"
+    rm -f "$out"
+    say "$label rc=$rc body=${body_value:-unknown}"
+    summary "phase=$label kind=digital-factory command=deneb-df-bridge_status installed=1 rc=$rc body=${body_value:-unknown}"
+    return "$rc"
+}
+
+client_proof() {
+    rc=0
+
+    say "===== client proof ====="
+    summary "snapshot=client-proof"
+    route_step "client-deneb-route" || rc=1
+    status_step "client-um-status" || rc=1
+    printer_root_step "client-um-printer" || rc=1
+    client_get_step "client-um-print-job" "$API_BASE" /print_job optional || true
+    client_get_step "client-um-system" "$API_BASE" /system || rc=1
+    client_get_step "client-cura-printers" "$CLUSTER_API_BASE" /printers || rc=1
+    client_get_step "client-cura-print-jobs" "$CLUSTER_API_BASE" /print_jobs || rc=1
+    client_get_step "client-cura-materials" "$CLUSTER_API_BASE" /materials || rc=1
+    digital_factory_status_step "client-digital-factory-status" || rc=1
+    summary "phase=client-proof-complete rc=$rc"
     return "$rc"
 }
 
@@ -1032,8 +1122,8 @@ if [ "$RUN_PARSER_SELFTEST" = "1" ]; then
 fi
 
 say "deneb-printsvc smoke started"
-say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
-summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC"
+say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF"
+summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF"
 
 append_cmd /usr/bin/deneb-printsvc --smoke-test
 summary "phase=printsvc-self-test rc=$?"
@@ -1053,6 +1143,10 @@ if [ "$ENABLE_NATIVE" = "1" ]; then
     summary "phase=native-route-enabled previous=native-only"
     assert_native_driver_process "native-driver-process" || exit $?
     snapshot "native-enabled"
+fi
+
+if [ "$RUN_CLIENT_PROOF" = "1" ]; then
+    client_proof || exit $?
 fi
 
 if [ "$RUN_HEAT" = "1" ]; then

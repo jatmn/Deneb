@@ -22,6 +22,7 @@ REQUIRE_COMPLETE_JOB=0
 REQUIRE_RESTART=0
 REQUIRE_RESOURCES=0
 REQUIRE_BOOT_SYNC=0
+REQUIRE_CLIENT_PROOF=0
 
 usage() {
     cat <<'EOF'
@@ -49,6 +50,8 @@ Options:
   --restart     Require native print-service restart recovery evidence
   --resources   Require resource evidence: uptime, memory, CPU, and load samples
   --boot-sync   Require bounded boot/backend readiness evidence
+  --client-proof
+               Require observe-only local client API/bridge evidence
   --full        Require native, heat, motion, and job evidence
   -h, --help    Show this help
 
@@ -83,6 +86,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         --resources) REQUIRE_RESOURCES=1 ;;
         --boot-sync) REQUIRE_BOOT_SYNC=1 ;;
+        --client-proof) REQUIRE_CLIENT_PROOF=1 ;;
         --full)
             REQUIRE_NATIVE=1
             REQUIRE_IDLE=1
@@ -99,6 +103,7 @@ while [ "$#" -gt 0 ]; do
             REQUIRE_RESTART=1
             REQUIRE_RESOURCES=1
             REQUIRE_BOOT_SYNC=1
+            REQUIRE_CLIENT_PROOF=1
             ;;
         -h|--help)
             usage
@@ -253,6 +258,19 @@ if [ "$REQUIRE_BOOT_SYNC" = "1" ]; then
     require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*rc=0' "boot sync reached readiness"
     require_pattern ' phase=boot-sync-ready .*route_body=[^ ]*native_only_route:true' "boot sync route body has native-only route evidence"
     require_pattern ' phase=boot-sync-ready .*status=(idle|printing|paused|error|offline|finished) ' "boot sync status is scalar"
+fi
+
+if [ "$REQUIRE_CLIENT_PROOF" = "1" ]; then
+    require_pattern ' snapshot=client-proof' "client-proof snapshot present"
+    require_pattern ' phase=client-deneb-route .*rc=0 .*body=.*native_only_route:true' "client Deneb route reports native-only"
+    require_pattern ' phase=client-um-status .*rc=0 .*status=' "client UM status endpoint responds"
+    require_pattern ' phase=client-um-printer .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "client UM printer root has idle native flags"
+    require_pattern ' phase=client-um-system .*rc=0 .*body=' "client UM system endpoint responds"
+    require_pattern ' phase=client-cura-printers .*rc=0 .*body=' "client Cura printers endpoint responds"
+    require_pattern ' phase=client-cura-print-jobs .*rc=0 .*body=' "client Cura print_jobs endpoint responds"
+    require_pattern ' phase=client-cura-materials .*rc=0 .*body=' "client Cura materials endpoint responds"
+    require_pattern ' phase=client-digital-factory-status .*installed=1 .*body=.*(status_timeout|state_[A-Za-z0-9_.:-]+|accepted_[01])' "client Digital Factory bridge reports status"
+    require_pattern ' phase=client-proof-complete .*rc=0' "client-proof completed"
 fi
 
 if [ "$REQUIRE_RESOURCES" = "1" ]; then

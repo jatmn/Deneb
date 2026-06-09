@@ -39,10 +39,24 @@ is not proven by a parser or harness existing.
   It proved native-only route, boot-sync readiness, service restart recovery,
   idle status, `native_active:false`, `native_stop_allowed:false`, and
   `print_service_py=0`.
+- June 9, 2026 observe-only client proof:
+  `dist/Deneb_Update_fa29a67.deneb` installed over SSH, rebooted, and the
+  installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof`
+  summary passed `/usr/bin/deneb-printsvc-smoke-verify --native --idle
+  --boot-sync --client-proof`. It proved native-only route, boot-sync readiness,
+  UM API `/printer/status`, `/printer`, and `/system`, Cura cluster
+  `/printers`, `/print_jobs`, and `/materials`, installed Digital Factory bridge
+  status, no stock `print_service.py`, and final process samples for
+  `/usr/bin/deneb-printsvc`, `/usr/bin/deneb-api`, and `/usr/bin/deneb-ui`. The
+  optional UM `/print_job` probe returned rc 8 and is recorded as optional
+  evidence, not as a required client contract.
 - The same smoke run proved temperature reporting was alive at idle: bed current
   was about 25.5 C with target 0.0 C, and nozzle current was about 28.3 C with
   target 0.0 C. This closes the observe-only `0/0 C` regression check, not any
   physical heating phase.
+- The client-proof run also showed nonzero ambient temperatures on the native
+  route: bed current about 30.3 C with target 0.0 C and nozzle current about
+  32.8 C with target 0.0 C.
 - The smoke harness process sampler now records executable-level samples so the
   smoke wrapper shell is not counted as `deneb-printsvc` RSS evidence, and the
   verifier rejects literal `print_service.py` process samples without matching
@@ -91,6 +105,11 @@ is not proven by a parser or harness existing.
 ## Open Parity Work
 
 - `G280`, `M109`, `M190`, raw multi-line `GCODE` wait sequencing, stock-order pause position capture, and abort cleanup-before-idle timing have host-tested native coverage but still need broader hardware proof where they drive physical heat or motion. Pause/resume now has bounded active-print hardware proof, and completion active-identity cleanup has bounded Z-only hardware proof, but neither has representative Cura/slicer geometry proof.
-- Prove native client behavior on hardware for coordinator, LCD UI, web/API, Cura LAN, and Digital Factory without stock Python fallback or stale pending-job state.
+- Prove native client behavior on hardware for coordinator, LCD UI, web/API,
+  Cura LAN, and Digital Factory without stock Python fallback or stale
+  pending-job state. Current client-proof evidence covers observe-only UM API,
+  Cura cluster status/material/job-list endpoints, and Digital Factory bridge
+  status; it does not prove LCD/Web UI user flows, Cura upload/start/abort, or
+  Digital Factory job lifecycle.
 - Regenerate supervised Cura, representative completion, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort and pause/resume with a real representative print before broad parity is claimed; the current physical evidence is bounded Z-only plus low-temperature preheat.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

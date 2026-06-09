@@ -565,7 +565,11 @@ deviation, not hidden under "stock parity."
 - [ ] Prove coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory
   behavior against the native service on hardware. This is not complete until
   those clients work through native `deneb-printsvc` without silently falling
-  back to stock Python or carrying stale print state.
+  back to stock Python or carrying stale print state. Current observe-only
+  client evidence covers native route ownership, UM API status/root/system,
+  Cura cluster printers/print_jobs/materials, and Digital Factory bridge status
+  on hardware; it does not yet prove LCD UI interaction, Web UI workflows, Cura
+  upload/start/abort, or Digital Factory job lifecycle behavior.
 - [ ] Finish the Deneb integration audit for code that patched around the stock
   Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`,
   `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata
@@ -687,7 +691,10 @@ deviation, not hidden under "stock parity."
   streaming owns the controller. Host tests prove active service resync keeps
   the job in `printing`; lower-level runtime tests still prove resync remains
   fatal when the service context has not explicitly allowed it.
-- [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
+- [ ] Add live-device smoke tests for boot sync, idle status, client API/bridge
+  surfaces, heat/cool, home, macro execution, USB/local print, Cura-started
+  print, pause, resume, abort during preheat, abort during active printing,
+  print completion, and recovery after service restart.
   Current evidence is partial, not full-matrix closure. June 9, 2026
   `dist/Deneb_Update_d0b61f7.deneb` passed a supervised native
   pause/resume/abort smoke using an all-axis prehome and a generated
@@ -1537,15 +1544,16 @@ Completed implementation slices:
 - [x] Add a packaged no-Python live smoke/resource harness,
   `deneb-printsvc-smoke`, for supervised lab validation of native route
   selection, boot/backend readiness, idle status snapshots, heat/cool, Z-home,
-  macro-backed manual actions, optional multipart job upload, pause/resume,
+  observe-only client API/bridge surfaces, macro-backed manual actions,
+  optional multipart job upload, pause/resume,
   abort, explicit native local/USB job acceptance, explicit preheat abort,
   explicit active-print abort, Cura cluster API job upload/abort, short-job
   completion, native service-restart
   recovery, process/resource samples, and native-route assertion. The harness
   installs with Deneb but only observes unless a tester explicitly enables
   native route, boot-sync, heat, motion, macro, local-job, REST job,
-  preheat-abort, active-abort with a configurable active-print delay, Cura job,
-  complete-job, or restart phases, and writes both
+  client-proof, preheat-abort, active-abort with a configurable active-print
+  delay, Cura job, complete-job, or restart phases, and writes both
   a full log plus a compact summary with phase results, bounded boot-sync
   ready timing, scalar `/printer/status` values plus sanitized full status
   bodies, `/printer` root snapshots with Deneb-native active/stop-allowed
@@ -1569,6 +1577,15 @@ Completed implementation slices:
   fresh, known fixtures instead of stale printer-side test files. The shell
   selftest covers those generators plus the dwell-only rejection path, and the
   native audit rejects packages missing the safe fixture generators.
+- [x] Add observe-only client proof to the live smoke harness: `--client-proof`
+  samples the native Deneb print-backend diagnostic, UM API `/printer/status`,
+  `/printer`, `/system`, Cura cluster `/printers`, `/print_jobs`, `/materials`,
+  and installed `deneb-df-bridge status` without heat or motion. Optional UM
+  `/print_job` probing is recorded as `optional_phase` so an absent legacy
+  endpoint remains visible without satisfying or poisoning the required client
+  proof. The verifier's `--client-proof` mode requires the native-only route,
+  idle native active/Stop flags false, Cura cluster responses, Digital Factory
+  bridge status, and a successful client-proof completion row.
 - [x] Deploy `Deneb_Update_be6a5b7` and collect first generated-fixture physical
   abort evidence on native `deneb-printsvc`: installed selftests passed, on-device
   active/preheat fixture generation passed, observe-only native restart/boot-sync
@@ -1592,6 +1609,7 @@ Completed implementation slices:
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
   for observe-only, native-route, explicit idle status, boot-sync readiness,
+  client API/bridge proof,
   heat/cool, Z-home,
   macro-backed action, local/USB native job-start/abort, REST job-start/abort,
   explicit preheat abort, explicit active-print abort, Cura cluster job-start/abort, pause/resume, short-job completion, native
@@ -1659,6 +1677,21 @@ Completed implementation slices:
   lifecycle status during initial idle, preheat/abort, or active-abort evidence, putting the full status body
   into boot-sync `status=`, or omitting boot-sync `status_body` native-route
   proof.
+- [x] Capture observe-only client API/bridge evidence after package install: on
+  June 9, 2026, `dist/Deneb_Update_fa29a67.deneb` installed over SSH and the
+  installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof`
+  summary passed `/usr/bin/deneb-printsvc-smoke-verify --native --idle
+  --boot-sync --client-proof`. The run proved native-only route, boot-sync
+  readiness, UM API idle status/root/system responses,
+  `native_active:false`, `native_stop_allowed:false`, Cura cluster
+  `/printers`, `/print_jobs`, and `/materials` responses, installed
+  Digital Factory bridge status (`status_timeout` accepted while offline), no
+  stock `print_service.py`, live ambient temperatures around 30.3 C bed and
+  32.8 C nozzle, and process RSS samples for `/usr/bin/deneb-printsvc`,
+  `/usr/bin/deneb-api`, and `/usr/bin/deneb-ui`. This closes only the
+  observe-only client-surface proof; it does not close LCD/Web workflows, Cura
+  upload/start/abort, Digital Factory job lifecycle, heat/motion, or
+  stock/native resource comparison.
 - [x] Add a shell-only native binary CLI selftest,
   `deneb-printsvc-cli-selftest`, that runs the real `deneb-printsvc`
   `--smoke-test` and `--local-job-smoke` entry points against a temp G-code
