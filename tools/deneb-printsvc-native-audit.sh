@@ -190,12 +190,21 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
         'reason=pre_physical_home' \
         "live smoke harness records pre-home evidence"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'physical_safety_plan' \
+        "live smoke harness records physical safety plans"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'axes=\$axes required_home=\$required_home travel=\$travel stop_conditions=\$stop_conditions' \
+        "live smoke harness records axes, homing, travel, and stop conditions"
     require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
         'smoke_requires_physical_ack' \
         "smoke selftest covers physical safety gate"
     require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
         'smoke_rejects_physical_bundle' \
         "smoke selftest covers physical bundle safety gate"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
+        'verify_rejects_missing_physical_safety' \
+        "smoke selftest covers missing physical safety plan"
     require_pattern "${repo}/web/init/deneb-web.init" \
         'procd_open_instance api' \
         "web init supervises API dependency before lighttpd"
@@ -275,6 +284,12 @@ audit_package_dir() {
     require_pattern "${root}/deneb-printsvc-smoke" \
         'reason=pre_physical_home' \
         "packaged smoke harness records pre-home evidence"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'physical_safety_plan' \
+        "packaged smoke harness records physical safety plans"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'axes=\$axes required_home=\$required_home travel=\$travel stop_conditions=\$stop_conditions' \
+        "packaged smoke harness records axes, homing, travel, and stop conditions"
 
     require_pattern "${root}/manifest.txt" '^native_printsvc: experimental$' \
         "package manifest marks native printsvc experimental"

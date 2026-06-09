@@ -203,6 +203,7 @@ if [ "$REQUIRE_IDLE" = "1" ]; then
 fi
 
 if [ "$REQUIRE_HEAT" = "1" ]; then
+    require_pattern ' phase=heat-safety .*kind=physical .*axes=none .*required_home=none .*travel=bed_to_40C_nozzle_to_50C_then_cooldown .*rc=0' "heat physical safety plan present"
     require_pattern ' phase=bed-low-heat .*rc=0' "bed heat command passed"
     require_pattern ' phase=nozzle-low-heat .*rc=0' "nozzle heat command passed"
     require_pattern ' snapshot=heating' "heating snapshot present"
@@ -216,6 +217,7 @@ if [ "$REQUIRE_HEAT" = "1" ]; then
 fi
 
 if [ "$REQUIRE_MOTION" = "1" ]; then
+    require_pattern ' phase=motion-safety .*kind=physical .*axes=Z .*required_home=Z .*travel=z_home_to_max_only .*rc=0' "motion physical safety plan present"
     require_pattern ' phase=z-home .*rc=0' "Z-home command passed"
     require_pattern ' snapshot=motion' "motion snapshot present"
     require_pattern ' phase=status-motion .*rc=0 .*status=' "motion status query passed"
@@ -223,6 +225,7 @@ if [ "$REQUIRE_MOTION" = "1" ]; then
 fi
 
 if [ "$REQUIRE_MACRO" = "1" ]; then
+    require_pattern ' phase=macro-safety .*kind=physical .*axes=(XYZ|Z) .*required_home=(XYZ|Z) .*rc=0' "macro physical safety plan present"
     require_pattern ' phase=macro-(home|bed_up|bed_down) .*rc=0' "macro-backed action passed"
     require_pattern ' snapshot=macro' "macro snapshot present"
     require_pattern ' phase=status-macro .*rc=0 .*status=' "macro status query passed"
@@ -230,6 +233,7 @@ if [ "$REQUIRE_MACRO" = "1" ]; then
 fi
 
 if [ "$REQUIRE_LOCAL_JOB" = "1" ]; then
+    require_pattern ' phase=local-job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "local-job physical safety plan present"
     require_pattern ' phase=local-job-native .*rc=0' "native local job smoke passed"
     require_pattern ' phase=local-job-start .*source=USB .*rc=0' "local job source is USB"
     require_pattern ' phase=local-job-accepted .*deneb_state=pre_print .*native_active=true .*native_stop_allowed=true .*source=USB .*rc=0' "local job native accepted state is stoppable"
@@ -262,6 +266,7 @@ if [ "$REQUIRE_RESOURCES" = "1" ]; then
 fi
 
 if [ "$REQUIRE_JOB" = "1" ]; then
+    require_pattern ' phase=job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "job physical safety plan present"
     require_pattern ' phase=job-start .*rc=0' "job start passed"
     require_pattern ' snapshot=job-running' "job-running snapshot present"
     require_pattern ' phase=status-job-running .*rc=0 .*status=printing' "job-running status is printing"
@@ -287,6 +292,7 @@ if [ "$REQUIRE_JOB" = "1" ]; then
 fi
 
 if [ "$REQUIRE_CURA_JOB" = "1" ]; then
+    require_pattern ' phase=cura-job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "Cura job physical safety plan present"
     require_pattern ' phase=cura-job-start .*rc=0' "Cura job start passed"
     require_pattern ' snapshot=cura-job-running' "Cura job-running snapshot present"
     require_pattern ' phase=status-cura-job-running .*rc=0 .*status=printing' "Cura job-running status is printing"
@@ -298,6 +304,7 @@ if [ "$REQUIRE_CURA_JOB" = "1" ]; then
 fi
 
 if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
+    require_pattern ' phase=preheat-abort-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "preheat-abort physical safety plan present"
     require_pattern ' phase=preheat-abort-start .*rc=0' "preheat abort job start passed"
     require_pattern ' snapshot=preheat-abort-active' "preheat-abort active snapshot present"
     require_pattern ' phase=status-preheat-abort-active .*rc=0 .*status=printing' "preheat-abort active status is printing"
@@ -313,6 +320,7 @@ if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
 fi
 
 if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
+    require_pattern ' phase=active-abort-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "active-abort physical safety plan present"
     require_pattern ' phase=active-abort-start .*rc=0' "active abort job start passed"
     require_pattern ' snapshot=active-abort-printing' "active-abort printing snapshot present"
     require_pattern ' phase=status-active-abort-printing .*rc=0 .*status=printing' "active-abort printing status is printing"
@@ -328,6 +336,7 @@ if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
 fi
 
 if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
+    require_pattern ' phase=complete-job-safety .*kind=physical .*axes=Z .*required_home=(z_home|home) .*travel=bounded_relative_Z_negative_max_96mm .*rc=0' "completion physical safety plan present"
     require_pattern ' phase=complete-job-fixture-check .*rc=0 .*reason=progress_command' "completion fixture passed non-dwell check"
     require_pattern ' phase=complete-job-start .*rc=0' "completion job start passed"
     require_pattern ' snapshot=complete-job-running' "completion job-running snapshot present"

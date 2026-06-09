@@ -77,6 +77,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:01Z phase=status-native-enabled kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:01Z phase=printer-native-enabled kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
+2026-06-08T00:00:03Z phase=heat-safety kind=physical axes=none required_home=none travel=bed_to_40C_nozzle_to_50C_then_cooldown stop_conditions=temperature_sensor_fault_or_runaway rc=0
 2026-06-08T00:00:03Z phase=bed-low-heat kind=api rc=0
 2026-06-08T00:00:03Z phase=nozzle-low-heat kind=api rc=0
 2026-06-08T00:00:03Z snapshot=heating
@@ -87,19 +88,23 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:04Z snapshot=cooldown
 2026-06-08T00:00:04Z phase=status-cooldown kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:04Z phase=printer-cooldown kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:05Z phase=motion-safety kind=physical axes=Z required_home=Z travel=z_home_to_max_only stop_conditions=z_endstop_or_unexpected_direction rc=0
 2026-06-08T00:00:05Z phase=z-home kind=api rc=0
 2026-06-08T00:00:05Z snapshot=motion
 2026-06-08T00:00:05Z phase=status-motion kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:05Z phase=printer-motion kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:06Z phase=macro-safety kind=physical axes=XYZ required_home=XYZ travel=stock_home_macro stop_conditions=endstop_or_unexpected_motion rc=0
 2026-06-08T00:00:06Z phase=macro-home kind=api rc=0
 2026-06-08T00:00:06Z snapshot=macro
 2026-06-08T00:00:06Z phase=status-macro kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:06Z phase=printer-macro kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:07Z phase=local-job-safety kind=physical axes=job_defined required_home=z_home travel=user_supplied_gcode stop_conditions=endstop_temperature_or_unexpected_motion rc=0
 2026-06-08T00:00:07Z phase=local-job-native kind=printsvc-cli path=/media/usb/local.gcode rc=0
 2026-06-08T00:00:07Z phase=local-job-start path=/media/usb/local.gcode source=USB rc=0
 2026-06-08T00:00:07Z phase=local-job-accepted deneb_state=pre_print native_active=true native_stop_allowed=true source=USB rc=0
 2026-06-08T00:00:07Z phase=local-job-abort rc=0
 2026-06-08T00:00:07Z phase=local-job-aborted-state deneb_state=idle native_active=false native_stop_allowed=false source=USB rc=0
+2026-06-08T00:00:08Z phase=job-safety kind=physical axes=job_defined required_home=z_home travel=user_supplied_gcode_until_abort stop_conditions=endstop_temperature_or_unexpected_motion rc=0
 2026-06-08T00:00:08Z phase=job-start kind=multipart path=/tmp/job.gcode rc=0
 2026-06-08T00:00:08Z snapshot=job-running
 2026-06-08T00:00:08Z phase=status-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
@@ -116,6 +121,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:11Z snapshot=job-aborted
 2026-06-08T00:00:11Z phase=status-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:11Z phase=printer-job-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:12Z phase=cura-job-safety kind=physical axes=job_defined required_home=z_home travel=cura_uploaded_gcode_until_abort stop_conditions=endstop_temperature_or_unexpected_motion rc=0
 2026-06-08T00:00:12Z phase=cura-job-start kind=cluster-multipart path=/tmp/cura.gcode rc=0
 2026-06-08T00:00:12Z snapshot=cura-job-running
 2026-06-08T00:00:12Z phase=status-cura-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
@@ -124,6 +130,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:13Z snapshot=cura-job-aborted
 2026-06-08T00:00:13Z phase=status-cura-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:13Z phase=printer-cura-job-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:14Z phase=preheat-abort-safety kind=physical axes=job_defined required_home=z_home travel=preheat_until_abort stop_conditions=temperature_sensor_fault_or_unexpected_motion rc=0
 2026-06-08T00:00:14Z phase=preheat-abort-start kind=multipart path=/tmp/preheat.gcode rc=0
 2026-06-08T00:00:14Z snapshot=preheat-abort-active
 2026-06-08T00:00:14Z phase=status-preheat-abort-active kind=api method=GET path=/printer/status rc=0 status=printing body=printing
@@ -132,6 +139,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:15Z snapshot=preheat-aborted
 2026-06-08T00:00:15Z phase=status-preheat-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:15Z phase=printer-preheat-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:16Z phase=active-abort-safety kind=physical axes=job_defined required_home=z_home travel=user_supplied_gcode_until_active_abort stop_conditions=endstop_temperature_or_unexpected_motion rc=0
 2026-06-08T00:00:16Z phase=active-abort-start kind=multipart path=/tmp/active.gcode rc=0
 2026-06-08T00:00:16Z snapshot=active-abort-printing
 2026-06-08T00:00:16Z phase=status-active-abort-printing kind=api method=GET path=/printer/status rc=0 status=printing body=printing
@@ -141,6 +149,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:17Z phase=status-active-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:17Z phase=printer-active-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:18Z phase=complete-job-fixture-check path=/tmp/complete.gcode rc=0 reason=progress_command
+2026-06-08T00:00:18Z phase=complete-job-safety kind=physical axes=Z required_home=z_home travel=bounded_relative_Z_negative_max_96mm stop_conditions=z_endstop_or_unexpected_direction rc=0
 2026-06-08T00:00:18Z phase=complete-job-start kind=multipart path=/tmp/complete.gcode rc=0
 2026-06-08T00:00:18Z snapshot=complete-job-running
 2026-06-08T00:00:18Z phase=status-complete-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
@@ -185,6 +194,12 @@ expect_failure verify_rejects_missing_active_stop \
 expect_failure compare_rejects_missing_active_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-stop.summary"
+
+grep -v 'phase=active-abort-safety ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-physical-safety.summary"
+expect_failure verify_rejects_missing_physical_safety \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-physical-safety.summary"
 
 sed '/phase=status-initial /s/status=idle/status=printing/; /phase=status-initial /s/status:idle/status:printing/; /phase=printer-initial /s/native_active:false/native_active:true/; /phase=printer-initial /s/native_stop_allowed:false/native_stop_allowed:true/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-idle.summary"

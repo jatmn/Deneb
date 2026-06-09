@@ -329,6 +329,11 @@ completion-job phases now run a guarded `z_home` pre-home step before the phase
 continues and record `reason=pre_physical_home` evidence in the summary. Use
 `--prehome-action home` only when a test explicitly needs all-axis homing and
 the X/Y travel path is clear.
+Every physical phase also records a `phase=*-safety kind=physical` plan before
+it runs. The plan names the axes involved, required homing, expected
+travel/range, and stop conditions; the verifier and native audit selftests
+reject full evidence that omits these records. These records describe the
+intended safety envelope and do not replace supervised live observation.
 `--local-job` requires `--native`, runs the native
 `deneb-printsvc --local-job-smoke` path through the shared IPC frame helper, and
 proves native route ownership, local/USB job acceptance with native `pre_print`

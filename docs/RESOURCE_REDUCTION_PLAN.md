@@ -438,10 +438,13 @@ Material-profile USB import root/depth/suffix policy and the
   `z_home` pre-home step before continuing and record
   `reason=pre_physical_home`
   evidence, with all-axis `home` reserved for explicit supervised overrides.
-  This is only a harness guardrail. Before any more motion evidence is accepted,
-  each physical phase still needs a per-axis safety audit covering which axes
-  move, which homing action is required, expected travel direction/range, and
-  which firmware/endstop warnings require immediate stop/recovery.
+  Each physical phase now also writes a mandatory
+  `phase=*-safety kind=physical` plan with axes, required homing, expected
+  travel/range, and stop conditions before it can be counted by the verifier.
+  The smoke verifier and native audit selftests reject missing safety-plan
+  records. This is still only a harness contract; the live heat, motion, Cura,
+  pause/resume, abort, completion, and stock/native resource matrix remains
+  required before this can leave experimental builds.
 - The native print-service handoff is owned by Deneb package scripts: native
   `deneb-printsvc` stops stock `printserver` on start, and the patched stock
   `printserver` init shim no longer launches the old driver from

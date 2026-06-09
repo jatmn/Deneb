@@ -25,7 +25,7 @@ is not proven by a parser or harness existing.
 - A smoke harness or verifier existing is not evidence that the corresponding live phase has passed.
 - A static no-Python package audit is not evidence that every client stopped depending on old Python-shaped bridge state.
 - A stock-compatible default such as `firmware:"none"` is not a failure by itself; compare stock and native under the same firmware state before treating it as a defect.
-- A `z_home` pre-home guard is not XY safety proof. Motion evidence must identify axes moved, required homing, expected direction/range, and stop conditions.
+- A `z_home` pre-home guard is not XY safety proof. Motion evidence must identify axes moved, required homing, expected direction/range, and stop conditions. The smoke harness now requires those records before accepting physical-phase summaries, but live observation is still required.
 
 ## Current Live Evidence
 
@@ -47,10 +47,14 @@ is not proven by a parser or harness existing.
   smoke wrapper shell is not counted as `deneb-printsvc` RSS evidence, and the
   verifier rejects literal `print_service.py` process samples without matching
   `print_service_py` summary fields.
+- Host-side smoke and native-audit selftests now prove full physical summaries
+  must include `phase=*-safety kind=physical` records with axes, required
+  homing, expected travel/range, and stop conditions. This closes the harness
+  safety-audit contract, not the live physical proof.
 
 ## Open Parity Work
 
 - `G280`, `M109`, `M190`, raw multi-line `GCODE` wait sequencing, stock-order pause position capture, completion active-identity cleanup, and abort cleanup-before-idle timing have host-tested native coverage but still need hardware proof where they drive physical heat or motion.
 - Prove native client behavior on hardware for coordinator, LCD UI, web/API, Cura LAN, and Digital Factory without stock Python fallback or stale pending-job state.
-- Regenerate supervised live active-abort, preheat-abort, pause/resume, completion, Cura, and resource comparison evidence after the physical-motion safety audit is complete.
+- Regenerate supervised live active-abort, preheat-abort, pause/resume, completion, Cura, and resource comparison evidence using the new physical safety-plan records.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

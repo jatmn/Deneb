@@ -688,12 +688,14 @@ deviation, not hidden under "stock parity."
   only through an explicit `--prehome-action home` override for supervised
   tests with a clear X/Y travel path. This is a harness guardrail, not proof
   that every moving phase is physically safe.
-- [ ] Re-audit live smoke physical-motion safety per axis before accepting any
-  more motion evidence. `z_home` is useful because UM2C homes Z to max, but it
-  does not prove X/Y are homed or that an XY macro/job path is clear. Each
-  physical smoke phase must document which axes it moves, which homing action
-  is required before that phase, expected travel direction/range, and what
-  firmware/endstop warnings require immediate stop/recovery.
+- [x] Re-audit live smoke physical-motion safety per axis before accepting any
+  more motion evidence. The smoke harness now records a mandatory
+  `phase=*-safety kind=physical` line before each physical phase, including the
+  axes involved, required homing action, expected travel/range, and stop
+  conditions. The verifier and native audit selftests reject full summaries or
+  packages that omit this safety-plan evidence. This is a harness contract only;
+  live heat, motion, Cura, pause/resume, abort, completion, and stock/native
+  resource evidence still remain open.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental

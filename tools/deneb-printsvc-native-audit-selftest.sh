@@ -51,6 +51,9 @@ PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
 guarded_prehome() {
     summary "phase=$1 action=z_home rc=0 reason=pre_physical_home"
 }
+physical_safety_plan() {
+    summary "phase=$1-safety kind=physical axes=$axes required_home=$required_home travel=$travel stop_conditions=$stop_conditions rc=0"
+}
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
 EOF
@@ -128,6 +131,9 @@ PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
 guarded_prehome() {
     summary "phase=$1 action=z_home rc=0 reason=pre_physical_home"
 }
+physical_safety_plan() {
+    summary "phase=$1-safety kind=physical axes=$axes required_home=$required_home travel=$travel stop_conditions=$stop_conditions rc=0"
+}
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
 EOF
@@ -135,6 +141,7 @@ EOF
 #!/bin/sh
 smoke_requires_physical_ack
 smoke_rejects_physical_bundle
+verify_rejects_missing_physical_safety
 EOF
 cat > "$root/ui/installer/update.sh" <<'EOF'
 #!/bin/sh
@@ -339,6 +346,13 @@ grep -v 'guarded_prehome' "$MISSING_PREHOME_GATE/deneb-printsvc-smoke" | \
     grep -v 'pre_physical_home' > "$MISSING_PREHOME_GATE/deneb-printsvc-smoke.tmp"
 mv "$MISSING_PREHOME_GATE/deneb-printsvc-smoke.tmp" "$MISSING_PREHOME_GATE/deneb-printsvc-smoke"
 expect_failure rejects_missing_prehome_gate "$AUDIT" --package-dir "$MISSING_PREHOME_GATE"
+
+MISSING_PHYSICAL_PLAN="$TMP_DIR/missing-physical-plan"
+write_valid_package "$MISSING_PHYSICAL_PLAN"
+grep -v 'physical_safety_plan' "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke" |
+    grep -v 'axes=\$axes required_home=\$required_home travel=\$travel stop_conditions=\$stop_conditions' > "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke.tmp"
+mv "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke.tmp" "$MISSING_PHYSICAL_PLAN/deneb-printsvc-smoke"
+expect_failure rejects_missing_physical_plan "$AUDIT" --package-dir "$MISSING_PHYSICAL_PLAN"
 
 MISSING_CLI_SELFTEST="$TMP_DIR/missing-cli-selftest"
 write_valid_package "$MISSING_CLI_SELFTEST"

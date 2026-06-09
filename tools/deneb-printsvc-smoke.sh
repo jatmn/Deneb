@@ -499,6 +499,31 @@ api_step() {
     return "$rc"
 }
 
+physical_safety_plan() {
+    label="$1"
+    axes="$2"
+    required_home="$3"
+    travel="$4"
+    stop_conditions="$5"
+
+    say "$label: physical safety axes=$axes required_home=$required_home travel=$travel stop_conditions=$stop_conditions"
+    summary "phase=${label}-safety kind=physical axes=$axes required_home=$required_home travel=$travel stop_conditions=$stop_conditions rc=0"
+}
+
+macro_safety_plan() {
+    case "$MACRO_ACTION" in
+        home)
+            physical_safety_plan "macro" "XYZ" "XYZ" "stock_home_macro" "endstop_or_unexpected_motion"
+            ;;
+        bed_up)
+            physical_safety_plan "macro" "Z" "Z" "stock_bed_up_macro" "endstop_or_unexpected_motion"
+            ;;
+        bed_down)
+            physical_safety_plan "macro" "Z" "Z" "stock_bed_down_macro" "endstop_or_unexpected_motion"
+            ;;
+    esac
+}
+
 guarded_prehome() {
     label="$1"
 
@@ -862,6 +887,7 @@ if [ "$ENABLE_NATIVE" = "1" ]; then
 fi
 
 if [ "$RUN_HEAT" = "1" ]; then
+    physical_safety_plan "heat" "none" "none" "bed_to_40C_nozzle_to_50C_then_cooldown" "temperature_sensor_fault_or_runaway"
     api_step "bed-low-heat" PUT /printer/bed/temperature '{"target":40}'
     api_step "nozzle-low-heat" PUT /printer/heads/0/extruders/0/hotend/temperature '{"target":50}'
     sleep 10
@@ -873,12 +899,14 @@ if [ "$RUN_HEAT" = "1" ]; then
 fi
 
 if [ "$RUN_MOTION" = "1" ]; then
+    physical_safety_plan "motion" "Z" "Z" "z_home_to_max_only" "z_endstop_or_unexpected_direction"
     api_step "z-home" POST /printer/heads/0/position '{"action":"z_home"}'
     sleep 5
     snapshot "motion"
 fi
 
 if [ "$RUN_MACRO" = "1" ]; then
+    macro_safety_plan
     guarded_prehome "macro-prehome" || exit $?
     api_step "macro-${MACRO_ACTION}" POST /printer/heads/0/position "{\"action\":\"$MACRO_ACTION\"}"
     sleep 5
@@ -904,6 +932,7 @@ if [ "$RUN_LOCAL_JOB" = "1" ]; then
         say "ERROR: local-job path does not exist: $LOCAL_JOB_PATH"
         exit 1
     fi
+    physical_safety_plan "local-job" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode" "endstop_temperature_or_unexpected_motion"
     guarded_prehome "local-job-prehome" || exit $?
     local_job_evidence="/tmp/deneb-printsvc-smoke-local-job.$$"
     say "$ /usr/bin/deneb-printsvc --local-job-smoke $LOCAL_JOB_PATH"
@@ -960,6 +989,7 @@ if [ "$RUN_JOB" = "1" ]; then
 fi
 
 if [ "$RUN_JOB" = "1" ]; then
+    physical_safety_plan "job" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
     guarded_prehome "job-prehome" || exit $?
     say "job-start: multipart upload $JOB_PATH"
     multipart_post "${API_BASE}/print_job" "$JOB_PATH" \
@@ -985,6 +1015,7 @@ if [ "$RUN_JOB" = "1" ]; then
 fi
 
 if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
+    physical_safety_plan "preheat-abort" "job_defined" "$PREHOME_ACTION" "preheat_until_abort" "temperature_sensor_fault_or_unexpected_motion"
     guarded_prehome "preheat-abort-prehome" || exit $?
     say "preheat-abort-start: multipart upload $PREHEAT_ABORT_PATH"
     multipart_post "${API_BASE}/print_job" "$PREHEAT_ABORT_PATH" \
@@ -1002,6 +1033,7 @@ if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
 fi
 
 if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
+    physical_safety_plan "active-abort" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_active_abort" "endstop_temperature_or_unexpected_motion"
     guarded_prehome "active-abort-prehome" || exit $?
     say "active-abort-start: multipart upload $ACTIVE_ABORT_PATH"
     multipart_post "${API_BASE}/print_job" "$ACTIVE_ABORT_PATH" \
@@ -1019,6 +1051,7 @@ if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
 fi
 
 if [ "$RUN_CURA_JOB" = "1" ]; then
+    physical_safety_plan "cura-job" "job_defined" "$PREHOME_ACTION" "cura_uploaded_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
     guarded_prehome "cura-job-prehome" || exit $?
     say "cura-job-start: cluster multipart upload $CURA_JOB_PATH"
     multipart_post "${CLUSTER_API_BASE}/print_jobs" "$CURA_JOB_PATH" \
@@ -1054,6 +1087,7 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
         exit 1
     fi
     summary "phase=complete-job-fixture-check path=$COMPLETE_JOB_PATH rc=0 reason=progress_command"
+    physical_safety_plan "complete-job" "Z" "$PREHOME_ACTION" "bounded_relative_Z_negative_max_96mm" "z_endstop_or_unexpected_direction"
     guarded_prehome "complete-job-prehome" || exit $?
     complete_job_bytes="$(wc -c <"$COMPLETE_JOB_PATH" 2>/dev/null | awk '{print $1}')"
     complete_job_bytes="${complete_job_bytes:-0}"
