@@ -709,6 +709,18 @@ Material-profile USB import root/depth/suffix policy and the
   observe-only/client-surface refresh; the fresh-M114 pause fix still needs a
   supervised all-axis pause/resume motion run, and Section 8 still needs
   representative Cura geometry plus strict stock/native resource comparison.
+- June 9, 2026 installed `dist/Deneb_Update_af12aaf.deneb` after moving LCD
+  abort-display context into shared `status_state.*` helpers. The target
+  manifest reported `version: af12aaf`; installer smoke, CLI, and native-audit
+  selftests passed; and `/usr/bin/deneb-printsvc-smoke --native --boot-sync
+  --client-proof` passed `/usr/bin/deneb-printsvc-smoke-verify --native --idle
+  --boot-sync --client-proof`. The accepted summary proved native-only route,
+  no stock Python driver, idle native active/Stop flags false, UM API and Cura
+  cluster client surfaces, installed Digital Factory bridge status, nonzero
+  ambient telemetry near 29.9 C bed and 32.8 C nozzle, and final
+  `/usr/bin/deneb-printsvc` RSS around 1584 KB. This refreshes current-build
+  observe-only evidence only; LCD hardware abort-flow, representative Cura
+  geometry, and strict stock/native resource comparison remain open.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action

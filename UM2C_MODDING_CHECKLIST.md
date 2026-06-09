@@ -1862,6 +1862,20 @@ Completed implementation slices:
   client-surface proof for the current build; it does not close the supervised
   all-axis pause/resume motion proof, representative Cura geometry, or
   stock/native resource comparison gates.
+- [x] Deploy `Deneb_Update_af12aaf` and refresh installed observe-only proof
+  after moving LCD abort-display context into shared status-state helpers: on
+  June 9, 2026, the package installed over SSH, `/etc/deneb/manifest.txt`
+  reported `version: af12aaf`, installer smoke/CLI/native-audit selftests
+  passed, and the installed `/usr/bin/deneb-printsvc-smoke --native
+  --boot-sync --client-proof` summary passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --boot-sync
+  --client-proof`. The run proved native-only route, no stock
+  `print_service.py`, idle native active/Stop flags false, UM API and Cura
+  cluster client surfaces, installed Digital Factory bridge status, nonzero
+  ambient telemetry around 29.9 C bed and 32.8 C nozzle, and final
+  `/usr/bin/deneb-printsvc` RSS around 1584 KB. This is non-motion evidence for
+  the current shared-helper build; hardware LCD abort-flow, representative
+  Cura geometry, and strict stock/native resource comparison remain open.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
   refuses `nightly` or `stable` native-printsvc packages unless
