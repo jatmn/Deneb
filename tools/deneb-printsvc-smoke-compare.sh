@@ -10,7 +10,8 @@ usage() {
     cat <<'EOF'
 Usage: deneb-printsvc-smoke-compare [--require-reduction] STOCK.summary NATIVE.summary
 
-Prints compact before/after deltas for memory, CPU, boot-sync, and throughput.
+Prints compact before/after deltas for firmware metadata, ambient telemetry,
+memory, CPU, boot-sync, and throughput.
 The command is evidence-oriented: missing required fields make it fail instead
 of silently reporting an incomplete comparison.
 
@@ -131,6 +132,28 @@ require_positive_integer() {
     fi
     if [ "$value" -le 0 ]; then
         fail "$label must be positive"
+        return 1
+    fi
+    return 0
+}
+
+require_positive_number() {
+    value="$1"
+    label="$2"
+
+    if ! require_number "$value" "$label"; then
+        return 1
+    fi
+    awk -v value="$value" -v label="$label" '
+        BEGIN {
+            if ((value + 0) <= 0) {
+                printf("FAIL: %s must be positive\n", label) > "/dev/stderr";
+                exit 1;
+            }
+        }
+    '
+    if [ "$?" -ne 0 ]; then
+        failures=$((failures + 1))
         return 1
     fi
     return 0
@@ -268,6 +291,66 @@ require_local_job_evidence() {
         "native summary missing native local/USB aborted idle-state evidence"
 }
 
+require_firmware_proof() {
+    file="$1"
+    label="$2"
+
+    require_pattern "$file" \
+        ' phase=firmware-proof .*rc=0 .*firmware=[A-Za-z0-9_.:-]+' \
+        "$label summary missing firmware-proof metadata"
+    require_pattern "$file" \
+        ' phase=firmware-proof .*machine_type=[A-Za-z0-9_.:-]+' \
+        "$label summary missing firmware-proof machine type"
+    require_pattern "$file" \
+        ' phase=firmware-proof .*bed_current=([1-9][0-9]*([.][0-9]+)?|0[.][1-9][0-9]*) .*nozzle_current=([1-9][0-9]*([.][0-9]+)?|0[.][1-9][0-9]*)' \
+        "$label summary missing positive ambient bed/nozzle temperatures"
+}
+
+compare_firmware_proof() {
+    stock_firmware="$(phase_value "$STOCK" firmware-proof firmware)"
+    native_firmware="$(phase_value "$NATIVE" firmware-proof firmware)"
+    stock_machine="$(phase_value "$STOCK" firmware-proof machine_type)"
+    native_machine="$(phase_value "$NATIVE" firmware-proof machine_type)"
+    stock_pcb="$(phase_value "$STOCK" firmware-proof pcb_id)"
+    native_pcb="$(phase_value "$NATIVE" firmware-proof pcb_id)"
+    stock_pcb_valid="$(phase_value "$STOCK" firmware-proof pcb_id_valid)"
+    native_pcb_valid="$(phase_value "$NATIVE" firmware-proof pcb_id_valid)"
+    stock_bed="$(phase_value "$STOCK" firmware-proof bed_current)"
+    native_bed="$(phase_value "$NATIVE" firmware-proof bed_current)"
+    stock_nozzle="$(phase_value "$STOCK" firmware-proof nozzle_current)"
+    native_nozzle="$(phase_value "$NATIVE" firmware-proof nozzle_current)"
+
+    require_firmware_proof "$STOCK" stock
+    require_firmware_proof "$NATIVE" native
+    require_positive_number "$stock_bed" "stock bed current temperature"
+    require_positive_number "$native_bed" "native bed current temperature"
+    require_positive_number "$stock_nozzle" "stock nozzle current temperature"
+    require_positive_number "$native_nozzle" "native nozzle current temperature"
+
+    if [ "$stock_firmware" != "none" ] &&
+       [ "$stock_firmware" != "$native_firmware" ]; then
+        fail "native firmware metadata does not match stock: stock=$stock_firmware native=$native_firmware"
+    fi
+    if [ "$native_firmware" = "none" ] &&
+       [ "$stock_firmware" != "none" ]; then
+        fail "native firmware metadata fell back to none while stock reported $stock_firmware"
+    fi
+    if [ "$stock_machine" != "none" ] &&
+       [ "$stock_machine" != "unknown" ] &&
+       [ "$stock_machine" != "$native_machine" ]; then
+        fail "native machine type does not match stock: stock=$stock_machine native=$native_machine"
+    fi
+    if [ "$stock_pcb_valid" = "true" ] &&
+       { [ "$native_pcb_valid" != "true" ] || [ "$stock_pcb" != "$native_pcb" ]; }; then
+        fail "native PCB metadata does not match valid stock PCB metadata: stock=$stock_pcb/$stock_pcb_valid native=$native_pcb/$native_pcb_valid"
+    fi
+
+    printf 'compare=firmware_proof stock_firmware=%s native_firmware=%s stock_machine_type=%s native_machine_type=%s stock_pcb_id=%s native_pcb_id=%s stock_bed_current=%s native_bed_current=%s stock_nozzle_current=%s native_nozzle_current=%s\n' \
+        "$stock_firmware" "$native_firmware" "$stock_machine" "$native_machine" \
+        "$stock_pcb" "$native_pcb" "$stock_bed" "$native_bed" \
+        "$stock_nozzle" "$native_nozzle"
+}
+
 delta_line() {
     name="$1"
     before="$2"
@@ -353,6 +436,8 @@ for phase in initial native-enabled cooldown motion macro service-restarted \
     job-completed; do
     require_printer_stop_phase "$phase" false false
 done
+
+compare_firmware_proof
 
 stock_initial_mem="$(summary_value "$STOCK" initial mem_used_kb)"
 native_initial_mem="$(summary_value "$NATIVE" initial mem_used_kb)"

@@ -83,7 +83,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   cadence. Live parity must compare stock and native on the same firmware:
   `firmware:"none"` is acceptable if stock also reports `none`; non-`none`
   metadata is required only when the motion controller actually emits version
-  output.
+  output. The smoke harness now exposes this as an observe-only
+  `--firmware-proof` summary phase and the stock/native comparer rejects
+  native firmware fallback or missing ambient bed/nozzle telemetry when stock
+  captured real values.
 - Native M105 telemetry parsing also carries the stock topcap fields: compact
   old-Marlin `t1/33.2` reports now update `topcapIsPresent` and
   `topcapTemperature` in the native status JSON instead of leaving clients on

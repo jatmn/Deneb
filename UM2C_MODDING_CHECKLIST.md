@@ -632,7 +632,11 @@ deviation, not hidden under "stock parity."
   also reports `none` under the same conditions; native must preserve the field
   and default, must parse non-`none` metadata if the controller emits version
   output, and must not regress temperature/topcap/status updates while stock
-  Python is absent.
+  Python is absent. The smoke harness now has an observe-only
+  `--firmware-proof` mode plus verifier/comparer checks for firmware,
+  machine/PCB metadata, nonzero ambient bed/nozzle temperatures, topcap
+  telemetry, and scalar status; this is tooling only until a live stock/native
+  pair is captured on the same printer.
 - [x] Carry native firmware/version and topcap telemetry through the web/API
   backend state and shared printer response formatter, so clients consuming
   `/api/v1/printer`, `/api/v1/airmanager`, or Deneb's cached status JSON do not

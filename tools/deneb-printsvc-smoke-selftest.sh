@@ -50,6 +50,8 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z sample=initial load1=0.20
 2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
 2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
+2026-06-08T00:00:11Z snapshot=firmware-proof
+2026-06-08T00:00:11Z phase=firmware-proof kind=api root_rc=0 bed_rc=0 nozzle_rc=0 airmanager_rc=0 rc=0 firmware=Apr_30_2020 machine_type=E2 pcb_id=4 pcb_id_valid=true bed_current=29.5 bed_target=0.0 nozzle_current=31.2 nozzle_target=0.0 topcap_present=true topcap_current=30.1 status=idle
 2026-06-08T00:01:00Z phase=job-throughput path=/home/3D/stock.gcode bytes=10000 elapsed_seconds=20 bytes_per_second=500 rc=0
 2026-06-08T00:02:00Z sample=final mem_total_kb=250000 mem_used_kb=122000
 2026-06-08T00:02:00Z sample=final uptime_seconds=220
@@ -88,6 +90,8 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:02Z phase=client-cura-materials kind=client-get method=GET path=/materials rc=0 body=[]
 2026-06-08T00:00:02Z phase=client-digital-factory-status kind=digital-factory command=deneb-df-bridge_status installed=1 rc=0 body=status_timeout
 2026-06-08T00:00:02Z phase=client-proof-complete rc=0
+2026-06-08T00:00:02Z snapshot=firmware-proof
+2026-06-08T00:00:02Z phase=firmware-proof kind=api root_rc=0 bed_rc=0 nozzle_rc=0 airmanager_rc=0 rc=0 firmware=Apr_30_2020 machine_type=E2 pcb_id=4 pcb_id_valid=true bed_current=30.3 bed_target=0.0 nozzle_current=32.8 nozzle_target=0.0 topcap_present=true topcap_current=31.0 status=idle
 2026-06-08T00:00:03Z phase=heat-safety kind=physical axes=none required_home=none travel=bed_to_40C_nozzle_to_50C_then_cooldown stop_conditions=temperature_sensor_fault_or_runaway rc=0
 2026-06-08T00:00:03Z phase=bed-low-heat kind=api rc=0
 2026-06-08T00:00:03Z phase=nozzle-low-heat kind=api rc=0
@@ -385,6 +389,18 @@ expect_failure verify_rejects_boot_sync_json_status \
 expect_failure compare_rejects_boot_sync_json_status \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-boot-sync-json-status.summary"
+
+sed '/phase=firmware-proof /s/firmware=Apr_30_2020/firmware=none/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-firmware-fallback.summary"
+expect_failure compare_rejects_native_firmware_fallback \
+    sh "$COMPARE" \
+    "$STOCK_SUMMARY" "$TMP_DIR/native-firmware-fallback.summary"
+
+sed '/phase=firmware-proof /s/nozzle_current=32.8/nozzle_current=0.0/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-zero-nozzle-temp.summary"
+expect_failure verify_rejects_zero_nozzle_temp \
+    sh "$VERIFY" --firmware-proof \
+    "$TMP_DIR/native-zero-nozzle-temp.summary"
 
 awk '
     { print }

@@ -23,6 +23,7 @@ REQUIRE_RESTART=0
 REQUIRE_RESOURCES=0
 REQUIRE_BOOT_SYNC=0
 REQUIRE_CLIENT_PROOF=0
+REQUIRE_FIRMWARE_PROOF=0
 
 usage() {
     cat <<'EOF'
@@ -52,6 +53,8 @@ Options:
   --boot-sync   Require bounded boot/backend readiness evidence
   --client-proof
                Require observe-only local client API/bridge evidence
+  --firmware-proof
+               Require observe-only firmware/version and ambient telemetry evidence
   --full        Require native, heat, motion, and job evidence
   -h, --help    Show this help
 
@@ -87,6 +90,7 @@ while [ "$#" -gt 0 ]; do
         --resources) REQUIRE_RESOURCES=1 ;;
         --boot-sync) REQUIRE_BOOT_SYNC=1 ;;
         --client-proof) REQUIRE_CLIENT_PROOF=1 ;;
+        --firmware-proof) REQUIRE_FIRMWARE_PROOF=1 ;;
         --full)
             REQUIRE_NATIVE=1
             REQUIRE_IDLE=1
@@ -104,6 +108,7 @@ while [ "$#" -gt 0 ]; do
             REQUIRE_RESOURCES=1
             REQUIRE_BOOT_SYNC=1
             REQUIRE_CLIENT_PROOF=1
+            REQUIRE_FIRMWARE_PROOF=1
             ;;
         -h|--help)
             usage
@@ -271,6 +276,20 @@ if [ "$REQUIRE_CLIENT_PROOF" = "1" ]; then
     require_pattern ' phase=client-cura-materials .*rc=0 .*body=' "client Cura materials endpoint responds"
     require_pattern ' phase=client-digital-factory-status .*installed=1 .*body=.*(status_timeout|state_[A-Za-z0-9_.:-]+|accepted_[01])' "client Digital Factory bridge reports status"
     require_pattern ' phase=client-proof-complete .*rc=0' "client-proof completed"
+fi
+
+if [ "$REQUIRE_FIRMWARE_PROOF" = "1" ]; then
+    positive_temp='([1-9][0-9]*([.][0-9]+)?|0[.][1-9][0-9]*)'
+    non_negative_temp='([0-9]+([.][0-9]+)?)'
+    require_pattern ' snapshot=firmware-proof' "firmware-proof snapshot present"
+    require_pattern ' phase=firmware-proof .*rc=0' "firmware-proof API queries passed"
+    require_pattern ' phase=firmware-proof .*firmware=[A-Za-z0-9_.:-]+' "firmware field captured"
+    require_pattern ' phase=firmware-proof .*machine_type=[A-Za-z0-9_.:-]+' "machine type field captured"
+    require_pattern ' phase=firmware-proof .*pcb_id=([0-9]+|unknown) .*pcb_id_valid=(true|false|unknown)' "PCB metadata field captured"
+    require_pattern " phase=firmware-proof .*bed_current=${positive_temp} .*bed_target=${non_negative_temp}" "bed ambient/current temperature captured"
+    require_pattern " phase=firmware-proof .*nozzle_current=${positive_temp} .*nozzle_target=${non_negative_temp}" "nozzle ambient/current temperature captured"
+    require_pattern ' phase=firmware-proof .*topcap_present=(true|false|unknown) .*topcap_current=([0-9]+([.][0-9]+)?|unknown)' "topcap telemetry field captured"
+    require_pattern ' phase=firmware-proof .*status=(idle|printing|paused|aborting|error|offline|finished)' "firmware-proof status is scalar"
 fi
 
 if [ "$REQUIRE_RESOURCES" = "1" ]; then

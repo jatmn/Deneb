@@ -25,6 +25,9 @@ is not proven by a parser or harness existing.
 - A smoke harness or verifier existing is not evidence that the corresponding live phase has passed.
 - A static no-Python package audit is not evidence that every client stopped depending on old Python-shaped bridge state.
 - A stock-compatible default such as `firmware:"none"` is not a failure by itself; compare stock and native under the same firmware state before treating it as a defect.
+- Firmware/version parity must use a paired stock/native `firmware-proof`
+  summary. The comparer rejects native `firmware=none` when stock reported a
+  real value and rejects missing or zero ambient bed/nozzle telemetry.
 - A `z_home` pre-home guard is not XY safety proof. Motion evidence must identify axes moved, required homing, expected direction/range, and stop conditions. The smoke harness now requires those records before accepting physical-phase summaries, but live observation is still required.
 
 ## Current Live Evidence
@@ -61,6 +64,13 @@ is not proven by a parser or harness existing.
   smoke wrapper shell is not counted as `deneb-printsvc` RSS evidence, and the
   verifier rejects literal `print_service.py` process samples without matching
   `print_service_py` summary fields.
+- The smoke harness now has observe-only `--firmware-proof` evidence. It
+  records `/printer`, bed-temperature, hotend-temperature, and Air Manager
+  status fields into scalar summary keys for firmware, machine/PCB metadata,
+  ambient bed/nozzle temperatures, topcap telemetry, and status. This closes
+  the harness gap for firmware/version parity collection only; live stock and
+  native runs still need to be captured on the same firmware before the
+  Section 8 live parity item is checked.
 - Host-side smoke and native-audit selftests now prove full physical summaries
   must include `phase=*-safety kind=physical` records with axes, required
   homing, expected travel/range, and stop conditions. This closes the harness

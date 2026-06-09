@@ -25,6 +25,7 @@ RUN_PAUSE_RESUME=0
 RUN_RESTART=0
 RUN_BOOT_SYNC=0
 RUN_CLIENT_PROOF=0
+RUN_FIRMWARE_PROOF=0
 RUN_PARSER_SELFTEST=0
 MAKE_COMPLETE_FIXTURE=0
 MAKE_ACTIVE_FIXTURE=0
@@ -79,6 +80,8 @@ Observe-only by default:
   --boot-sync           Wait for print backend route/status readiness evidence
   --client-proof        Observe-only proof for local UM API, Cura cluster API,
                         Deneb route diagnostics, and Digital Factory bridge status
+  --firmware-proof      Observe-only proof for firmware/version fields and
+                        ambient bed/nozzle/topcap telemetry
   --summary-parser-selftest
                         Exercise summary status/body parsing without hardware
   --physical-ok        Required for any phase that heats, homes, moves axes,
@@ -205,6 +208,7 @@ while [ "$#" -gt 0 ]; do
         --restart) RUN_RESTART=1 ;;
         --boot-sync) RUN_BOOT_SYNC=1 ;;
         --client-proof) RUN_CLIENT_PROOF=1 ;;
+        --firmware-proof) RUN_FIRMWARE_PROOF=1 ;;
         --summary-parser-selftest) RUN_PARSER_SELFTEST=1 ;;
         --physical-ok) PHYSICAL_OK=1 ;;
         --physical-bundle-ok) PHYSICAL_BUNDLE_OK=1 ;;
@@ -523,6 +527,36 @@ http_status_code() {
 
 sanitize_summary_value() {
     printf '%s' "$1" | tr -d '\r\n"' | sed 's/[^A-Za-z0-9_.:-]/_/g'
+}
+
+extract_json_string_field() {
+    raw="$1"
+    key="$2"
+
+    value="$(printf '%s' "$raw" |
+        sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" |
+        head -n 1)"
+    sanitize_summary_value "$value"
+}
+
+extract_json_number_field() {
+    raw="$1"
+    key="$2"
+
+    value="$(printf '%s' "$raw" |
+        sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\\(-\\{0,1\\}[0-9][0-9.]*\\).*/\\1/p" |
+        head -n 1)"
+    sanitize_summary_value "$value"
+}
+
+extract_json_bool_field() {
+    raw="$1"
+    key="$2"
+
+    value="$(printf '%s' "$raw" |
+        sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\\(true\\|false\\).*/\\1/p" |
+        head -n 1)"
+    sanitize_summary_value "$value"
 }
 
 extract_status_value() {
@@ -854,6 +888,61 @@ client_proof() {
     return "$rc"
 }
 
+firmware_proof() {
+    rc=0
+    root_file="/tmp/deneb-printsvc-smoke-fw-root.$$"
+    bed_file="/tmp/deneb-printsvc-smoke-fw-bed.$$"
+    nozzle_file="/tmp/deneb-printsvc-smoke-fw-nozzle.$$"
+    air_file="/tmp/deneb-printsvc-smoke-fw-air.$$"
+
+    say "===== firmware proof ====="
+    summary "snapshot=firmware-proof"
+
+    http_get_capture /printer "$root_file"
+    root_rc=$?
+    [ "$root_rc" = "0" ] || rc=1
+    http_get_capture /printer/bed/temperature "$bed_file"
+    bed_rc=$?
+    [ "$bed_rc" = "0" ] || rc=1
+    http_get_capture /printer/heads/0/extruders/0/hotend/temperature "$nozzle_file"
+    nozzle_rc=$?
+    [ "$nozzle_rc" = "0" ] || rc=1
+    http_get_capture_base "$API_BASE" /airmanager "$air_file"
+    air_rc=$?
+
+    root_raw="$(cat "$root_file" 2>/dev/null || true)"
+    bed_raw="$(cat "$bed_file" 2>/dev/null || true)"
+    nozzle_raw="$(cat "$nozzle_file" 2>/dev/null || true)"
+    air_raw="$(cat "$air_file" 2>/dev/null || true)"
+
+    if [ -s "$root_file" ]; then cat "$root_file" >>"$LOG"; printf '\n' >>"$LOG"; fi
+    if [ -s "$bed_file" ]; then cat "$bed_file" >>"$LOG"; printf '\n' >>"$LOG"; fi
+    if [ -s "$nozzle_file" ]; then cat "$nozzle_file" >>"$LOG"; printf '\n' >>"$LOG"; fi
+    if [ -s "$air_file" ]; then cat "$air_file" >>"$LOG"; printf '\n' >>"$LOG"; fi
+
+    firmware="$(extract_json_string_field "$root_raw" firmware)"
+    machine_type="$(extract_json_string_field "$root_raw" machine_type)"
+    [ -n "$machine_type" ] || machine_type="$(extract_json_string_field "$root_raw" machineType)"
+    pcb_id="$(extract_json_number_field "$root_raw" pcb_id)"
+    [ -n "$pcb_id" ] || pcb_id="$(extract_json_number_field "$root_raw" pcbId)"
+    pcb_id_valid="$(extract_json_bool_field "$root_raw" pcb_id_valid)"
+    [ -n "$pcb_id_valid" ] || pcb_id_valid="$(extract_json_bool_field "$root_raw" pcbIdValid)"
+    status_value="$(extract_status_value "$root_raw")"
+    bed_current="$(extract_json_number_field "$bed_raw" current)"
+    bed_target="$(extract_json_number_field "$bed_raw" target)"
+    nozzle_current="$(extract_json_number_field "$nozzle_raw" current)"
+    nozzle_target="$(extract_json_number_field "$nozzle_raw" target)"
+    topcap_present="$(extract_json_bool_field "$root_raw" present)"
+    topcap_current="$(extract_json_number_field "$air_raw" current)"
+    [ -n "$topcap_current" ] || topcap_current="$(extract_json_number_field "$root_raw" current)"
+
+    rm -f "$root_file" "$bed_file" "$nozzle_file" "$air_file"
+
+    say "firmware-proof rc=$rc firmware=${firmware:-unknown} machine_type=${machine_type:-unknown} bed=${bed_current:-unknown}/${bed_target:-unknown} nozzle=${nozzle_current:-unknown}/${nozzle_target:-unknown}"
+    summary "phase=firmware-proof kind=api root_rc=$root_rc bed_rc=$bed_rc nozzle_rc=$nozzle_rc airmanager_rc=$air_rc rc=$rc firmware=${firmware:-unknown} machine_type=${machine_type:-unknown} pcb_id=${pcb_id:-unknown} pcb_id_valid=${pcb_id_valid:-unknown} bed_current=${bed_current:-unknown} bed_target=${bed_target:-unknown} nozzle_current=${nozzle_current:-unknown} nozzle_target=${nozzle_target:-unknown} topcap_present=${topcap_present:-unknown} topcap_current=${topcap_current:-unknown} status=${status_value:-unknown}"
+    return "$rc"
+}
+
 monotonic_seconds() {
     awk '{printf("%d", $1)}' /proc/uptime 2>/dev/null || printf '0'
 }
@@ -1122,8 +1211,8 @@ if [ "$RUN_PARSER_SELFTEST" = "1" ]; then
 fi
 
 say "deneb-printsvc smoke started"
-say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF"
-summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF"
+say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
+summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
 
 append_cmd /usr/bin/deneb-printsvc --smoke-test
 summary "phase=printsvc-self-test rc=$?"
@@ -1147,6 +1236,10 @@ fi
 
 if [ "$RUN_CLIENT_PROOF" = "1" ]; then
     client_proof || exit $?
+fi
+
+if [ "$RUN_FIRMWARE_PROOF" = "1" ]; then
+    firmware_proof || exit $?
 fi
 
 if [ "$RUN_HEAT" = "1" ]; then
