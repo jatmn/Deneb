@@ -579,9 +579,12 @@ deviation, not hidden under "stock parity."
   [docs/PRINTSVC_INTEGRATION_AUDIT.md](docs/PRINTSVC_INTEGRATION_AUDIT.md),
   and `deneb-printsvc-integration-audit` plus its negative-fixture selftest now
   gate source, package, archive, installer, and CTest paths.
-- [ ] Finish deciding, per integration, whether the behavior remains a client of
+- [x] Finish deciding, per integration, whether the behavior remains a client of
   native `deneb-printsvc`, moves into `deneb-printsvc`, or belongs in a shared
-  Deneb print-control library/API.
+  Deneb print-control library/API. The placement-decision column in
+  [docs/PRINTSVC_INTEGRATION_AUDIT.md](docs/PRINTSVC_INTEGRATION_AUDIT.md)
+  records this for each patched client boundary and is enforced by
+  `deneb-printsvc-integration-audit`.
 - [ ] Avoid preserving patchwork solely for compatibility with the stock
   driver's shape; compatibility shims are acceptable only as temporary migration
   boundaries with explicit removal criteria. The integration audit now records
@@ -594,7 +597,11 @@ deviation, not hidden under "stock parity."
 - [ ] Finish migrating LCD UI, web UI, REST API, Cura cluster API, diagnostics,
   and native `deneb-printsvc` callers onto those shared helpers so they no
   longer reinterpret print state, pending jobs, abort state, preheat state, and
-  macro safety differently.
+  macro safety differently. The integration audit now enforces the helper
+  dependencies and key context/status helper calls for LCD `backend_comm`, web
+  `backend_zmq`, REST print-job/printer APIs, and Cura cluster routes, but this
+  remains open until the remaining adapter-specific lifecycle code is removed
+  or proven to be display/transport-only on hardware.
 - [x] Add tests around shared print-control helpers before removing duplicate
   callers so web/touch/API behavior stays aligned during migration.
 - [x] Keep the native driver source tree intentionally modular; do not create a few thousand-line catch-all files.

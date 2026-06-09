@@ -35,20 +35,20 @@ write_valid_source() {
     root="$1"
     mkdir -p "$root/docs" "$root/ui/src" "$root/web/src" "$root/printsvc/src" "$root/common/print" "$root/tools" "$root/ui/installer"
     cat > "$root/docs/PRINTSVC_INTEGRATION_AUDIT.md" <<'EOF'
-| Integration | Native owner | Compatibility boundary | Removal condition | Evidence | Remaining proof |
-| --- | --- | --- | --- | --- | --- |
-| LCD `backend_comm` | owner | boundary | removal | evidence | proof |
-| web `backend_zmq` | owner | boundary | removal | evidence | proof |
-| REST `api_print_job` | owner | boundary | removal | evidence | proof |
-| Cura `api_cluster` | owner | boundary | removal | evidence | proof |
-| REST `api_printer` | owner | boundary | removal | evidence | proof |
-| conflict and preheat bridges | owner | boundary | removal | evidence | proof |
-| pending-job metadata files | owner | boundary | removal | evidence | proof |
-| direct macro calls | owner | boundary | removal | evidence | proof |
-| direct raw G-code calls | owner | boundary | removal | evidence | proof |
-| duplicated status classification | owner | boundary | removal | evidence | proof |
-| diagnostics and error mapping | owner | boundary | removal | evidence | proof |
-| native `deneb-printsvc` callers | owner | boundary | removal | evidence | proof |
+| Integration | Placement decision | Native owner | Compatibility boundary | Removal condition | Evidence | Remaining proof |
+| --- | --- | --- | --- | --- | --- | --- |
+| LCD `backend_comm` | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| web `backend_zmq` | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| REST `api_print_job` | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| Cura `api_cluster` | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| REST `api_printer` | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| conflict and preheat bridges | Client via shared helpers | owner | boundary | removal | evidence | proof |
+| pending-job metadata files | Shared library/API boundary | owner | boundary | removal | evidence | proof |
+| direct macro calls | Native service-owned | owner | boundary | removal | evidence | proof |
+| direct raw G-code calls | Native service-owned | owner | boundary | removal | evidence | proof |
+| duplicated status classification | Shared library/API boundary | owner | boundary | removal | evidence | proof |
+| diagnostics and error mapping | Native service-owned | owner | boundary | removal | evidence | proof |
+| native `deneb-printsvc` callers | Native service-owned | owner | boundary | removal | evidence | proof |
 EOF
     cat > "$root/ui/src/backend_comm.c" <<'EOF'
 #include "print_backend_route.h"
@@ -57,6 +57,7 @@ EOF
 #include "pending_job_file.h"
 #include "command_format.h"
 #include "print_state_rules.h"
+int uses_flags(void) { return deneb_status_state_context_flags(0, 0).has_active_context; }
 EOF
     cat > "$root/web/src/backend_zmq.c" <<'EOF'
 #include "print_backend_route.h"
@@ -64,6 +65,7 @@ EOF
 #include "pending_job_dispatch.h"
 #include "print_history.h"
 #include "print_state_rules.h"
+const char *uses_label(void) { return deneb_print_status_label_with_req(1, 0, 0, 0, "", 0); }
 EOF
     cat > "$root/web/src/api_print_job.c" <<'EOF'
 #include "pending_job_registration.h"
@@ -117,6 +119,12 @@ cat >> "$PLACEHOLDER/docs/PRINTSVC_INTEGRATION_AUDIT.md" <<'EOF'
 TBD
 EOF
 expect_failure rejects_placeholder_doc "$AUDIT" --source "$PLACEHOLDER"
+
+MISSING_DECISION="$TMP_DIR/source-missing-decision"
+write_valid_source "$MISSING_DECISION"
+sed 's/Client via shared helpers/missing decision/' "$MISSING_DECISION/docs/PRINTSVC_INTEGRATION_AUDIT.md" > "$MISSING_DECISION/docs/audit.tmp"
+mv "$MISSING_DECISION/docs/audit.tmp" "$MISSING_DECISION/docs/PRINTSVC_INTEGRATION_AUDIT.md"
+expect_failure rejects_missing_placement_decision "$AUDIT" --source "$MISSING_DECISION"
 
 MISSING_HELPER="$TMP_DIR/source-missing-helper"
 write_valid_source "$MISSING_HELPER"

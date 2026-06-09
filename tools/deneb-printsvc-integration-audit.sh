@@ -65,6 +65,7 @@ audit_source() {
     doc="${repo}/docs/PRINTSVC_INTEGRATION_AUDIT.md"
 
     require_file "$doc" "integration audit document exists"
+    require_pattern "$doc" 'Placement decision' "integration audit records placement decision column"
     require_pattern "$doc" 'Native owner' "integration audit records native owner column"
     require_pattern "$doc" 'Compatibility boundary' "integration audit records compatibility boundary column"
     require_pattern "$doc" 'Removal condition' "integration audit records removal condition column"
@@ -84,6 +85,30 @@ audit_source() {
     require_doc_row "$doc" 'duplicated status classification' 'duplicated status classification'
     require_doc_row "$doc" 'diagnostics and error mapping' 'diagnostics and error mapping'
     require_doc_row "$doc" 'native deneb-printsvc callers' 'native `deneb-printsvc` callers'
+    require_pattern "$doc" 'LCD `backend_comm`.*Client via shared helpers' \
+        "integration audit decides LCD remains client via shared helpers"
+    require_pattern "$doc" 'web `backend_zmq`.*Client via shared helpers' \
+        "integration audit decides web backend remains client via shared helpers"
+    require_pattern "$doc" 'REST `api_print_job`.*Client via shared helpers' \
+        "integration audit decides print job API remains client via shared helpers"
+    require_pattern "$doc" 'Cura `api_cluster`.*Client via shared helpers' \
+        "integration audit decides Cura API remains client via shared helpers"
+    require_pattern "$doc" 'REST `api_printer`.*Client via shared helpers' \
+        "integration audit decides printer API remains client via shared helpers"
+    require_pattern "$doc" 'conflict and preheat bridges.*Client via shared helpers' \
+        "integration audit decides conflict/preheat bridges remain clients via shared helpers"
+    require_pattern "$doc" 'pending-job metadata files.*Shared library/API boundary' \
+        "integration audit decides pending-job files are shared boundary"
+    require_pattern "$doc" 'duplicated status classification.*Shared library/API boundary' \
+        "integration audit decides status classification is shared boundary"
+    require_pattern "$doc" 'direct macro calls.*Native service-owned' \
+        "integration audit decides macro resolution is native service-owned"
+    require_pattern "$doc" 'direct raw G-code calls.*Native service-owned' \
+        "integration audit decides raw G-code execution is native service-owned"
+    require_pattern "$doc" 'diagnostics and error mapping.*Native service-owned' \
+        "integration audit decides diagnostics ownership"
+    require_pattern "$doc" 'native `deneb-printsvc` callers.*Native service-owned' \
+        "integration audit decides native callers ownership"
 
     require_file "${repo}/ui/src/backend_comm.c" "LCD backend source exists"
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "print_backend_route\.h"' "LCD backend uses shared route helper"
@@ -92,6 +117,7 @@ audit_source() {
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "pending_job_file\.h"' "LCD backend uses shared pending-job files"
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "command_format\.h"' "LCD backend uses shared command formatting"
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "print_state_rules\.h"' "LCD backend uses shared state rules"
+    require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_context_flags' "LCD backend gets context flags from shared status helper"
 
     require_file "${repo}/web/src/backend_zmq.c" "web backend source exists"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_backend_route\.h"' "web backend uses shared route helper"
@@ -99,6 +125,7 @@ audit_source() {
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "pending_job_dispatch\.h"' "web backend uses shared pending-job dispatch"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_history\.h"' "web backend uses shared print history"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_state_rules\.h"' "web backend uses shared state rules"
+    require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_print_status_label_with_req' "web backend gets status labels from shared rules"
 
     require_file "${repo}/web/src/api_print_job.c" "print job API source exists"
     require_pattern "${repo}/web/src/api_print_job.c" '#include "pending_job_registration\.h"' "print job API uses shared pending-job registration"

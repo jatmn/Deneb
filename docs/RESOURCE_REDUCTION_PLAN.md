@@ -709,9 +709,11 @@ Material-profile USB import root/depth/suffix policy and the
   remaining proof for LCD `backend_comm`, web `backend_zmq`, REST/Cura API
   paths, conflict/preheat bridges, pending-job metadata, direct macro/G-code
   calls, status classification, diagnostics, and native print-service callers.
-  The shell-only `deneb-printsvc-integration-audit` and selftest are packaged
-  and wired into CTest, package build, archive audit, and installer validation
-  so new patchwork has to declare an owner before it ships.
+  Each row now also carries a placement decision: client via shared helpers,
+  shared library/API boundary, or native service-owned. The shell-only
+  `deneb-printsvc-integration-audit` and selftest are packaged and wired into
+  CTest, package build, archive audit, and installer validation so new
+  patchwork has to declare an owner and placement before it ships.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API
