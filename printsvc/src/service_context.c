@@ -28,6 +28,8 @@ int deneb_service_context_motion_runtime(deneb_print_service_t *svc,
     runtime->flow = &svc->flow;
     runtime->serial = &svc->serial;
     runtime->serial_ready = &svc->serial_ready;
+    runtime->allow_sequence_resync =
+        svc->abort_cleanup_pending || svc->finish_cleanup_pending;
     return 0;
 }
 
@@ -45,6 +47,7 @@ int deneb_service_context_job_streamer(deneb_print_service_t *svc,
     streamer->serial_ready = &svc->serial_ready;
     streamer->job_active = &svc->job_active;
     streamer->abort_requested = &svc->abort_requested;
+    streamer->finish_cleanup_pending = &svc->finish_cleanup_pending;
     streamer->planner_starvation_count = &svc->planner_starvation_count;
     return 0;
 }
@@ -55,7 +58,9 @@ void deneb_service_context_refresh_diagnostics(deneb_print_service_t *svc)
         return;
 
     deneb_runtime_diagnostics_refresh(
-        &svc->status, &svc->flow, svc->job_active,
+        &svc->status, &svc->flow,
+        svc->job_active || svc->finish_cleanup_pending ||
+            svc->abort_cleanup_pending,
         (unsigned int)svc->job_stream.line_number,
         svc->planner_starvation_count);
 }
@@ -70,6 +75,27 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     deneb_gcode_stream_close(&svc->job_stream);
     svc->job_active = 0;
     svc->abort_requested = 0;
+    svc->abort_cleanup_pending = 0;
+    svc->abort_cleanup_index = 0;
+    svc->finish_cleanup_pending = 0;
+    svc->startup_status_probe_pending = 0;
+    svc->firmware_probe_pending = 0;
+    svc->firmware_probe_ticks = 0;
+    svc->firmware_probe_attempts = 0;
+    svc->pause_policy_pending = 0;
+    svc->pause_policy_index = 0;
+    svc->pause_position_probe_pending = 0;
+    svc->pause_position_probe_sent = 0;
+    svc->pause_position_report_start = 0;
+    svc->resume_policy_pending = 0;
+    svc->resume_policy_index = 0;
+    svc->paused_position_valid = 0;
+    svc->gcode_queue_count = 0;
+    svc->gcode_queue_index = 0;
+    svc->gcode_queue_active = 0;
+    svc->finish_drain_ticks = 0;
+    svc->finish_position_report_count = 0;
+    svc->finish_stable_reports = 0;
     svc->heater_wait.active = 0;
 
     if (deneb_service_context_motion_runtime(svc, &runtime) == 0)

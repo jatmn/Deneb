@@ -24,6 +24,10 @@ typedef struct {
     char source[32];
     char uuid[64];
     char req[32];
+    char firmware[64];
+    char machine_type[16];
+    int pcb_id;
+    int pcb_id_valid;
     int has_file;
     int is_printing;
     int is_paused;

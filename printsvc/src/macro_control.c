@@ -79,6 +79,43 @@ static int macro_control_poll_motion_cb(void *ctx)
     return rc;
 }
 
+static int macro_control_wait_for_heater_cb(void *ctx, int wait_bed,
+                                            int wait_nozzle, float target,
+                                            long long timeout_ms)
+{
+    deneb_print_service_t *svc = (deneb_print_service_t *)ctx;
+    long long deadline = macro_control_monotonic_ms() + timeout_ms;
+
+    if (!svc)
+        return -1;
+
+    if (wait_bed) {
+        svc->status.bed_t_set = target;
+        deneb_heater_wait_start_bed(&svc->heater_wait, target, 1.0f);
+    } else if (wait_nozzle) {
+        svc->status.head_t_set = target;
+        deneb_heater_wait_start_head(&svc->heater_wait, target, 1.0f);
+    } else {
+        return 0;
+    }
+
+    while (!deneb_heater_wait_ready(&svc->heater_wait, &svc->status)) {
+        int rc;
+        deneb_heater_wait_apply_status(&svc->heater_wait, &svc->status);
+        if (svc->abort_requested)
+            return -2;
+        rc = macro_control_poll_motion_cb(svc);
+        if (rc != 0)
+            return rc;
+        if (macro_control_monotonic_ms() >= deadline)
+            return -1;
+        usleep(10000);
+    }
+
+    svc->heater_wait.active = 0;
+    return 0;
+}
+
 int deneb_macro_control_run(deneb_print_service_t *svc,
                             const deneb_command_t *cmd,
                             char *reply, size_t reply_sz)
@@ -93,6 +130,7 @@ int deneb_macro_control_run(deneb_print_service_t *svc,
     io.wait_for_window = macro_control_wait_for_stream_window_cb;
     io.send_gcode = macro_control_send_gcode_cb;
     io.poll_motion = macro_control_poll_motion_cb;
+    io.wait_for_heater = macro_control_wait_for_heater_cb;
     int rc = deneb_macro_runner_run_macro(cmd->macro, &io);
     if (rc != 0) {
         svc->status.error =

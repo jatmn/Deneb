@@ -17,6 +17,7 @@ typedef struct {
     int *serial_ready;
     int *job_active;
     int *abort_requested;
+    int *finish_cleanup_pending;
     unsigned int *planner_starvation_count;
 } deneb_job_streamer_t;
 

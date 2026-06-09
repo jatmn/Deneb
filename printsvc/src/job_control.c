@@ -8,6 +8,10 @@
 #include "motion_send_error.h"
 #include "motion_sender.h"
 
+#define DENEB_FINISH_DRAIN_MIN_TICKS 8
+#define DENEB_FINISH_DRAIN_STABLE_REPORTS 3
+#define DENEB_FINISH_POSITION_EPSILON 0.01f
+
 static int job_control_abortable(const deneb_print_service_t *svc)
 {
     if (!svc)
@@ -43,7 +47,21 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
         return -1;
     }
 
+    deneb_flow_clear_inflight(&svc->flow);
     svc->abort_requested = 0;
+    svc->abort_cleanup_pending = 0;
+    svc->pause_policy_pending = 0;
+    svc->pause_policy_index = 0;
+    svc->pause_position_probe_pending = 0;
+    svc->pause_position_probe_sent = 0;
+    svc->pause_position_report_start = 0;
+    svc->resume_policy_pending = 0;
+    svc->resume_policy_index = 0;
+    svc->paused_position_valid = 0;
+    svc->finish_cleanup_pending = 0;
+    svc->finish_drain_ticks = 0;
+    svc->finish_position_report_count = 0;
+    svc->finish_stable_reports = 0;
     svc->job_active = 1;
     deneb_job_lifecycle_start(&svc->status, cmd->file, cmd->source,
                               cmd->uuid, cmd->bed_target, cmd->head_target);
@@ -58,7 +76,6 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
                             char *reply, size_t reply_sz)
 {
     deneb_motion_policy_t abort_policy;
-    int policy_rc;
 
     if (!svc || !reply || reply_sz == 0)
         return -1;
@@ -74,24 +91,137 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;
     }
-    svc->abort_requested = 1;
-    policy_rc = deneb_motion_sender_apply_policy(&svc->flow, &svc->serial,
-                                                 svc->serial_ready,
-                                                 &abort_policy);
-    if (policy_rc != 0) {
-        svc->abort_requested = 0;
-        svc->heater_wait.active = 0;
-        deneb_job_lifecycle_error(&svc->status,
-                                  deneb_error_make(
-                                      deneb_motion_send_error_code(policy_rc),
-                                      "abort cleanup failed"));
-        deneb_command_reply_error(reply, reply_sz, "abort cleanup failed");
-        return -1;
-    }
-
-    deneb_job_lifecycle_abort(&svc->status);
     svc->abort_requested = 0;
+    svc->finish_cleanup_pending = 0;
+    svc->pause_policy_pending = 0;
+    svc->pause_policy_index = 0;
+    svc->pause_position_probe_pending = 0;
+    svc->pause_position_probe_sent = 0;
+    svc->pause_position_report_start = 0;
+    svc->resume_policy_pending = 0;
+    svc->resume_policy_index = 0;
+    svc->paused_position_valid = 0;
+    svc->finish_drain_ticks = 0;
+    svc->finish_position_report_count = 0;
+    svc->finish_stable_reports = 0;
+    svc->abort_cleanup_policy = abort_policy;
+    svc->abort_cleanup_index = 0;
+    svc->abort_cleanup_pending = 1;
     svc->heater_wait.active = 0;
+    deneb_job_lifecycle_aborting(&svc->status);
+    if (!svc->serial_ready) {
+        deneb_flow_clear_inflight(&svc->flow);
+        svc->abort_cleanup_pending = 0;
+        svc->abort_cleanup_index = 0;
+        deneb_job_lifecycle_abort(&svc->status);
+    }
     deneb_command_reply_ok(reply, reply_sz, "abort accepted");
     return 0;
+}
+
+int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
+{
+    if (!svc || !svc->abort_cleanup_pending)
+        return 0;
+
+    while (svc->abort_cleanup_index < svc->abort_cleanup_policy.count) {
+        int send_rc;
+        if (deneb_flow_has_pending_barrier(&svc->flow) ||
+            deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
+            return 0;
+        send_rc = deneb_motion_sender_send_gcode(
+            &svc->flow, &svc->serial, svc->serial_ready,
+            svc->abort_cleanup_policy.commands[svc->abort_cleanup_index]);
+        if (send_rc != 0) {
+            svc->abort_requested = 0;
+            svc->abort_cleanup_pending = 0;
+            svc->abort_cleanup_index = 0;
+            svc->heater_wait.active = 0;
+            deneb_job_lifecycle_error(&svc->status,
+                                      deneb_error_make(
+                                          deneb_motion_send_error_code(send_rc),
+                                          "abort cleanup failed"));
+            return -1;
+        }
+        svc->abort_cleanup_index++;
+    }
+
+    if (deneb_flow_inflight(&svc->flow) != 0)
+        return 0;
+
+    svc->abort_cleanup_pending = 0;
+    svc->abort_cleanup_index = 0;
+    svc->abort_requested = 0;
+    svc->heater_wait.active = 0;
+    deneb_job_lifecycle_abort(&svc->status);
+    return 1;
+}
+
+int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
+{
+    if (!svc || !svc->finish_cleanup_pending)
+        return 0;
+
+    if (deneb_flow_inflight(&svc->flow) != 0)
+        return 0;
+
+    if (!svc->serial_ready) {
+        svc->finish_cleanup_pending = 0;
+        svc->finish_drain_ticks = 0;
+        svc->finish_stable_reports = 0;
+        svc->status.finish_drain_ticks = 0;
+        svc->status.finish_stable_reports = 0;
+        svc->abort_requested = 0;
+        svc->heater_wait.active = 0;
+        deneb_job_lifecycle_complete(&svc->status);
+        return 1;
+    }
+
+    if (svc->finish_drain_ticks == 0) {
+        svc->finish_position_report_count = svc->status.position_report_count;
+        svc->finish_last_x = svc->status.x;
+        svc->finish_last_y = svc->status.y;
+        svc->finish_last_z = svc->status.z;
+        svc->finish_stable_reports = 0;
+    }
+
+    svc->finish_drain_ticks++;
+    if (svc->status.position_report_count != svc->finish_position_report_count) {
+        float dx = svc->status.x - svc->finish_last_x;
+        float dy = svc->status.y - svc->finish_last_y;
+        float dz = svc->status.z - svc->finish_last_z;
+        if (dx < 0.0f)
+            dx = -dx;
+        if (dy < 0.0f)
+            dy = -dy;
+        if (dz < 0.0f)
+            dz = -dz;
+        if (dx <= DENEB_FINISH_POSITION_EPSILON &&
+            dy <= DENEB_FINISH_POSITION_EPSILON &&
+            dz <= DENEB_FINISH_POSITION_EPSILON) {
+            svc->finish_stable_reports++;
+        } else {
+            svc->finish_stable_reports = 0;
+        }
+        svc->finish_last_x = svc->status.x;
+        svc->finish_last_y = svc->status.y;
+        svc->finish_last_z = svc->status.z;
+        svc->finish_position_report_count = svc->status.position_report_count;
+    }
+
+    svc->status.finish_drain_ticks = svc->finish_drain_ticks;
+    svc->status.finish_stable_reports = svc->finish_stable_reports;
+    if (svc->finish_drain_ticks < DENEB_FINISH_DRAIN_MIN_TICKS ||
+        svc->finish_stable_reports < DENEB_FINISH_DRAIN_STABLE_REPORTS)
+        return 0;
+
+    svc->finish_cleanup_pending = 0;
+    svc->finish_drain_ticks = 0;
+    svc->finish_stable_reports = 0;
+    svc->status.finish_drain_ticks = 0;
+    svc->status.finish_stable_reports = 0;
+    svc->abort_requested = 0;
+    svc->heater_wait.active = 0;
+    deneb_job_lifecycle_complete(&svc->status);
+    return 1;
 }

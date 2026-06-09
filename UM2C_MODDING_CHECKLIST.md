@@ -525,7 +525,9 @@ Current open focus:
 
 Resource rationale and measurement guardrails live in
 [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets);
-this section is the milestone checklist for that same work.
+this section is the milestone checklist for that same work. Stock Python
+source comparison and no-overclaim rules live in
+[docs/PRINTSVC_LEGACY_PARITY_AUDIT.md](docs/PRINTSVC_LEGACY_PARITY_AUDIT.md).
 
 Current native replacement progress lives under [printsvc/](printsvc/). The
 current buildable slice provides a native-default experimental
@@ -537,34 +539,161 @@ into `.deneb` releases, Deneb clients route directly to native
 `deneb-printsvc`, and the generated printserver handoff no longer delegates
 back to the stock driver through a Deneb config flag.
 
+Evidence rule for this section: a checked implementation, parser, harness, or
+packaging item is not live hardware parity unless the item explicitly says it
+was proven on hardware. Stock Python source comparison is required for behavior
+claims, and live hardware/client proof remains open until captured with the
+native service running. Static package gates and host tests may prove that a
+guardrail exists, but they do not prove that the physical printer behaved
+safely or that every client path is migrated.
+
+Legacy Python source anchors checked during the Section 8 honesty audit:
+`print_service.py` binds status PUB `127.0.0.1:5555`, command REP
+`127.0.0.1:5556`, publishes topic `10001`, and defaults `firmware` from
+`marlin-version` to `none`; `marlin_protocol.py`'s service loop schedules
+`M105` and `M114`, not `M115`; `marlin_companion/protocol.py` can parse
+`MACHINE_TYPE`, `PCB_ID`, and quoted `BUILD` version output when such a line is
+observed; `marlin_executor.py` rewrites `M190`/`M109`, ignores/replaces `G280`,
+and aborts with relative XY wipe, Z move, `G28 X Y`, then `G28 Z`. Native
+behavior that deliberately improves safety must be documented as a Deneb
+deviation, not hidden under "stock parity."
+
 - [x] Treat `marlindriver` replacement as a dedicated milestone, not an opportunistic bug fix.
-- [x] Build an original native `deneb-printsvc` replacement for `/home/cygnus/marlindriver/print_service.py`.
+- [x] Build an experimental original native `deneb-printsvc` replacement track
+  for `/home/cygnus/marlindriver/print_service.py`.
 - [x] Preserve the stock print-service IPC contract first: raw ZMQ status PUB on `127.0.0.1:5555`, command REP on `127.0.0.1:5556`, topic `10001`, and `COMMAND<json>` request framing.
-- [x] Keep coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory assumptions compatible during the first replacement stage.
-- [x] Audit every Deneb integration that currently patches around the stock Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`, `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata files, direct macro calls, direct raw G-code calls, and duplicated status classification.
-- [x] Decide for each integration whether it remains a client of the native service, moves into `deneb-printsvc`, or becomes a shared Deneb print-control library/API.
-- [x] Avoid preserving patchwork solely for compatibility with a bad stock-driver shape; use compatibility shims only as temporary migration boundaries with removal criteria.
-- [x] Define one Deneb-owned print-control contract for web UI, touchscreen UI, Cura LAN/API, and future services so they do not each reinterpret print state, pending jobs, abort state, preheat state, and macro safety differently.
-- [x] Deduplicate print-control logic as part of the rewrite: status classification, print/pending job metadata, command formatting, macro lookup, safe motion policy, heat-state decisions, pause/resume/abort semantics, and error mapping should each have one owner.
-- [x] Prefer shared native helpers or a single `deneb-printsvc` API over copy-pasted logic between LCD UI, web UI, REST API, Cura cluster API, and diagnostics.
-- [x] Add tests around shared print-control helpers before removing duplicate callers so web/touch/API behavior stays aligned during migration.
+- [ ] Prove coordinator, LCD UI, web UI, Cura LAN flow, and Digital Factory
+  behavior against the native service on hardware. This is not complete until
+  those clients work through native `deneb-printsvc` without silently falling
+  back to stock Python or carrying stale print state.
+- [ ] Finish the Deneb integration audit for code that patched around the stock
+  Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`,
+  `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata
+  files, direct macro calls, direct raw G-code calls, and duplicated status
+  classification. Record each remaining shim's owner and removal condition.
+- [ ] Finish deciding, per integration, whether the behavior remains a client of
+  native `deneb-printsvc`, moves into `deneb-printsvc`, or belongs in a shared
+  Deneb print-control library/API.
+- [ ] Avoid preserving patchwork solely for compatibility with the stock
+  driver's shape; compatibility shims are acceptable only as temporary migration
+  boundaries with explicit removal criteria.
+- [x] Create shared Deneb print-control helpers for status classification,
+  pending-job metadata, command formatting, macro lookup, safe motion policy,
+  heat-state decisions, pause/resume/abort semantics, and error mapping.
+- [ ] Finish migrating LCD UI, web UI, REST API, Cura cluster API, diagnostics,
+  and native `deneb-printsvc` callers onto those shared helpers so they no
+  longer reinterpret print state, pending jobs, abort state, preheat state, and
+  macro safety differently.
+- [x] Add tests around shared print-control helpers before removing duplicate
+  callers so web/touch/API behavior stays aligned during migration.
 - [x] Keep the native driver source tree intentionally modular; do not create a few thousand-line catch-all files.
 - [x] Start with named source units for clear responsibilities, for example: service main/init, ZMQ IPC, print-control API, serial transport, Marlin packet framing, CRC, status parsing, command parsing, G-code stream reader, macro registry, job queue, heater waits, pause/resume state, abort/finalize motion policy, diagnostics/logging, and test fakes.
 - [x] Require new `deneb-printsvc` files to have narrow public headers and focused tests where practical, especially for packet framing, status parsing, G-code streaming, and state-machine behavior.
 - [x] Port the Marlin serial packet layer cleanly: `/dev/ttyS1`, 250000 baud, CRC16 packet generation, CRC8 sync parsing, sequence numbers, ACK/reject handling, resend queues, and flow-control limits.
-- [x] Port the status parser for M105, M114, G28 home-distance, M115 version data, Marlin log messages, and Marlin fault messages.
+- [x] Port host-tested parser support for M105 hotend/bed/topcap telemetry, M114
+  position/R0, G28 home-distance telemetry, recoverable Marlin log messages,
+  Marlin fault messages, and M115/version-output recognition. Native
+  temperature parsing accepts both plain `T:` and older indexed `T0:` nozzle
+  reports, old-Marlin compact bed reports such as `B25.1/0.0@0`, and topcap
+  reports such as `t1/33.2`, so idle LCD/API temperatures do not fall back to
+  impossible `0/0C` values when the firmware uses stock compact telemetry. This
+  does not by itself prove the native runtime is requesting every status source.
+- [x] Add bounded native firmware/version probing as a Deneb diagnostic
+  extension, not a stock-parity claim. Stock Python parses `MACHINE_TYPE`,
+  `PCB_ID`, and quoted `BUILD` lines when they are observed and publishes
+  `firmware` from `marlin-version`, defaulting to `none`; local source review
+  does not show stock Python scheduling `M115` in its normal status loop.
+  Native now sends `M115` with the startup `M105`/`M114` probe and retries
+  `M115` a bounded number of times while firmware metadata remains absent,
+  while keeping recurring status polling on the stock-shaped `M105`/`M114`
+  cadence. Host tests prove startup `M115`/`M105`/`M114`, bounded retry, and
+  periodic polling without duplicate `M115`.
+- [ ] Verify firmware/version status behavior live against stock and native.
+  Accepted evidence must compare stock Python and native `deneb-printsvc` on
+  the same old-Marlin firmware: `firmware:"none"` is acceptable only if stock
+  also reports `none` under the same conditions; native must preserve the field
+  and default, must parse non-`none` metadata if the controller emits version
+  output, and must not regress temperature/topcap/status updates while stock
+  Python is absent.
+- [x] Carry native firmware/version and topcap telemetry through the web/API
+  backend state and shared printer response formatter, so clients consuming
+  `/api/v1/printer`, `/api/v1/airmanager`, or Deneb's cached status JSON do not
+  discard fields that `deneb-printsvc` has parsed and serialized.
 - [x] Port bounded G-code streaming for `JOB`, `MACRO`, and raw `GCODE` without loading whole print jobs into RAM.
+- [x] Add shared native stock-derived G-code rewrite coverage for `M117`,
+  `M109`, `M190`, and `G280`. Native `gcode_rewrite.*` skips display-only
+  `M117`, converts `M109` to `M104` and `M190` to `M140`, expands `G280`
+  prime commands using the stock Python sequence shape, and marks streamed
+  wait commands so `deneb-printsvc` waits in service code instead of blocking
+  old Marlin. Host tests cover raw command rewrite, stream expansion, a
+  job-level `M190` wait before the next print move is streamed, raw multi-line
+  `GCODE` wait-before-next-command sequencing, and macro-level heater wait
+  callbacks. Hardware heat/motion proof remains open.
 - [x] Ship Deneb-owned macro defaults under `/etc/deneb/marlindriver/gcode/`
   and fail closed when a macro is missing instead of falling back to
   `/home/cygnus/marlindriver/gcode/`.
-- [x] Re-design abort, pause, resume, and print-finish behavior deliberately instead of blindly copying stock motion sequences.
-- [x] Fix unsafe abort cleanup as part of the native design: no duplicate homing, no unsafe XY motion into unknown print geometry, and clear status transitions after cancellation.
+- [x] Start abort, pause, resume, and print-finish behavior as deliberate Deneb
+  designs instead of blindly copying stock motion sequences. Native active
+  pause/resume now has a host-tested physical policy based on stock Python's
+  M114/save-position, wipe/retract, park/cool, reheat, restore-position, E, and
+  R0 flow, while keeping Deneb's safer clamped build-volume moves.
+- [x] Remove stock Python's unsafe abort cleanup from the native design: no
+  duplicate homing and no unsafe XY motion into unknown print geometry. Native
+  abort deliberately deviates from stock Python's XY/Z homing cleanup.
+- [ ] Prove native abort status transitions on hardware after active-print and
+  preheat aborts: cancellation must remain visible while cleanup is pending,
+  then settle to idle with Stop disabled, no stale `native_active`, no stale
+  print filename/UUID/source, no stale temperature targets, and no manual
+  cluster cleanup.
+- [x] Keep native print completion in an active printing state until finish
+  cleanup drains in host lifecycle coverage. End-of-file no longer marks the
+  job idle immediately; the streamer dispatches the finish policy, keeps
+  stop/status semantics active while planner-drain work is in flight, and only
+  completes the lifecycle after the flow window clears.
 - [x] Preserve startup motion-controller firmware verification/programming behavior or document and test a safer replacement.
 - [x] Replace the Deneb printserver handoff with native ownership so Deneb
   clients do not route back to stock `printserver` through a config flag.
-- [x] Add side-by-side logging for stock versus native service status fields, serial ACK/reject rates, resend counts, queue depth, planner starvation indicators, and command latency.
+- [x] Add native diagnostics logging with stock-shaped status fields beside
+  native serial ACK/reject rates, resend counts, queue depth, planner
+  starvation indicators, and command latency so future stock/native comparisons
+  have a consistent target-side format.
 - [x] Add host tests for CRC, packet framing, status parsing, G-code stream replacement, command parsing, and state transitions.
+- [x] Add native flow-control regression coverage for late acknowledged
+  resends, compact CRC ACK/reject packets, stale firmware resend requests, and
+  old-Marlin ProtoError sequence mismatches. Idle and cleanup phases can resync
+  to the controller's expected sequence; active print desync now fails visible
+  and routes the job toward abort cleanup instead of silently continuing to
+  stream print moves.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
+- [ ] Capture supervised live active-print abort evidence on native
+  `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
+  later live work exposed active/abort ProtoError desync and stale native
+  status risk. The next accepted evidence must show native route ownership,
+  active `printing` with Stop allowed, native `aborting` while cleanup drains,
+  final idle with `native_active:false` and `native_stop_allowed:false`, no
+  unsafe XY-home cleanup lines, no fault markers, and no manual recovery.
+- [x] Add a hard safety interlock to the live smoke harness so heat, homing,
+  macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
+  refuse to run unless `--physical-ok` or
+  `DENEB_PRINTSVC_SMOKE_PHYSICAL_OK=1` is set. The interrupted full-matrix run
+  is not counted as complete evidence.
+- [x] Add a second safety interlock for bundled live smoke runs: more than one
+  physical phase in a single invocation now refuses to run unless
+  `--physical-bundle-ok` or `DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK=1` is set,
+  keeping future validation split into narrow supervised checks by default.
+- [x] Add guarded pre-home requirements to live smoke phases that can move after
+  setup: macro, local-job, web job, preheat-abort, active-abort, Cura job, and
+  completion-job now run a `z_home` pre-home step before continuing and write
+  `reason=pre_physical_home` summary evidence. All-axis `home` is available
+  only through an explicit `--prehome-action home` override for supervised
+  tests with a clear X/Y travel path. This is a harness guardrail, not proof
+  that every moving phase is physically safe.
+- [ ] Re-audit live smoke physical-motion safety per axis before accepting any
+  more motion evidence. `z_home` is useful because UM2C homes Z to max, but it
+  does not prove X/Y are homed or that an XY macro/job path is clear. Each
+  physical smoke phase must document which axes it moves, which homing action
+  is required before that phase, expected travel direction/range, and what
+  firmware/endstop warnings require immediate stop/recovery.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
@@ -582,6 +711,12 @@ Completed implementation slices:
   safety, flow control ACK/resend handling, status serialization, Marlin status
   parsing, G28/home-distance telemetry, heater target readiness, and abort
   state cleanup.
+- [ ] Complete stock Python source parity review item-by-item. Current evidence
+  confirms the ZMQ IPC framing, M105/M114 status poll shape, M105/M114/M115
+  parser fields, host-tested `G280`/`M109`/`M190` rewrite behavior, and the
+  unsafe stock abort cleanup sequence; remaining review must still reconcile
+  startup M115/version probing, completion/abort callback timing, and
+  pause/resume/abort motion-policy differences before claiming broad parity.
 - [x] Add a native serial response pump that reads Marlin lines, updates parsed
   status fields, accounts ACK/reject/resend responses, and re-emits resend
   packets through the flow-control queue.
@@ -1065,6 +1200,10 @@ Completed implementation slices:
 - [x] Move print completion history labeling into shared native print-state
   rules so web history and future native diagnostics use the same
   `"completed"`, `"stopped"`, and `"error"` decision.
+- [x] Match stock completion callback identity cleanup in native lifecycle:
+  after finish policy/drain completes, native status marks completion and
+  clears active file/source/UUID/heater targets so clients do not retain a
+  stale completed job as active print context.
 - [x] Move active/preparing/stoppable print-context decisions into shared
   native print-state rules so the touchscreen Stop button, preheat status, and
   abort cleanup use the same tested contract instead of local screen/backend
@@ -1107,6 +1246,14 @@ Completed implementation slices:
 - [x] Add native pause/resume state-machine tests so paused jobs do not continue
   streaming and preheat-stage pauses resume to preparing instead of pretending
   to be actively printing.
+- [x] Add native active-print pause/resume motion-policy coverage: active pause
+  saves X/Y/Z/E/R0/nozzle setpoint, queues the stock-derived retract/park/cool
+  policy, accepts a resume request while pause cleanup is still draining, and
+  blocks job streaming until the reheat/restore policy drains.
+- [x] Match stock pause-position callback ordering in native pause control:
+  active pause now sends and drains `M114` before saving the restore
+  X/Y/Z/E/R0/nozzle state and starting the cleanup policy, with host tests
+  proving the job stream remains gated until pause/resume policies drain.
 - [x] Move native job-control ownership into
   `printsvc/src/job_control.*` so job acceptance, duplicate-active rejection,
   stream-open storage failures, preheat heater-wait initialization, and abort
@@ -1140,12 +1287,20 @@ Completed implementation slices:
   abort owner so a consumed abort clears active-job state, file identity, and
   timing, and resets the consumed abort latch instead of leaving stale print
   status or stop state behind.
+- [x] Route latched native abort requests through the service-level abort owner
+  before job streaming so internal abort latches use the same cleanup-before-
+  idle callback boundary as explicit `ABORT` commands.
 - [x] Clear stale native abort latches when job polling observes no active job
   and when the service context closes, so the native driver cannot keep stop
   state alive after the stream is gone.
 - [x] Clear native heater-wait/preheat state on abort, stream failure, finish
   failure, completion, idle poll cleanup, and service close so preheat status
   cannot reappear after a terminal job transition.
+- [x] Make old-Marlin ProtoError sequence desync deterministic in native host
+  tests: idle and abort/finish cleanup phases resync to the firmware's expected
+  sequence, while active print desync clears in-flight state and enters the
+  abort cleanup path instead of continuing to stream print moves or leaving the
+  service stuck in `printing`.
 - [x] Keep native job-streamer motion output tied to the service-owned serial
   readiness flag by reference, matching the motion-runtime adapter and avoiding
   stale copied readiness state if motion transport opens or closes around job
@@ -1196,8 +1351,9 @@ Completed implementation slices:
   distance, coordinate, speed, build-volume, or raw move-command planning.
 - [x] Move native pause/resume command ownership into
   `printsvc/src/pause_resume_control.*` so command-level pause/resume replies,
-  heater-wait-aware resume routing, and invalid-state errors are not embedded
-  in generic command dispatch.
+  heater-wait-aware resume routing, active-print pause/resume motion-policy
+  queues, and invalid-state errors are not embedded in generic command
+  dispatch.
 - [x] Move native motion-send ownership into
   `printsvc/src/motion_sender.*` so Marlin packet preparation, serial-ready
   behavior, resend packet writes, and multi-command motion-policy dispatch are
@@ -1235,7 +1391,8 @@ Completed implementation slices:
 - [x] Make native resend handoff fail visibly when Marlin requests a resend but
   the serial write cannot be performed while transport is marked ready; the
   runtime now enters a serial-error state instead of silently continuing after a
-  failed resend attempt.
+  failed resend attempt, and repeated protocol rejects for the same in-flight
+  packet are bounded so stale resend storms fail visibly.
 - [x] Move native service-context ownership into
   `printsvc/src/service_context.*` so service initialization, motion-runtime
   adapter wiring, job-streamer adapter wiring, diagnostics projection, and
@@ -1312,7 +1469,19 @@ Completed implementation slices:
   bodies, `/printer` root snapshots with Deneb-native active/stop-allowed
   flags, and `/proc`-sourced process RSS/VSZ samples, CPU
   jiffies, load averages, uptime samples, and completed-job throughput records,
-  including native route/status snapshots after native-route tests.
+  including native route/status snapshots after native-route tests. Completion
+  waits default to a bounded 300 seconds and timeout with current status/root
+  evidence plus a best-effort API abort, so a live completion safety blocker
+  produces actionable summary evidence instead of an unbounded smoke hang. The
+  harness also rejects dwell/M400-only completion fixtures before upload, so
+  completion evidence must use a bounded fixture with real progress commands
+  instead of a firmware wait file or a temperature-poll loop. The same harness
+  can generate a bounded old-Marlin Z movement fixture with
+  `--make-complete-fixture`: it homes Z once, performs up to 480 small relative
+  `G1 Z-0.20 F30` moves away from homed Z max, avoids heat/extrusion/dwell/newer
+  commands and avoids moving farther into the Z max endstop, with total travel
+  capped to 96 mm away from homed Z max. The shell selftest covers that
+  generator plus the dwell-only rejection path.
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
   for observe-only, native-route, explicit idle status, boot-sync readiness,
@@ -1405,8 +1574,9 @@ Completed implementation slices:
   `deneb-printsvc-native-audit-selftest`, that proves the audit fails closed
   when source reintroduces a stock print backend selector, source launches the
   stock Python print driver, package-builder audit wiring is removed, an
-  installer audit-selftest handoff is removed, an unpacked package lacks the
-  audit tool, an unpacked package contains a Python driver artifact name, an
+  installer audit-selftest handoff is removed, installer web-service restart
+  wiring is removed, an unpacked package lacks the audit tool, an unpacked
+  package contains a Python driver artifact name, an
   unpacked package omits the native-printsvc release gate, or when an archived
   package contains a Python driver artifact name.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
@@ -1415,27 +1585,63 @@ Completed implementation slices:
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
   `deneb-printsvc-smoke-compare`, `deneb-printsvc-smoke-selftest`,
   `deneb-printsvc-cli-selftest`, `deneb-printsvc-init-selftest`,
-  `deneb-printsvc-native-audit`, `deneb-printsvc-native-audit-selftest`,
-  `deneb-printsvc-macros/`, `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`, with
+  `deneb-printsvc-release-gate-selftest`, `deneb-printsvc-native-audit`,
+  `deneb-printsvc-native-audit-selftest`, `deneb-printsvc-macros/`,
+  `manifest.txt`, and `LVGL_LICENSE_TLSF.txt`, with
   no packaged Python or `print_service.py` entries. The package builder now
   fails if a Python driver artifact is present in the staging directory or the
   final `.deneb` archive, and `tools/build-update-release.ps1` also inspects the
   produced `.deneb` archive so release automation fails closed if a Python
   driver artifact is packaged or `deneb-printsvc` /
   `deneb-printsvc-smoke-selftest` / `deneb-printsvc-cli-selftest` /
-  `deneb-printsvc-init-selftest` / `deneb-printsvc-native-audit` /
+  `deneb-printsvc-init-selftest` / `deneb-printsvc-release-gate-selftest` /
+  `deneb-printsvc-native-audit` /
   `deneb-printsvc-native-audit-selftest` is missing.
+  The native route/package audit also rejects unpacked packages that omit the
+  smoke verifier selftest, native CLI selftest, init-handoff selftest, native
+  audit selftest, or declared `LVGL_LICENSE_TLSF.txt` notice, so the package
+  evidence contract is checked by an independent shell gate as well as by the
+  release wrapper. The same static audit now checks that the shell package
+  builder defaults native print-service packages to `experimental`, gates
+  `nightly`/`stable` on stock and native live summaries, runs
+  `deneb-printsvc-smoke-verify --full`, runs
+  `deneb-printsvc-smoke-compare --require-reduction`, and that the PowerShell
+  release wrapper exposes and preflights the same live-summary boundary.
+  `deneb-printsvc-release-gate-selftest` also behaviorally exercises invalid
+  channels, stable builds without summaries, and nightly builds with missing
+  stock or native summary files or a malformed native summary, so those
+  fail-fast paths are covered before a package can be accepted. The selftest
+  uses an isolated
+  `DENEB_PACKAGE_VERSION_OVERRIDE` staging name and cleans that staging/output
+  after the expected failures so it cannot clobber the active package build.
   Both `ui/build-package.sh` and the PowerShell release verifier require the
-  packaged smoke, CLI, init, and native audit tools to be present while running
-  the shell-only smoke/init/native-audit gates that do not execute the
+  packaged smoke, CLI, init, release-gate, and native audit tools to be present
+  while running the shell-only smoke/release-gate/init/native-audit gates that
+  do not execute the
   cross-compiled target binary. The print-service CTest suite runs the shell
-  smoke, native CLI, init, route/package audit, and negative-fixture audit
-  selftests against the host build, and the installer deploys them to
+  smoke, native CLI, init, release-gate, route/package audit, and
+  negative-fixture audit selftests against the host build, and the installer
+  deploys the release-gate evidence tool to
   `/usr/bin/` beside the live smoke verifier and comparator. The installer also
   rejects update packages that contain Python driver artifacts, runs the
   packaged native audit over the unpacked update, and runs the installed
   print-service smoke-tool, CLI, native-audit, and init-handoff selftests before
-  completing the update.
+  completing the update. The installed `/usr/bin/deneb-printsvc-init-selftest`
+  now falls back to `/etc/init.d/deneb-printsvc` and `/etc/init.d/printserver`
+  when package sources are absent, and
+  `/usr/bin/deneb-printsvc-release-gate-selftest` validates the installed
+  manifest/toolchain instead of requiring `ui/build-package.sh` on target.
+- [x] Capture observe-only live native route evidence after package install:
+  on June 9, 2026, package `dist/Deneb_Update_8816c0b.deneb` installed over SSH
+  and rebooted cleanly. The installed CLI, init-handoff, release-gate, and
+  native-audit selftests passed under `set -e`; `ps` showed
+  `/usr/bin/deneb-printsvc` with no `print_service.py`; and
+  `/usr/bin/deneb-printsvc-smoke --native --restart --boot-sync` verified
+  native-only route, boot-sync readiness, idle status, service restart recovery,
+  `native_active:false`, `native_stop_allowed:false`, ambient bed/nozzle
+  readings around 25.5 C / 28.3 C, and `print_service_py=0`. This was
+  observe-only evidence; heat, motion, Cura job, pause/resume, completion, and
+  active/preheat abort physical phases remain open.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
   refuses `nightly` or `stable` native-printsvc packages unless

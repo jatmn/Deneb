@@ -6,17 +6,45 @@ STOP=8
 USE_PROCD=1
 PROG=/usr/sbin/lighttpd
 CONF=/etc/deneb/lighttpd.conf
+API_PROG=/usr/bin/deneb-api
+API_SOCK=/var/run/deneb-api.sock
+
+wait_for_api_socket() {
+    local elapsed=0
+
+    while [ "$elapsed" -lt 10 ]; do
+        [ -S "$API_SOCK" ] && return 0
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    return 1
+}
+
+start_api_dependency() {
+    [ -f "$API_PROG" ] || return 0
+    [ -S "$API_SOCK" ] && return 0
+    pidof deneb-api >/dev/null 2>&1 && return 0
+
+    procd_open_instance api
+    procd_set_param command "$API_PROG"
+    procd_set_param respawn 3600 5 5
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
 
 start_service() {
-    local enabled=$(uci -q get deneb.web.enabled 2>/dev/null || echo "0")
-    [ "$enabled" = "1" ] || return 0
     [ -f "$CONF" ] || return 0
     [ -f "$PROG" ] || return 0
 
     # Ensure web root exists
     mkdir -p /www/deneb
 
-    procd_open_instance
+    start_api_dependency
+    wait_for_api_socket || true
+
+    procd_open_instance web
     procd_set_param command "$PROG" -f "$CONF" -D
     procd_set_param respawn 3600 5 5
     procd_set_param stdout 1

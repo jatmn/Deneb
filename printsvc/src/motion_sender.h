@@ -18,6 +18,9 @@ int deneb_motion_sender_resend_sequence(deneb_flow_control_t *flow,
                                         deneb_serial_transport_t *serial,
                                         int serial_ready,
                                         uint8_t sequence);
+int deneb_motion_sender_resend_pending(deneb_flow_control_t *flow,
+                                       deneb_serial_transport_t *serial,
+                                       int serial_ready);
 int deneb_motion_sender_apply_policy(deneb_flow_control_t *flow,
                                      deneb_serial_transport_t *serial,
                                      int serial_ready,

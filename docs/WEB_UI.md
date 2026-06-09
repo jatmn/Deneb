@@ -147,7 +147,14 @@ on real hardware remains open.
   Manager compatibility responses now use the same native printer response
   owner, including LED scalar defaults. `backend_zmq` now exposes a printer
   status response snapshot for these endpoints so `api_printer` no longer maps
-  cached backend fields itself.
+  cached backend fields itself. Native firmware/version and topcap telemetry
+  pass through that same backend/status formatter path when `deneb-printsvc`
+  supplies them, so the web/API layer does not discard fields parsed from
+  old-Marlin M105/M115-style reports. Native startup sends a bounded M115 probe
+  as a Deneb diagnostic extension, but stock Python defaults `firmware` to
+  `none` unless version output is observed, so web/API parity is preserving and
+  forwarding the stock-compatible field/default rather than requiring every
+  old-Marlin run to report a non-`none` version.
   Web temperature writes also delegate bounded target parsing and `M104`/`M140`
   command planning to the shared native G-code helper instead of clamping and
   formatting heater commands inside the REST endpoint.
@@ -181,10 +188,9 @@ on real hardware remains open.
 
 ## Configuration
 
-Web UI is opt-in via UCI:
+The web UI is installed, enabled, and restarted by the Deneb update package.
+Cura/mDNS advertisement remains configurable:
 ```sh
-uci set deneb.web.enabled=1  # Enable
-uci set deneb.web.enabled=0  # Disable
 uci set deneb.mdns.enabled=1 # Enable Cura/mDNS advertisement
 uci set deneb.mdns.machine=deneb_um2c
 uci set deneb.mdns.firmware=4.0.0

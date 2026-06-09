@@ -86,6 +86,11 @@ void backend_zmq_get_printer_status_response(
     status->has_native_active = state.has_native_active;
     status->has_native_stop_allowed = state.has_native_stop_allowed;
     status->topcap_present = state.topcap_present;
+    status->topcap_temp_cur = state.topcap_temp_cur;
+    status->firmware = state.firmware;
+    status->machine_type = state.machine_type;
+    status->pcb_id = state.pcb_id;
+    status->pcb_id_valid = state.pcb_id_valid;
     status->progress = state.progress;
     status->time_total = state.time_total;
     status->time_left = state.time_left;
@@ -313,11 +318,17 @@ static void update_status_cache(void)
     int rem = 1536;
     int n;
     char escaped_filename[sizeof(state.filename) * 2 + 1];
+    char escaped_firmware[sizeof(state.firmware) * 2 + 1];
+    char escaped_machine_type[sizeof(state.machine_type) * 2 + 1];
     char route_fields[256];
     const char *status = deneb_print_status_label(state.connected,
         state.has_error, state.is_paused, state.is_printing);
 
     deneb_json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
+    deneb_json_escape_string(state.firmware, escaped_firmware,
+                             sizeof(escaped_firmware));
+    deneb_json_escape_string(state.machine_type, escaped_machine_type,
+                             sizeof(escaped_machine_type));
     if (deneb_print_backend_route_json_fields(&backend_route, route_fields,
                                               sizeof(route_fields)) < 0)
         snprintf(route_fields, sizeof(route_fields),
@@ -326,18 +337,26 @@ static void update_status_cache(void)
     n = snprintf(p, rem,
         "{\"nozzle_temp_cur\":%.1f,\"nozzle_temp_set\":%.1f,"
         "\"bed_temp_cur\":%.1f,\"bed_temp_set\":%.1f,"
+        "\"topcap_temp_cur\":%.1f,\"topcap_present\":%s,"
         "\"pos_x\":%.1f,\"pos_y\":%.1f,\"pos_z\":%.1f,"
         "\"progress\":%.1f,\"time_total\":%d,\"time_left\":%d,"
         "\"filename\":\"%s\",\"status\":\"%s\","
+        "\"firmware\":\"%s\",\"machine_type\":\"%s\","
+        "\"pcb_id\":%d,\"pcb_id_valid\":%s,"
         "\"is_printing\":%s,\"is_paused\":%s,\"has_error\":%s,"
         "\"connected\":%s,\"native_active\":%s,"
         "\"native_stop_allowed\":%s,%s}",
         state.nozzle_temp_cur, state.nozzle_temp_set,
         state.bed_temp_cur, state.bed_temp_set,
+        state.topcap_temp_cur, state.topcap_present ? "true" : "false",
         state.pos_x, state.pos_y, state.pos_z,
         state.progress, state.time_total, state.time_left,
         escaped_filename,
         status,
+        escaped_firmware,
+        escaped_machine_type,
+        state.pcb_id,
+        state.pcb_id_valid ? "true" : "false",
         state.is_printing ? "true" : "false",
         state.is_paused ? "true" : "false",
         state.has_error ? "true" : "false",
@@ -434,6 +453,12 @@ void backend_zmq_poll(void)
             snprintf(state.source, sizeof(state.source), "%s", payload.source);
             snprintf(state.uuid, sizeof(state.uuid), "%s", payload.uuid);
             snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
+            snprintf(state.firmware, sizeof(state.firmware), "%s",
+                     payload.firmware);
+            snprintf(state.machine_type, sizeof(state.machine_type), "%s",
+                     payload.machine_type);
+            state.pcb_id = payload.pcb_id;
+            state.pcb_id_valid = payload.pcb_id_valid != 0;
             state.topcap_temp_cur = payload.topcap_temp_cur;
             state.topcap_present = payload.topcap_present != 0;
             state.is_paused = payload.is_paused != 0;
@@ -538,7 +563,16 @@ void backend_zmq_get_printer_status_response(
     status->is_printing = state.is_printing;
     status->is_paused = state.is_paused;
     status->has_error = state.has_error;
+    status->native_active = state.native_active;
+    status->native_stop_allowed = state.native_stop_allowed;
+    status->has_native_active = state.has_native_active;
+    status->has_native_stop_allowed = state.has_native_stop_allowed;
     status->topcap_present = state.topcap_present;
+    status->topcap_temp_cur = state.topcap_temp_cur;
+    status->firmware = state.firmware;
+    status->machine_type = state.machine_type;
+    status->pcb_id = state.pcb_id;
+    status->pcb_id_valid = state.pcb_id_valid;
     status->progress = state.progress;
     status->time_total = state.time_total;
     status->time_left = state.time_left;

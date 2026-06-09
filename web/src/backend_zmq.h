@@ -35,6 +35,10 @@ typedef struct {
     char filename[128];
     char source[32];
     char uuid[64];
+    char firmware[64];
+    char machine_type[16];
+    int pcb_id;
+    bool pcb_id_valid;
     int time_total;      /* seconds */
     int time_left;       /* seconds (from ZMQ field "Tleft") */
     float progress;      /* 0-100 */

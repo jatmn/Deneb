@@ -2,6 +2,8 @@
 #ifndef DENEB_PRINTSVC_SERIAL_TRANSPORT_H
 #define DENEB_PRINTSVC_SERIAL_TRANSPORT_H
 
+#include "config.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -9,6 +11,8 @@ typedef struct {
     int fd;
     char device[128];
     unsigned int baud;
+    char rx_buf[DENEB_PRINTSVC_SERIAL_LINE];
+    size_t rx_len;
 } deneb_serial_transport_t;
 
 int deneb_serial_open(deneb_serial_transport_t *transport, const char *device,

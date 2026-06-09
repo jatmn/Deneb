@@ -2,6 +2,8 @@
 #ifndef DENEB_PRINTSVC_GCODE_STREAM_H
 #define DENEB_PRINTSVC_GCODE_STREAM_H
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stddef.h>
 
@@ -9,10 +11,20 @@ typedef struct {
     FILE *file;
     char path[256];
     unsigned long line_number;
+    char pending[DENEB_PRINTSVC_MAX_COMMANDS][DENEB_PRINTSVC_MAX_GCODE_LINE];
+    size_t pending_count;
+    size_t pending_index;
+    int last_wait_for_bed;
+    int last_wait_for_nozzle;
+    float last_wait_target;
 } deneb_gcode_stream_t;
 
 int deneb_gcode_stream_open(deneb_gcode_stream_t *stream, const char *path);
 int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t line_sz);
+int deneb_gcode_stream_last_wait(const deneb_gcode_stream_t *stream,
+                                 int *wait_for_bed,
+                                 int *wait_for_nozzle,
+                                 float *target);
 void deneb_gcode_stream_close(deneb_gcode_stream_t *stream);
 
 #endif

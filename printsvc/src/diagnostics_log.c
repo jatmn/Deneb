@@ -12,14 +12,20 @@ typedef struct {
     deneb_print_state_t state;
     char req[32];
     char file[128];
+    char firmware[64];
+    char machine_type[16];
+    int pcb_id;
+    int pcb_id_valid;
     unsigned int flow_ack;
     unsigned int flow_resend;
     unsigned int flow_reject;
     unsigned int flow_inflight;
+    char flow_last_response[96];
     unsigned int job_queue_depth;
     unsigned int job_line_number;
     unsigned int command_latency_ms;
     unsigned int planner_starvation_count;
+    char error_detail[128];
 } deneb_diag_snapshot_t;
 
 static FILE *diag_file;
@@ -114,14 +120,23 @@ void deneb_diagnostics_log_status(const deneb_status_t *status, int force)
     next.state = status->state;
     snprintf(next.req, sizeof(next.req), "%s", status->req);
     snprintf(next.file, sizeof(next.file), "%s", status->file);
+    snprintf(next.firmware, sizeof(next.firmware), "%s", status->firmware);
+    snprintf(next.machine_type, sizeof(next.machine_type), "%s",
+             status->machine_type);
+    next.pcb_id = status->pcb_id;
+    next.pcb_id_valid = status->pcb_id_valid ? 1 : 0;
     next.flow_ack = status->flow_ack;
     next.flow_resend = status->flow_resend;
     next.flow_reject = status->flow_reject;
     next.flow_inflight = status->flow_inflight;
+    snprintf(next.flow_last_response, sizeof(next.flow_last_response), "%s",
+             status->flow_last_response);
     next.job_queue_depth = status->job_queue_depth;
     next.job_line_number = status->job_line_number;
     next.command_latency_ms = status->command_latency_ms;
     next.planner_starvation_count = status->planner_starvation_count;
+    snprintf(next.error_detail, sizeof(next.error_detail), "%s",
+             status->error.detail);
 
     now_ms = monotonic_ms();
     if (!force && !snapshot_changed(&next) && now_ms - last_status_ms < 1000)
@@ -133,14 +148,19 @@ void deneb_diagnostics_log_status(const deneb_status_t *status, int force)
     write_quoted(diag_file, "stock.req", status->req[0] ? status->req :
                  deneb_status_state_name(status->state));
     write_quoted(diag_file, "stock.file", status->file);
+    write_quoted(diag_file, "stock.firmware", status->firmware);
+    write_quoted(diag_file, "stock.machineType", status->machine_type);
     fprintf(diag_file,
+            "stock.pcbId=%d stock.pcbIdValid=%d "
             "stock.headTcur=%.1f stock.headTset=%.1f "
             "stock.bedTcur=%.1f stock.bedTset=%.1f "
             "stock.x=%.3f stock.y=%.3f stock.z=%.3f stock.fault=%d "
             "native.phase=%s native.active=%d native.stopAllowed=%d "
             "serial.flowInflight=%u serial.ack=%u serial.resend=%u serial.reject=%u "
             "native.queueDepth=%u native.jobLine=%u native.commandLatencyMs=%u "
-            "native.plannerStarvation=%u ",
+            "native.plannerStarvation=%u native.positionReports=%u "
+            "native.finishDrainTicks=%u native.finishStableReports=%u ",
+            status->pcb_id, status->pcb_id_valid ? 1 : 0,
             status->head_t_cur, status->head_t_set,
             status->bed_t_cur, status->bed_t_set,
             status->x, status->y, status->z, status->fault ? 1 : 0,
@@ -150,9 +170,14 @@ void deneb_diagnostics_log_status(const deneb_status_t *status, int force)
             status->flow_inflight, status->flow_ack,
             status->flow_resend, status->flow_reject,
             status->job_queue_depth, status->job_line_number,
-            status->command_latency_ms, status->planner_starvation_count);
+            status->command_latency_ms, status->planner_starvation_count,
+            status->position_report_count, status->finish_drain_ticks,
+            status->finish_stable_reports);
+    write_quoted(diag_file, "serial.lastFlowResponse",
+                 status->flow_last_response);
     write_quoted(diag_file, "native.errorKey", status->error.key ?
                  status->error.key : DENEB_PRINT_NONE_VALUE);
+    write_quoted(diag_file, "native.errorDetail", status->error.detail);
     fputc('\n', diag_file);
 
     last_snapshot = next;

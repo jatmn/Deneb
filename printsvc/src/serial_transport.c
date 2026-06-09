@@ -1,45 +1,34 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "serial_transport.h"
 
-#include <fcntl.h>
+#include <asm/ioctls.h>
+#include <asm/termbits.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
-#include <termios.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
-
-static speed_t baud_to_speed(unsigned int baud)
-{
-    switch (baud) {
-        case 115200: return B115200;
-#ifdef B230400
-        case 230400: return B230400;
-#endif
-#ifdef B250000
-        case 250000: return B250000;
-#endif
-        default: return B115200;
-    }
-}
 
 static int configure_serial(int fd, unsigned int baud)
 {
-    struct termios tio;
+    struct termios2 tio;
 
-    if (tcgetattr(fd, &tio) != 0)
+    if (ioctl(fd, TCGETS2, &tio) != 0)
         return -1;
 
-    cfmakeraw(&tio);
+    tio.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP |
+                     INLCR | IGNCR | ICRNL | IXON);
+    tio.c_oflag &= ~OPOST;
+    tio.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    tio.c_cflag &= ~(CSIZE | PARENB | CSTOPB | CRTSCTS | CBAUD);
     tio.c_cflag |= (CLOCAL | CREAD);
-    tio.c_cflag &= ~(PARENB | CSTOPB | CSIZE | CRTSCTS);
-    tio.c_cflag |= CS8;
+    tio.c_cflag |= CS8 | BOTHER;
     tio.c_cc[VMIN] = 0;
     tio.c_cc[VTIME] = 1;
+    tio.c_ispeed = baud;
+    tio.c_ospeed = baud;
 
-    speed_t speed = baud_to_speed(baud);
-    if (cfsetispeed(&tio, speed) != 0 || cfsetospeed(&tio, speed) != 0)
-        return -1;
-
-    return tcsetattr(fd, TCSANOW, &tio);
+    return ioctl(fd, TCSETS2, &tio);
 }
 
 int deneb_serial_open(deneb_serial_transport_t *transport, const char *device,
@@ -85,14 +74,12 @@ int deneb_serial_write_all(deneb_serial_transport_t *transport,
 int deneb_serial_read_line(deneb_serial_transport_t *transport,
                            char *line, size_t line_sz)
 {
-    size_t pos = 0;
-
     if (!transport || transport->fd < 0 || !line || line_sz == 0)
         return -1;
 
     line[0] = '\0';
 
-    while (pos + 1 < line_sz) {
+    for (;;) {
         char ch;
         ssize_t n = read(transport->fd, &ch, 1);
         if (n == 0)
@@ -105,13 +92,24 @@ int deneb_serial_read_line(deneb_serial_transport_t *transport,
 
         if (ch == '\r')
             continue;
-        if (ch == '\n')
-            break;
-        line[pos++] = ch;
+        if (ch == '\n') {
+            size_t copy_len = transport->rx_len;
+            if (copy_len >= line_sz)
+                copy_len = line_sz - 1;
+            memcpy(line, transport->rx_buf, copy_len);
+            line[copy_len] = '\0';
+            transport->rx_len = 0;
+            return (int)copy_len;
+        }
+        if (transport->rx_len + 1 < sizeof(transport->rx_buf)) {
+            transport->rx_buf[transport->rx_len++] = ch;
+        } else {
+            transport->rx_len = 0;
+            return -1;
+        }
     }
 
-    line[pos] = '\0';
-    return pos > 0 ? (int)pos : 0;
+    return 0;
 }
 
 void deneb_serial_close(deneb_serial_transport_t *transport)

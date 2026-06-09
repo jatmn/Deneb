@@ -45,7 +45,9 @@ int deneb_command_audit_run(deneb_print_service_t *svc,
         deneb_command_audit_elapsed_ms(start_ms, audit_monotonic_ms());
 
     deneb_runtime_diagnostics_refresh(
-        &svc->status, &svc->flow, svc->job_active,
+        &svc->status, &svc->flow,
+        svc->job_active || svc->finish_cleanup_pending ||
+            svc->abort_cleanup_pending,
         (unsigned int)svc->job_stream.line_number,
         svc->planner_starvation_count);
     deneb_diagnostics_log_command(cmd, rc, svc->status.command_latency_ms);

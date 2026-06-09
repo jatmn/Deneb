@@ -24,6 +24,7 @@ typedef struct {
 
 void deneb_error_clear(deneb_error_t *error);
 deneb_error_t deneb_error_from_marlin_line(const char *line);
+int deneb_error_line_is_recoverable_serial(const char *line);
 deneb_error_t deneb_error_make(deneb_error_code_t code, const char *detail);
 const char *deneb_error_code_key(deneb_error_code_t code);
 const char *deneb_error_code_category(deneb_error_code_t code);

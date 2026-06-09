@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "job_lifecycle.h"
+#include "error_map.h"
 #include "print_control.h"
 #include "print_state_rules.h"
 
@@ -23,6 +24,8 @@ void deneb_job_lifecycle_start(deneb_status_t *status,
         return;
 
     set_phase(status, DENEB_PRINT_PHASE_PREPARING);
+    status->fault = false;
+    deneb_error_clear(&status->error);
     snprintf(status->file, sizeof(status->file), "%s",
              file && file[0] ? file : DENEB_PRINT_NONE_VALUE);
     snprintf(status->source, sizeof(status->source), "%s",
@@ -46,6 +49,18 @@ void deneb_job_lifecycle_complete(deneb_status_t *status)
     if (!status)
         return;
     set_phase(status, DENEB_PRINT_PHASE_COMPLETE);
+    snprintf(status->file, sizeof(status->file), "%s", DENEB_PRINT_NONE_VALUE);
+    status->source[0] = '\0';
+    status->uuid[0] = '\0';
+    status->bed_t_set = 0.0f;
+    status->head_t_set = 0.0f;
+}
+
+void deneb_job_lifecycle_aborting(deneb_status_t *status)
+{
+    if (!status)
+        return;
+    set_phase(status, DENEB_PRINT_PHASE_ABORTING);
 }
 
 void deneb_job_lifecycle_abort(deneb_status_t *status)
@@ -54,7 +69,13 @@ void deneb_job_lifecycle_abort(deneb_status_t *status)
         return;
 
     set_phase(status, DENEB_PRINT_PHASE_IDLE);
+    status->fault = false;
+    deneb_error_clear(&status->error);
     snprintf(status->file, sizeof(status->file), "%s", DENEB_PRINT_NONE_VALUE);
+    status->source[0] = '\0';
+    status->uuid[0] = '\0';
+    status->bed_t_set = 0.0f;
+    status->head_t_set = 0.0f;
     status->time_total = 0;
     status->time_left = 0;
 }

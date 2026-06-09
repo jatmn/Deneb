@@ -13,6 +13,7 @@ typedef struct {
     deneb_flow_control_t *flow;
     deneb_serial_transport_t *serial;
     int *serial_ready;
+    int allow_sequence_resync;
 } deneb_motion_runtime_t;
 
 int deneb_motion_runtime_open(deneb_motion_runtime_t *runtime);

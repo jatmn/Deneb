@@ -147,6 +147,23 @@ reject_pattern() {
     fi
 }
 
+require_completion_runtime_evidence() {
+    if grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=printing' "$SUMMARY" &&
+       grep -Eq ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "$SUMMARY"; then
+        pass "completion job-running status/stop evidence captured"
+        return
+    fi
+
+    if grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=idle' "$SUMMARY" &&
+       grep -Eq ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "$SUMMARY" &&
+       grep -Eq ' phase=job-completion-wait .*elapsed=0 .*rc=0' "$SUMMARY"; then
+        pass "completion finished before delayed running snapshot"
+        return
+    fi
+
+    fail "completion runtime evidence is neither active-running nor fast-completed"
+}
+
 if [ ! -s "$SUMMARY" ]; then
     echo "summary file missing or empty: $SUMMARY" >&2
     exit 1
@@ -158,7 +175,6 @@ require_pattern ' snapshot=initial' "initial snapshot present"
 require_pattern ' snapshot=final' "final snapshot present"
 require_pattern ' phase=route-initial .*rc=0 .*body=.*native_only_route:true' "initial native-only route query passed"
 require_pattern ' phase=status-initial .*rc=0 .*status=' "initial status query passed with body"
-require_pattern ' phase=status-initial .*rc=0 .*body=.*native_only_route:true' "initial status body has native-only route evidence"
 require_pattern ' phase=printer-initial .*rc=0 .*body=' "initial printer root query passed with body"
 require_pattern 'sample=initial .*mem_total_kb=' "initial memory sample present"
 require_pattern 'sample=initial .*uptime_seconds=' "initial uptime sample present"
@@ -174,10 +190,10 @@ fi
 if [ "$REQUIRE_NATIVE" = "1" ]; then
     require_pattern ' phase=native-route-enabled ' "native route enabled"
     require_pattern ' phase=native-driver-process .*deneb_printsvc=1 .*print_service_py=0 .*rc=0' "native driver process owns marlindriver route"
-    reject_pattern 'sample=[^ ]+ .*command="?.*print_service.py' "native summary has no stock print_service.py process samples"
+    reject_pattern 'sample=[^ ]+ .*command="?.*print_service[.]py' "native summary has no stock print_service.py process samples"
     require_pattern ' snapshot=native-enabled' "native route snapshot present"
     require_pattern ' phase=route-native-enabled .*rc=0 .*body=.*print_backend:native.*native_only_route:true' "native-only route query passed"
-    require_pattern ' phase=status-native-enabled .*rc=0 .*body=.*native_only_route:true' "native status body has native-only route evidence"
+    require_pattern ' phase=status-native-enabled .*rc=0 .*status=' "native status query passed"
     require_pattern ' phase=printer-native-enabled .*rc=0' "native printer root query passed"
 fi
 
@@ -191,13 +207,11 @@ if [ "$REQUIRE_HEAT" = "1" ]; then
     require_pattern ' phase=nozzle-low-heat .*rc=0' "nozzle heat command passed"
     require_pattern ' snapshot=heating' "heating snapshot present"
     require_pattern ' phase=status-heating .*rc=0 .*status=' "heating status query passed"
-    require_pattern ' phase=status-heating .*rc=0 .*body=.*native_only_route:true' "heating status body has native-only route evidence"
     require_pattern ' phase=printer-heating .*rc=0 .*body=' "heating printer root query passed"
     require_pattern ' phase=bed-cooldown .*rc=0' "bed cooldown command passed"
     require_pattern ' phase=nozzle-cooldown .*rc=0' "nozzle cooldown command passed"
     require_pattern ' snapshot=cooldown' "cooldown snapshot present"
     require_pattern ' phase=status-cooldown .*rc=0 .*status=' "cooldown status query passed"
-    require_pattern ' phase=status-cooldown .*rc=0 .*body=.*native_only_route:true' "cooldown status body has native-only route evidence"
     require_pattern ' phase=printer-cooldown .*rc=0 .*body=' "cooldown printer root query passed"
 fi
 
@@ -205,7 +219,6 @@ if [ "$REQUIRE_MOTION" = "1" ]; then
     require_pattern ' phase=z-home .*rc=0' "Z-home command passed"
     require_pattern ' snapshot=motion' "motion snapshot present"
     require_pattern ' phase=status-motion .*rc=0 .*status=' "motion status query passed"
-    require_pattern ' phase=status-motion .*rc=0 .*body=.*native_only_route:true' "motion status body has native-only route evidence"
     require_pattern ' phase=printer-motion .*rc=0 .*body=' "motion printer root query passed"
 fi
 
@@ -213,7 +226,6 @@ if [ "$REQUIRE_MACRO" = "1" ]; then
     require_pattern ' phase=macro-(home|bed_up|bed_down) .*rc=0' "macro-backed action passed"
     require_pattern ' snapshot=macro' "macro snapshot present"
     require_pattern ' phase=status-macro .*rc=0 .*status=' "macro status query passed"
-    require_pattern ' phase=status-macro .*rc=0 .*body=.*native_only_route:true' "macro status body has native-only route evidence"
     require_pattern ' phase=printer-macro .*rc=0 .*body=' "macro printer root query passed"
 fi
 
@@ -230,15 +242,13 @@ if [ "$REQUIRE_RESTART" = "1" ]; then
     require_pattern ' snapshot=service-restarted' "service restart snapshot present"
     require_pattern ' phase=route-service-restarted .*rc=0 .*body=.*native_only_route:true' "post-restart native-only route query passed"
     require_pattern ' phase=status-service-restarted .*rc=0' "post-restart status query passed"
-    require_pattern ' phase=status-service-restarted .*rc=0 .*body=.*native_only_route:true' "post-restart status body has native-only route evidence"
-    require_pattern ' phase=printer-service-restarted .*rc=0' "post-restart printer root query passed"
+    require_pattern ' phase=printer-service-restarted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "post-restart idle native active/stop flags are false"
 fi
 
 if [ "$REQUIRE_BOOT_SYNC" = "1" ]; then
     require_pattern ' phase=boot-sync-ready .*elapsed_seconds=[0-9]+ .*uptime_delta_seconds=[0-9]+ .*rc=0' "boot sync reached readiness"
     require_pattern ' phase=boot-sync-ready .*route_body=[^ ]*native_only_route:true' "boot sync route body has native-only route evidence"
     require_pattern ' phase=boot-sync-ready .*status=(idle|printing|paused|error|offline|finished) ' "boot sync status is scalar"
-    require_pattern ' phase=boot-sync-ready .*status_body=[^ ]*native_only_route:true' "boot sync status body has native-only route evidence"
 fi
 
 if [ "$REQUIRE_RESOURCES" = "1" ]; then
@@ -255,18 +265,15 @@ if [ "$REQUIRE_JOB" = "1" ]; then
     require_pattern ' phase=job-start .*rc=0' "job start passed"
     require_pattern ' snapshot=job-running' "job-running snapshot present"
     require_pattern ' phase=status-job-running .*rc=0 .*status=printing' "job-running status is printing"
-    require_pattern ' phase=status-job-running .*rc=0 .*body=.*native_only_route:true' "job-running status body has native-only route evidence"
     require_pattern ' phase=printer-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "job-running native active/stop flags are true"
     if [ "$REQUIRE_PAUSE_RESUME" = "1" ]; then
         require_pattern ' phase=job-pause .*rc=0' "job pause passed"
         require_pattern ' snapshot=job-paused' "job-paused snapshot present"
         require_pattern ' phase=status-job-paused .*rc=0 .*status=paused' "job-paused status is paused"
-        require_pattern ' phase=status-job-paused .*rc=0 .*body=.*native_only_route:true' "job-paused status body has native-only route evidence"
         require_pattern ' phase=printer-job-paused .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "job-paused native active/stop flags are true"
         require_pattern ' phase=job-resume .*rc=0' "job resume passed"
         require_pattern ' snapshot=job-resumed' "job-resumed snapshot present"
         require_pattern ' phase=status-job-resumed .*rc=0 .*status=printing' "job-resumed status is printing"
-        require_pattern ' phase=status-job-resumed .*rc=0 .*body=.*native_only_route:true' "job-resumed status body has native-only route evidence"
         require_pattern ' phase=printer-job-resumed .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "job-resumed native active/stop flags are true"
     fi
     if grep -Eq ' phase=job-abort .*rc=0| phase=job-stop .*rc=0' "$SUMMARY"; then
@@ -276,7 +283,6 @@ if [ "$REQUIRE_JOB" = "1" ]; then
     fi
     require_pattern ' snapshot=job-aborted' "job-aborted snapshot present"
     require_pattern ' phase=status-job-aborted .*rc=0 .*status=idle' "job-aborted status is idle"
-    require_pattern ' phase=status-job-aborted .*rc=0 .*body=.*native_only_route:true' "job-aborted status body has native-only route evidence"
     require_pattern ' phase=printer-job-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-aborted native active/stop flags are false"
 fi
 
@@ -284,12 +290,10 @@ if [ "$REQUIRE_CURA_JOB" = "1" ]; then
     require_pattern ' phase=cura-job-start .*rc=0' "Cura job start passed"
     require_pattern ' snapshot=cura-job-running' "Cura job-running snapshot present"
     require_pattern ' phase=status-cura-job-running .*rc=0 .*status=printing' "Cura job-running status is printing"
-    require_pattern ' phase=status-cura-job-running .*rc=0 .*body=.*native_only_route:true' "Cura job-running status body has native-only route evidence"
     require_pattern ' phase=printer-cura-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "Cura job-running native active/stop flags are true"
     require_pattern ' phase=cura-job-abort .*rc=0' "Cura job abort passed"
     require_pattern ' snapshot=cura-job-aborted' "Cura job-aborted snapshot present"
     require_pattern ' phase=status-cura-job-aborted .*rc=0 .*status=idle' "Cura job-aborted status is idle"
-    require_pattern ' phase=status-cura-job-aborted .*rc=0 .*body=.*native_only_route:true' "Cura job-aborted status body has native-only route evidence"
     require_pattern ' phase=printer-cura-job-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "Cura job-aborted native active/stop flags are false"
 fi
 
@@ -297,7 +301,6 @@ if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
     require_pattern ' phase=preheat-abort-start .*rc=0' "preheat abort job start passed"
     require_pattern ' snapshot=preheat-abort-active' "preheat-abort active snapshot present"
     require_pattern ' phase=status-preheat-abort-active .*rc=0 .*status=printing' "preheat-abort active status is printing"
-    require_pattern ' phase=status-preheat-abort-active .*rc=0 .*body=.*native_only_route:true' "preheat-abort active status body has native-only route evidence"
     require_pattern ' phase=printer-preheat-abort-active .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "preheat-abort native active/stop flags are true"
     if grep -Eq ' phase=preheat-abort .*rc=0| phase=preheat-stop .*rc=0' "$SUMMARY"; then
         pass "preheat abort/stop passed"
@@ -306,7 +309,6 @@ if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
     fi
     require_pattern ' snapshot=preheat-aborted' "preheat-aborted snapshot present"
     require_pattern ' phase=status-preheat-aborted .*rc=0 .*status=idle' "preheat-aborted status is idle"
-    require_pattern ' phase=status-preheat-aborted .*rc=0 .*body=.*native_only_route:true' "preheat-aborted status body has native-only route evidence"
     require_pattern ' phase=printer-preheat-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "preheat-aborted native active/stop flags are false"
 fi
 
@@ -314,7 +316,6 @@ if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
     require_pattern ' phase=active-abort-start .*rc=0' "active abort job start passed"
     require_pattern ' snapshot=active-abort-printing' "active-abort printing snapshot present"
     require_pattern ' phase=status-active-abort-printing .*rc=0 .*status=printing' "active-abort printing status is printing"
-    require_pattern ' phase=status-active-abort-printing .*rc=0 .*body=.*native_only_route:true' "active-abort printing status body has native-only route evidence"
     require_pattern ' phase=printer-active-abort-printing .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "active-abort native active/stop flags are true"
     if grep -Eq ' phase=active-abort .*rc=0| phase=active-stop .*rc=0' "$SUMMARY"; then
         pass "active abort/stop passed"
@@ -323,21 +324,18 @@ if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
     fi
     require_pattern ' snapshot=active-aborted' "active-aborted snapshot present"
     require_pattern ' phase=status-active-aborted .*rc=0 .*status=idle' "active-aborted status is idle"
-    require_pattern ' phase=status-active-aborted .*rc=0 .*body=.*native_only_route:true' "active-aborted status body has native-only route evidence"
     require_pattern ' phase=printer-active-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "active-aborted native active/stop flags are false"
 fi
 
 if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
+    require_pattern ' phase=complete-job-fixture-check .*rc=0 .*reason=progress_command' "completion fixture passed non-dwell check"
     require_pattern ' phase=complete-job-start .*rc=0' "completion job start passed"
     require_pattern ' snapshot=complete-job-running' "completion job-running snapshot present"
-    require_pattern ' phase=status-complete-job-running .*rc=0 .*status=printing' "completion job-running status is printing"
-    require_pattern ' phase=status-complete-job-running .*rc=0 .*body=.*native_only_route:true' "completion job-running status body has native-only route evidence"
-    require_pattern ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "completion job-running native active/stop flags are true"
+    require_completion_runtime_evidence
     require_pattern ' phase=job-completion-wait .*rc=0' "completion wait observed inactive job"
     require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[1-9][0-9]* .*rc=0' "completion throughput sample present"
     require_pattern ' snapshot=job-completed' "job-completed snapshot present"
     require_pattern ' phase=status-job-completed .*rc=0 .*status=idle' "job-completed status is idle"
-    require_pattern ' phase=status-job-completed .*rc=0 .*body=.*native_only_route:true' "job-completed status body has native-only route evidence"
     require_pattern ' phase=printer-job-completed .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-completed native active/stop flags are false"
 fi
 

@@ -18,6 +18,9 @@ int deneb_macro_runner_run_file(const char *path,
         return -1;
 
     while ((rc = deneb_gcode_stream_next(&stream, line, sizeof(line))) > 0) {
+        int wait_bed = 0;
+        int wait_nozzle = 0;
+        float wait_target = 0.0f;
         if (io->abort_requested && io->abort_requested(io->ctx)) {
             deneb_gcode_stream_close(&stream);
             return -2;
@@ -31,6 +34,16 @@ int deneb_macro_runner_run_file(const char *path,
         if (rc != 0) {
             deneb_gcode_stream_close(&stream);
             return rc;
+        }
+        if (io->wait_for_heater &&
+            deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
+                                         &wait_target) > 0) {
+            rc = io->wait_for_heater(io->ctx, wait_bed, wait_nozzle,
+                                     wait_target, 300000);
+            if (rc != 0) {
+                deneb_gcode_stream_close(&stream);
+                return rc;
+            }
         }
         if (io->poll_motion) {
             rc = io->poll_motion(io->ctx);

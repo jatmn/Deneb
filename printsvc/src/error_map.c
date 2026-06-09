@@ -98,6 +98,19 @@ deneb_error_t deneb_error_make(deneb_error_code_t code, const char *detail)
     return error;
 }
 
+int deneb_error_line_is_recoverable_serial(const char *line)
+{
+    if (!line || !*line)
+        return 0;
+
+    return contains_ci(line, "line number") ||
+           contains_ci(line, "checksum") ||
+           contains_ci(line, "resend") ||
+           contains_ci(line, "protoerror:sequence number is unexpected") ||
+           contains_ci(line, "expected line") ||
+           contains_ci(line, "last line number");
+}
+
 deneb_error_t deneb_error_from_marlin_line(const char *line)
 {
     deneb_error_code_t code = DENEB_ERROR_UNKNOWN;
@@ -116,9 +129,7 @@ deneb_error_t deneb_error_from_marlin_line(const char *line)
                contains_ci(line, "home failed")) {
         code = DENEB_ERROR_ENDSTOP;
     } else if (contains_ci(line, "serial") ||
-               contains_ci(line, "line number") ||
-               contains_ci(line, "checksum") ||
-               contains_ci(line, "resend")) {
+               deneb_error_line_is_recoverable_serial(line)) {
         code = DENEB_ERROR_SERIAL;
     } else if (contains_ci(line, "unknown command") ||
                contains_ci(line, "bad command")) {

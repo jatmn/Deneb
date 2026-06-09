@@ -87,6 +87,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/error_map.c
     src/flow_control.c
     src/gcode_control.c
+    src/gcode_rewrite.c
     src/gcode_stream.c
     src/heater_wait.c
     src/ipc_frame.c
@@ -187,6 +188,11 @@ if(SH_EXECUTABLE)
         NAME deneb-printsvc-native-audit-selftest
         COMMAND "${SH_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-native-audit-selftest.sh"
+    )
+    add_test(
+        NAME deneb-printsvc-release-gate-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-release-gate-selftest.sh"
     )
 else()
     message(WARNING "sh not found; deneb-printsvc shell selftests will not be registered with CTest.")

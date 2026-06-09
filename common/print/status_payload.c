@@ -111,6 +111,13 @@ int deneb_status_payload_parse(const char *json,
     copy_json_value(json, "source", payload->source, sizeof(payload->source));
     copy_json_value(json, "uuid", payload->uuid, sizeof(payload->uuid));
     copy_json_value(json, "req", payload->req, sizeof(payload->req));
+    copy_json_value(json, "firmware", payload->firmware,
+                    sizeof(payload->firmware));
+    copy_json_value(json, "machineType", payload->machine_type,
+                    sizeof(payload->machine_type));
+    payload->pcb_id = deneb_json_get_int(json, "pcbId", 0);
+    (void)deneb_json_get_truthy_value(json, "pcbIdValid",
+                                      &payload->pcb_id_valid);
 
     deneb_print_observation_init(&payload->observation, payload->req,
                                  payload->file, payload->time_total,

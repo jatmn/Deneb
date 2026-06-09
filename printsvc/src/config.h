@@ -10,6 +10,7 @@
 #define DENEB_PRINTSVC_MACRO_DIR "/etc/deneb/marlindriver/gcode"
 #define DENEB_PRINTSVC_MAX_GCODE_LINE 256
 #define DENEB_PRINTSVC_MAX_COMMANDS 16
+#define DENEB_PRINTSVC_GCODE_QUEUE_COMMANDS 64
 #define DENEB_PRINTSVC_SERIAL_LINE 256
 #define DENEB_PRINTSVC_STREAM_WINDOW 4
 #define DENEB_MOTION_FW_HEX "/home/atmel_programmer/cygnus-marlin.hex"

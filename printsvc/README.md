@@ -31,15 +31,25 @@ scaffold:
   `10001`. Command-frame handling is split into a host-tested helper so valid
   commands, audited unknown verbs, and malformed-frame replies stay consistent.
 - `status.*` serializes stock-shaped status JSON.
-- `status_parser.*` parses Marlin temperature, position, version, and fault
-  lines.
+- `status_parser.*` parses Marlin hotend/bed/topcap temperature, position/R0,
+  home-distance, and fault lines, and recognizes version-output lines. It
+  includes both plain `T:` and old indexed `T0:` nozzle temperature reports, old
+  `B25.1/0.0@0` bed reports, and old `t1/33.2` topcap reports from `M105`. It
+  recognizes stock firmware/version output by parsing old `MACHINE_TYPE`,
+  `PCB_ID`, and quoted `BUILD` output plus generic `FIRMWARE_NAME` output, then
+  serializing `firmware`, `machineType`, `pcbId`, and `pcbIdValid` when those
+  lines have actually been observed.
 - `serial_transport.*` opens and configures the Marlin serial device.
 - `motion_runtime.*` owns serial runtime state: Marlin transport open/close,
   readiness, line polling, observation dispatch, and resend handoff; resend
-  write failures are reported as serial errors when the transport is marked
-  ready.
+  write failures and repeated protocol rejects are reported as serial errors
+  when the transport is marked ready.
 - `flow_control.*` tracks sequence numbers, in-flight packets, ACKs, rejects,
-  and resend requests.
+  and resend requests. It preserves recently acknowledged packet history for
+  late firmware resends, parses compact CRC ACK/reject sync packets, and
+  resyncs stale unreplayable resend requests. Repeated replayable resend
+  requests are bounded so protocol storms fail visibly instead of leaving the
+  native print service stuck in `printing`.
 - `motion_sender.*` returns named negative failure codes for invalid commands,
   flow-window pressure, and serial transport writes so command handlers can map
   failures to the correct native error class.
@@ -57,18 +67,29 @@ scaffold:
   planner-starvation accounting. Stream-send failures close the active stream,
   clear active-job state, and record command or serial lifecycle errors; abort
   requests are finalized through shared job lifecycle cleanup and clear the
-  consumed abort latch. Idle polling clears stale abort latches when no active
-  job remains. Terminal stream paths clear heater-wait state so preheat status
-  cannot reappear after abort, completion, or stream failure.
+  consumed abort latch. End-of-file dispatches finish cleanup and leaves a
+  finish-cleanup pending marker so status stays active until the finish policy
+  drains through flow control. Idle polling clears stale abort latches when no
+  active job remains. Terminal stream paths clear heater-wait state so preheat
+  status cannot reappear after abort, completion, or stream failure.
 - `macro_runner.*` streams macro files through callbacks and preserves
   send/poll callback failure codes so `MACRO` command handling can distinguish
   serial transport errors from path/stream failures.
-- `pause_resume_control.*` owns command-level pause/resume replies and routes
-  accepted requests into the native pause/resume state policy.
+- `pause_resume_control.*` owns command-level pause/resume replies, saved
+  X/Y/Z/E/R0/nozzle pause state, stock-derived retract/park/cool and
+  reheat/restore policies, and the streaming gate that keeps queued print lines
+  paused until resume cleanup drains.
 - `marlin_packet.*` owns sequence-numbered packet formatting and CRC.
 - `crc.*` owns CRC helpers.
 - `gcode_stream.*` streams job and macro G-code line by line without loading
   whole files.
+- `gcode_rewrite.*` owns stock-derived line normalization: display-only `M117`
+  skip, `M109`/`M190` conversion to service-managed `M104`/`M140` waits, and
+  `G280` prime expansion for streamed jobs/macros. Job and macro execution
+  honor the generated heater-wait markers in service code.
+- `gcode_control.*` owns raw `GCODE` queueing and drains rewritten multi-line
+  command batches without sending commands after `M109`/`M190` until the
+  corresponding service-side heater wait has cleared.
 - `macro_registry.*` resolves Deneb-owned macro defaults only from
   `DENEB_PRINTSVC_MACRO_DIR` (`/etc/deneb/marlindriver/gcode/`) and fails
   closed when a macro is missing instead of falling back to stock
@@ -97,7 +118,23 @@ scaffold:
   dispatch handoff, and command reply propagation.
 - `service_context.*` owns service initialization, lower-level runtime
   adapter wiring, diagnostics projection, and close cleanup.
-- `service.*` owns the print lifecycle state machine and command dispatch.
+- `service.*` owns the print lifecycle state machine, command dispatch,
+  startup M115/M105/M114 probing after serial open, bounded M115 retry while
+  firmware metadata is absent, and recurring M105/M114 status polling.
+
+Active pause follows the stock callback ordering for restore coordinates:
+pause control sends a standalone `M114`, waits for that packet to drain, then
+snapshots X/Y/Z/E/R0/nozzle setpoint before starting the retract/park/cool
+policy. This avoids resuming from a stale periodic position sample.
+
+Completion follows the stock service callback cleanup boundary: the native
+service keeps the job active until finish cleanup and drain evidence completes,
+then marks the lifecycle complete and clears active file/source/UUID/heater
+targets so downstream clients do not keep a stale completed job context.
+
+Latched aborts are consumed at the service lifecycle boundary before job
+streaming, so internal abort requests use the same cleanup-before-idle path as
+explicit `ABORT` commands instead of bypassing cleanup inside the streamer.
 
 ## Diagnostics Log
 
@@ -172,12 +209,14 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 
 The release builder verifies the produced `.deneb` archive after packaging: it
 must contain `deneb-printsvc` plus the shell smoke/CLI/init/native-audit
-selftests and `deneb-printsvc-native-audit`, and must not contain Python driver
-artifacts such as `*.py`, `*python*`, or `print_service.py`. The package builder
-runs the staged selftests and native audit before creating the archive, then
-inspects the archive for the same native/no-Python invariant; the PowerShell
-release builder extracts the archived copies and runs the shell-only
-smoke/init/native-audit checks again before accepting the release package.
+selftests, the release-gate selftest, `deneb-printsvc-native-audit`, and the
+declared TLSF notice, and must not contain Python driver artifacts such as
+`*.py`, `*python*`, or `print_service.py`. The package builder runs the staged
+selftests and native audit before creating the archive, then inspects the
+archive for the same native/no-Python invariant; the PowerShell release builder
+extracts the archived copies and runs the shell-only
+smoke/release-gate/init/native-audit checks again before accepting the release
+package.
 Packages default to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` or
 `stable` builds must provide `DENEB_PRINTSVC_STOCK_SUMMARY` and
 `DENEB_PRINTSVC_NATIVE_SUMMARY`, and the package builder verifies the native
@@ -185,6 +224,13 @@ summary with `deneb-printsvc-smoke-verify --full` plus the strict
 `deneb-printsvc-smoke-compare --require-reduction` resource gate before
 creating the archive. The PowerShell release entry point exposes the same gate
 as `-ReleaseChannel`, `-PrintsvcStockSummary`, and `-PrintsvcNativeSummary`.
+The native source audit checks that both release entry points retain this
+non-experimental live-evidence boundary, and
+`deneb-printsvc-release-gate-selftest` behaviorally checks invalid channels,
+stable builds without summaries, missing nightly summary files, and malformed
+native summary files. It uses `DENEB_PACKAGE_VERSION_OVERRIDE` so these
+expected-failure package-builder checks run in isolated staging and clean that
+staging/output afterward.
 Both the shell package builder and PowerShell wrapper inspect the archived
 manifest so the channel and native-printsvc evidence boundary travel with the
 artifact.
@@ -192,8 +238,14 @@ During install, the update script rejects Python driver artifacts in
 `/tmp/update`, runs the packaged native audit over the unpacked update,
 requires the packaged manifest to carry the native-printsvc experimental status
 plus non-experimental evidence gate, preserves that manifest at
-`/etc/deneb/manifest.txt`, and runs the installed smoke-tool, native binary
-CLI, and init-handoff selftests before completing the update.
+`/etc/deneb/manifest.txt`, preserves the release-gate evidence selftest, and
+runs the installed smoke-tool, native binary CLI, native-audit, and
+init-handoff selftests before completing the update. The installed init
+selftest validates `/etc/init.d/deneb-printsvc` and the generated
+`/etc/init.d/printserver` shim when package/source paths are absent. The
+installed release-gate selftest validates `/etc/deneb/manifest.txt` plus the
+installed verifier/comparator/audit tools when source-only `ui/build-package.sh`
+is not present on target.
 
 ## Device Smoke Harness
 
@@ -206,6 +258,8 @@ memory, CPU jiffy, load, and completed-job throughput evidence to
 `deneb-printsvc` instead of toggling a stock-driver route, and fail if the
 route diagnostic does not report `native_only_route:true` or if
 `print_service.py` is still running during native validation.
+Process RSS samples are matched by executable name, not substring, so the smoke
+harness shell is not counted as `deneb-printsvc` resource evidence.
 Every snapshot records the selected print-backend route body, the scalar
 `/printer/status` status value plus sanitized full body, and `/printer` root body in
 the summary so preheat, pause/resume, abort, completion, and restart runs prove
@@ -221,26 +275,60 @@ evidence.
 `--boot-sync` waits for native-only print-backend route and printer-status
 readiness before the initial snapshot and records the bounded ready elapsed
 time, scalar status value, and native-only status body evidence.
+Use `--make-complete-fixture PATH [CYCLES]` to generate a bounded old-Marlin
+completion fixture. It homes Z once, switches to relative mode, performs small
+relative `G1 Z-0.20 F30` moves away from the homed Z-max position, restores
+absolute mode, and emits `M114`. It does not heat, extrude, dwell, use newer
+Marlin commands, or command farther into the Z homing/max direction after
+`G28 Z`. The cycle count is capped at 480, which keeps total travel to 96 mm
+away from the homed Z-max position while providing enough runtime for active
+pause/resume, Cura, completion, and sequence-wrap smoke evidence.
+This mode writes the fixture and exits; run the resulting `--complete-job`
+phase only under supervision because it moves the Z axis.
+`--complete-job` waits up to 300 seconds by default
+(`--completion-timeout SEC` or `DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT`
+override this) before failing with the current `/printer/status` and
+`/printer` root bodies in the summary and attempting a normal API abort. It
+records a successful non-dwell fixture check before upload and rejects
+dwell/M400-only completion fixtures; use a bounded fixture generated with
+`--make-complete-fixture` or another short safe print, so live completion
+evidence cannot be confused with an indefinite firmware wait or a temperature
+poll loop.
 
 Risky phases are explicit:
 
 ```sh
 deneb-printsvc-smoke --native
 deneb-printsvc-smoke --boot-sync
-deneb-printsvc-smoke --native --heat
-deneb-printsvc-smoke --native --motion
-deneb-printsvc-smoke --native --macro home
-deneb-printsvc-smoke --native --local-job /mnt/usb/local-test.gcode
-deneb-printsvc-smoke --native --job /home/3D/test.gcode --pause-resume
-deneb-printsvc-smoke --native --preheat-abort /home/3D/preheat-test.gcode
-deneb-printsvc-smoke --native --active-abort /home/3D/active-test.gcode --active-abort-delay 120
-deneb-printsvc-smoke --native --cura-job /home/3D/cura-test.gcode
-deneb-printsvc-smoke --native --complete-job /home/3D/short-test.gcode
+deneb-printsvc-smoke --physical-ok --native --heat
+deneb-printsvc-smoke --physical-ok --native --motion
+deneb-printsvc-smoke --physical-ok --native --macro bed_down
+deneb-printsvc-smoke --physical-ok --native --local-job /mnt/usb/local-test.gcode
+deneb-printsvc-smoke --physical-ok --native --job /home/3D/test.gcode --pause-resume
+deneb-printsvc-smoke --physical-ok --native --preheat-abort /home/3D/preheat-test.gcode
+deneb-printsvc-smoke --physical-ok --native --active-abort /home/3D/active-test.gcode --active-abort-delay 120
+deneb-printsvc-smoke --physical-ok --native --cura-job /home/3D/cura-test.gcode
+deneb-printsvc-smoke --make-complete-fixture /tmp/deneb-complete-z.gcode 80
+deneb-printsvc-smoke --physical-ok --native --complete-job /tmp/deneb-complete-z.gcode
 deneb-printsvc-smoke --native --restart
 deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
 ```
 
 Use only under supervision with clear motion axes and a ready power cutoff.
+Any phase that heats, homes, moves axes, starts a print job, or sends a macro
+action fails closed unless `--physical-ok` or
+`DENEB_PRINTSVC_SMOKE_PHYSICAL_OK=1` is set. Prefer single-purpose physical
+checks over a large bundled run. If more than one physical phase is requested
+in a single invocation, the harness also requires `--physical-bundle-ok` or
+`DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK=1`; this is intentionally a second
+acknowledgement because bundled validation can combine homing, heat, upload,
+motion, pause/resume, abort, and completion behavior. Stop immediately on any
+unexpected homing, endstop, grinding, or motion-limit behavior.
+Macro, local-job, web job, preheat-abort, active-abort, Cura job, and
+completion-job phases now run a guarded `z_home` pre-home step before the phase
+continues and record `reason=pre_physical_home` evidence in the summary. Use
+`--prehome-action home` only when a test explicitly needs all-axis homing and
+the X/Y travel path is clear.
 `--local-job` requires `--native`, runs the native
 `deneb-printsvc --local-job-smoke` path through the shared IPC frame helper, and
 proves native route ownership, local/USB job acceptance with native `pre_print`
@@ -263,17 +351,36 @@ deneb-printsvc-smoke-compare --require-reduction /tmp/stock-printsvc.summary /tm
 deneb-printsvc-smoke-selftest
 deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc
 deneb-printsvc-init-selftest
+deneb-printsvc-release-gate-selftest
 deneb-printsvc-native-audit-selftest
 ```
 
 For job runs the verifier requires `printing` while active, `paused` after a
-pause command, and `idle` after abort or natural completion, including the
-active `printing` snapshot before a completion run is allowed to settle to
-idle. Active-print abort runs must also show `printing` with native
+pause command, and `idle` after abort or natural completion. Completion runs
+may show either an active `printing` snapshot before settling, or a fast
+completed job that is already `idle` with native active/stop flags false and
+zero completion-wait elapsed time. Active-print abort runs must also show
+`printing` with native
 active/stop-allowed flags before abort and `idle` with both flags false after
 abort. It also checks native active/stop-allowed flags during active, preheat,
 paused, and resumed snapshots, then requires those flags to be false after
 abort or completion.
+The 2026-06-08 supervised SSH validation originally used a bounded Z fixture
+with repeated relative Z traffic for active abort. Follow-up validation found
+that UM2C Z homes to max travel, so generated completion fixtures now use
+bounded `G1 Z-0.20 F30` moves away from the homed max position. Later
+full-matrix work also exposed active/abort ProtoError desync and stale native
+status risk, so the earlier active-abort evidence is no longer accepted as
+Section 8 proof. Completion and active-abort evidence must be regenerated with
+the corrected away-from-max fixture and must settle to idle with native
+active/stop flags false without manual recovery.
+The old positive-Z fixture timed out at the Z max travel boundary, so
+completion evidence must be regenerated with the corrected away-from-max fixture
+before Section 8 can be marked complete.
+Native completion also deliberately waits for finish cleanup to drain before
+reporting idle, so the live verifier samples the active/stop-allowed state
+during planner-drain cleanup instead of accepting an immediate EOF-to-idle
+transition.
 `--idle` requires the initial status sample to be `idle` and the initial
 printer-root native active/stop flags to be false.
 Heat, motion, and macro verification require their snapshot status and printer
@@ -286,7 +393,18 @@ with elapsed and uptime-delta seconds, a scalar status value, and native-only
 status-body evidence.
 `--native` also requires native-only route body evidence, native-only route
 evidence in captured status bodies, native `deneb-printsvc` process evidence,
-and no captured native process sample with stock `print_service.py`.
+and no captured native process sample with literal stock `print_service.py`.
+It intentionally does not treat the `print_service_py=0` diagnostic field as a
+stock process sample.
+The June 9, 2026 observe-only installed-package run of
+`Deneb_Update_8816c0b.deneb` passed installed CLI/init/release-gate/native-audit
+selftests and
+`deneb-printsvc-smoke-verify --native --idle --restart --boot-sync`. That run
+proved native-only route, boot-sync readiness, service restart recovery, idle
+`native_active:false` / `native_stop_allowed:false`, `print_service_py=0`, and
+nonzero ambient bed/nozzle readings around 25.5 C / 28.3 C. It did not run
+physical heat, motion, Cura, pause/resume, abort, completion, or throughput
+phases.
 The compare tool reports before/after deltas for memory, process RSS, CPU
 jiffies, CPU jiffies consumed between initial/final samples, boot-sync elapsed
 time, and print throughput. It fails if the stock summary lacks
@@ -312,7 +430,7 @@ single comparator lifecycle status snapshot, a wrong single-phase lifecycle
 status value, missing active-abort status or stop-safety evidence, boot-sync
 summaries that put the full status response into
 `status=` or omit `status_body` native-route proof, missing natural-completion
-active status evidence, missing native local/USB job evidence, a non-native-only route diagnostic, a returned stock
+active or fast-completed idle status evidence, missing native local/USB job evidence, a non-native-only route diagnostic, a returned stock
 `print_service.py` process in a native run,
 missing stock `print_service.py` baseline evidence, and zero-throughput records
 are rejected.

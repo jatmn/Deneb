@@ -44,13 +44,21 @@ static const char *safe_file(const char *file)
     return file && file[0] ? file : DENEB_PRINT_NONE_VALUE;
 }
 
+static const char *safe_value(const char *value)
+{
+    return value && value[0] ? value : DENEB_PRINT_NONE_VALUE;
+}
+
 int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size_t out_sz)
 {
     char file[256];
     char uuid[128];
     char source[80];
     char req[80];
+    char firmware[128];
+    char machine_type[48];
     char error_detail[256];
+    char flow_last_response[192];
     int n;
 
     if (!status || !out || out_sz == 0)
@@ -61,34 +69,51 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
     deneb_json_escape_string(status->source, source, sizeof(source));
     deneb_json_escape_string(status->req[0] ? status->req : deneb_status_state_name(status->state),
                              req, sizeof(req));
+    deneb_json_escape_string(safe_value(status->firmware), firmware,
+                             sizeof(firmware));
+    deneb_json_escape_string(safe_value(status->machine_type), machine_type,
+                             sizeof(machine_type));
     deneb_json_escape_string(status->error.detail, error_detail, sizeof(error_detail));
+    deneb_json_escape_string(status->flow_last_response, flow_last_response,
+                             sizeof(flow_last_response));
 
     n = snprintf(out, out_sz,
                  "{\"file\":\"%s\",\"name\":\"%s\",\"headTset\":%.1f,"
                  "\"headTcur\":%.1f,\"bedTset\":%.1f,\"bedTcur\":%.1f,"
+                 "\"topcapIsPresent\":%s,\"topcapTemperature\":%.1f,"
                  "\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f,\"E\":%.3f,"
                  "\"homeDistanceX\":%.3f,\"homeDistanceY\":%.3f,"
                  "\"homeDistanceZ\":%.3f,\"homeDistanceValid\":%s,"
                  "\"flowInflight\":%u,\"flowSent\":%u,\"flowAck\":%u,"
                  "\"flowResend\":%u,\"flowReject\":%u,"
+                 "\"flowLastResponse\":\"%s\","
                  "\"jobQueueDepth\":%u,\"jobLineNumber\":%u,"
                  "\"commandLatencyMs\":%u,\"plannerStarvationCount\":%u,"
+                 "\"positionReportCount\":%u,"
+                 "\"finishDrainTicks\":%u,\"finishStableReports\":%u,"
                  "\"denebState\":\"%s\",\"denebActive\":%s,"
                  "\"denebStopAllowed\":%s,"
                  "\"denebErrorKey\":\"%s\",\"denebErrorCategory\":\"%s\","
                  "\"denebErrorDetail\":\"%s\","
+                 "\"firmware\":\"%s\",\"machineType\":\"%s\",\"pcbId\":%d,"
+                 "\"pcbIdValid\":%s,"
                  "\"uuid\":\"%s\",\"source\":\"%s\",\"Ttot\":%d,"
                  "\"Tleft\":%d,\"req\":\"%s\",\"received_faults\":%s}",
                  file, file,
                  status->head_t_set, status->head_t_cur,
                  status->bed_t_set, status->bed_t_cur,
+                 status->topcap_present ? "true" : "false",
+                 status->topcap_t_cur,
                  status->x, status->y, status->z, status->e,
                  status->home_x, status->home_y, status->home_z,
                  status->home_distance_valid ? "true" : "false",
                  status->flow_inflight, status->flow_sent, status->flow_ack,
                  status->flow_resend, status->flow_reject,
+                 flow_last_response,
                  status->job_queue_depth, status->job_line_number,
                  status->command_latency_ms, status->planner_starvation_count,
+                 status->position_report_count,
+                 status->finish_drain_ticks, status->finish_stable_reports,
                  deneb_print_control_phase_name(
                      deneb_print_control_phase_from_state(status->state)),
                  deneb_status_has_active_print(status) ? "true" : "false",
@@ -97,6 +122,8 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
                  status->error.key ? status->error.key : DENEB_PRINT_NONE_VALUE,
                  status->error.category ? status->error.category : DENEB_PRINT_NONE_VALUE,
                  error_detail,
+                 firmware, machine_type, status->pcb_id,
+                 status->pcb_id_valid ? "true" : "false",
                  uuid, source,
                  status->time_total, status->time_left,
                  req, status->fault ? "[1]" : "[]");

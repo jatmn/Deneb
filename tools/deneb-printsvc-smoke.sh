@@ -25,16 +25,22 @@ RUN_PAUSE_RESUME=0
 RUN_RESTART=0
 RUN_BOOT_SYNC=0
 RUN_PARSER_SELFTEST=0
+MAKE_COMPLETE_FIXTURE=0
+PHYSICAL_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_OK:-0}"
+PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
 JOB_PATH=""
 LOCAL_JOB_PATH=""
 CURA_JOB_PATH=""
 PREHEAT_ABORT_PATH=""
 ACTIVE_ABORT_PATH=""
 COMPLETE_JOB_PATH=""
+MAKE_COMPLETE_FIXTURE_PATH=""
+MAKE_COMPLETE_FIXTURE_CYCLES=80
 MACRO_ACTION=""
-COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-3600}"
+COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-300}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
 ACTIVE_ABORT_DELAY="${DENEB_PRINTSVC_SMOKE_ACTIVE_ABORT_DELAY:-60}"
+PREHOME_ACTION="${DENEB_PRINTSVC_SMOKE_PREHOME_ACTION:-z_home}"
 
 usage() {
     cat <<'EOF'
@@ -56,11 +62,19 @@ Observe-only by default:
   --pause-resume        During --job, pause and resume before aborting
   --complete-job PATH   Start PATH and wait for it to leave the active job API
   --completion-timeout SEC
-                        Max seconds to wait for --complete-job, default 3600
+                        Max seconds to wait for --complete-job, default 300
+  --make-complete-fixture PATH [CYCLES]
+                        Write a bounded old-Marlin Z-move completion fixture and exit
   --restart             Restart deneb-printsvc and deneb-api, then sample recovery
   --boot-sync           Wait for print backend route/status readiness evidence
   --summary-parser-selftest
                         Exercise summary status/body parsing without hardware
+  --physical-ok        Required for any phase that heats, homes, moves axes,
+                        starts a print job, or sends a macro action
+  --physical-bundle-ok Required in addition to --physical-ok when more than
+                        one physical phase is requested in a single run
+  --prehome-action ACTION
+                        Motion guard before macro/job phases, default z_home
   --ready-timeout SEC   Max seconds for --boot-sync, default 180
   --log PATH            Write the smoke log to PATH
   --summary PATH        Write compact evidence summary to PATH
@@ -70,7 +84,10 @@ Observe-only by default:
 
 The heat, motion, macro, job, and complete-job phases move or heat hardware. Run
 them only with the printer supervised, clear of obstructions, and prepared for
-immediate power-off.
+immediate power-off. These phases fail closed unless --physical-ok or
+DENEB_PRINTSVC_SMOKE_PHYSICAL_OK=1 is set. More than one physical phase in a
+single invocation also requires --physical-bundle-ok or
+DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK=1; prefer separate narrow checks.
 EOF
 }
 
@@ -147,9 +164,30 @@ while [ "$#" -gt 0 ]; do
             esac
             COMPLETION_TIMEOUT="$1"
             ;;
+        --make-complete-fixture)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing path after --make-complete-fixture" >&2; exit 2; }
+            MAKE_COMPLETE_FIXTURE=1
+            MAKE_COMPLETE_FIXTURE_PATH="$1"
+            if [ "$#" -gt 1 ] && printf '%s' "$2" | grep -Eq '^[0-9]+$'; then
+                shift
+                MAKE_COMPLETE_FIXTURE_CYCLES="$1"
+            fi
+            ;;
         --restart) RUN_RESTART=1 ;;
         --boot-sync) RUN_BOOT_SYNC=1 ;;
         --summary-parser-selftest) RUN_PARSER_SELFTEST=1 ;;
+        --physical-ok) PHYSICAL_OK=1 ;;
+        --physical-bundle-ok) PHYSICAL_BUNDLE_OK=1 ;;
+        --prehome-action)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing action after --prehome-action" >&2; exit 2; }
+            PREHOME_ACTION="$1"
+            case "$PREHOME_ACTION" in
+                z_home|home) ;;
+                *) echo "invalid --prehome-action: $PREHOME_ACTION" >&2; exit 2 ;;
+            esac
+            ;;
         --ready-timeout)
             shift
             [ "$#" -gt 0 ] || { echo "missing seconds after --ready-timeout" >&2; exit 2; }
@@ -210,6 +248,93 @@ summary() {
     printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date)" "$*" >>"$SUMMARY"
 }
 
+write_complete_fixture() {
+    path="$1"
+    cycle_count="$2"
+
+    case "$cycle_count" in
+        ''|*[!0-9]*) echo "invalid fixture cycle count: $cycle_count" >&2; return 2 ;;
+    esac
+    if [ "$cycle_count" -lt 1 ]; then
+        echo "fixture cycle count must be greater than zero" >&2
+        return 2
+    fi
+    if [ "$cycle_count" -gt 480 ]; then
+        echo "fixture cycle count must be 480 or lower to keep Z travel bounded" >&2
+        return 2
+    fi
+
+    mkdir -p "$(dirname "$path")" 2>/dev/null || true
+    {
+        printf '; Deneb native print-service completion smoke fixture\n'
+        printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
+        printf '; Homes Z once to max, then performs bounded relative moves away from max.\n'
+        printf 'G28 Z\n'
+        printf 'G91\n'
+        i=1
+        while [ "$i" -le "$cycle_count" ]; do
+            printf 'G1 Z-0.20 F30\n'
+            i=$((i + 1))
+        done
+        printf 'G90\n'
+        printf 'M114\n'
+    } >"$path" || return 1
+    return 0
+}
+
+if [ "$MAKE_COMPLETE_FIXTURE" = "1" ]; then
+    write_complete_fixture "$MAKE_COMPLETE_FIXTURE_PATH" "$MAKE_COMPLETE_FIXTURE_CYCLES"
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        summary "phase=make-complete-fixture path=$MAKE_COMPLETE_FIXTURE_PATH cycles=$MAKE_COMPLETE_FIXTURE_CYCLES rc=$rc"
+        exit "$rc"
+    fi
+    summary "phase=make-complete-fixture path=$MAKE_COMPLETE_FIXTURE_PATH cycles=$MAKE_COMPLETE_FIXTURE_CYCLES rc=0 command=G1_Z"
+    say "wrote complete-job fixture: $MAKE_COMPLETE_FIXTURE_PATH cycles=$MAKE_COMPLETE_FIXTURE_CYCLES"
+    exit 0
+fi
+
+physical_phase_requested() {
+    [ "$RUN_HEAT" = "1" ] ||
+    [ "$RUN_MOTION" = "1" ] ||
+    [ "$RUN_MACRO" = "1" ] ||
+    [ "$RUN_LOCAL_JOB" = "1" ] ||
+    [ "$RUN_JOB" = "1" ] ||
+    [ "$RUN_CURA_JOB" = "1" ] ||
+    [ "$RUN_PREHEAT_ABORT" = "1" ] ||
+    [ "$RUN_ACTIVE_ABORT" = "1" ] ||
+    [ "$RUN_COMPLETE_JOB" = "1" ]
+}
+
+physical_phase_count() {
+    count=0
+    [ "$RUN_HEAT" = "1" ] && count=$((count + 1))
+    [ "$RUN_MOTION" = "1" ] && count=$((count + 1))
+    [ "$RUN_MACRO" = "1" ] && count=$((count + 1))
+    [ "$RUN_LOCAL_JOB" = "1" ] && count=$((count + 1))
+    [ "$RUN_JOB" = "1" ] && count=$((count + 1))
+    [ "$RUN_CURA_JOB" = "1" ] && count=$((count + 1))
+    [ "$RUN_PREHEAT_ABORT" = "1" ] && count=$((count + 1))
+    [ "$RUN_ACTIVE_ABORT" = "1" ] && count=$((count + 1))
+    [ "$RUN_COMPLETE_JOB" = "1" ] && count=$((count + 1))
+    printf '%s\n' "$count"
+}
+
+if physical_phase_requested && [ "$PHYSICAL_OK" != "1" ]; then
+    say "ERROR: physical printer phase requested without --physical-ok"
+    say "Refusing to heat, home, move axes, start jobs, or run macros without an explicit supervised-machine acknowledgement."
+    summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
+    exit 2
+fi
+
+PHYSICAL_PHASE_COUNT="$(physical_phase_count)"
+if [ "$PHYSICAL_PHASE_COUNT" -gt 1 ] && [ "$PHYSICAL_BUNDLE_OK" != "1" ]; then
+    say "ERROR: multiple physical printer phases requested without --physical-bundle-ok"
+    say "Refusing bundled physical validation by default; split the run into supervised single-purpose checks."
+    summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=$PHYSICAL_PHASE_COUNT"
+    exit 2
+fi
+
 append_cmd() {
     say "$ $*"
     "$@" >>"$LOG" 2>&1
@@ -234,13 +359,21 @@ http_request() {
         return $?
     fi
 
-    if [ "$method" = "GET" ] && command -v wget >/dev/null 2>&1; then
-        wget -q -O - "$url" >>"$LOG" 2>&1
+    if command -v wget >/dev/null 2>&1; then
+        if [ "$method" = "GET" ]; then
+            wget -q -O - "$url" >>"$LOG" 2>&1
+        elif [ -n "$body" ]; then
+            wget -q -O - --method="$method" \
+                --header='Content-Type: application/json' \
+                --body-data="$body" "$url" >>"$LOG" 2>&1
+        else
+            wget -q -O - --method="$method" "$url" >>"$LOG" 2>&1
+        fi
         return $?
     fi
 
-    say "SKIP: no curl available for $method $url"
-    return 0
+    say "ERROR: no curl/wget available for $method $url"
+    return 1
 }
 
 http_status_code() {
@@ -249,13 +382,22 @@ http_status_code() {
     url="${API_BASE}${path}"
     body_file="/tmp/deneb-printsvc-smoke-http.$$"
 
-    if ! command -v curl >/dev/null 2>&1; then
-        say "SKIP: no curl available for status-code check $method $url"
+    if command -v curl >/dev/null 2>&1; then
+        code="$(curl -sS -o "$body_file" -w '%{http_code}' -X "$method" "$url" 2>>"$LOG")"
+        rc=$?
+    elif command -v wget >/dev/null 2>&1; then
+        header_file="/tmp/deneb-printsvc-smoke-http-headers.$$"
+        wget -S -q -O "$body_file" --method="$method" "$url" \
+            2>"$header_file"
+        rc=$?
+        code="$(awk '/^  HTTP\// { code=$2 } END { print code }' "$header_file" 2>/dev/null)"
+        cat "$header_file" >>"$LOG" 2>/dev/null || true
+        rm -f "$header_file"
+        [ -n "$code" ] && rc=0
+    else
+        say "ERROR: no curl/wget available for status-code check $method $url"
         return 2
     fi
-
-    code="$(curl -sS -o "$body_file" -w '%{http_code}' -X "$method" "$url" 2>>"$LOG")"
-    rc=$?
     if [ -s "$body_file" ]; then
         cat "$body_file" >>"$LOG"
         printf '\n' >>"$LOG"
@@ -306,6 +448,44 @@ http_get_capture() {
     return 0
 }
 
+multipart_post() {
+    url="$1"
+    file_path="$2"
+    job_name="$3"
+    owner="$4"
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS -F "file=@${file_path}" -F "jobname=${job_name}" \
+            -F "owner=${owner}" "$url" >>"$LOG" 2>&1
+        return $?
+    fi
+
+    if command -v wget >/dev/null 2>&1; then
+        boundary="----deneb-smoke-$$-$(date +%s 2>/dev/null || echo 0)"
+        body_file="/tmp/deneb-printsvc-smoke-multipart.$$"
+        {
+            printf -- '--%s\r\n' "$boundary"
+            printf 'Content-Disposition: form-data; name="file"; filename="%s"\r\n' "$(basename "$file_path")"
+            printf 'Content-Type: application/octet-stream\r\n\r\n'
+            cat "$file_path"
+            printf '\r\n--%s\r\n' "$boundary"
+            printf 'Content-Disposition: form-data; name="jobname"\r\n\r\n%s\r\n' "$job_name"
+            printf -- '--%s\r\n' "$boundary"
+            printf 'Content-Disposition: form-data; name="owner"\r\n\r\n%s\r\n' "$owner"
+            printf -- '--%s--\r\n' "$boundary"
+        } >"$body_file" || return 1
+        wget -q -O - \
+            --header="Content-Type: multipart/form-data; boundary=${boundary}" \
+            --post-file="$body_file" "$url" >>"$LOG" 2>&1
+        rc=$?
+        rm -f "$body_file"
+        return "$rc"
+    fi
+
+    say "ERROR: no curl/wget available for multipart upload $url"
+    return 1
+}
+
 api_step() {
     label="$1"
     method="$2"
@@ -317,6 +497,29 @@ api_step() {
     say "$label rc=$rc"
     summary "phase=$label kind=api method=$method path=$path rc=$rc"
     return "$rc"
+}
+
+guarded_prehome() {
+    label="$1"
+
+    case "$PREHOME_ACTION" in
+        z_home|home) ;;
+        *)
+            say "ERROR: invalid prehome action: $PREHOME_ACTION"
+            summary "phase=${label} action=${PREHOME_ACTION} rc=2 reason=invalid_prehome_action"
+            return 2
+            ;;
+    esac
+
+    say "$label: guarded $PREHOME_ACTION before physical phase"
+    summary "phase=${label} action=${PREHOME_ACTION} rc=pending reason=pre_physical_home"
+    api_step "$label" POST /printer/heads/0/position "{\"action\":\"$PREHOME_ACTION\"}"
+    rc=$?
+    summary "phase=${label} action=${PREHOME_ACTION} rc=$rc reason=pre_physical_home"
+    [ "$rc" = "0" ] || return "$rc"
+    sleep 5
+    snapshot "$label"
+    return 0
 }
 
 status_step() {
@@ -413,6 +616,8 @@ wait_for_job_inactive() {
     timeout="$1"
     elapsed=0
     interval=10
+    status_file="/tmp/deneb-printsvc-smoke-complete-status.$$"
+    printer_file="/tmp/deneb-printsvc-smoke-complete-printer.$$"
 
     while [ "$elapsed" -le "$timeout" ]; do
         code="$(http_status_code GET /print_job 2>/dev/null || true)"
@@ -434,8 +639,41 @@ wait_for_job_inactive() {
         elapsed=$((elapsed + interval))
     done
 
-    summary "phase=job-completion-wait elapsed=$elapsed rc=1"
+    http_get_capture /printer/status "$status_file"
+    status_rc=$?
+    status_raw="$(cat "$status_file" 2>/dev/null || true)"
+    status_value="$(extract_status_value "$status_raw")"
+    status_body="$(sanitize_summary_value "$status_raw")"
+    http_get_capture /printer "$printer_file"
+    printer_rc=$?
+    printer_body="$(sanitize_summary_value "$(cat "$printer_file" 2>/dev/null || true)")"
+    rm -f "$status_file" "$printer_file"
+
+    say "job completion timeout after ${elapsed}s status=${status_value:-unknown}"
+    summary "phase=job-completion-wait elapsed=$elapsed rc=1 status=${status_value:-unknown} status_rc=$status_rc status_body=${status_body:-unknown} printer_rc=$printer_rc printer_body=${printer_body:-unknown}"
+    api_step "completion-timeout-abort" PUT /print_job/state '{"action":"abort"}' || true
     return 1
+}
+
+completion_fixture_has_progress_command() {
+    path="$1"
+
+    awk '
+        {
+            sub(/\r$/, "");
+            sub(/[;].*$/, "");
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "");
+            if ($0 == "")
+                next;
+            split($0, fields, /[[:space:]]+/);
+            cmd = toupper(fields[1]);
+            if (cmd == "G4" || cmd == "M400")
+                next;
+            found = 1;
+            exit;
+        }
+        END { exit found ? 0 : 1; }
+    ' "$path"
 }
 
 wait_for_boot_sync() {
@@ -468,7 +706,6 @@ wait_for_boot_sync() {
 
         if [ "$route_rc" = "0" ] && [ "$status_rc" = "0" ] && \
            printf '%s' "$route_value" | grep -q 'native_only_route:true' && \
-           printf '%s' "$status_body_value" | grep -q 'native_only_route:true' && \
            [ -n "$status_value" ] && [ "$status_value" != "unknown" ]; then
             uptime_now="$(monotonic_seconds)"
             boot_elapsed=$((uptime_now - start_uptime))
@@ -497,6 +734,23 @@ sample_processes() {
             vmsize="$(awk '/^VmSize:/ {print $2}' "$status" 2>/dev/null || true)"
             vmrss="$(awk '/^VmRSS:/ {print $2}' "$status" 2>/dev/null || true)"
             command="$(tr '\0' ' ' <"$cmdline" 2>/dev/null || printf '%s' "$rest")"
+            command_exe="${command%% *}"
+            case "$command_exe" in
+                /usr/bin/deneb-printsvc|/usr/bin/deneb-api|/usr/bin/deneb-ui|/usr/bin/deneb-mdns)
+                    ;;
+                /usr/bin/python*|python*)
+                    case "$command" in
+                        *'/home/cygnus/marlindriver/print_service.py'*|*'/home/cygnus/marlindriver/coordinator.py'*)
+                            ;;
+                        *)
+                            continue
+                            ;;
+                    esac
+                    ;;
+                *)
+                    continue
+                    ;;
+            esac
             summary "sample=$label pid=$pid vmsize_kb=${vmsize:-0} vmrss_kb=${vmrss:-0} command=\"$command\""
         done
 }
@@ -526,26 +780,26 @@ assert_native_driver_process() {
 }
 
 snapshot() {
-    label="$1"
-    say "===== snapshot: $label ====="
-    summary "snapshot=$label"
+    snapshot_label="$1"
+    say "===== snapshot: $snapshot_label ====="
+    summary "snapshot=$snapshot_label"
     append_cmd cat /proc/uptime || true
-    awk -v label="$label" '{printf("sample=%s uptime_seconds=%s idle_seconds=%s\n", label, $1, $2)}' \
+    awk -v label="$snapshot_label" '{printf("sample=%s uptime_seconds=%s idle_seconds=%s\n", label, $1, $2)}' \
         /proc/uptime >>"$SUMMARY" 2>/dev/null || true
     append_cmd free || true
-    free | awk -v label="$label" '
+    free | awk -v label="$snapshot_label" '
         /^Mem:/ {printf("sample=%s mem_total_kb=%s mem_used_kb=%s mem_free_kb=%s\n", label, $2, $3, $4)}
         /^Swap:/ {printf("sample=%s swap_total_kb=%s swap_used_kb=%s swap_free_kb=%s\n", label, $2, $3, $4)}
     ' >>"$SUMMARY" 2>/dev/null || true
     append_cmd head -n 1 /proc/stat || true
-    sample_cpu "$label"
+    sample_cpu "$snapshot_label"
     append_cmd cat /proc/loadavg || true
     append_cmd df -h || true
     append_cmd sh -c "ps w | grep -E 'deneb-printsvc|print_service.py|coordinator.py|deneb-api|deneb-ui' | grep -v grep" || true
-    sample_processes "$label"
-    route_step "route-$label" || true
-    status_step "status-$label" || true
-    printer_root_step "printer-$label" || true
+    sample_processes "$snapshot_label"
+    route_step "route-$snapshot_label" || true
+    status_step "status-$snapshot_label" || true
+    printer_root_step "printer-$snapshot_label" || true
 }
 
 parser_selftest_case() {
@@ -625,6 +879,7 @@ if [ "$RUN_MOTION" = "1" ]; then
 fi
 
 if [ "$RUN_MACRO" = "1" ]; then
+    guarded_prehome "macro-prehome" || exit $?
     api_step "macro-${MACRO_ACTION}" POST /printer/heads/0/position "{\"action\":\"$MACRO_ACTION\"}"
     sleep 5
     snapshot "macro"
@@ -649,6 +904,7 @@ if [ "$RUN_LOCAL_JOB" = "1" ]; then
         say "ERROR: local-job path does not exist: $LOCAL_JOB_PATH"
         exit 1
     fi
+    guarded_prehome "local-job-prehome" || exit $?
     local_job_evidence="/tmp/deneb-printsvc-smoke-local-job.$$"
     say "$ /usr/bin/deneb-printsvc --local-job-smoke $LOCAL_JOB_PATH"
     /usr/bin/deneb-printsvc --local-job-smoke "$LOCAL_JOB_PATH" \
@@ -669,8 +925,8 @@ if [ "$RUN_LOCAL_JOB" = "1" ]; then
 fi
 
 if [ "$RUN_JOB" = "1" ] || [ "$RUN_CURA_JOB" = "1" ] || [ "$RUN_PREHEAT_ABORT" = "1" ] || [ "$RUN_ACTIVE_ABORT" = "1" ] || [ "$RUN_COMPLETE_JOB" = "1" ]; then
-    if ! command -v curl >/dev/null 2>&1; then
-        say "ERROR: job upload requires curl for multipart/form-data"
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        say "ERROR: job upload requires curl or wget for multipart/form-data"
         exit 1
     fi
 fi
@@ -704,9 +960,10 @@ if [ "$RUN_JOB" = "1" ]; then
 fi
 
 if [ "$RUN_JOB" = "1" ]; then
+    guarded_prehome "job-prehome" || exit $?
     say "job-start: multipart upload $JOB_PATH"
-    curl -fsS -F "file=@${JOB_PATH}" -F "jobname=$(basename "$JOB_PATH")" \
-        -F "owner=Deneb smoke" "${API_BASE}/print_job" >>"$LOG" 2>&1
+    multipart_post "${API_BASE}/print_job" "$JOB_PATH" \
+        "$(basename "$JOB_PATH")" "Deneb smoke"
     rc=$?
     say "job-start rc=$rc"
     summary "phase=job-start kind=multipart path=$JOB_PATH rc=$rc"
@@ -728,10 +985,10 @@ if [ "$RUN_JOB" = "1" ]; then
 fi
 
 if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
+    guarded_prehome "preheat-abort-prehome" || exit $?
     say "preheat-abort-start: multipart upload $PREHEAT_ABORT_PATH"
-    curl -fsS -F "file=@${PREHEAT_ABORT_PATH}" \
-        -F "jobname=$(basename "$PREHEAT_ABORT_PATH")" \
-        -F "owner=Deneb smoke preheat abort" "${API_BASE}/print_job" >>"$LOG" 2>&1
+    multipart_post "${API_BASE}/print_job" "$PREHEAT_ABORT_PATH" \
+        "$(basename "$PREHEAT_ABORT_PATH")" "Deneb smoke preheat abort"
     rc=$?
     say "preheat-abort-start rc=$rc"
     summary "phase=preheat-abort-start kind=multipart path=$PREHEAT_ABORT_PATH rc=$rc"
@@ -745,10 +1002,10 @@ if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
 fi
 
 if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
+    guarded_prehome "active-abort-prehome" || exit $?
     say "active-abort-start: multipart upload $ACTIVE_ABORT_PATH"
-    curl -fsS -F "file=@${ACTIVE_ABORT_PATH}" \
-        -F "jobname=$(basename "$ACTIVE_ABORT_PATH")" \
-        -F "owner=Deneb smoke active abort" "${API_BASE}/print_job" >>"$LOG" 2>&1
+    multipart_post "${API_BASE}/print_job" "$ACTIVE_ABORT_PATH" \
+        "$(basename "$ACTIVE_ABORT_PATH")" "Deneb smoke active abort"
     rc=$?
     say "active-abort-start rc=$rc"
     summary "phase=active-abort-start kind=multipart path=$ACTIVE_ABORT_PATH rc=$rc"
@@ -762,10 +1019,10 @@ if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
 fi
 
 if [ "$RUN_CURA_JOB" = "1" ]; then
+    guarded_prehome "cura-job-prehome" || exit $?
     say "cura-job-start: cluster multipart upload $CURA_JOB_PATH"
-    curl -fsS -F "file=@${CURA_JOB_PATH}" \
-        -F "jobname=$(basename "$CURA_JOB_PATH")" \
-        -F "owner=Cura" "${CLUSTER_API_BASE}/print_jobs" >>"$LOG" 2>&1
+    multipart_post "${CLUSTER_API_BASE}/print_jobs" "$CURA_JOB_PATH" \
+        "$(basename "$CURA_JOB_PATH")" "Cura"
     rc=$?
     say "cura-job-start rc=$rc"
     summary "phase=cura-job-start kind=cluster-multipart path=$CURA_JOB_PATH rc=$rc"
@@ -773,7 +1030,11 @@ if [ "$RUN_CURA_JOB" = "1" ]; then
     sleep 20
     snapshot "cura-job-running"
     say "cura-job-abort: cluster DELETE /print_jobs/current"
-    curl -fsS -X DELETE "${CLUSTER_API_BASE}/print_jobs/current" >>"$LOG" 2>&1
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS -X DELETE "${CLUSTER_API_BASE}/print_jobs/current" >>"$LOG" 2>&1
+    else
+        wget -q -O - --method=DELETE "${CLUSTER_API_BASE}/print_jobs/current" >>"$LOG" 2>&1
+    fi
     rc=$?
     say "cura-job-abort rc=$rc"
     summary "phase=cura-job-abort kind=cluster-api method=DELETE path=/print_jobs/current rc=$rc"
@@ -787,13 +1048,19 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
         say "ERROR: complete-job path does not exist: $COMPLETE_JOB_PATH"
         exit 1
     fi
+    if ! completion_fixture_has_progress_command "$COMPLETE_JOB_PATH"; then
+        say "ERROR: complete-job fixture must not be dwell/M400-only: $COMPLETE_JOB_PATH"
+        summary "phase=complete-job-fixture-check path=$COMPLETE_JOB_PATH rc=1 reason=dwell_only"
+        exit 1
+    fi
+    summary "phase=complete-job-fixture-check path=$COMPLETE_JOB_PATH rc=0 reason=progress_command"
+    guarded_prehome "complete-job-prehome" || exit $?
     complete_job_bytes="$(wc -c <"$COMPLETE_JOB_PATH" 2>/dev/null | awk '{print $1}')"
     complete_job_bytes="${complete_job_bytes:-0}"
     complete_job_start="$(monotonic_seconds)"
     say "complete-job-start: multipart upload $COMPLETE_JOB_PATH"
-    curl -fsS -F "file=@${COMPLETE_JOB_PATH}" \
-        -F "jobname=$(basename "$COMPLETE_JOB_PATH")" \
-        -F "owner=Deneb smoke completion" "${API_BASE}/print_job" >>"$LOG" 2>&1
+    multipart_post "${API_BASE}/print_job" "$COMPLETE_JOB_PATH" \
+        "$(basename "$COMPLETE_JOB_PATH")" "Deneb smoke completion"
     rc=$?
     say "complete-job-start rc=$rc"
     summary "phase=complete-job-start kind=multipart path=$COMPLETE_JOB_PATH rc=$rc"

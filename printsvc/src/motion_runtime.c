@@ -50,15 +50,31 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
             runtime->status, runtime->heater_wait, runtime->flow, line,
             &resend_sequence);
         if (flow_rc == 2) {
-            if (deneb_motion_sender_resend_sequence(runtime->flow,
-                                                    runtime->serial,
-                                                    *runtime->serial_ready,
-                                                    resend_sequence) != 0) {
+            (void)resend_sequence;
+            if (deneb_motion_sender_resend_pending(runtime->flow,
+                                                   runtime->serial,
+                                                   *runtime->serial_ready) != 0) {
+                if (runtime->status->state == DENEB_PRINT_STATE_IDLE)
+                    continue;
                 runtime->status->state = DENEB_PRINT_STATE_ERROR;
                 runtime->status->error = deneb_error_make(DENEB_ERROR_SERIAL,
                                                           "resend failed");
                 return -1;
             }
+        } else if (flow_rc == 3) {
+            deneb_flow_resync_to_expected(runtime->flow);
+            if (runtime->status->state != DENEB_PRINT_STATE_IDLE &&
+                !runtime->allow_sequence_resync) {
+                runtime->status->state = DENEB_PRINT_STATE_ERROR;
+                runtime->status->error = deneb_error_make(
+                    DENEB_ERROR_SERIAL, "flow control sequence desync");
+                return -1;
+            }
+        } else if (flow_rc < 0 && runtime->status->state != DENEB_PRINT_STATE_IDLE) {
+            runtime->status->state = DENEB_PRINT_STATE_ERROR;
+            runtime->status->error = deneb_error_make(
+                DENEB_ERROR_SERIAL, "flow control rejected response");
+            return -1;
         }
     }
 

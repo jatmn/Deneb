@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -145,6 +145,10 @@ install_web_runtime() {
     chmod 0755 /usr/bin/deneb-printsvc-init-selftest
     log "installed deneb-printsvc-init-selftest to /usr/bin/deneb-printsvc-init-selftest"
 
+    cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
+    chmod 0755 /usr/bin/deneb-printsvc-release-gate-selftest
+    log "installed deneb-printsvc-release-gate-selftest to /usr/bin/deneb-printsvc-release-gate-selftest"
+
     cp /tmp/update/deneb-printsvc-native-audit /usr/bin/deneb-printsvc-native-audit
     chmod 0755 /usr/bin/deneb-printsvc-native-audit
     log "installed deneb-printsvc-native-audit to /usr/bin/deneb-printsvc-native-audit"
@@ -179,8 +183,6 @@ install_web_runtime() {
     log "installed Deneb web and print service init scripts"
 
     [ -f /etc/config/deneb ] || touch /etc/config/deneb
-    uci -q set deneb.web=web 2>/dev/null || true
-    uci -q set deneb.web.enabled='1' 2>/dev/null || true
     uci -q set deneb.mdns=mdns 2>/dev/null || true
     uci -q set deneb.mdns.enabled='1' 2>/dev/null || true
     uci -q set deneb.printsvc=printsvc 2>/dev/null || true
@@ -204,6 +206,11 @@ install_web_runtime() {
     /etc/init.d/deneb-mdns enable 2>/dev/null || true
     /etc/init.d/deneb-printsvc enable 2>/dev/null || true
     log "enabled Deneb web services for next boot"
+
+    /etc/init.d/deneb-api restart 2>/dev/null || true
+    /etc/init.d/deneb-web restart 2>/dev/null || true
+    /etc/init.d/deneb-mdns restart 2>/dev/null || true
+    log "started Deneb web services"
 }
 
 prune_stock_wifi_portal() {

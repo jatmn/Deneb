@@ -7,9 +7,7 @@ USE_PROCD=1
 PROG=/usr/bin/deneb-mdns
 
 start_service() {
-    local web_enabled=$(uci -q get deneb.web.enabled 2>/dev/null || echo "0")
     local mdns_enabled=$(uci -q get deneb.mdns.enabled 2>/dev/null || echo "1")
-    [ "$web_enabled" = "1" ] || return 0
     [ "$mdns_enabled" = "1" ] || return 0
     [ -x "$PROG" ] || return 0
 

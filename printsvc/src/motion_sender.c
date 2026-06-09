@@ -54,6 +54,45 @@ int deneb_motion_sender_resend_sequence(deneb_flow_control_t *flow,
                DENEB_MOTION_SEND_SERIAL;
 }
 
+int deneb_motion_sender_resend_pending(deneb_flow_control_t *flow,
+                                       deneb_serial_transport_t *serial,
+                                       int serial_ready)
+{
+    int emitted[DENEB_FLOW_WINDOW] = {0};
+    const uint8_t soh[] = {0xff, 0xff};
+
+    if (!flow)
+        return DENEB_MOTION_SEND_INVALID;
+    if (!serial_ready)
+        return 0;
+    if (!serial)
+        return DENEB_MOTION_SEND_SERIAL;
+
+    if (deneb_serial_write_all(serial, soh, sizeof(soh)) != 0)
+        return DENEB_MOTION_SEND_SERIAL;
+
+    for (;;) {
+        int best = -1;
+        for (size_t i = 0; i < DENEB_FLOW_WINDOW; i++) {
+            deneb_flow_slot_t *slot = &flow->slots[i];
+            if (!slot->occupied || slot->acknowledged || emitted[i])
+                continue;
+            if (best < 0 ||
+                slot->send_order < flow->slots[best].send_order)
+                best = (int)i;
+        }
+        if (best < 0)
+            break;
+        emitted[best] = 1;
+        int rc = deneb_motion_sender_resend_sequence(
+            flow, serial, serial_ready, flow->slots[best].sequence);
+        if (rc != 0)
+            return rc;
+    }
+
+    return 0;
+}
+
 int deneb_motion_sender_apply_policy(deneb_flow_control_t *flow,
                                      deneb_serial_transport_t *serial,
                                      int serial_ready,

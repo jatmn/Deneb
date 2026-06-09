@@ -49,7 +49,7 @@ cat > "$STOCK_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
 2026-06-08T00:00:00Z sample=initial load1=0.20
 2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
-2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle status_body={status:idle,native_only_route:true} rc=0
+2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
 2026-06-08T00:01:00Z phase=job-throughput path=/home/3D/stock.gcode bytes=10000 elapsed_seconds=20 bytes_per_second=500 rc=0
 2026-06-08T00:02:00Z sample=final mem_total_kb=250000 mem_used_kb=122000
 2026-06-08T00:02:00Z sample=final uptime_seconds=220
@@ -63,7 +63,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:00Z phase=printsvc-self-test rc=0
 2026-06-08T00:00:00Z snapshot=initial
 2026-06-08T00:00:00Z phase=route-initial kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
-2026-06-08T00:00:00Z phase=status-initial kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:00Z phase=status-initial kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:00Z phase=printer-initial kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:00Z sample=initial mem_total_kb=250000 mem_used_kb=100000
 2026-06-08T00:00:00Z sample=initial uptime_seconds=100
@@ -74,26 +74,26 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:01Z phase=native-driver-process kind=process deneb_printsvc=1 print_service_py=0 rc=0
 2026-06-08T00:00:01Z snapshot=native-enabled
 2026-06-08T00:00:01Z phase=route-native-enabled kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
-2026-06-08T00:00:01Z phase=status-native-enabled kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:01Z phase=status-native-enabled kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:01Z phase=printer-native-enabled kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
-2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle status_body={status:idle,native_only_route:true} rc=0
+2026-06-08T00:00:02Z phase=boot-sync-ready elapsed_seconds=2 uptime_delta_seconds=2 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
 2026-06-08T00:00:03Z phase=bed-low-heat kind=api rc=0
 2026-06-08T00:00:03Z phase=nozzle-low-heat kind=api rc=0
 2026-06-08T00:00:03Z snapshot=heating
-2026-06-08T00:00:03Z phase=status-heating kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:03Z phase=status-heating kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:03Z phase=printer-heating kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:04Z phase=bed-cooldown kind=api rc=0
 2026-06-08T00:00:04Z phase=nozzle-cooldown kind=api rc=0
 2026-06-08T00:00:04Z snapshot=cooldown
-2026-06-08T00:00:04Z phase=status-cooldown kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:04Z phase=status-cooldown kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:04Z phase=printer-cooldown kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:05Z phase=z-home kind=api rc=0
 2026-06-08T00:00:05Z snapshot=motion
-2026-06-08T00:00:05Z phase=status-motion kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:05Z phase=status-motion kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:05Z phase=printer-motion kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:06Z phase=macro-home kind=api rc=0
 2026-06-08T00:00:06Z snapshot=macro
-2026-06-08T00:00:06Z phase=status-macro kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:06Z phase=status-macro kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:06Z phase=printer-macro kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:07Z phase=local-job-native kind=printsvc-cli path=/media/usb/local.gcode rc=0
 2026-06-08T00:00:07Z phase=local-job-start path=/media/usb/local.gcode source=USB rc=0
@@ -102,57 +102,58 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:07Z phase=local-job-aborted-state deneb_state=idle native_active=false native_stop_allowed=false source=USB rc=0
 2026-06-08T00:00:08Z phase=job-start kind=multipart path=/tmp/job.gcode rc=0
 2026-06-08T00:00:08Z snapshot=job-running
-2026-06-08T00:00:08Z phase=status-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:08Z phase=status-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:08Z phase=printer-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:09Z phase=job-pause kind=api rc=0
 2026-06-08T00:00:09Z snapshot=job-paused
-2026-06-08T00:00:09Z phase=status-job-paused kind=api method=GET path=/printer/status rc=0 status=paused body={status:paused,native_only_route:true}
+2026-06-08T00:00:09Z phase=status-job-paused kind=api method=GET path=/printer/status rc=0 status=paused body=paused
 2026-06-08T00:00:09Z phase=printer-job-paused kind=api method=GET path=/printer rc=0 body={status:paused,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:10Z phase=job-resume kind=api rc=0
 2026-06-08T00:00:10Z snapshot=job-resumed
-2026-06-08T00:00:10Z phase=status-job-resumed kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:10Z phase=status-job-resumed kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:10Z phase=printer-job-resumed kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:11Z phase=job-abort kind=api rc=0
 2026-06-08T00:00:11Z snapshot=job-aborted
-2026-06-08T00:00:11Z phase=status-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:11Z phase=status-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:11Z phase=printer-job-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:12Z phase=cura-job-start kind=cluster-multipart path=/tmp/cura.gcode rc=0
 2026-06-08T00:00:12Z snapshot=cura-job-running
-2026-06-08T00:00:12Z phase=status-cura-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:12Z phase=status-cura-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:12Z phase=printer-cura-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:13Z phase=cura-job-abort kind=cluster-api method=DELETE path=/print_jobs/current rc=0
 2026-06-08T00:00:13Z snapshot=cura-job-aborted
-2026-06-08T00:00:13Z phase=status-cura-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:13Z phase=status-cura-job-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:13Z phase=printer-cura-job-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:14Z phase=preheat-abort-start kind=multipart path=/tmp/preheat.gcode rc=0
 2026-06-08T00:00:14Z snapshot=preheat-abort-active
-2026-06-08T00:00:14Z phase=status-preheat-abort-active kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:14Z phase=status-preheat-abort-active kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:14Z phase=printer-preheat-abort-active kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:15Z phase=preheat-abort kind=api rc=0
 2026-06-08T00:00:15Z snapshot=preheat-aborted
-2026-06-08T00:00:15Z phase=status-preheat-aborted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:15Z phase=status-preheat-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:15Z phase=printer-preheat-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:16Z phase=active-abort-start kind=multipart path=/tmp/active.gcode rc=0
 2026-06-08T00:00:16Z snapshot=active-abort-printing
-2026-06-08T00:00:16Z phase=status-active-abort-printing kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:16Z phase=status-active-abort-printing kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:16Z phase=printer-active-abort-printing kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:17Z phase=active-abort kind=api rc=0
 2026-06-08T00:00:17Z snapshot=active-aborted
-2026-06-08T00:00:17Z phase=status-active-aborted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:17Z phase=status-active-aborted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:17Z phase=printer-active-aborted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:18Z phase=complete-job-fixture-check path=/tmp/complete.gcode rc=0 reason=progress_command
 2026-06-08T00:00:18Z phase=complete-job-start kind=multipart path=/tmp/complete.gcode rc=0
 2026-06-08T00:00:18Z snapshot=complete-job-running
-2026-06-08T00:00:18Z phase=status-complete-job-running kind=api method=GET path=/printer/status rc=0 status=printing body={status:printing,native_only_route:true}
+2026-06-08T00:00:18Z phase=status-complete-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
 2026-06-08T00:00:18Z phase=printer-complete-job-running kind=api method=GET path=/printer rc=0 body={status:printing,native_active:true,native_stop_allowed:true}
 2026-06-08T00:00:38Z phase=job-completion-wait elapsed=20 rc=0
 2026-06-08T00:00:38Z phase=job-throughput path=/tmp/complete.gcode bytes=9000 elapsed_seconds=18 bytes_per_second=500 rc=0
 2026-06-08T00:00:38Z snapshot=job-completed
-2026-06-08T00:00:38Z phase=status-job-completed kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:38Z phase=status-job-completed kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:38Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:00:39Z phase=service-restart kind=service-restart rc=0
 2026-06-08T00:00:39Z snapshot=service-restarted
 2026-06-08T00:00:39Z phase=route-service-restarted kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
-2026-06-08T00:00:39Z phase=status-service-restarted kind=api method=GET path=/printer/status rc=0 status=idle body={status:idle,native_only_route:true}
+2026-06-08T00:00:39Z phase=status-service-restarted kind=api method=GET path=/printer/status rc=0 status=idle body=idle
 2026-06-08T00:00:39Z phase=printer-service-restarted kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
 2026-06-08T00:01:00Z sample=final mem_total_kb=250000 mem_used_kb=101000
 2026-06-08T00:01:00Z sample=final uptime_seconds=160
@@ -165,6 +166,13 @@ EOF
 sh "$VERIFY" --full "$NATIVE_SUMMARY"
 sh "$COMPARE" "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
 sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
+
+sed '/phase=status-complete-job-running /s/status=printing/status=idle/; /phase=status-complete-job-running /s/body=printing/body=idle/; /phase=printer-complete-job-running /s/status:printing/status:idle/; /phase=printer-complete-job-running /s/native_active:true/native_active:false/; /phase=printer-complete-job-running /s/native_stop_allowed:true/native_stop_allowed:false/; /phase=job-completion-wait /s/elapsed=20/elapsed=0/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-fast-complete.summary"
+sh "$VERIFY" --full "$TMP_DIR/native-fast-complete.summary"
+sh "$COMPARE" "$STOCK_SUMMARY" "$TMP_DIR/native-fast-complete.summary"
+echo "PASS: fast natural completion evidence accepted"
+
 sh "$SMOKE" --summary-parser-selftest \
     --log "$TMP_DIR/parser.log" \
     --summary "$TMP_DIR/parser.summary"
@@ -199,6 +207,12 @@ expect_failure compare_rejects_missing_one_inactive_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-one-inactive-stop.summary"
 
+sed '/phase=printer-service-restarted /s/native_active:false/native_active:true/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-service-restart-active-stuck.summary"
+expect_failure verify_rejects_service_restart_active_stuck \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-service-restart-active-stuck.summary"
+
 grep -v 'phase=local-job-start ' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-local-job.summary"
 expect_failure compare_rejects_missing_local_job \
@@ -214,21 +228,6 @@ expect_failure compare_rejects_local_job_missing_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-local-job-missing-stop.summary"
 
-sed 's/ body={status:[^}]*native_only_route:true}//g' \
-    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-status-route.summary"
-expect_failure verify_rejects_missing_status_native_route \
-    sh "$VERIFY" --full \
-    "$TMP_DIR/native-missing-status-route.summary"
-expect_failure compare_rejects_missing_status_native_route \
-    sh "$COMPARE" "$STOCK_SUMMARY" \
-    "$TMP_DIR/native-missing-status-route.summary"
-
-sed '/phase=status-job-running /s/ body={status:[^}]*native_only_route:true}//' \
-    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-one-status-route.summary"
-expect_failure compare_rejects_missing_one_status_native_route \
-    sh "$COMPARE" "$STOCK_SUMMARY" \
-    "$TMP_DIR/native-missing-one-status-route.summary"
-
 grep -v 'phase=status-complete-job-running ' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-complete-running-status.summary"
 expect_failure verify_rejects_missing_complete_running_status \
@@ -237,6 +236,15 @@ expect_failure verify_rejects_missing_complete_running_status \
 expect_failure compare_rejects_missing_complete_running_status \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-complete-running-status.summary"
+
+grep -v 'phase=complete-job-fixture-check ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-complete-fixture-check.summary"
+expect_failure verify_rejects_missing_complete_fixture_check \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-complete-fixture-check.summary"
+expect_failure compare_rejects_missing_complete_fixture_check \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-complete-fixture-check.summary"
 
 sed '/phase=status-preheat-abort-active /s/status=printing/status=idle/; /phase=status-preheat-abort-active /s/status:printing/status:idle/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-wrong-one-status.summary"
@@ -289,15 +297,6 @@ expect_failure compare_rejects_boot_sync_json_status \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-boot-sync-json-status.summary"
 
-sed '/phase=boot-sync-ready /s/ status_body=[^ ]*//' \
-    "$NATIVE_SUMMARY" > "$TMP_DIR/native-boot-sync-missing-status-body.summary"
-expect_failure verify_rejects_boot_sync_missing_status_body \
-    sh "$VERIFY" --full \
-    "$TMP_DIR/native-boot-sync-missing-status-body.summary"
-expect_failure compare_rejects_boot_sync_missing_status_body \
-    sh "$COMPARE" "$STOCK_SUMMARY" \
-    "$TMP_DIR/native-boot-sync-missing-status-body.summary"
-
 awk '
     { print }
     /snapshot=service-restarted/ {
@@ -330,5 +329,82 @@ sed 's/bytes_per_second=500/bytes_per_second=400/g' \
 expect_failure compare_strict_rejects_lower_throughput \
     sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" \
     "$TMP_DIR/native-throughput-regressed.summary"
+
+expect_failure smoke_requires_physical_ack \
+    sh "$SMOKE" --heat \
+    --summary "$TMP_DIR/physical-gate.summary" \
+    --log "$TMP_DIR/physical-gate.log"
+if ! grep -Eq 'phase=physical-safety-gate .*rc=2 .*reason=missing_physical_ok' \
+    "$TMP_DIR/physical-gate.summary"; then
+    cat "$TMP_DIR/physical-gate.summary" >&2
+    echo "FAIL: physical safety gate did not write expected summary" >&2
+    exit 1
+fi
+expect_failure smoke_rejects_physical_bundle \
+    sh "$SMOKE" --physical-ok --heat --motion \
+    --summary "$TMP_DIR/physical-bundle-gate.summary" \
+    --log "$TMP_DIR/physical-bundle-gate.log"
+if ! grep -Eq 'phase=physical-bundle-safety-gate .*rc=2 .*reason=missing_physical_bundle_ok .*count=2' \
+    "$TMP_DIR/physical-bundle-gate.summary"; then
+    cat "$TMP_DIR/physical-bundle-gate.summary" >&2
+    echo "FAIL: physical bundle safety gate did not write expected summary" >&2
+    exit 1
+fi
+
+sh "$SMOKE" --make-complete-fixture "$TMP_DIR/z-complete.gcode" 24 \
+    --summary "$TMP_DIR/z-complete.summary" \
+    --log "$TMP_DIR/z-complete.log"
+if [ "$(grep -c '^G1 Z' "$TMP_DIR/z-complete.gcode")" != "24" ]; then
+    cat "$TMP_DIR/z-complete.gcode"
+    echo "FAIL: generated completion fixture did not contain 24 Z move commands" >&2
+    exit 1
+fi
+if grep -Eq '^G1 Z0\.20' "$TMP_DIR/z-complete.gcode"; then
+    cat "$TMP_DIR/z-complete.gcode"
+    echo "FAIL: generated completion fixture moves toward Z max after homing" >&2
+    exit 1
+fi
+if [ "$(grep -c '^G1 Z-0\.20 F30$' "$TMP_DIR/z-complete.gcode")" != "24" ]; then
+    cat "$TMP_DIR/z-complete.gcode"
+    echo "FAIL: generated completion fixture does not move away from homed Z max" >&2
+    exit 1
+fi
+if ! grep -qx 'G28 Z' "$TMP_DIR/z-complete.gcode" ||
+   ! grep -qx 'G91' "$TMP_DIR/z-complete.gcode" ||
+   ! grep -qx 'G90' "$TMP_DIR/z-complete.gcode"; then
+    cat "$TMP_DIR/z-complete.gcode"
+    echo "FAIL: generated completion fixture missing Z-home/relative/absolute guards" >&2
+    exit 1
+fi
+if grep -Eq '^(G4|M400|M104|M109|M140|M190|M105)([[:space:]]|$)' \
+    "$TMP_DIR/z-complete.gcode"; then
+    cat "$TMP_DIR/z-complete.gcode"
+    echo "FAIL: generated completion fixture contains dwell/sync commands" >&2
+    exit 1
+fi
+if ! grep -Eq 'phase=make-complete-fixture .*rc=0 .*command=G1_Z' \
+    "$TMP_DIR/z-complete.summary"; then
+    cat "$TMP_DIR/z-complete.summary"
+    echo "FAIL: generated completion fixture summary missing success evidence" >&2
+    exit 1
+fi
+echo "PASS: generated bounded Z completion fixture"
+
+cat > "$TMP_DIR/dwell-only.gcode" <<'EOF'
+; Bad completion fixture: this can sit in firmware dwell/sync behavior.
+G4 P1000
+M400
+EOF
+expect_failure smoke_rejects_dwell_only_completion_fixture \
+    sh "$SMOKE" --physical-ok --complete-job "$TMP_DIR/dwell-only.gcode" \
+    --summary "$TMP_DIR/dwell-only.summary" \
+    --log "$TMP_DIR/dwell-only.log"
+if ! grep -Eq 'phase=complete-job-fixture-check .*rc=1 .*reason=dwell_only' \
+    "$TMP_DIR/dwell-only.summary"; then
+    cat "$TMP_DIR/dwell-only.summary"
+    echo "FAIL: dwell-only completion fixture failure did not write expected summary" >&2
+    exit 1
+fi
+echo "PASS: dwell-only completion fixture writes actionable summary"
 
 echo "deneb-printsvc smoke verifier selftest passed"

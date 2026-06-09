@@ -227,8 +227,9 @@ int deneb_printer_status_response_format_um_airmanager(
     n = snprintf(out, out_sz,
                  "{\"firmware_version\":\"\",\"filter_age\":0,"
                  "\"filter_max_age\":0,\"filter_status\":\"none\","
-                 "\"status\":\"%s\",\"fan_speed\":0}",
-                 airmanager_status);
+                 "\"status\":\"%s\",\"fan_speed\":0,"
+                 "\"temperature\":{\"current\":%.1f}}",
+                 airmanager_status, status->topcap_temp_cur);
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
     return n;
@@ -362,6 +363,8 @@ int deneb_printer_status_response_format_um_root(
     char nozzle_id_buf[64];
     char filename[256];
     char status_label[64];
+    char firmware[128];
+    char machine_type[48];
     int n;
 
     if (!status || !out || out_sz == 0)
@@ -372,12 +375,19 @@ int deneb_printer_status_response_format_um_root(
     deneb_json_escape_string(filename_raw, filename, sizeof(filename));
     deneb_json_escape_string(status->status_label ? status->status_label : "",
                              status_label, sizeof(status_label));
+    deneb_json_escape_string(status->firmware ? status->firmware : "",
+                             firmware, sizeof(firmware));
+    deneb_json_escape_string(status->machine_type ? status->machine_type : "",
+                             machine_type, sizeof(machine_type));
 
     n = snprintf(
         out, out_sz,
         "{"
         "\"bed\":{\"temperature\":{\"current\":%.1f,\"target\":%.1f},"
         "\"type\":\"glass\",\"pre_heat\":{\"active\":false}},"
+        "\"topcap\":{\"present\":%s,\"temperature\":{\"current\":%.1f}},"
+        "\"firmware\":\"%s\",\"machine_type\":\"%s\","
+        "\"pcb_id\":%d,\"pcb_id_valid\":%s,"
         "\"heads\":[{\"acceleration\":3000,"
         "\"extruders\":[{\"active_material\":{\"GUID\":\"\",\"guid\":\"\","
         "\"length_remaining\":-1.0},"
@@ -399,7 +409,10 @@ int deneb_printer_status_response_format_um_root(
         "\"time_total\":%d,\"time_left\":%d,\"filename\":\"%s\","
         "\"diagnostics\":{}"
         "}",
-        status->bed_temp_cur, status->bed_temp_set, nozzle_id_buf,
+        status->bed_temp_cur, status->bed_temp_set,
+        bool_text(status->topcap_present), status->topcap_temp_cur,
+        firmware, machine_type, status->pcb_id,
+        bool_text(status->pcb_id_valid), nozzle_id_buf,
         status->nozzle_temp_cur, status->nozzle_temp_set, status->pos_x,
         status->pos_y, status->pos_z, status_label,
         bool_text(status->connected), bool_text(status->is_printing),

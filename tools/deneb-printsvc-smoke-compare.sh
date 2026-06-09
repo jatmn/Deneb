@@ -201,8 +201,8 @@ require_status_phase() {
     status="$2"
 
     require_pattern "$NATIVE" \
-        " phase=status-${phase} .*rc=0 .*status=${status} .*body=.*native_only_route:true" \
-        "native summary missing status/native-route evidence for ${phase}"
+        " phase=status-${phase} .*rc=0 .*status=${status}" \
+        "native summary missing scalar status evidence for ${phase}"
 }
 
 require_printer_stop_phase() {
@@ -213,6 +213,22 @@ require_printer_stop_phase() {
     require_pattern "$NATIVE" \
         " phase=printer-${phase} .*rc=0 .*body=.*native_active:${active}.*native_stop_allowed:${stop_allowed}" \
         "native summary missing printer native active/stop evidence for ${phase}"
+}
+
+require_completion_runtime_evidence() {
+    if grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=printing' "$NATIVE" &&
+       grep -Eq ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "$NATIVE"; then
+        return 0
+    fi
+
+    if grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=idle' "$NATIVE" &&
+       grep -Eq ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "$NATIVE" &&
+       grep -Eq ' phase=job-completion-wait .*elapsed=0 .*rc=0' "$NATIVE"; then
+        return 0
+    fi
+
+    fail "native summary missing completion active-running or fast-completed evidence"
+    return 1
 }
 
 require_local_job_evidence() {
@@ -276,9 +292,6 @@ require_pattern "$NATIVE" \
 require_pattern "$NATIVE" \
     ' phase=boot-sync-ready .*status=(idle|printing|paused|error|offline|finished) ' \
     "native summary missing scalar boot-sync status evidence"
-require_pattern "$NATIVE" \
-    ' phase=boot-sync-ready .*status_body=[^ ]*native_only_route:true' \
-    "native summary missing native-only boot-sync status body evidence"
 require_local_job_evidence
 for phase in initial native-enabled cooldown motion macro service-restarted \
     job-aborted cura-job-aborted preheat-aborted active-aborted \
@@ -286,10 +299,14 @@ for phase in initial native-enabled cooldown motion macro service-restarted \
     require_status_phase "$phase" idle
 done
 for phase in heating job-running job-resumed cura-job-running \
-    preheat-abort-active active-abort-printing complete-job-running; do
+    preheat-abort-active active-abort-printing; do
     require_status_phase "$phase" printing
 done
 require_status_phase job-paused paused
+require_pattern "$NATIVE" \
+    ' phase=complete-job-fixture-check .*rc=0 .*reason=progress_command' \
+    "native summary missing non-dwell completion fixture evidence"
+require_completion_runtime_evidence
 require_pattern "$STOCK" \
     'sample=initial .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing initial print_service.py process evidence"
@@ -297,7 +314,7 @@ require_pattern "$STOCK" \
     'sample=final .*pid=[0-9]+ .*command="?.*print_service.py' \
     "stock summary missing final print_service.py process evidence"
 for phase in heating job-running job-paused job-resumed cura-job-running \
-    preheat-abort-active active-abort-printing complete-job-running; do
+    preheat-abort-active active-abort-printing; do
     require_printer_stop_phase "$phase" true true
 done
 for phase in initial native-enabled cooldown motion macro service-restarted \

@@ -8,12 +8,18 @@ typedef struct {
     float bed_target;
     float head_target;
     float tolerance;
+    int wait_bed;
+    int wait_head;
     int active;
 } deneb_heater_wait_t;
 
 void deneb_heater_wait_init(deneb_heater_wait_t *wait);
 void deneb_heater_wait_start(deneb_heater_wait_t *wait, float bed_target,
                              float head_target, float tolerance);
+void deneb_heater_wait_start_bed(deneb_heater_wait_t *wait, float bed_target,
+                                 float tolerance);
+void deneb_heater_wait_start_head(deneb_heater_wait_t *wait, float head_target,
+                                  float tolerance);
 int deneb_heater_wait_ready(const deneb_heater_wait_t *wait,
                             const deneb_status_t *status);
 void deneb_heater_wait_apply_status(const deneb_heater_wait_t *wait,

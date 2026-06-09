@@ -13,6 +13,11 @@ typedef struct {
 
 void deneb_motion_policy_abort(deneb_motion_policy_t *policy);
 void deneb_motion_policy_finish(deneb_motion_policy_t *policy);
+void deneb_motion_policy_pause(deneb_motion_policy_t *policy,
+                               float x, float y, float z);
+void deneb_motion_policy_resume(deneb_motion_policy_t *policy,
+                                float x, float y, float z, float e,
+                                float r0, float nozzle_setpoint);
 int deneb_motion_policy_contains_xy_home(const deneb_motion_policy_t *policy);
 
 #endif

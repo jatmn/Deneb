@@ -10,5 +10,7 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
                              char *reply, size_t reply_sz);
 int deneb_job_control_abort(deneb_print_service_t *svc,
                             char *reply, size_t reply_sz);
+int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc);
+int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc);
 
 #endif

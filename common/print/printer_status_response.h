@@ -21,6 +21,11 @@ typedef struct {
     int has_native_active;
     int has_native_stop_allowed;
     int topcap_present;
+    float topcap_temp_cur;
+    const char *firmware;
+    const char *machine_type;
+    int pcb_id;
+    int pcb_id_valid;
     float progress;
     int time_total;
     int time_left;

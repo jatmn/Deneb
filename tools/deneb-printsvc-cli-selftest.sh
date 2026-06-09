@@ -42,7 +42,7 @@ require_pattern \
     'phase=local-job-accepted .*deneb_state=pre_print .*native_active=true .*native_stop_allowed=true .*source=USB .*rc=0' \
     "local-job accepted state is native and stoppable"
 require_pattern \
-    'phase=local-job-aborted-state .*deneb_state=idle .*native_active=false .*native_stop_allowed=false .*source=USB .*rc=0' \
+    'phase=local-job-aborted-state .*deneb_state=idle .*native_active=false .*native_stop_allowed=false .*source=none .*rc=0' \
     "local-job aborted state is idle and not stoppable"
 
 echo "deneb-printsvc CLI selftest passed"
