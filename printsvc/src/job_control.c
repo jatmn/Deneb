@@ -35,7 +35,10 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
         return -1;
     }
 
-    if (svc->job_active) {
+    if (svc->job_active || svc->finish_cleanup_pending ||
+        svc->abort_cleanup_pending || svc->gcode_queue_active ||
+        svc->pause_policy_pending || svc->pause_position_probe_pending ||
+        svc->resume_policy_pending) {
         deneb_command_reply_error(reply, reply_sz, "job already active");
         return -1;
     }
@@ -174,6 +177,7 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
         svc->abort_requested = 0;
         svc->heater_wait.active = 0;
         deneb_job_lifecycle_complete(&svc->status);
+        svc->job_active = 0;
         return 1;
     }
 
@@ -223,5 +227,6 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
     svc->abort_requested = 0;
     svc->heater_wait.active = 0;
     deneb_job_lifecycle_complete(&svc->status);
+    svc->job_active = 0;
     return 1;
 }

@@ -797,7 +797,11 @@ static void test_job_streamer_policy(void)
     assert(deneb_flow_inflight(&flow) == 1);
 
     assert(deneb_job_streamer_poll(&streamer) == 1);
-    assert(!job_active);
+    assert(job_active);
+    assert(finish_cleanup_pending);
+    assert(status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(deneb_job_streamer_poll(&streamer) == 0);
+    assert(job_active);
     assert(finish_cleanup_pending);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
     deneb_flow_clear_inflight(&flow);
@@ -3949,9 +3953,19 @@ static void test_job_completion_waits_for_finish_cleanup(void)
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 1);
-    assert(!svc.job_active);
+    assert(svc.job_active);
     assert(svc.finish_cleanup_pending);
     assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(deneb_status_has_active_print(&svc.status));
+
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_active);
+    assert(svc.finish_cleanup_pending);
+    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply,
+                                              sizeof(reply)) < 0);
+    assert(strstr(reply, "job already active") != NULL);
 
     deneb_print_service_refresh_diagnostics(&svc);
     assert(svc.status.job_queue_depth == 1);
@@ -3980,6 +3994,7 @@ static void test_job_completion_waits_for_finish_cleanup(void)
         deneb_job_control_poll_finish_cleanup(&svc);
     }
     assert(!svc.finish_cleanup_pending);
+    assert(!svc.job_active);
     assert(svc.status.state == DENEB_PRINT_STATE_COMPLETE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
     assert(svc.status.source[0] == '\0');
