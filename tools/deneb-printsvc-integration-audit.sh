@@ -134,6 +134,7 @@ audit_source() {
     reject_pattern "${repo}/web/src/backend_zmq.c" 'deneb_print_status_label\(' "web backend does not bypass request-aware status labels"
     require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_status_state_transition_from_pair' "web backend gets lifecycle transition classification from shared status helper"
     require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_status_state_preheat_events' "web backend gets preheat transition classification from shared status helper"
+    reject_pattern "${repo}/web/src/backend_zmq.c" 'deneb_print_completion_state_label_with_req' "web backend does not duplicate completion classification"
 
     require_file "${repo}/web/src/api_print_job.c" "print job API source exists"
     require_pattern "${repo}/web/src/api_print_job.c" '#include "pending_job_registration\.h"' "print job API uses shared pending-job registration"
@@ -151,6 +152,10 @@ audit_source() {
     require_pattern "${repo}/web/src/api_printer.c" '#include "gcode_command\.h"' "printer API uses shared G-code command helper"
     require_pattern "${repo}/web/src/api_printer.c" '#include "manual_motion\.h"' "printer API uses shared motion helper"
     require_pattern "${repo}/web/src/api_printer.c" '#include "printer_status_response\.h"' "printer API uses shared status response helper"
+    require_file "${repo}/common/print/printer_status_response.c" "printer status response helper exists"
+    require_pattern "${repo}/common/print/printer_status_response.c" '#include "print_state_rules\.h"' "printer status response uses shared state rules"
+    require_pattern "${repo}/common/print/printer_status_response.c" 'deneb_print_has_temp_targets' "printer status response uses shared heat-target rules"
+    reject_pattern "${repo}/common/print/printer_status_response.c" '"pre_heat":\{"active":false\}' "printer status response does not hard-code bed preheat inactive"
 
     require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-integration-audit" \

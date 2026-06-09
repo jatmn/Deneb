@@ -4,6 +4,7 @@
 #include "json_string.h"
 #include "pending_job_file.h"
 #include "print_profile.h"
+#include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,13 @@ void deneb_printer_status_response_init(
 static const char *bool_text(int value)
 {
     return value ? "true" : "false";
+}
+
+static int bed_preheat_active(const deneb_printer_status_response_t *status)
+{
+    if (!status)
+        return 0;
+    return deneb_print_has_temp_targets(status->bed_temp_set, 0.0f);
 }
 
 static void resolve_filename(const deneb_printer_status_response_t *status,
@@ -98,8 +106,9 @@ int deneb_printer_status_response_format_um_bed(
 
     n = snprintf(out, out_sz,
                  "{\"temperature\":{\"current\":%.1f,\"target\":%.1f},"
-                 "\"type\":\"glass\",\"pre_heat\":{\"active\":false}}",
-                 status->bed_temp_cur, status->bed_temp_set);
+                 "\"type\":\"glass\",\"pre_heat\":{\"active\":%s}}",
+                 status->bed_temp_cur, status->bed_temp_set,
+                 bool_text(bed_preheat_active(status)));
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
     return n;
@@ -398,7 +407,7 @@ int deneb_printer_status_response_format_um_root(
         out, out_sz,
         "{"
         "\"bed\":{\"temperature\":{\"current\":%.1f,\"target\":%.1f},"
-        "\"type\":\"glass\",\"pre_heat\":{\"active\":false}},"
+        "\"type\":\"glass\",\"pre_heat\":{\"active\":%s}},"
         "\"topcap\":{\"present\":%s,\"temperature\":{\"current\":%.1f}},"
         "\"firmware\":\"%s\",\"machine_type\":\"%s\","
         "\"pcb_id\":%d,\"pcb_id_valid\":%s,"
@@ -428,6 +437,7 @@ int deneb_printer_status_response_format_um_root(
         "\"flow_reject\":%d,\"job_line_number\":%d}"
         "}",
         status->bed_temp_cur, status->bed_temp_set,
+        bool_text(bed_preheat_active(status)),
         bool_text(status->topcap_present), status->topcap_temp_cur,
         firmware, machine_type, status->pcb_id,
         bool_text(status->pcb_id_valid), nozzle_id_buf,

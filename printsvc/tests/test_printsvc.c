@@ -2316,6 +2316,7 @@ static void test_printer_status_response(void)
                &status, json, sizeof(json)) > 0);
     assert(strstr(json, "\"bed\":{\"temperature\":{\"current\":57.8") != NULL);
     assert(strstr(json, "\"target\":60.0") != NULL);
+    assert(strstr(json, "\"pre_heat\":{\"active\":true}") != NULL);
     assert(strstr(json, "\"topcap\":{\"present\":true") != NULL);
     assert(strstr(json, "\"temperature\":{\"current\":33.2}") != NULL);
     assert(strstr(json, "\"firmware\":\"Apr 30 2020 12:57:04\"") != NULL);
@@ -2351,7 +2352,12 @@ static void test_printer_status_response(void)
                &status, json, sizeof(json)) > 0);
     assert(strstr(json, "\"temperature\":{\"current\":57.8") != NULL);
     assert(strstr(json, "\"type\":\"glass\"") != NULL);
+    assert(strstr(json, "\"pre_heat\":{\"active\":true}") != NULL);
+    status.bed_temp_set = 0.0f;
+    assert(deneb_printer_status_response_format_um_bed(
+               &status, json, sizeof(json)) > 0);
     assert(strstr(json, "\"pre_heat\":{\"active\":false}") != NULL);
+    status.bed_temp_set = 60.0f;
     assert(deneb_printer_status_response_format_um_temperature(
                status.bed_temp_cur, status.bed_temp_set,
                json, sizeof(json)) > 0);

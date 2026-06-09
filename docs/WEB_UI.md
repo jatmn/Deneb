@@ -140,12 +140,12 @@ on real hardware remains open.
   scalar endpoints use the same native formatter owner for string escaping and
   numeric response bodies.
   UM printer root/status responses now delegate their top-level status fields,
-  temperature/position shape, and pending filename fallback to
-  `common/print/printer_status_response.*`. UM printer bed/head/extruder,
-  hotend, position, and feeder subresources use the same shared formatter
-  instead of endpoint-local JSON fragments. Material, LED, ambient, and Air
-  Manager compatibility responses now use the same native printer response
-  owner, including LED scalar defaults. `backend_zmq` now exposes a printer
+  temperature/position shape, bed preheat activity, and pending filename
+  fallback to `common/print/printer_status_response.*`. UM printer
+  bed/head/extruder, hotend, position, and feeder subresources use the same
+  shared formatter instead of endpoint-local JSON fragments. Material, LED,
+  ambient, and Air Manager compatibility responses now use the same native
+  printer response owner, including LED scalar defaults. `backend_zmq` now exposes a printer
   status response snapshot for these endpoints so `api_printer` no longer maps
   cached backend fields itself. Native firmware/version and topcap telemetry
   pass through that same backend/status formatter path when `deneb-printsvc`

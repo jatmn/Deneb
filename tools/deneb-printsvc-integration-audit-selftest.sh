@@ -72,6 +72,10 @@ const char *uses_label(void) { return deneb_print_status_label_with_req(1, 0, 0,
 int uses_transition(void) { deneb_status_transition_t t; return deneb_status_state_transition_from_pair(&t, 0, 0); }
 int uses_preheat(void) { return deneb_status_state_preheat_events(0, 0); }
 EOF
+    cat > "$root/common/print/printer_status_response.c" <<'EOF'
+#include "print_state_rules.h"
+int uses_heat_targets(void) { return deneb_print_has_temp_targets(60.0f, 0.0f); }
+EOF
     cat > "$root/web/src/api_print_job.c" <<'EOF'
 #include "pending_job_registration.h"
 #include "print_action_dispatch.h"
@@ -161,6 +165,20 @@ cat >> "$WEB_STATUS_BYPASS/web/src/backend_zmq.c" <<'EOF'
 const char *bad_status_label(void) { return deneb_print_status_label(1, 0, 0, 0); }
 EOF
 expect_failure rejects_web_status_label_bypass "$AUDIT" --source "$WEB_STATUS_BYPASS"
+
+WEB_COMPLETION_BYPASS="$TMP_DIR/source-web-completion-bypass"
+write_valid_source "$WEB_COMPLETION_BYPASS"
+cat >> "$WEB_COMPLETION_BYPASS/web/src/backend_zmq.c" <<'EOF'
+const char *bad_completion(void) { return deneb_print_completion_state_label_with_req(0, 1, 1, "Idle"); }
+EOF
+expect_failure rejects_web_completion_bypass "$AUDIT" --source "$WEB_COMPLETION_BYPASS"
+
+BED_PREHEAT_HARDCODE="$TMP_DIR/source-bed-preheat-hardcode"
+write_valid_source "$BED_PREHEAT_HARDCODE"
+cat > "$BED_PREHEAT_HARDCODE/common/print/printer_status_response.c" <<'EOF'
+const char *bad_bed_preheat(void) { return "\"pre_heat\":{\"active\":false}"; }
+EOF
+expect_failure rejects_bed_preheat_hardcode "$AUDIT" --source "$BED_PREHEAT_HARDCODE"
 
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"

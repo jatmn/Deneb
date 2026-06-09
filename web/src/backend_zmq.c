@@ -166,7 +166,7 @@ static char retained_print_filename[128];
 static deneb_print_stop_guard_t stop_guard;
 
 static void append_print_history(const printer_state_t *prev,
-                                 const printer_state_t *curr);
+                                 const char *completion_label);
 
 static void retain_backend_filename(const char *path)
 {
@@ -213,7 +213,7 @@ static void log_status_transition(const printer_state_t *curr)
         else
             fprintf(stderr, "deneb-api: print stopped before completion (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
 
-        append_print_history(&previous_state, curr);
+        append_print_history(&previous_state, transition.completion_label);
         deneb_print_preheat_tracker_init(&preheat_tracker);
         if (deneb_pending_job_file_clear_default() == 0)
             fprintf(stderr, "deneb-api: removed pending job metadata after print end\n");
@@ -242,7 +242,8 @@ static void log_status_transition(const printer_state_t *curr)
     previous_state = *curr;
 }
 
-static void append_print_history(const printer_state_t *prev, const printer_state_t *curr)
+static void append_print_history(const printer_state_t *prev,
+                                 const char *completion_label)
 {
     deneb_print_history_entry_t entry;
 
@@ -250,8 +251,8 @@ static void append_print_history(const printer_state_t *prev, const printer_stat
     entry.name = prev->filename;
     entry.uuid = prev->uuid;
     entry.source = prev->source;
-    entry.state = deneb_print_completion_state_label_with_req(
-        curr->has_error, prev->time_total, prev->time_left, curr->current_req);
+    entry.state = completion_label && completion_label[0] ?
+        completion_label : "stopped";
     entry.time_total = prev->time_total;
     entry.time_elapsed = deneb_print_elapsed_seconds(prev->time_total,
                                                      prev->time_left);
