@@ -400,7 +400,8 @@ Heat, motion, and macro verification require their snapshot status and printer
 root records so those phases prove backend state sampling, not only command
 acceptance.
 `--resources` requires initial/final memory, uptime, CPU, load, process RSS
-samples, and a bytes/elapsed/bytes-per-second throughput record.
+samples, native `deneb-printsvc` driver RSS when native mode is required, and
+a bytes/elapsed/bytes-per-second throughput record.
 `--boot-sync` requires a successful native-only route/status readiness record
 with elapsed and uptime-delta seconds, a scalar status value, and native-only
 status-body evidence.
@@ -445,8 +446,8 @@ summaries that put the full status response into
 `status=` or omit `status_body` native-route proof, missing natural-completion
 active or fast-completed idle status evidence, missing native local/USB job evidence, a non-native-only route diagnostic, a returned stock
 `print_service.py` process in a native run,
-missing stock `print_service.py` baseline evidence, and zero-throughput records
-are rejected.
+missing stock `print_service.py` baseline evidence, missing native
+`deneb-printsvc` RSS evidence, and zero-throughput records are rejected.
 The CLI selftest runs the actual `deneb-printsvc` binary entry points without
 opening the motion serial device, proving `--smoke-test` and the native
 `--local-job-smoke` accepted/aborted stop-state rows.

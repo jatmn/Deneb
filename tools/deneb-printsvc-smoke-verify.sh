@@ -49,7 +49,8 @@ Options:
   --complete-job
                Require a job run to leave the active-job API without abort
   --restart     Require native print-service restart recovery evidence
-  --resources   Require resource evidence: uptime, memory, CPU, and load samples
+  --resources   Require resource evidence: uptime, memory, CPU, load samples,
+               process RSS, and native driver RSS when --native is required
   --boot-sync   Require bounded boot/backend readiness evidence
   --client-proof
                Require observe-only local client API/bridge evidence
@@ -320,6 +321,10 @@ if [ "$REQUIRE_RESOURCES" = "1" ]; then
     require_pattern 'sample=final .*load1=' "final load sample present"
     require_pattern 'sample=initial pid=[0-9]+ .*vmrss_kb=' "initial process RSS sample present"
     require_pattern 'sample=final pid=[0-9]+ .*vmrss_kb=' "final process RSS sample present"
+    if [ "$REQUIRE_NATIVE" = "1" ]; then
+        require_pattern 'sample=initial pid=[0-9]+ .*vmrss_kb=[1-9][0-9]* .*command="?.*deneb-printsvc' "initial native driver RSS sample present"
+        require_pattern 'sample=final pid=[0-9]+ .*vmrss_kb=[1-9][0-9]* .*command="?.*deneb-printsvc' "final native driver RSS sample present"
+    fi
     require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[1-9][0-9]* .*rc=0' "resource mode includes print throughput"
 fi
 

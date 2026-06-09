@@ -1696,7 +1696,8 @@ Completed implementation slices:
   motion, and macro phases must include their snapshot status/root API samples
   so command acceptance alone cannot satisfy those live checks. Its
   resource mode requires initial/final memory, uptime, CPU, load, process RSS,
-  and completed-job throughput evidence so future stock/native live runs can
+  native `deneb-printsvc` driver RSS when native mode is required, and
+  completed-job throughput evidence so future stock/native live runs can
   satisfy the before/after measurement gate.
 - [x] Add a packaged shell-only comparator,
   `deneb-printsvc-smoke-compare`, so stock and native live summary files can be
@@ -1727,7 +1728,8 @@ Completed implementation slices:
   stop-safety phases, missing native local/USB job evidence, a route diagnostic
   that is not native-only, a stock `print_service.py` process returning in a
   native run, missing stock
-  `print_service.py` baseline evidence, zero-throughput records, and nonzero
+  `print_service.py` baseline evidence, missing native `deneb-printsvc` RSS
+  evidence, zero-throughput records, and nonzero
   throughput regressions under strict reduction mode. This does
   not replace live hardware evidence, but it prevents the packaged
   verifier/comparator gates from drifting away from the Section 8 smoke and

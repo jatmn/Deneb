@@ -461,6 +461,9 @@ expect_failure compare_rejects_missing_stock_python_baseline \
     "$TMP_DIR/stock-missing-python.summary" "$NATIVE_SUMMARY"
 
 grep -v 'command="/usr/bin/deneb-printsvc"' "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-driver-rss.summary"
+expect_failure verify_rejects_missing_native_driver_rss \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-driver-rss.summary"
 expect_failure compare_rejects_missing_native_driver_rss \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-driver-rss.summary"

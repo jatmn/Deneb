@@ -522,7 +522,8 @@ Material-profile USB import root/depth/suffix policy and the
   time, native
   active/stop-allowed flags during preheat and active jobs, heat/motion/macro status-root snapshot
   evidence, observe-only UM API/Cura cluster/Digital Factory bridge proof, and
-  resource/throughput evidence, so live runs can be checked on target without
+  resource/throughput evidence that includes native `deneb-printsvc` driver RSS
+  when native mode is required, so live runs can be checked on target without
   Python. Packages also include
   `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator
   that emits before/after deltas for system memory, driver-process RSS, raw
@@ -562,7 +563,8 @@ Material-profile USB import root/depth/suffix policy and the
   native local/USB job evidence, a non-native-only route diagnostic, a returned
   stock `print_service.py` process in a native run,
   missing stock
-  `print_service.py` baseline evidence, zero-throughput records, and nonzero
+  `print_service.py` baseline evidence, missing native `deneb-printsvc`
+  RSS evidence, zero-throughput records, and nonzero
   throughput regressions under strict reduction mode, so the
   evidence contract can be tested without Python or live hardware.
   `deneb-printsvc-cli-selftest` runs the actual native binary's `--smoke-test`
