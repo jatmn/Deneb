@@ -2,6 +2,9 @@
 #ifndef DENEB_PRINTSVC_MACRO_RUNNER_H
 #define DENEB_PRINTSVC_MACRO_RUNNER_H
 
+#define DENEB_MACRO_RUNNER_WINDOW_TIMEOUT_MS 60000LL
+#define DENEB_MACRO_RUNNER_HEATER_TIMEOUT_MS 300000LL
+
 typedef struct {
     void *ctx;
     int (*abort_requested)(void *ctx);

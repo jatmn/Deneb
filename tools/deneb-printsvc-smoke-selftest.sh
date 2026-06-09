@@ -104,7 +104,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:07Z phase=local-job-accepted deneb_state=pre_print native_active=true native_stop_allowed=true source=USB rc=0
 2026-06-08T00:00:07Z phase=local-job-abort rc=0
 2026-06-08T00:00:07Z phase=local-job-aborted-state deneb_state=idle native_active=false native_stop_allowed=false source=USB rc=0
-2026-06-08T00:00:08Z phase=job-safety kind=physical axes=job_defined required_home=z_home travel=user_supplied_gcode_until_abort stop_conditions=endstop_temperature_or_unexpected_motion rc=0
+2026-06-08T00:00:08Z phase=job-safety kind=physical axes=XYZ required_home=home travel=pause_resume_restore_and_user_supplied_gcode_until_abort stop_conditions=endstop_temperature_or_unexpected_motion rc=0
 2026-06-08T00:00:08Z phase=job-start kind=multipart path=/tmp/job.gcode rc=0
 2026-06-08T00:00:08Z snapshot=job-running
 2026-06-08T00:00:08Z phase=status-job-running kind=api method=GET path=/printer/status rc=0 status=printing body=printing
@@ -239,6 +239,12 @@ sed '/phase=printer-cura-job-running /s/native_stop_allowed:true/native_stop_all
 expect_failure compare_rejects_missing_one_active_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-one-active-stop.summary"
+
+sed '/phase=job-safety /s/axes=XYZ required_home=home/axes=job_defined required_home=z_home/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-pause-resume-z-home-only.summary"
+expect_failure verify_rejects_pause_resume_without_all_axis_home \
+    sh "$VERIFY" --native --job --pause-resume \
+    "$TMP_DIR/native-pause-resume-z-home-only.summary"
 
 sed '/phase=printer-job-completed /s/native_stop_allowed:false/native_stop_allowed:true/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-one-inactive-stop.summary"
@@ -475,15 +481,16 @@ if grep -Eq '^G1 [XYE]' "$TMP_DIR/z-active.gcode"; then
     echo "FAIL: generated active fixture moves X/Y/E axes" >&2
     exit 1
 fi
-if [ "$(grep -c '^G1 Z-0\.20 F30$' "$TMP_DIR/z-active.gcode")" != "36" ]; then
+if ! grep -qx 'G1 Z206.8 F30' "$TMP_DIR/z-active.gcode" ||
+   ! grep -qx 'G1 Z199.8 F30' "$TMP_DIR/z-active.gcode"; then
     cat "$TMP_DIR/z-active.gcode"
     echo "FAIL: generated active fixture does not move away from homed Z max" >&2
     exit 1
 fi
-if ! grep -qx 'G91' "$TMP_DIR/z-active.gcode" ||
-   ! grep -qx 'G90' "$TMP_DIR/z-active.gcode"; then
+if ! grep -qx 'G90' "$TMP_DIR/z-active.gcode" ||
+   grep -qx 'G91' "$TMP_DIR/z-active.gcode"; then
     cat "$TMP_DIR/z-active.gcode"
-    echo "FAIL: generated active fixture missing relative/absolute guards" >&2
+    echo "FAIL: generated active fixture must keep XYZ in absolute mode" >&2
     exit 1
 fi
 if ! grep -Eq 'phase=make-active-fixture .*rc=0 .*command=G1_Z' \
@@ -498,6 +505,18 @@ expect_failure smoke_rejects_oversized_active_fixture \
     sh "$SMOKE" --make-active-fixture "$TMP_DIR/z-active-too-large.gcode" 481 \
     --summary "$TMP_DIR/z-active-too-large.summary" \
     --log "$TMP_DIR/z-active-too-large.log"
+
+touch "$TMP_DIR/z-active.gcode"
+expect_failure smoke_rejects_pause_resume_without_all_axis_home \
+    sh "$SMOKE" --physical-ok --job "$TMP_DIR/z-active.gcode" --pause-resume \
+    --summary "$TMP_DIR/pause-resume-z-home-only.summary" \
+    --log "$TMP_DIR/pause-resume-z-home-only.log"
+if ! grep -Eq 'phase=pause-resume-safety-gate .*reason=requires_all_axis_home' \
+    "$TMP_DIR/pause-resume-z-home-only.summary"; then
+    cat "$TMP_DIR/pause-resume-z-home-only.summary"
+    echo "FAIL: pause/resume missing all-axis-home safety summary" >&2
+    exit 1
+fi
 
 sh "$SMOKE" --make-preheat-abort-fixture "$TMP_DIR/preheat-abort.gcode" \
     --summary "$TMP_DIR/preheat-abort-fixture.summary" \

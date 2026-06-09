@@ -328,13 +328,15 @@ write_active_fixture() {
         printf '; Deneb native print-service active smoke fixture\n'
         printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
         printf '; Requires the smoke harness pre-home step; moves only away from homed Z max.\n'
-        printf 'G91\n'
+        printf '; Keep XYZ in absolute mode so pause/resume matches Cura-style jobs.\n'
+        printf 'G90\n'
         i=1
         while [ "$i" -le "$cycle_count" ]; do
-            printf 'G1 Z-0.20 F30\n'
+            z_tenths=$((2070 - (i * 2)))
+            printf 'G1 Z%d.%01d F30\n' \
+                $((z_tenths / 10)) $((z_tenths % 10))
             i=$((i + 1))
         done
-        printf 'G90\n'
         printf 'M114\n'
     } >"$path" || return 1
     return 0
@@ -424,6 +426,13 @@ if physical_phase_requested && [ "$PHYSICAL_OK" != "1" ]; then
     say "ERROR: physical printer phase requested without --physical-ok"
     say "Refusing to heat, home, move axes, start jobs, or run macros without an explicit supervised-machine acknowledgement."
     summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
+    exit 2
+fi
+
+if [ "$RUN_JOB" = "1" ] && [ "$RUN_PAUSE_RESUME" = "1" ] &&
+   [ "$PREHOME_ACTION" != "home" ]; then
+    say "ERROR: --job --pause-resume moves X/Y during pause and resume; use --prehome-action home"
+    summary "phase=pause-resume-safety-gate rc=2 reason=requires_all_axis_home"
     exit 2
 fi
 
@@ -624,6 +633,58 @@ macro_safety_plan() {
     esac
 }
 
+wait_for_prehome_idle() {
+    label="$1"
+    timeout="${2:-45}"
+    elapsed=0
+    interval=2
+    status_file="/tmp/deneb-printsvc-smoke-prehome-status.$$"
+    printer_file="/tmp/deneb-printsvc-smoke-prehome-printer.$$"
+
+    while [ "$elapsed" -le "$timeout" ]; do
+        http_get_capture /printer/status "$status_file"
+        status_rc=$?
+        status_raw="$(cat "$status_file" 2>/dev/null || true)"
+        status_value="$(extract_status_value "$status_raw")"
+        status_body="$(sanitize_summary_value "$status_raw")"
+        http_get_capture /printer "$printer_file"
+        printer_rc=$?
+        printer_raw="$(cat "$printer_file" 2>/dev/null || true)"
+        printer_body="$(sanitize_summary_value "$printer_raw")"
+
+        if [ -s "$status_file" ]; then
+            cat "$status_file" >>"$LOG"
+            printf '\n' >>"$LOG"
+        fi
+        if [ -s "$printer_file" ]; then
+            cat "$printer_file" >>"$LOG"
+            printf '\n' >>"$LOG"
+        fi
+
+        if [ "$status_value" = "error" ] ||
+           printf '%s' "$printer_raw" | grep -q '"has_error":true'; then
+            rm -f "$status_file" "$printer_file"
+            summary "phase=${label}-ready elapsed=$elapsed status=${status_value:-unknown} status_rc=$status_rc status_body=${status_body:-unknown} printer_rc=$printer_rc printer_body=${printer_body:-unknown} rc=1 reason=prehome_error"
+            return 1
+        fi
+
+        if [ "$status_rc" = "0" ] && [ "$printer_rc" = "0" ] &&
+           [ "$status_value" = "idle" ] &&
+           printf '%s' "$printer_raw" | grep -q '"has_error":false'; then
+            rm -f "$status_file" "$printer_file"
+            summary "phase=${label}-ready elapsed=$elapsed status=$status_value rc=0"
+            return 0
+        fi
+
+        rm -f "$status_file" "$printer_file"
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+
+    summary "phase=${label}-ready elapsed=$elapsed status=${status_value:-unknown} status_rc=${status_rc:-unknown} status_body=${status_body:-unknown} printer_rc=${printer_rc:-unknown} printer_body=${printer_body:-unknown} rc=1 reason=prehome_timeout"
+    return 1
+}
+
 guarded_prehome() {
     label="$1"
 
@@ -642,7 +703,7 @@ guarded_prehome() {
     rc=$?
     summary "phase=${label} action=${PREHOME_ACTION} rc=$rc reason=pre_physical_home"
     [ "$rc" = "0" ] || return "$rc"
-    sleep 5
+    wait_for_prehome_idle "$label" 45 || return $?
     snapshot "$label"
     return 0
 }
@@ -1097,7 +1158,11 @@ if [ "$RUN_JOB" = "1" ]; then
 fi
 
 if [ "$RUN_JOB" = "1" ]; then
-    physical_safety_plan "job" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
+    if [ "$RUN_PAUSE_RESUME" = "1" ]; then
+        physical_safety_plan "job" "XYZ" "home" "pause_resume_restore_and_user_supplied_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
+    else
+        physical_safety_plan "job" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
+    fi
     guarded_prehome "job-prehome" || exit $?
     say "job-start: multipart upload $JOB_PATH"
     multipart_post "${API_BASE}/print_job" "$JOB_PATH" \

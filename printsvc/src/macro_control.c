@@ -77,7 +77,7 @@ static int macro_control_poll_motion_cb(void *ctx)
     rc = deneb_print_service_poll_motion(svc);
     if (rc < 0 && svc->status.error.code == DENEB_ERROR_SERIAL)
         return DENEB_MOTION_SEND_SERIAL;
-    return rc;
+    return rc < 0 ? rc : 0;
 }
 
 static int macro_control_wait_for_heater_cb(void *ctx, int wait_bed,

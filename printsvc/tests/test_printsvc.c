@@ -1136,7 +1136,7 @@ static int macro_runner_fake_abort(void *ctx)
 static int macro_runner_fake_wait(void *ctx, long long timeout_ms)
 {
     macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
-    assert(timeout_ms == 5000);
+    assert(timeout_ms == DENEB_MACRO_RUNNER_WINDOW_TIMEOUT_MS);
     return fake->fail_wait ? -1 : 0;
 }
 
@@ -1166,7 +1166,7 @@ static int macro_runner_fake_heater_wait(void *ctx, int wait_bed,
                                          long long timeout_ms)
 {
     macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
-    assert(timeout_ms == 300000);
+    assert(timeout_ms == DENEB_MACRO_RUNNER_HEATER_TIMEOUT_MS);
     fake->heater_waits++;
     fake->last_wait_bed = wait_bed;
     fake->last_wait_nozzle = wait_nozzle;

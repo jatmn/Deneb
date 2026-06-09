@@ -266,7 +266,11 @@ if [ "$REQUIRE_RESOURCES" = "1" ]; then
 fi
 
 if [ "$REQUIRE_JOB" = "1" ]; then
-    require_pattern ' phase=job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "job physical safety plan present"
+    if [ "$REQUIRE_PAUSE_RESUME" = "1" ]; then
+        require_pattern ' phase=job-safety .*kind=physical .*axes=XYZ .*required_home=home .*rc=0' "pause/resume job physical safety plan uses all-axis home"
+    else
+        require_pattern ' phase=job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "job physical safety plan present"
+    fi
     require_pattern ' phase=job-start .*rc=0' "job start passed"
     require_pattern ' snapshot=job-running' "job-running snapshot present"
     require_pattern ' phase=status-job-running .*rc=0 .*status=printing' "job-running status is printing"
