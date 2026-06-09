@@ -14,59 +14,10 @@
 #include "print_backend_route.h"
 #include "print_job_summary.h"
 #include "printer_status_response.h"
+#include "status_state.h"
 
 /* Printer state, updated from ZMQ SUB status stream */
-typedef struct {
-    /* Temperatures */
-    float nozzle_temp_cur;
-    float nozzle_temp_set;
-    float bed_temp_cur;
-    float bed_temp_set;
-    float topcap_temp_cur;
-    bool topcap_present;
-
-    /* Position */
-    float pos_x;
-    float pos_y;
-    float pos_z;
-    float pos_e;
-
-    /* Print job */
-    char filename[128];
-    char source[32];
-    char uuid[64];
-    char firmware[64];
-    char machine_type[16];
-    char error_key[32];
-    char error_category[32];
-    char error_detail[128];
-    char flow_last_response[128];
-    int pcb_id;
-    bool pcb_id_valid;
-    int flow_inflight;
-    int flow_sent;
-    int flow_ack;
-    int flow_resend;
-    int flow_reject;
-    int job_line_number;
-    int time_total;      /* seconds */
-    int time_left;       /* seconds (from ZMQ field "Tleft") */
-    float progress;      /* 0-100 */
-
-    /* State */
-    bool is_printing;
-    bool is_paused;
-    bool has_error;
-    bool native_active;
-    bool native_stop_allowed;
-    bool has_native_active;
-    bool has_native_stop_allowed;
-    char current_req[32];
-
-    /* Connection */
-    bool connected;
-    uint32_t last_update_ms;
-} printer_state_t;
+typedef deneb_backend_status_state_t printer_state_t;
 
 /* Initialize ZMQ connections. Returns 0 on success. */
 int backend_zmq_init(void);

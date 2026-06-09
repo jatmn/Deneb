@@ -209,6 +209,7 @@ set(DENEB_SOURCES
     ../common/print/print_string.c
     ../common/print/print_timing_rules.c
     ../common/print/status_payload.c
+    ../common/print/status_state.c
     ../common/print/system_language.c
     ${DRIVER_SOURCES}
     ${DF_BRIDGE_SOURCES}

@@ -160,6 +160,10 @@ Cura/pending job identity defaults. UM API and Cura cluster print-job action
 bodies now share the same native parser for plain or JSON pause/resume/print,
 continue/force/start, abort/cancel, and stop requests before commands are sent.
 Touchscreen/web macro, multi-line G-code, and job-start callers now use backend
-helper functions that own stock frame formatting. The native `deneb-printsvc`
+helper functions that own stock frame formatting. Touchscreen and web/API ZMQ
+status consumers now also share `common/print/status_state.*` for applying
+parsed payload fields, resolving retained filenames, clearing stop guards after
+idle cleanup, normalizing timing, and deriving active/preparing/stoppable
+context flags. The native `deneb-printsvc`
 milestone should keep collapsing remaining direct clients toward shared Deneb
 print-control helpers or a single native service API.

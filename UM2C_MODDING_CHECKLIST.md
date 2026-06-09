@@ -870,6 +870,11 @@ Completed implementation slices:
   `common/print/status_payload.*` so LCD status rendering, LCD backend status
   parsing, and web backend status parsing do not each hand-build the same
   print context when resolving retained job names.
+- [x] Move native ZMQ status-to-backend-state application into
+  `common/print/status_state.*` so LCD `backend_comm` and web `backend_zmq`
+  share parsed-field copying, retained filename resolution, stop-guard cleanup,
+  timing normalization, and active/preparing/stoppable context helpers instead
+  of reinterpreting the same status payload independently.
 - [x] Move uploaded print-file metadata sniffing into
   `common/print/print_job_file.*` so Cura upload registration, conflict
   detection, and future native print-service entry points share one parser for

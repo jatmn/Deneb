@@ -109,8 +109,12 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   Conflict/preheat action bridges, pending-job metadata, print-profile defaults,
   uploaded-file metadata parsing, command-level pause/resume control,
   service-context runtime wiring, service-level command handling, and printer
-  hostname/GUID identity reads have started moving into shared native helpers instead of embedded
-  Python/Gershwin launchers.
+  hostname/GUID identity reads have started moving into shared native helpers.
+  LCD/web ZMQ status consumers now also share
+  `common/print/status_state.*` for status-to-state application, retained
+  filename cleanup, stop-guard cleanup, timing normalization, and
+  active/preparing/stoppable context derivation instead of carrying separate
+  copies beside each backend or embedded Python/Gershwin launchers.
 - Do not preserve awkward compatibility layers just because they match the
   current Python driver's shape. Any shim kept for migration needs explicit
   removal criteria and tests proving the final Deneb-owned contract is cleaner

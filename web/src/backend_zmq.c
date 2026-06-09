@@ -22,7 +22,7 @@
 #include "print_history.h"
 #include "print_job_file.h"
 #include "print_state_rules.h"
-#include "status_payload.h"
+#include "status_state.h"
 
 #ifdef BACKEND_ZMQ_STUB
 
@@ -167,32 +167,6 @@ static deneb_print_stop_guard_t stop_guard;
 
 static void append_print_history(const printer_state_t *prev,
                                  const printer_state_t *curr);
-
-static int state_has_print_context(const printer_state_t *s)
-{
-    if (!s)
-        return 0;
-
-    return deneb_print_fields_have_active_context(
-        s->current_req, s->filename, s->time_total, s->time_left,
-        s->bed_temp_set, s->nozzle_temp_set, s->is_printing, s->is_paused,
-        deneb_print_file_is_candidate(s->filename));
-}
-
-static deneb_status_filename_context_t filename_context_from_state(
-    const printer_state_t *s)
-{
-    return deneb_status_filename_context_from_fields(
-        s ? s->current_req : NULL,
-        s ? s->filename : NULL,
-        s ? s->uuid : NULL,
-        s ? s->time_total : 0,
-        s ? s->time_left : 0,
-        s ? s->bed_temp_set : 0.0f,
-        s ? s->nozzle_temp_set : 0.0f,
-        s ? s->is_printing : 0,
-        s ? s->is_paused : 0);
-}
 
 static void retain_backend_filename(const char *path)
 {
@@ -433,101 +407,20 @@ void backend_zmq_poll(void)
         /* Skip topic prefix "10001<" */
         const char *json = memchr(data, '<', len);
         if (json) {
-            deneb_status_payload_t payload;
             printer_state_t prev = state;
+            struct timespec ts;
+            uint32_t now_ms;
 
             json++; /* skip the '<' */
-            if (deneb_status_payload_parse(json, &payload) != 0) {
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+            if (deneb_status_state_apply_json(&state, &prev, json,
+                                              retained_print_filename,
+                                              sizeof(retained_print_filename),
+                                              &stop_guard, now_ms) != 0) {
                 zmq_msg_close(&msg);
                 continue;
             }
-
-            state.nozzle_temp_cur = payload.nozzle_temp_cur;
-            state.nozzle_temp_set = payload.nozzle_temp_set;
-            state.bed_temp_cur = payload.bed_temp_cur;
-            state.bed_temp_set = payload.bed_temp_set;
-            state.pos_x = payload.pos_x;
-            state.pos_y = payload.pos_y;
-            state.pos_z = payload.pos_z;
-            state.pos_e = payload.pos_e;
-            state.time_total = payload.time_total;
-            state.time_left = payload.time_left;
-            state.progress = payload.progress;
-            snprintf(state.source, sizeof(state.source), "%s", payload.source);
-            snprintf(state.uuid, sizeof(state.uuid), "%s", payload.uuid);
-            snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
-            snprintf(state.firmware, sizeof(state.firmware), "%s",
-                     payload.firmware);
-            snprintf(state.machine_type, sizeof(state.machine_type), "%s",
-                     payload.machine_type);
-            snprintf(state.error_key, sizeof(state.error_key), "%s",
-                     payload.error_key);
-            snprintf(state.error_category, sizeof(state.error_category), "%s",
-                     payload.error_category);
-            snprintf(state.error_detail, sizeof(state.error_detail), "%s",
-                     payload.error_detail);
-            snprintf(state.flow_last_response,
-                     sizeof(state.flow_last_response), "%s",
-                     payload.flow_last_response);
-            state.pcb_id = payload.pcb_id;
-            state.pcb_id_valid = payload.pcb_id_valid != 0;
-            state.flow_inflight = payload.flow_inflight;
-            state.flow_sent = payload.flow_sent;
-            state.flow_ack = payload.flow_ack;
-            state.flow_resend = payload.flow_resend;
-            state.flow_reject = payload.flow_reject;
-            state.job_line_number = payload.job_line_number;
-            state.topcap_temp_cur = payload.topcap_temp_cur;
-            state.topcap_present = payload.topcap_present != 0;
-            state.is_paused = payload.is_paused != 0;
-            state.is_printing = payload.is_printing != 0;
-            state.native_active = payload.native_active != 0;
-            state.native_stop_allowed = payload.native_stop_allowed != 0;
-            state.has_native_active = payload.has_native_active != 0;
-            state.has_native_stop_allowed =
-                payload.has_native_stop_allowed != 0;
-            {
-                deneb_status_filename_context_t curr_ctx =
-                    filename_context_from_state(&state);
-                deneb_status_filename_context_t prev_ctx =
-                    filename_context_from_state(&prev);
-                deneb_status_payload_resolve_filename(&payload,
-                                                      &curr_ctx,
-                                                      &prev_ctx,
-                                                      retained_print_filename,
-                                                      sizeof(retained_print_filename),
-                                                      state.filename,
-                                                      sizeof(state.filename));
-            }
-            deneb_print_normalize_timing(state.is_printing, state.is_paused,
-                                         &state.time_total, &state.time_left,
-                                         &state.progress);
-            state.has_error = payload.has_error != 0;
-
-            {
-                deneb_status_filename_context_t curr_ctx =
-                    filename_context_from_state(&state);
-                deneb_status_filename_context_t prev_ctx =
-                    filename_context_from_state(&prev);
-                if (!deneb_status_payload_should_hold_filename(
-                        &curr_ctx, &prev_ctx) &&
-                state.time_total <= 0 &&
-                state.time_left <= 0 &&
-                state.bed_temp_set <= 0.0f &&
-                state.nozzle_temp_set <= 0.0f &&
-                state.current_req[0] == '\0' &&
-                !state.is_printing &&
-                !state.is_paused &&
-                !prev.is_printing &&
-                !prev.is_paused) {
-                    deneb_print_stop_guard_clear(&stop_guard);
-                }
-            }
-
-            state.connected = true;
-            struct timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            state.last_update_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 
             log_status_transition(&state);
             update_status_cache();
@@ -793,7 +686,7 @@ int backend_zmq_stop_print(void)
 
     long long now_ms = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
     if (deneb_print_stop_guard_inflight(&stop_guard, now_ms,
-                                        state_has_print_context(&state)))
+                                        deneb_status_state_has_print_context(&state)))
         return 0;
     if (!deneb_print_stop_guard_begin(&stop_guard, now_ms))
         return 0;
