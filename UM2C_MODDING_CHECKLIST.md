@@ -570,17 +570,24 @@ deviation, not hidden under "stock parity."
   Cura cluster printers/print_jobs/materials, and Digital Factory bridge status
   on hardware; it does not yet prove LCD UI interaction, Web UI workflows, Cura
   upload/start/abort, or Digital Factory job lifecycle behavior.
-- [ ] Finish the Deneb integration audit for code that patched around the stock
+- [x] Finish the Deneb integration audit for code that patched around the stock
   Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`,
   `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata
   files, direct macro calls, direct raw G-code calls, and duplicated status
   classification. Record each remaining shim's owner and removal condition.
+  The tracked artifact is
+  [docs/PRINTSVC_INTEGRATION_AUDIT.md](docs/PRINTSVC_INTEGRATION_AUDIT.md),
+  and `deneb-printsvc-integration-audit` plus its negative-fixture selftest now
+  gate source, package, archive, installer, and CTest paths.
 - [ ] Finish deciding, per integration, whether the behavior remains a client of
   native `deneb-printsvc`, moves into `deneb-printsvc`, or belongs in a shared
   Deneb print-control library/API.
 - [ ] Avoid preserving patchwork solely for compatibility with the stock
   driver's shape; compatibility shims are acceptable only as temporary migration
-  boundaries with explicit removal criteria.
+  boundaries with explicit removal criteria. The integration audit now records
+  each boundary and removal condition, but this remains open until the listed
+  hardware client flows prove the boundaries are thin adapters rather than
+  hidden compatibility behavior.
 - [x] Create shared Deneb print-control helpers for status classification,
   pending-job metadata, command formatting, macro lookup, safe motion policy,
   heat-state decisions, pause/resume/abort semantics, and error mapping.

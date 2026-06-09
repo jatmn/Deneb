@@ -191,6 +191,18 @@ if(SH_EXECUTABLE)
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-native-audit-selftest.sh"
     )
     add_test(
+        NAME deneb-printsvc-integration-audit
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-integration-audit.sh"
+                --source
+                "${CMAKE_SOURCE_DIR}/.."
+    )
+    add_test(
+        NAME deneb-printsvc-integration-audit-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-integration-audit-selftest.sh"
+    )
+    add_test(
         NAME deneb-printsvc-release-gate-selftest
         COMMAND "${SH_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-release-gate-selftest.sh"

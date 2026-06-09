@@ -121,8 +121,10 @@ tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-init-selftest.sh" > "${STAGING_D
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-release-gate-selftest.sh" > "${STAGING_DIR}/deneb-printsvc-release-gate-selftest"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-native-audit.sh" > "${STAGING_DIR}/deneb-printsvc-native-audit"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-native-audit-selftest.sh" > "${STAGING_DIR}/deneb-printsvc-native-audit-selftest"
+tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-integration-audit.sh" > "${STAGING_DIR}/deneb-printsvc-integration-audit"
+tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-integration-audit-selftest.sh" > "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest"
 chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init"
-chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest" "${STAGING_DIR}/deneb-printsvc-cli-selftest" "${STAGING_DIR}/deneb-printsvc-init-selftest" "${STAGING_DIR}/deneb-printsvc-release-gate-selftest" "${STAGING_DIR}/deneb-printsvc-native-audit" "${STAGING_DIR}/deneb-printsvc-native-audit-selftest"
+chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest" "${STAGING_DIR}/deneb-printsvc-cli-selftest" "${STAGING_DIR}/deneb-printsvc-init-selftest" "${STAGING_DIR}/deneb-printsvc-release-gate-selftest" "${STAGING_DIR}/deneb-printsvc-native-audit" "${STAGING_DIR}/deneb-printsvc-native-audit-selftest" "${STAGING_DIR}/deneb-printsvc-integration-audit" "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest"
 
 if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
     if [ -z "$PRINTSVC_STOCK_SUMMARY" ] || [ -z "$PRINTSVC_NATIVE_SUMMARY" ]; then
@@ -195,6 +197,8 @@ contents:
   deneb-printsvc-release-gate-selftest - Shell release-channel gate selftest
   deneb-printsvc-native-audit - Shell static/package de-Python regression audit
   deneb-printsvc-native-audit-selftest - Shell negative-fixture selftest for native audit
+  deneb-printsvc-integration-audit - Shell static client-integration ownership audit
+  deneb-printsvc-integration-audit-selftest - Shell negative-fixture selftest for integration audit
   deneb-printsvc-macros/ - Deneb-owned native print-service macro defaults
   lighttpd          - Static web server and API reverse proxy (MIPS)
   deneb-api.init    - OpenWrt procd init script for deneb-api
@@ -229,6 +233,9 @@ DENEB_REPO_ROOT="$REPO_ROOT" "${STAGING_DIR}/deneb-printsvc-release-gate-selftes
 "${STAGING_DIR}/deneb-printsvc-native-audit" --source "$REPO_ROOT"
 "${STAGING_DIR}/deneb-printsvc-native-audit" --package-dir "$STAGING_DIR"
 "${STAGING_DIR}/deneb-printsvc-native-audit-selftest"
+"${STAGING_DIR}/deneb-printsvc-integration-audit" --source "$REPO_ROOT"
+"${STAGING_DIR}/deneb-printsvc-integration-audit" --package-dir "$STAGING_DIR"
+"${STAGING_DIR}/deneb-printsvc-integration-audit-selftest"
 DENEB_REPO_ROOT="$STAGING_DIR" \
 DENEB_PRINTSVC_INIT="${STAGING_DIR}/deneb-printsvc.init" \
 DENEB_INSTALLER="${STAGING_DIR}/update.sh" \
@@ -237,7 +244,7 @@ DENEB_INSTALLER="${STAGING_DIR}/update.sh" \
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
-    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
+    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
 
 tar tf "$OUTPUT_IMG" > "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)update.sh$' "${STAGING_DIR}/package-files.txt"
@@ -252,11 +259,14 @@ grep -Eq '(^|/)deneb-printsvc-init-selftest$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-release-gate-selftest$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-native-audit$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-native-audit-selftest$' "${STAGING_DIR}/package-files.txt"
+grep -Eq '(^|/)deneb-printsvc-integration-audit$' "${STAGING_DIR}/package-files.txt"
+grep -Eq '(^|/)deneb-printsvc-integration-audit-selftest$' "${STAGING_DIR}/package-files.txt"
 tar -xOf "$OUTPUT_IMG" manifest.txt > "${STAGING_DIR}/package-manifest.txt"
 grep -Eq "^channel: ${DENEB_RELEASE_CHANNEL}$" "${STAGING_DIR}/package-manifest.txt"
 grep -Eq '^native_printsvc: experimental$' "${STAGING_DIR}/package-manifest.txt"
 grep -Fx "native_printsvc_release_gate: ${PRINTSVC_RELEASE_GATE}" "${STAGING_DIR}/package-manifest.txt" >/dev/null
 "${STAGING_DIR}/deneb-printsvc-native-audit" --archive "$OUTPUT_IMG"
+"${STAGING_DIR}/deneb-printsvc-integration-audit" --archive "$OUTPUT_IMG"
 if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' "${STAGING_DIR}/package-files.txt"; then
     echo "ERROR: Python driver artifact found in Deneb package archive" >&2
     exit 1

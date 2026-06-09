@@ -111,5 +111,9 @@ is not proven by a parser or harness existing.
   Cura cluster status/material/job-list endpoints, and Digital Factory bridge
   status; it does not prove LCD/Web UI user flows, Cura upload/start/abort, or
   Digital Factory job lifecycle.
+- Use [PRINTSVC_INTEGRATION_AUDIT.md](PRINTSVC_INTEGRATION_AUDIT.md) as the
+  owner/removal-condition map for patched stock-driver client boundaries. The
+  static integration audit is now gated in source/package/archive/installer
+  paths, but it is not live parity evidence by itself.
 - Regenerate supervised Cura, representative completion, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort and pause/resume with a real representative print before broad parity is claimed; the current physical evidence is bounded Z-only plus low-temperature preheat.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

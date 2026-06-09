@@ -1,0 +1,149 @@
+#!/bin/sh
+# SPDX-License-Identifier: MPL-2.0
+#
+# Negative fixtures for deneb-printsvc-integration-audit.
+
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TMP_DIR="${TMPDIR:-/tmp}/deneb-integration-audit-selftest.$$"
+AUDIT="${SCRIPT_DIR}/deneb-printsvc-integration-audit.sh"
+
+if [ ! -f "$AUDIT" ]; then
+    AUDIT="${SCRIPT_DIR}/deneb-printsvc-integration-audit"
+fi
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+
+trap cleanup EXIT HUP INT TERM
+mkdir -p "$TMP_DIR"
+
+expect_failure() {
+    label="$1"
+    shift
+    if "$@" > "$TMP_DIR/$label.out" 2>&1; then
+        cat "$TMP_DIR/$label.out"
+        echo "FAIL: expected integration audit failure: $label" >&2
+        exit 1
+    fi
+    echo "PASS: expected integration audit failure: $label"
+}
+
+write_valid_source() {
+    root="$1"
+    mkdir -p "$root/docs" "$root/ui/src" "$root/web/src" "$root/printsvc/src" "$root/common/print" "$root/tools" "$root/ui/installer"
+    cat > "$root/docs/PRINTSVC_INTEGRATION_AUDIT.md" <<'EOF'
+| Integration | Native owner | Compatibility boundary | Removal condition | Evidence | Remaining proof |
+| --- | --- | --- | --- | --- | --- |
+| LCD `backend_comm` | owner | boundary | removal | evidence | proof |
+| web `backend_zmq` | owner | boundary | removal | evidence | proof |
+| REST `api_print_job` | owner | boundary | removal | evidence | proof |
+| Cura `api_cluster` | owner | boundary | removal | evidence | proof |
+| REST `api_printer` | owner | boundary | removal | evidence | proof |
+| conflict and preheat bridges | owner | boundary | removal | evidence | proof |
+| pending-job metadata files | owner | boundary | removal | evidence | proof |
+| direct macro calls | owner | boundary | removal | evidence | proof |
+| direct raw G-code calls | owner | boundary | removal | evidence | proof |
+| duplicated status classification | owner | boundary | removal | evidence | proof |
+| diagnostics and error mapping | owner | boundary | removal | evidence | proof |
+| native `deneb-printsvc` callers | owner | boundary | removal | evidence | proof |
+EOF
+    cat > "$root/ui/src/backend_comm.c" <<'EOF'
+#include "print_backend_route.h"
+#include "status_state.h"
+#include "pending_job_dispatch.h"
+#include "pending_job_file.h"
+#include "command_format.h"
+#include "print_state_rules.h"
+EOF
+    cat > "$root/web/src/backend_zmq.c" <<'EOF'
+#include "print_backend_route.h"
+#include "status_state.h"
+#include "pending_job_dispatch.h"
+#include "print_history.h"
+#include "print_state_rules.h"
+EOF
+    cat > "$root/web/src/api_print_job.c" <<'EOF'
+#include "pending_job_registration.h"
+#include "print_action_dispatch.h"
+#include "print_job_summary.h"
+#include "print_state_rules.h"
+EOF
+    cat > "$root/web/src/api_cluster.c" <<'EOF'
+#include "pending_job_file.h"
+#include "print_job_summary.h"
+#include "print_profile.h"
+#include "print_state_rules.h"
+EOF
+    cat > "$root/web/src/api_printer.c" <<'EOF'
+#include "gcode_command.h"
+#include "manual_motion.h"
+#include "printer_status_response.h"
+EOF
+    cat > "$root/ui/build-package.sh" <<'EOF'
+deneb-printsvc-integration-audit
+EOF
+    cat > "$root/ui/installer/update.sh" <<'EOF'
+deneb-printsvc-integration-audit
+EOF
+    cat > "$root/printsvc/CMakeLists.txt" <<'EOF'
+deneb-printsvc-integration-audit
+EOF
+    touch "$root/common/print/placeholder.c" "$root/printsvc/src/placeholder.c" "$root/tools/placeholder.sh"
+}
+
+write_valid_package() {
+    root="$1"
+    mkdir -p "$root"
+    touch "$root/deneb-printsvc-integration-audit"
+}
+
+VALID_SOURCE="$TMP_DIR/source-valid"
+write_valid_source "$VALID_SOURCE"
+"$AUDIT" --source "$VALID_SOURCE" >/tmp/deneb-integration-audit-selftest-source-valid.log
+echo "PASS: valid source fixture accepted"
+
+MISSING_ROW="$TMP_DIR/source-missing-row"
+write_valid_source "$MISSING_ROW"
+grep -v 'REST `api_printer`' "$MISSING_ROW/docs/PRINTSVC_INTEGRATION_AUDIT.md" > "$MISSING_ROW/docs/audit.tmp"
+mv "$MISSING_ROW/docs/audit.tmp" "$MISSING_ROW/docs/PRINTSVC_INTEGRATION_AUDIT.md"
+expect_failure rejects_missing_doc_row "$AUDIT" --source "$MISSING_ROW"
+
+PLACEHOLDER="$TMP_DIR/source-placeholder"
+write_valid_source "$PLACEHOLDER"
+cat >> "$PLACEHOLDER/docs/PRINTSVC_INTEGRATION_AUDIT.md" <<'EOF'
+TBD
+EOF
+expect_failure rejects_placeholder_doc "$AUDIT" --source "$PLACEHOLDER"
+
+MISSING_HELPER="$TMP_DIR/source-missing-helper"
+write_valid_source "$MISSING_HELPER"
+grep -v 'print_action_dispatch.h' "$MISSING_HELPER/web/src/api_print_job.c" > "$MISSING_HELPER/web/src/api_print_job.tmp"
+mv "$MISSING_HELPER/web/src/api_print_job.tmp" "$MISSING_HELPER/web/src/api_print_job.c"
+expect_failure rejects_missing_shared_helper "$AUDIT" --source "$MISSING_HELPER"
+
+PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
+write_valid_source "$PYTHON_LAUNCH"
+cat >> "$PYTHON_LAUNCH/web/src/backend_zmq.c" <<'EOF'
+const char *bad_driver = "/usr/bin/python3 /home/cygnus/marlindriver/print_service.py";
+EOF
+expect_failure rejects_python_driver_launch "$AUDIT" --source "$PYTHON_LAUNCH"
+
+VALID_PACKAGE="$TMP_DIR/package-valid"
+write_valid_package "$VALID_PACKAGE"
+"$AUDIT" --package-dir "$VALID_PACKAGE" >/tmp/deneb-integration-audit-selftest-package-valid.log
+echo "PASS: valid package fixture accepted"
+
+MISSING_PACKAGE_TOOL="$TMP_DIR/package-missing-tool"
+mkdir -p "$MISSING_PACKAGE_TOOL"
+expect_failure rejects_missing_package_tool "$AUDIT" --package-dir "$MISSING_PACKAGE_TOOL"
+
+ARCHIVE_DIR="$TMP_DIR/archive-valid"
+write_valid_package "$ARCHIVE_DIR"
+(cd "$ARCHIVE_DIR" && tar cf "$TMP_DIR/archive-valid.deneb" .)
+"$AUDIT" --archive "$TMP_DIR/archive-valid.deneb" >/tmp/deneb-integration-audit-selftest-archive-valid.log
+echo "PASS: valid archive fixture accepted"
+
+echo "deneb-printsvc integration audit selftest passed"

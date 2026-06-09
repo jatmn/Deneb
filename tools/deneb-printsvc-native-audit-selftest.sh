@@ -43,6 +43,8 @@ write_valid_package() {
         "$root/deneb-printsvc-release-gate-selftest" \
         "$root/deneb-printsvc-native-audit" \
         "$root/deneb-printsvc-native-audit-selftest" \
+        "$root/deneb-printsvc-integration-audit" \
+        "$root/deneb-printsvc-integration-audit-selftest" \
         "$root/LVGL_LICENSE_TLSF.txt"
     cat > "$root/deneb-printsvc-smoke" <<'EOF'
 #!/bin/sh
@@ -107,6 +109,8 @@ if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
 fi
 deneb-printsvc-native-audit --source .
 deneb-printsvc-native-audit-selftest
+deneb-printsvc-integration-audit --source .
+deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
 find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \)
 EOF
@@ -119,6 +123,8 @@ if ($ReleaseChannel -ne "experimental") {
 $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
 deneb-printsvc-release-gate-selftest
+deneb-printsvc-integration-audit
+deneb-printsvc-integration-audit-selftest
 EOF
     cat > "$root/tools/deneb-printsvc-release-gate-selftest.sh" <<'EOF'
 #!/bin/sh
@@ -161,6 +167,8 @@ cat > "$root/ui/installer/update.sh" <<'EOF'
 #!/bin/sh
 deneb-printsvc-native-audit --package-dir /tmp/update
 deneb-printsvc-native-audit-selftest
+deneb-printsvc-integration-audit --package-dir /tmp/update
+deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
 /etc/init.d/deneb-api restart
 /etc/init.d/deneb-web restart

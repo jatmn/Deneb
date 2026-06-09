@@ -122,6 +122,12 @@ audit_source() {
         "deneb-printsvc-native-audit-selftest" \
         "package builder runs de-Python audit selftest"
     require_pattern "${repo}/ui/build-package.sh" \
+        "deneb-printsvc-integration-audit" \
+        "package builder runs integration audit"
+    require_pattern "${repo}/ui/build-package.sh" \
+        "deneb-printsvc-integration-audit-selftest" \
+        "package builder runs integration audit selftest"
+    require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-release-gate-selftest" \
         "package builder runs release gate selftest"
     require_pattern "${repo}/ui/build-package.sh" \
@@ -163,6 +169,12 @@ audit_source() {
     require_pattern "${repo}/tools/build-update-release.ps1" \
         'deneb-printsvc-release-gate-selftest' \
         "release wrapper runs release gate selftest"
+    require_pattern "${repo}/tools/build-update-release.ps1" \
+        'deneb-printsvc-integration-audit' \
+        "release wrapper preserves integration audit"
+    require_pattern "${repo}/tools/build-update-release.ps1" \
+        'deneb-printsvc-integration-audit-selftest' \
+        "release wrapper runs integration audit selftest"
     require_pattern "${repo}/tools/deneb-printsvc-release-gate-selftest.sh" \
         'DENEB_PACKAGE_VERSION_OVERRIDE="\$PACKAGE_VERSION"' \
         "release gate selftest isolates package staging"
@@ -245,6 +257,12 @@ audit_source() {
         "deneb-printsvc-native-audit-selftest" \
         "installer runs de-Python audit selftest"
     require_pattern "${repo}/ui/installer/update.sh" \
+        "deneb-printsvc-integration-audit" \
+        "installer runs integration audit"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        "deneb-printsvc-integration-audit-selftest" \
+        "installer requires integration audit selftest"
+    require_pattern "${repo}/ui/installer/update.sh" \
         "deneb-printsvc-release-gate-selftest" \
         "installer requires release gate selftest"
     require_pattern "${repo}/ui/installer/update.sh" \
@@ -275,6 +293,8 @@ audit_package_dir() {
     require_file "${root}/deneb-printsvc-release-gate-selftest" "package includes release gate selftest"
     require_file "${root}/deneb-printsvc-native-audit" "package includes de-Python audit"
     require_file "${root}/deneb-printsvc-native-audit-selftest" "package includes de-Python audit selftest"
+    require_file "${root}/deneb-printsvc-integration-audit" "package includes integration audit"
+    require_file "${root}/deneb-printsvc-integration-audit-selftest" "package includes integration audit selftest"
     require_dir "${root}/deneb-printsvc-macros" "package includes Deneb macro directory"
     require_file "${root}/LVGL_LICENSE_TLSF.txt" "package includes declared TLSF notice"
     reject_name_artifacts "$root" "package has no Python driver artifact names"
@@ -337,6 +357,10 @@ audit_archive() {
         "archive includes de-Python audit"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-native-audit-selftest$' \
         "archive includes de-Python audit selftest"
+    require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit$' \
+        "archive includes integration audit"
+    require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit-selftest$' \
+        "archive includes integration audit selftest"
     require_pattern "${tmp_dir}/files.txt" '(^|/)manifest.txt$' \
         "archive includes manifest"
     tar xf "$archive" -C "$tmp_dir"
