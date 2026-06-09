@@ -1427,6 +1427,10 @@ Completed implementation slices:
   `deneb_status_state_preheat_events` wraps the shared preheat tracker for both
   ZMQ clients. The integration audit now rejects either adapter if those helper
   calls disappear.
+- [x] Route web backend cached status JSON through the same request/native-aware
+  status-label accessor used by REST and Cura cluster status, and add an
+  integration-audit rejection for direct request-blind status-label calls in
+  `backend_zmq`.
 - [x] Make native abort/finish cleanup policy failures visible as serial faults
   when motion transport is marked ready, so the driver no longer reports
   successful abort or completion if the required cleanup G-code cannot be sent.

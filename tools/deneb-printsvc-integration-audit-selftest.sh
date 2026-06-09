@@ -155,6 +155,13 @@ grep -v 'deneb_status_state_preheat_events' "$MISSING_WEB_PREHEAT_HELPER/web/src
 mv "$MISSING_WEB_PREHEAT_HELPER/web/src/backend_zmq.tmp" "$MISSING_WEB_PREHEAT_HELPER/web/src/backend_zmq.c"
 expect_failure rejects_missing_web_preheat_helper "$AUDIT" --source "$MISSING_WEB_PREHEAT_HELPER"
 
+WEB_STATUS_BYPASS="$TMP_DIR/source-web-status-bypass"
+write_valid_source "$WEB_STATUS_BYPASS"
+cat >> "$WEB_STATUS_BYPASS/web/src/backend_zmq.c" <<'EOF'
+const char *bad_status_label(void) { return deneb_print_status_label(1, 0, 0, 0); }
+EOF
+expect_failure rejects_web_status_label_bypass "$AUDIT" --source "$WEB_STATUS_BYPASS"
+
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"
 cat >> "$PYTHON_LAUNCH/web/src/backend_zmq.c" <<'EOF'

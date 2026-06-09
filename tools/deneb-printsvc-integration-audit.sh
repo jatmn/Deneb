@@ -131,6 +131,7 @@ audit_source() {
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_history\.h"' "web backend uses shared print history"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_state_rules\.h"' "web backend uses shared state rules"
     require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_print_status_label_with_req' "web backend gets status labels from shared rules"
+    reject_pattern "${repo}/web/src/backend_zmq.c" 'deneb_print_status_label\(' "web backend does not bypass request-aware status labels"
     require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_status_state_transition_from_pair' "web backend gets lifecycle transition classification from shared status helper"
     require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_status_state_preheat_events' "web backend gets preheat transition classification from shared status helper"
 

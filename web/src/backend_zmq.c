@@ -300,8 +300,7 @@ static void update_status_cache(void)
     char escaped_firmware[sizeof(state.firmware) * 2 + 1];
     char escaped_machine_type[sizeof(state.machine_type) * 2 + 1];
     char route_fields[256];
-    const char *status = deneb_print_status_label(state.connected,
-        state.has_error, state.is_paused, state.is_printing);
+    const char *status = backend_zmq_get_status_label();
 
     deneb_json_escape_string(state.filename, escaped_filename, sizeof(escaped_filename));
     deneb_json_escape_string(state.firmware, escaped_firmware,

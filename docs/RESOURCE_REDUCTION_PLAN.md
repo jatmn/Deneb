@@ -119,7 +119,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   active/preparing/stoppable context derivation. Their lifecycle transition
   logging and preheat event logging now also use shared `status_state.*`
   wrappers instead of carrying separate pause/resume/completion/preheat
-  classifiers beside each backend or embedded Python/Gershwin launchers. Host
+  classifiers beside each backend or embedded Python/Gershwin launchers. The
+  web backend's cached JSON now reuses its request/native-aware status-label
+  accessor, avoiding a second label path that could report idle while native
+  preheat or abort state is active. Host
   regression coverage now exercises that shared owner for active/preheat stop
   allowance, retained filename behavior through transient macro statuses,
   firmware/topcap identity copying, and immediate stop-guard clearing once the
