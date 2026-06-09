@@ -114,7 +114,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   `common/print/status_state.*` for status-to-state application, retained
   filename cleanup, stop-guard cleanup, timing normalization, and
   active/preparing/stoppable context derivation instead of carrying separate
-  copies beside each backend or embedded Python/Gershwin launchers.
+  copies beside each backend or embedded Python/Gershwin launchers. Host
+  regression coverage now exercises that shared owner for active/preheat stop
+  allowance, retained filename behavior through transient macro statuses,
+  firmware/topcap identity copying, and immediate stop-guard clearing once the
+  current native status is idle.
 - Do not preserve awkward compatibility layers just because they match the
   current Python driver's shape. Any shim kept for migration needs explicit
   removal criteria and tests proving the final Deneb-owned contract is cleaner

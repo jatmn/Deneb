@@ -875,6 +875,10 @@ Completed implementation slices:
   share parsed-field copying, retained filename resolution, stop-guard cleanup,
   timing normalization, and active/preparing/stoppable context helpers instead
   of reinterpreting the same status payload independently.
+- [x] Add host regression coverage for `common/print/status_state.*` so native
+  status consumers keep active/preheat stop allowance, retained print-name
+  cleanup, firmware/topcap identity fields, context flags, and idle stop-guard
+  clearing aligned after active or aborting jobs transition back to idle.
 - [x] Move uploaded print-file metadata sniffing into
   `common/print/print_job_file.*` so Cura upload registration, conflict
   detection, and future native print-service entry points share one parser for

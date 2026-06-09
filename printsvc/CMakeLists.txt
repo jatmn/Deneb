@@ -77,6 +77,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/print_timing_rules.c
     ../common/print/printer_status_response.c
     ../common/print/status_payload.c
+    ../common/print/status_state.c
     ../common/print/system_language.c
     src/command.c
     src/command_audit.c

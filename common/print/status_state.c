@@ -153,16 +153,13 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
 
     curr_ctx = deneb_status_state_filename_context(state);
     if (stop_guard &&
-        !deneb_status_payload_should_hold_filename(&curr_ctx, &prev_ctx) &&
         state->time_total <= 0 &&
         state->time_left <= 0 &&
         state->bed_temp_set <= 0.0f &&
         state->nozzle_temp_set <= 0.0f &&
         state->current_req[0] == '\0' &&
         !state->is_printing &&
-        !state->is_paused &&
-        !prev->is_printing &&
-        !prev->is_paused) {
+        !state->is_paused) {
         deneb_print_stop_guard_clear(stop_guard);
     }
 

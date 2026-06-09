@@ -164,6 +164,8 @@ helper functions that own stock frame formatting. Touchscreen and web/API ZMQ
 status consumers now also share `common/print/status_state.*` for applying
 parsed payload fields, resolving retained filenames, clearing stop guards after
 idle cleanup, normalizing timing, and deriving active/preparing/stoppable
-context flags. The native `deneb-printsvc`
+context flags. Host tests cover this shared state owner through active/preheat,
+transient macro, and idle cleanup transitions so LCD and web/API clients do not
+drift separately. The native `deneb-printsvc`
 milestone should keep collapsing remaining direct clients toward shared Deneb
 print-control helpers or a single native service API.

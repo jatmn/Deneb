@@ -59,6 +59,7 @@
 #include "service_context.h"
 #include "status.h"
 #include "status_payload.h"
+#include "status_state.h"
 #include "status_parser.h"
 #include "system_language.h"
 
@@ -3104,6 +3105,97 @@ static void test_status_payload_helpers(void)
     assert(payload.is_printing);
 }
 
+static void test_status_state_helpers(void)
+{
+    deneb_backend_status_state_t state;
+    deneb_backend_status_state_t prev;
+    deneb_status_filename_context_t ctx;
+    deneb_print_context_flags_t flags;
+    deneb_print_stop_guard_t stop_guard;
+    char retained[128] = "";
+
+    deneb_status_state_init(&state);
+    deneb_print_stop_guard_init(&stop_guard, 3000);
+    assert(deneb_print_stop_guard_begin(&stop_guard, 1000));
+    assert(stop_guard.in_flight);
+
+    assert(deneb_status_state_apply_json(
+               &state, NULL,
+               "{\"file\":\"/home/3D/cube.gcode\",\"source\":\"Cura\","
+               "\"uuid\":\"job-1\",\"req\":\"PREHEATING\","
+               "\"Ttot\":120,\"Tleft\":120,\"headTset\":210,\"bedTset\":60,"
+               "\"headTcur\":31.5,\"bedTcur\":28.0,"
+               "\"denebActive\":true,\"denebStopAllowed\":true,"
+               "\"topcapTemperature\":33.0,\"topcapIsPresent\":true,"
+               "\"firmware\":\"Apr 30 2020\",\"machineType\":\"E2\","
+               "\"pcbId\":4,\"pcbIdValid\":true}",
+               retained, sizeof(retained), &stop_guard, 1234) == 0);
+    assert(state.connected);
+    assert(state.last_update_ms == 1234);
+    assert(state.is_printing);
+    assert(!state.is_paused);
+    assert(state.native_active);
+    assert(state.native_stop_allowed);
+    assert(state.has_native_active);
+    assert(state.has_native_stop_allowed);
+    assert(strcmp(state.filename, "cube.gcode") == 0);
+    assert(strcmp(retained, "cube.gcode") == 0);
+    assert(strcmp(state.source, "Cura") == 0);
+    assert(strcmp(state.uuid, "job-1") == 0);
+    assert(strcmp(state.firmware, "Apr 30 2020") == 0);
+    assert(strcmp(state.machine_type, "E2") == 0);
+    assert(state.pcb_id == 4);
+    assert(state.pcb_id_valid);
+    assert(state.topcap_present);
+    assert(state.topcap_temp_cur > 32.9f);
+    assert(stop_guard.in_flight);
+
+    ctx = deneb_status_state_filename_context(&state);
+    assert(strcmp(ctx.req, DENEB_PRINT_REQ_PREHEATING) == 0);
+    assert(strcmp(ctx.filename, "cube.gcode") == 0);
+    assert(deneb_status_state_has_print_name(&state, NULL));
+    assert(deneb_status_state_has_print_context(&state));
+    flags = deneb_status_state_context_flags(&state, 1);
+    assert(flags.has_active_context);
+    assert(flags.has_preparing_context);
+    assert(flags.has_stoppable_context);
+
+    prev = state;
+    assert(deneb_status_state_apply_json(
+               &state, &prev,
+               "{\"file\":\"/home/cygnus/marlindriver/gcode/"
+               DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD
+               "\",\"req\":\"PREHEATING\",\"headTset\":210,"
+               "\"bedTset\":60,\"denebActive\":true,"
+               "\"denebStopAllowed\":true}",
+               retained, sizeof(retained), &stop_guard, 2234) == 0);
+    assert(strcmp(state.filename, "cube.gcode") == 0);
+    assert(strcmp(retained, "cube.gcode") == 0);
+    assert(stop_guard.in_flight);
+
+    prev = state;
+    assert(deneb_status_state_apply_json(
+               &state, &prev,
+               "{\"file\":\"none\",\"req\":\"\",\"Ttot\":0,\"Tleft\":0,"
+               "\"headTset\":0,\"bedTset\":0,\"denebActive\":false,"
+               "\"denebStopAllowed\":false}",
+               retained, sizeof(retained), &stop_guard, 3234) == 0);
+    assert(!state.is_printing);
+    assert(!state.is_paused);
+    assert(!state.native_active);
+    assert(!state.native_stop_allowed);
+    assert(state.filename[0] == '\0');
+    assert(!deneb_status_state_has_print_context(&state));
+    assert(!stop_guard.in_flight);
+
+    assert(deneb_status_state_apply_json(NULL, &prev, "{}", retained,
+                                         sizeof(retained), &stop_guard,
+                                         1) < 0);
+    assert(deneb_status_state_apply_json(&state, &prev, NULL, retained,
+                                         sizeof(retained), &stop_guard,
+                                         1) < 0);
+}
+
 static void test_print_profile_helpers(void)
 {
     char value[64];
@@ -5013,6 +5105,7 @@ int main(void)
     test_material_workflow_helpers();
     test_json_string_helpers();
     test_status_payload_helpers();
+    test_status_state_helpers();
     test_print_profile_helpers();
     test_printer_identity_helpers();
     test_print_backend_route_contract();
