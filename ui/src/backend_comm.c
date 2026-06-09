@@ -251,9 +251,9 @@ static void log_status_transition(const printer_state_t *curr)
 
     if (previous_state.is_printing && !curr->is_printing) {
         const char *completion =
-            deneb_print_completion_state_label(curr->has_error,
-                                               curr->time_total,
-                                               curr->time_left);
+            deneb_print_completion_state_label_with_req(
+                curr->has_error, previous_state.time_total,
+                previous_state.time_left, curr->current_req);
         if (strcmp(completion, "error") == 0)
             fprintf(stderr, "backend: print ended with error (filename=%s)\n",
                     previous_state.filename[0] ? previous_state.filename : "(unknown)");
