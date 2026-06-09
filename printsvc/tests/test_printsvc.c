@@ -1415,7 +1415,7 @@ static void test_motion_runtime_policy(void)
     }
 }
 
-static void test_service_proto_desync_aborts_active_job(void)
+static void test_service_proto_desync_resyncs_active_job(void)
 {
     const char *proto_error =
         "Error:ProtoError:Sequence number is unexpected (received, expected): 0,7\n";
@@ -1442,11 +1442,12 @@ static void test_service_proto_desync_aborts_active_job(void)
     assert(serial_fd >= 0);
     svc.serial.fd = serial_fd;
 
-    assert(deneb_print_service_poll_motion(&svc) < 0);
-    assert(!svc.job_active);
-    assert(svc.abort_cleanup_pending);
-    assert(svc.status.state == DENEB_PRINT_STATE_ABORTING);
-    assert(deneb_flow_inflight(&svc.flow) > 0);
+    assert(deneb_print_service_poll_motion(&svc) == 1);
+    assert(svc.job_active);
+    assert(!svc.abort_cleanup_pending);
+    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(svc.flow.next_sequence == 7);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
 
     deneb_print_service_close(&svc);
     fclose(serial_file);
@@ -3958,6 +3959,16 @@ static void test_service_context_policy(void)
     assert(runtime.serial_ready == &svc.serial_ready);
     assert(!runtime.allow_sequence_resync);
 
+    svc.job_active = 1;
+    assert(deneb_service_context_motion_runtime(&svc, &runtime) == 0);
+    assert(runtime.allow_sequence_resync);
+    svc.job_active = 0;
+
+    svc.gcode_queue_active = 1;
+    assert(deneb_service_context_motion_runtime(&svc, &runtime) == 0);
+    assert(runtime.allow_sequence_resync);
+    svc.gcode_queue_active = 0;
+
     svc.abort_cleanup_pending = 1;
     assert(deneb_service_context_motion_runtime(&svc, &runtime) == 0);
     assert(runtime.allow_sequence_resync);
@@ -4980,7 +4991,7 @@ int main(void)
     test_service_startup_status_probe();
     test_service_firmware_probe_retries_until_bounded();
     test_service_periodic_status_poll_omits_version_probe();
-    test_service_proto_desync_aborts_active_job();
+    test_service_proto_desync_resyncs_active_job();
     test_heater_wait();
     test_sha256();
     test_motion_policy();

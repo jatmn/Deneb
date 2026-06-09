@@ -29,6 +29,7 @@ int deneb_service_context_motion_runtime(deneb_print_service_t *svc,
     runtime->serial = &svc->serial;
     runtime->serial_ready = &svc->serial_ready;
     runtime->allow_sequence_resync =
+        svc->job_active || svc->gcode_queue_active ||
         svc->abort_cleanup_pending || svc->finish_cleanup_pending;
     return 0;
 }

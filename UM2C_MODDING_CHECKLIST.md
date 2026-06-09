@@ -644,7 +644,15 @@ deviation, not hidden under "stock parity."
   preheat aborts: cancellation must remain visible while cleanup is pending,
   then settle to idle with Stop disabled, no stale `native_active`, no stale
   print filename/UUID/source, no stale temperature targets, and no manual
-  cluster cleanup.
+  cluster cleanup. On June 9, 2026, a dirty `b15786e` resync build passed
+  bounded Z-only active-abort and preheat-abort smoke verification on hardware:
+  both active snapshots reported `printing` with `native_active:true` and
+  `native_stop_allowed:true`, the API abort returned success, and final
+  snapshots returned to `idle` with `native_active:false`,
+  `native_stop_allowed:false`, blank filename, cleared temperature targets,
+  and no stock `print_service.py`. Keep this open until the smoke harness also
+  captures the intermediate native `aborting` state while cleanup drains and a
+  representative supervised print path repeats the result.
 - [x] Keep native print completion in an active printing state until finish
   cleanup drains in host lifecycle coverage. End-of-file no longer marks the
   job idle immediately; the streamer dispatches the finish policy, keeps
@@ -661,9 +669,13 @@ deviation, not hidden under "stock parity."
 - [x] Add native flow-control regression coverage for late acknowledged
   resends, compact CRC ACK/reject packets, stale firmware resend requests, and
   old-Marlin ProtoError sequence mismatches. Idle and cleanup phases can resync
-  to the controller's expected sequence; active print desync now fails visible
-  and routes the job toward abort cleanup instead of silently continuing to
-  stream print moves.
+  to the controller's expected sequence. Live active-print evidence on June 9,
+  2026 showed that treating active-job ProtoError resync as fatal caused a
+  premature native abort while accepted Z moves were still in flight, so the
+  service context now permits sequence resync while native job or raw-G-code
+  streaming owns the controller. Host tests prove active service resync keeps
+  the job in `printing`; lower-level runtime tests still prove resync remains
+  fatal when the service context has not explicitly allowed it.
 - [ ] Add live-device smoke tests for boot sync, idle status, heat/cool, home, macro execution, USB/local print, Cura-started print, pause, resume, abort during preheat, abort during active printing, print completion, and recovery after service restart.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
@@ -678,6 +690,17 @@ deviation, not hidden under "stock parity."
   `native_active:false` / `native_stop_allowed:false`; Z ended at 202.6 after
   starting from homed 207.0. Keep this open until a representative supervised
   print path also proves no unsafe X/Y cleanup or fault markers.
+  A later June 9, 2026 dirty `b15786e` resync build first reproduced the stale
+  active-status risk on a 300-cycle bounded Z-only active-abort fixture: the
+  first run moved Z but had already fallen back to `idle` before the smoke
+  harness sent abort, because active ProtoError resync was treated as fatal.
+  After allowing active service-owned sequence resync, the same fixture passed:
+  native route owned the driver, the active snapshot was `printing` with Stop
+  allowed, `job_line_number` advanced to 50, API abort returned success, and
+  the final state was `idle` with `native_active:false` /
+  `native_stop_allowed:false`; Z ended at 197.8 after starting from homed
+  207.0. Keep this open for a representative supervised print path and explicit
+  no-unsafe-X/Y-cleanup log review.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or
