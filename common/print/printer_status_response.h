@@ -31,6 +31,16 @@ typedef struct {
     int time_left;
     const char *filename;
     const char *status_label;
+    const char *error_key;
+    const char *error_category;
+    const char *error_detail;
+    const char *flow_last_response;
+    int flow_inflight;
+    int flow_sent;
+    int flow_ack;
+    int flow_resend;
+    int flow_reject;
+    int job_line_number;
 } deneb_printer_status_response_t;
 
 void deneb_printer_status_response_init(

@@ -62,6 +62,7 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     svc->resume_policy_index = 0;
     svc->paused_position_valid = 0;
     svc->finish_cleanup_pending = 0;
+    svc->finish_cleanup_index = 0;
     svc->finish_drain_ticks = 0;
     svc->finish_position_report_count = 0;
     svc->finish_stable_reports = 0;
@@ -96,6 +97,7 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     }
     svc->abort_requested = 0;
     svc->finish_cleanup_pending = 0;
+    svc->finish_cleanup_index = 0;
     svc->pause_policy_pending = 0;
     svc->pause_policy_index = 0;
     svc->pause_position_probe_pending = 0;
@@ -130,12 +132,15 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     while (svc->abort_cleanup_index < svc->abort_cleanup_policy.count) {
         int send_rc;
         if (deneb_flow_has_pending_barrier(&svc->flow) ||
+            !deneb_flow_can_send(&svc->flow) ||
             deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
             return 0;
         send_rc = deneb_motion_sender_send_gcode(
             &svc->flow, &svc->serial, svc->serial_ready,
             svc->abort_cleanup_policy.commands[svc->abort_cleanup_index]);
         if (send_rc != 0) {
+            if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
+                return 0;
             svc->abort_requested = 0;
             svc->abort_cleanup_pending = 0;
             svc->abort_cleanup_index = 0;
@@ -165,11 +170,37 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
     if (!svc || !svc->finish_cleanup_pending)
         return 0;
 
+    while (svc->finish_cleanup_index < svc->finish_cleanup_policy.count) {
+        int send_rc;
+        if (deneb_flow_has_pending_barrier(&svc->flow) ||
+            !deneb_flow_can_send(&svc->flow) ||
+            deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
+            return 0;
+        send_rc = deneb_motion_sender_send_gcode(
+            &svc->flow, &svc->serial, svc->serial_ready,
+            svc->finish_cleanup_policy.commands[svc->finish_cleanup_index]);
+        if (send_rc != 0) {
+            if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
+                return 0;
+            svc->finish_cleanup_pending = 0;
+            svc->finish_cleanup_index = 0;
+            svc->finish_drain_ticks = 0;
+            svc->heater_wait.active = 0;
+            deneb_job_lifecycle_error(
+                &svc->status,
+                deneb_error_make(deneb_motion_send_error_code(send_rc),
+                                 "finish cleanup failed"));
+            return -1;
+        }
+        svc->finish_cleanup_index++;
+    }
+
     if (deneb_flow_inflight(&svc->flow) != 0)
         return 0;
 
     if (!svc->serial_ready) {
         svc->finish_cleanup_pending = 0;
+        svc->finish_cleanup_index = 0;
         svc->finish_drain_ticks = 0;
         svc->finish_stable_reports = 0;
         svc->status.finish_drain_ticks = 0;
@@ -220,6 +251,7 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
         return 0;
 
     svc->finish_cleanup_pending = 0;
+    svc->finish_cleanup_index = 0;
     svc->finish_drain_ticks = 0;
     svc->finish_stable_reports = 0;
     svc->status.finish_drain_ticks = 0;

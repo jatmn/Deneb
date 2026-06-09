@@ -5,6 +5,7 @@
 #include "flow_control.h"
 #include "gcode_stream.h"
 #include "heater_wait.h"
+#include "motion_policy.h"
 #include "serial_transport.h"
 #include "status.h"
 
@@ -18,6 +19,8 @@ typedef struct {
     int *job_active;
     int *abort_requested;
     int *finish_cleanup_pending;
+    deneb_motion_policy_t *finish_cleanup_policy;
+    size_t *finish_cleanup_index;
     unsigned int *planner_starvation_count;
 } deneb_job_streamer_t;
 

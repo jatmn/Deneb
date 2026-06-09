@@ -5,9 +5,28 @@
 #include <asm/termbits.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+
+static int wait_for_serial_write(int fd)
+{
+    struct pollfd pfd;
+    int rc;
+
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    pfd.revents = 0;
+
+    do {
+        rc = poll(&pfd, 1, DENEB_PRINTSVC_SERIAL_WRITE_TIMEOUT_MS);
+    } while (rc < 0 && errno == EINTR);
+
+    if (rc <= 0)
+        return -1;
+    return (pfd.revents & POLLOUT) ? 0 : -1;
+}
 
 static int configure_serial(int fd, unsigned int baud)
 {
@@ -63,9 +82,23 @@ int deneb_serial_write_all(deneb_serial_transport_t *transport,
 
     while (off < len) {
         ssize_t n = write(transport->fd, data + off, len - off);
-        if (n <= 0)
+        if (n > 0) {
+            off += (size_t)n;
+            continue;
+        }
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            if (wait_for_serial_write(transport->fd) == 0)
+                continue;
             return -1;
-        off += (size_t)n;
+        }
+        if (n == 0) {
+            if (wait_for_serial_write(transport->fd) == 0)
+                continue;
+            return -1;
+        }
+        return -1;
     }
 
     return 0;

@@ -12,6 +12,7 @@
 #define DENEB_PRINTSVC_MAX_COMMANDS 16
 #define DENEB_PRINTSVC_GCODE_QUEUE_COMMANDS 64
 #define DENEB_PRINTSVC_SERIAL_LINE 256
+#define DENEB_PRINTSVC_SERIAL_WRITE_TIMEOUT_MS 1000
 #define DENEB_PRINTSVC_STREAM_WINDOW 4
 #define DENEB_MOTION_FW_HEX "/home/atmel_programmer/cygnus-marlin.hex"
 #define DENEB_MOTION_FW_CACHE "/etc/deneb/motion-controller-firmware.sha256"

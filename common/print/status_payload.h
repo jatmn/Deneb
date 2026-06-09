@@ -26,8 +26,18 @@ typedef struct {
     char req[32];
     char firmware[64];
     char machine_type[16];
+    char error_key[32];
+    char error_category[32];
+    char error_detail[128];
+    char flow_last_response[128];
     int pcb_id;
     int pcb_id_valid;
+    int flow_inflight;
+    int flow_sent;
+    int flow_ack;
+    int flow_resend;
+    int flow_reject;
+    int job_line_number;
     int has_file;
     int is_printing;
     int is_paused;

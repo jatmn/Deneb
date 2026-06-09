@@ -5,5 +5,6 @@
 #include "error_map.h"
 
 deneb_error_code_t deneb_motion_send_error_code(int rc);
+const char *deneb_motion_send_error_name(int rc);
 
 #endif

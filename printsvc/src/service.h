@@ -30,6 +30,8 @@ typedef struct {
     deneb_motion_policy_t abort_cleanup_policy;
     size_t abort_cleanup_index;
     int finish_cleanup_pending;
+    deneb_motion_policy_t finish_cleanup_policy;
+    size_t finish_cleanup_index;
     unsigned int finish_drain_ticks;
     unsigned int finish_position_report_count;
     unsigned int finish_stable_reports;

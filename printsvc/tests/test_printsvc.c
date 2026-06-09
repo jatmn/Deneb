@@ -68,6 +68,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static int buffer_contains_bytes(const uint8_t *buf, size_t len,
@@ -716,6 +717,34 @@ static void test_job_control_policy(void)
     svc.serial.fd = -1;
     svc.serial_ready = 0;
 
+    deneb_print_service_init(&svc);
+    svc.serial_ready = 0;
+    svc.finish_cleanup_pending = 1;
+    svc.job_active = 1;
+    deneb_motion_policy_finish(&svc.finish_cleanup_policy);
+    svc.finish_cleanup_index = 0;
+    svc.flow.controller_free_space_known = 1;
+    svc.flow.controller_free_space = 0;
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    snprintf(svc.status.file, sizeof(svc.status.file), "finish.gcode");
+    assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
+    assert(svc.finish_cleanup_pending);
+    assert(svc.finish_cleanup_index == 0);
+    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    svc.flow.controller_free_space = 4;
+    assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
+    assert(svc.finish_cleanup_index > 0);
+    while (svc.finish_cleanup_index < svc.finish_cleanup_policy.count) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
+    }
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_job_control_poll_finish_cleanup(&svc) == 1);
+    assert(!svc.finish_cleanup_pending);
+    assert(!svc.job_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_COMPLETE);
+    assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     snprintf(svc.status.file, sizeof(svc.status.file), "stale.gcode");
     deneb_flow_init(&svc.flow);
@@ -743,6 +772,8 @@ static void test_job_streamer_policy(void)
     int job_active = 1;
     int abort_requested = 0;
     int finish_cleanup_pending = 0;
+    deneb_motion_policy_t finish_cleanup_policy;
+    size_t finish_cleanup_index = 0;
     int serial_ready = 0;
     unsigned int starvation = 0;
     FILE *f = fopen(path, "wb");
@@ -771,6 +802,8 @@ static void test_job_streamer_policy(void)
     streamer.job_active = &job_active;
     streamer.abort_requested = &abort_requested;
     streamer.finish_cleanup_pending = &finish_cleanup_pending;
+    streamer.finish_cleanup_policy = &finish_cleanup_policy;
+    streamer.finish_cleanup_index = &finish_cleanup_index;
     streamer.planner_starvation_count = &starvation;
 
     assert(deneb_job_streamer_poll(NULL) < 0);
@@ -799,12 +832,33 @@ static void test_job_streamer_policy(void)
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(job_active);
     assert(finish_cleanup_pending);
+    assert(finish_cleanup_policy.count > 0);
+    assert(finish_cleanup_index == 0);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
     assert(deneb_job_streamer_poll(&streamer) == 0);
     assert(job_active);
     assert(finish_cleanup_pending);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
     deneb_flow_clear_inflight(&flow);
+    assert(deneb_flow_inflight(&flow) == 0);
+
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    flow.controller_free_space_known = 1;
+    flow.controller_free_space = 0;
+    deneb_heater_wait_init(&wait);
+    assert(deneb_gcode_stream_open(&stream, path) == 0);
+    deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
+                              "stream-backpressure", 0.0f, 0.0f);
+    job_active = 1;
+    abort_requested = 0;
+    finish_cleanup_pending = 0;
+    serial_ready = 0;
+    assert(deneb_job_streamer_poll(&streamer) == 0);
+    assert(job_active);
+    assert(!finish_cleanup_pending);
+    assert(status.state != DENEB_PRINT_STATE_ERROR);
+    assert(stream.line_number == 0);
     assert(deneb_flow_inflight(&flow) == 0);
 
     deneb_status_init(&status);
@@ -820,10 +874,12 @@ static void test_job_streamer_policy(void)
     serial_ready = 1;
     assert(deneb_job_streamer_poll(&streamer) == -1);
     assert(!job_active);
+    assert(!finish_cleanup_pending);
     assert(!wait.active);
     assert(status.state == DENEB_PRINT_STATE_ERROR);
     assert(status.error.code == DENEB_ERROR_SERIAL);
-    assert(strstr(status.error.detail, "job stream send failed") != NULL);
+    assert(strstr(status.error.detail,
+                  "job stream send failed: serial_write") != NULL);
 
     deneb_flow_init(&flow);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
@@ -859,11 +915,13 @@ static void test_job_streamer_policy(void)
     finish_cleanup_pending = 0;
     wait.active = 1;
     serial_ready = 1;
-    assert(deneb_job_streamer_poll(&streamer) == -1);
-    assert(!job_active);
+    assert(deneb_job_streamer_poll(&streamer) == 1);
+    assert(job_active);
+    assert(finish_cleanup_pending);
+    assert(finish_cleanup_policy.count > 0);
+    assert(finish_cleanup_index == 0);
     assert(!wait.active);
-    assert(status.state == DENEB_PRINT_STATE_ERROR);
-    assert(status.error.code == DENEB_ERROR_SERIAL);
+    assert(status.state == DENEB_PRINT_STATE_PRINTING);
 
     f = fopen(path, "wb");
     assert(f != NULL);
@@ -1183,6 +1241,45 @@ static void test_serial_transport_buffers_partial_lines(void)
     close(pipefd[0]);
     close(pipefd[1]);
     serial.fd = -1;
+}
+
+static void test_serial_transport_retries_nonblocking_writes(void)
+{
+    deneb_serial_transport_t serial;
+    int pipefd[2];
+    uint8_t fill[4096];
+    uint8_t payload[512];
+    pid_t child;
+
+    memset(&serial, 0, sizeof(serial));
+    serial.fd = -1;
+    memset(fill, 0x5a, sizeof(fill));
+    memset(payload, 0xa5, sizeof(payload));
+
+    assert(pipe(pipefd) == 0);
+    assert(fcntl(pipefd[1], F_SETFL, O_NONBLOCK) == 0);
+    while (write(pipefd[1], fill, sizeof(fill)) > 0) {
+    }
+
+    child = fork();
+    assert(child >= 0);
+    if (child == 0) {
+        uint8_t drain[8192];
+        close(pipefd[1]);
+        assert(fcntl(pipefd[0], F_SETFL, O_NONBLOCK) == 0);
+        usleep(50000);
+        while (read(pipefd[0], drain, sizeof(drain)) > 0) {
+        }
+        close(pipefd[0]);
+        _exit(0);
+    }
+
+    serial.fd = pipefd[1];
+    assert(deneb_serial_write_all(&serial, payload, sizeof(payload)) == 0);
+    close(pipefd[0]);
+    close(pipefd[1]);
+    serial.fd = -1;
+    assert(waitpid(child, NULL, 0) == child);
 }
 
 static void test_motion_runtime_policy(void)
@@ -2149,6 +2246,16 @@ static void test_printer_status_response(void)
     status.time_left = 690;
     status.filename = "cube\"one.gcode";
     status.status_label = "printing";
+    status.error_key = "serial_fault";
+    status.error_category = "serial";
+    status.error_detail = "flow \"desync\"";
+    status.flow_last_response = "Error:ProtoError";
+    status.flow_inflight = 3;
+    status.flow_sent = 55;
+    status.flow_ack = 52;
+    status.flow_resend = 1;
+    status.flow_reject = 2;
+    status.job_line_number = 54;
 
     assert(deneb_printer_status_response_format_status(
                &status, json, sizeof(json)) > 0);
@@ -2179,7 +2286,15 @@ static void test_printer_status_response(void)
     assert(strstr(json, "\"time_total\":1200") != NULL);
     assert(strstr(json, "\"time_left\":690") != NULL);
     assert(strstr(json, "\"filename\":\"cube\\\"one.gcode\"") != NULL);
-    assert(strstr(json, "\"diagnostics\":{}") != NULL);
+    assert(strstr(json, "\"diagnostics\":{\"error_key\":\"serial_fault\"") != NULL);
+    assert(strstr(json, "\"error_detail\":\"flow \\\"desync\\\"\"") != NULL);
+    assert(strstr(json, "\"flow_last_response\":\"Error:ProtoError\"") != NULL);
+    assert(strstr(json, "\"flow_inflight\":3") != NULL);
+    assert(strstr(json, "\"flow_sent\":55") != NULL);
+    assert(strstr(json, "\"flow_ack\":52") != NULL);
+    assert(strstr(json, "\"flow_resend\":1") != NULL);
+    assert(strstr(json, "\"flow_reject\":2") != NULL);
+    assert(strstr(json, "\"job_line_number\":54") != NULL);
 
     assert(deneb_printer_status_response_format_um_bed(
                &status, json, sizeof(json)) > 0);
@@ -2832,6 +2947,12 @@ static void test_status_payload_helpers(void)
                "\"bedTset\":60,\"topcapTemperature\":32.5,"
                "\"topcapIsPresent\":\"yes\",\"firmware\":\"Apr 30 2020\","
                "\"machineType\":\"E2\",\"pcbId\":4,\"pcbIdValid\":true,"
+               "\"denebErrorKey\":\"serial_fault\","
+               "\"denebErrorCategory\":\"serial\","
+               "\"denebErrorDetail\":\"flow control sequence desync\","
+               "\"flowLastResponse\":\"Error:ProtoError\","
+               "\"flowInflight\":3,\"flowSent\":55,\"flowAck\":52,"
+               "\"flowResend\":1,\"flowReject\":2,\"jobLineNumber\":54,"
                "\"received_faults\":1}",
                &payload) == 0);
     assert(strcmp(payload.file, "cube.gcode") == 0);
@@ -2847,6 +2968,17 @@ static void test_status_payload_helpers(void)
     assert(strcmp(payload.machine_type, "E2") == 0);
     assert(payload.pcb_id == 4);
     assert(payload.pcb_id_valid);
+    assert(strcmp(payload.error_key, "serial_fault") == 0);
+    assert(strcmp(payload.error_category, "serial") == 0);
+    assert(strcmp(payload.error_detail,
+                  "flow control sequence desync") == 0);
+    assert(strcmp(payload.flow_last_response, "Error:ProtoError") == 0);
+    assert(payload.flow_inflight == 3);
+    assert(payload.flow_sent == 55);
+    assert(payload.flow_ack == 52);
+    assert(payload.flow_resend == 1);
+    assert(payload.flow_reject == 2);
+    assert(payload.job_line_number == 54);
     assert(payload.progress > 49.9f && payload.progress < 50.1f);
     assert(payload.nozzle_temp_cur > 199.4f);
     assert(payload.observation.file == payload.file);
@@ -3843,6 +3975,8 @@ static void test_service_context_policy(void)
     assert(streamer.job_active == &svc.job_active);
     assert(streamer.abort_requested == &svc.abort_requested);
     assert(streamer.finish_cleanup_pending == &svc.finish_cleanup_pending);
+    assert(streamer.finish_cleanup_policy == &svc.finish_cleanup_policy);
+    assert(streamer.finish_cleanup_index == &svc.finish_cleanup_index);
     assert(streamer.planner_starvation_count == &svc.planner_starvation_count);
 
     svc.job_active = 1;
@@ -3999,7 +4133,23 @@ static void test_job_completion_waits_for_finish_cleanup(void)
     assert(svc.status.job_queue_depth == 1);
     assert(svc.status.job_line_number == 1);
 
+    assert(pipe(pipefd) == 0);
+    svc.serial.fd = pipefd[1];
     svc.serial_ready = 1;
+
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
+    assert(svc.finish_cleanup_pending);
+    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(svc.finish_cleanup_index > 0);
+    assert(svc.status.finish_drain_ticks == 0);
+
+    while (svc.finish_cleanup_index < svc.finish_cleanup_policy.count) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
+        assert(svc.finish_cleanup_pending);
+        assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    }
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
@@ -4030,6 +4180,9 @@ static void test_job_completion_waits_for_finish_cleanup(void)
     assert(svc.status.bed_t_set == 0.0f);
     assert(svc.status.head_t_set == 0.0f);
     svc.serial_ready = 0;
+    svc.serial.fd = -1;
+    close(pipefd[0]);
+    close(pipefd[1]);
 
     remove(job_path);
 }
@@ -4778,6 +4931,7 @@ int main(void)
     test_motion_sender_policy();
     test_motion_observer_policy();
     test_serial_transport_buffers_partial_lines();
+    test_serial_transport_retries_nonblocking_writes();
     test_motion_runtime_policy();
     test_macro_runner_policy();
     test_macro_control_policy();

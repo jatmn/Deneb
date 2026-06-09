@@ -28,7 +28,8 @@ static int macro_control_wait_for_stream_window(deneb_print_service_t *svc,
     if (!svc)
         return -1;
 
-    while (deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW) {
+    while (!deneb_flow_can_send(&svc->flow) ||
+           deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW) {
         if (svc->abort_requested)
             return -2;
         if (deneb_print_service_poll_motion(svc) < 0)

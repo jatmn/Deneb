@@ -40,6 +40,16 @@ typedef struct {
     char filename[128];
     char source[32];
     char uuid[64];
+    char error_key[32];
+    char error_category[32];
+    char error_detail[128];
+    char flow_last_response[128];
+    int flow_inflight;
+    int flow_sent;
+    int flow_ack;
+    int flow_resend;
+    int flow_reject;
+    int job_line_number;
     int time_total;      /* seconds */
     int time_left;       /* seconds */
     float progress;      /* 0-100, calculated from time */

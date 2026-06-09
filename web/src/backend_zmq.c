@@ -457,8 +457,23 @@ void backend_zmq_poll(void)
                      payload.firmware);
             snprintf(state.machine_type, sizeof(state.machine_type), "%s",
                      payload.machine_type);
+            snprintf(state.error_key, sizeof(state.error_key), "%s",
+                     payload.error_key);
+            snprintf(state.error_category, sizeof(state.error_category), "%s",
+                     payload.error_category);
+            snprintf(state.error_detail, sizeof(state.error_detail), "%s",
+                     payload.error_detail);
+            snprintf(state.flow_last_response,
+                     sizeof(state.flow_last_response), "%s",
+                     payload.flow_last_response);
             state.pcb_id = payload.pcb_id;
             state.pcb_id_valid = payload.pcb_id_valid != 0;
+            state.flow_inflight = payload.flow_inflight;
+            state.flow_sent = payload.flow_sent;
+            state.flow_ack = payload.flow_ack;
+            state.flow_resend = payload.flow_resend;
+            state.flow_reject = payload.flow_reject;
+            state.job_line_number = payload.job_line_number;
             state.topcap_temp_cur = payload.topcap_temp_cur;
             state.topcap_present = payload.topcap_present != 0;
             state.is_paused = payload.is_paused != 0;
@@ -578,6 +593,16 @@ void backend_zmq_get_printer_status_response(
     status->time_left = state.time_left;
     status->filename = state.filename;
     status->status_label = backend_zmq_get_status_label();
+    status->error_key = state.error_key;
+    status->error_category = state.error_category;
+    status->error_detail = state.error_detail;
+    status->flow_last_response = state.flow_last_response;
+    status->flow_inflight = state.flow_inflight;
+    status->flow_sent = state.flow_sent;
+    status->flow_ack = state.flow_ack;
+    status->flow_resend = state.flow_resend;
+    status->flow_reject = state.flow_reject;
+    status->job_line_number = state.job_line_number;
 }
 
 int backend_zmq_has_active_job(void)

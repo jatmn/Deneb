@@ -365,6 +365,10 @@ int deneb_printer_status_response_format_um_root(
     char status_label[64];
     char firmware[128];
     char machine_type[48];
+    char error_key[64];
+    char error_category[64];
+    char error_detail[256];
+    char flow_last_response[256];
     int n;
 
     if (!status || !out || out_sz == 0)
@@ -379,6 +383,16 @@ int deneb_printer_status_response_format_um_root(
                              firmware, sizeof(firmware));
     deneb_json_escape_string(status->machine_type ? status->machine_type : "",
                              machine_type, sizeof(machine_type));
+    deneb_json_escape_string(status->error_key ? status->error_key : "",
+                             error_key, sizeof(error_key));
+    deneb_json_escape_string(status->error_category ?
+                             status->error_category : "",
+                             error_category, sizeof(error_category));
+    deneb_json_escape_string(status->error_detail ? status->error_detail : "",
+                             error_detail, sizeof(error_detail));
+    deneb_json_escape_string(status->flow_last_response ?
+                             status->flow_last_response : "",
+                             flow_last_response, sizeof(flow_last_response));
 
     n = snprintf(
         out, out_sz,
@@ -407,7 +421,11 @@ int deneb_printer_status_response_format_um_root(
         "\"is_paused\":%s,\"has_error\":%s,\"progress\":%.1f,"
         "\"native_active\":%s,\"native_stop_allowed\":%s,"
         "\"time_total\":%d,\"time_left\":%d,\"filename\":\"%s\","
-        "\"diagnostics\":{}"
+        "\"diagnostics\":{\"error_key\":\"%s\","
+        "\"error_category\":\"%s\",\"error_detail\":\"%s\","
+        "\"flow_last_response\":\"%s\",\"flow_inflight\":%d,"
+        "\"flow_sent\":%d,\"flow_ack\":%d,\"flow_resend\":%d,"
+        "\"flow_reject\":%d,\"job_line_number\":%d}"
         "}",
         status->bed_temp_cur, status->bed_temp_set,
         bool_text(status->topcap_present), status->topcap_temp_cur,
@@ -421,7 +439,11 @@ int deneb_printer_status_response_format_um_root(
         bool_text(status->has_native_active && status->native_active),
         bool_text(status->has_native_stop_allowed &&
                   status->native_stop_allowed),
-        status->time_total, status->time_left, filename);
+        status->time_total, status->time_left, filename,
+        error_key, error_category, error_detail, flow_last_response,
+        status->flow_inflight, status->flow_sent, status->flow_ack,
+        status->flow_resend, status->flow_reject,
+        status->job_line_number);
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
     return n;

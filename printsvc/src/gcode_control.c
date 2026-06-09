@@ -104,6 +104,7 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
         int rc;
 
         if (deneb_flow_has_pending_barrier(&svc->flow) ||
+            !deneb_flow_can_send(&svc->flow) ||
             deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
             return 0;
 
@@ -111,6 +112,8 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
                                             svc->serial_ready,
                                             svc->gcode_queue[index]);
         if (rc != 0) {
+            if (rc == DENEB_MOTION_SEND_FLOW_FULL)
+                return 0;
             clear_queue(svc);
             svc->heater_wait.active = 0;
             svc->status.error =

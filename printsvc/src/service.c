@@ -21,19 +21,30 @@ static int send_status_probe(deneb_print_service_t *svc, int include_version)
     int rc;
 
     if (include_version) {
+        if (!deneb_flow_can_send(&svc->flow))
+            return 0;
         rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
                                             svc->serial_ready, "M115");
+        if (rc == DENEB_MOTION_SEND_FLOW_FULL)
+            return 0;
         if (rc != 0)
             return rc;
     }
 
+    if (!deneb_flow_can_send(&svc->flow))
+        return 0;
     rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
                                         svc->serial_ready, "M105");
+    if (rc == DENEB_MOTION_SEND_FLOW_FULL)
+        return 0;
     if (rc != 0)
         return rc;
 
-    return deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
-                                          svc->serial_ready, "M114");
+    if (!deneb_flow_can_send(&svc->flow))
+        return 0;
+    rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                        svc->serial_ready, "M114");
+    return rc == DENEB_MOTION_SEND_FLOW_FULL ? 0 : rc;
 }
 
 void deneb_print_service_init(deneb_print_service_t *svc)

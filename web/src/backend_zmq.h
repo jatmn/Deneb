@@ -37,8 +37,18 @@ typedef struct {
     char uuid[64];
     char firmware[64];
     char machine_type[16];
+    char error_key[32];
+    char error_category[32];
+    char error_detail[128];
+    char flow_last_response[128];
     int pcb_id;
     bool pcb_id_valid;
+    int flow_inflight;
+    int flow_sent;
+    int flow_ack;
+    int flow_resend;
+    int flow_reject;
+    int job_line_number;
     int time_total;      /* seconds */
     int time_left;       /* seconds (from ZMQ field "Tleft") */
     float progress;      /* 0-100 */

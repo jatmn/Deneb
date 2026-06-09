@@ -44,11 +44,14 @@ static int poll_pause_position_probe(deneb_print_service_t *svc)
 
     if (!svc->pause_position_probe_sent) {
         if (deneb_flow_has_pending_barrier(&svc->flow) ||
+            !deneb_flow_can_send(&svc->flow) ||
             deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
             return 0;
         send_rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
                                                  svc->serial_ready, "M114");
         if (send_rc != 0) {
+            if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
+                return 0;
             svc->pause_position_probe_pending = 0;
             deneb_job_lifecycle_error(
                 &svc->status,
@@ -82,12 +85,15 @@ static int poll_policy(deneb_print_service_t *svc,
     while (*index < policy->count) {
         int send_rc;
         if (deneb_flow_has_pending_barrier(&svc->flow) ||
+            !deneb_flow_can_send(&svc->flow) ||
             deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
             return 0;
         send_rc = deneb_motion_sender_send_gcode(
             &svc->flow, &svc->serial, svc->serial_ready,
             policy->commands[*index]);
         if (send_rc != 0) {
+            if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
+                return 0;
             *pending = 0;
             *index = 0;
             deneb_job_lifecycle_error(

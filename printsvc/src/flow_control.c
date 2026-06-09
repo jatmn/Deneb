@@ -187,6 +187,13 @@ size_t deneb_flow_inflight(const deneb_flow_control_t *flow)
     return count;
 }
 
+int deneb_flow_can_send(deneb_flow_control_t *flow)
+{
+    if (!flow)
+        return 0;
+    return first_free_slot(flow) != NULL;
+}
+
 int deneb_flow_has_pending_barrier(const deneb_flow_control_t *flow)
 {
     if (!flow)

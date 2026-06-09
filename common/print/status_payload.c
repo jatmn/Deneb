@@ -178,9 +178,23 @@ int deneb_status_payload_parse(const char *json,
                     sizeof(payload->firmware));
     copy_json_value(json, "machineType", payload->machine_type,
                     sizeof(payload->machine_type));
+    copy_json_value(json, "denebErrorKey", payload->error_key,
+                    sizeof(payload->error_key));
+    copy_json_value(json, "denebErrorCategory", payload->error_category,
+                    sizeof(payload->error_category));
+    copy_json_value(json, "denebErrorDetail", payload->error_detail,
+                    sizeof(payload->error_detail));
+    copy_json_value(json, "flowLastResponse", payload->flow_last_response,
+                    sizeof(payload->flow_last_response));
     payload->pcb_id = deneb_json_get_int(json, "pcbId", 0);
     (void)deneb_json_get_truthy_value(json, "pcbIdValid",
                                       &payload->pcb_id_valid);
+    payload->flow_inflight = deneb_json_get_int(json, "flowInflight", 0);
+    payload->flow_sent = deneb_json_get_int(json, "flowSent", 0);
+    payload->flow_ack = deneb_json_get_int(json, "flowAck", 0);
+    payload->flow_resend = deneb_json_get_int(json, "flowResend", 0);
+    payload->flow_reject = deneb_json_get_int(json, "flowReject", 0);
+    payload->job_line_number = deneb_json_get_int(json, "jobLineNumber", 0);
 
     deneb_print_observation_init(&payload->observation, payload->req,
                                  payload->file, payload->time_total,

@@ -319,6 +319,20 @@ static void parse_status(const char *json)
     snprintf(state.source, sizeof(state.source), "%s", payload.source);
     snprintf(state.uuid, sizeof(state.uuid), "%s", payload.uuid);
     snprintf(state.current_req, sizeof(state.current_req), "%s", payload.req);
+    snprintf(state.error_key, sizeof(state.error_key), "%s",
+             payload.error_key);
+    snprintf(state.error_category, sizeof(state.error_category), "%s",
+             payload.error_category);
+    snprintf(state.error_detail, sizeof(state.error_detail), "%s",
+             payload.error_detail);
+    snprintf(state.flow_last_response, sizeof(state.flow_last_response), "%s",
+             payload.flow_last_response);
+    state.flow_inflight = payload.flow_inflight;
+    state.flow_sent = payload.flow_sent;
+    state.flow_ack = payload.flow_ack;
+    state.flow_resend = payload.flow_resend;
+    state.flow_reject = payload.flow_reject;
+    state.job_line_number = payload.job_line_number;
     state.is_printing = payload.is_printing != 0;
     state.is_paused = payload.is_paused != 0;
     state.native_active = payload.native_active != 0;

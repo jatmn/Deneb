@@ -48,6 +48,8 @@ int deneb_service_context_job_streamer(deneb_print_service_t *svc,
     streamer->job_active = &svc->job_active;
     streamer->abort_requested = &svc->abort_requested;
     streamer->finish_cleanup_pending = &svc->finish_cleanup_pending;
+    streamer->finish_cleanup_policy = &svc->finish_cleanup_policy;
+    streamer->finish_cleanup_index = &svc->finish_cleanup_index;
     streamer->planner_starvation_count = &svc->planner_starvation_count;
     return 0;
 }
@@ -78,6 +80,7 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     svc->abort_cleanup_pending = 0;
     svc->abort_cleanup_index = 0;
     svc->finish_cleanup_pending = 0;
+    svc->finish_cleanup_index = 0;
     svc->startup_status_probe_pending = 0;
     svc->firmware_probe_pending = 0;
     svc->firmware_probe_ticks = 0;

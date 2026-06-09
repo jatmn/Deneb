@@ -45,6 +45,7 @@ void deneb_flow_resync_to_expected(deneb_flow_control_t *flow);
 int deneb_flow_get_resend_packet(deneb_flow_control_t *flow, uint8_t sequence,
                                  uint8_t *out, size_t out_sz, size_t *written);
 size_t deneb_flow_inflight(const deneb_flow_control_t *flow);
+int deneb_flow_can_send(deneb_flow_control_t *flow);
 int deneb_flow_has_pending_barrier(const deneb_flow_control_t *flow);
 
 #endif
