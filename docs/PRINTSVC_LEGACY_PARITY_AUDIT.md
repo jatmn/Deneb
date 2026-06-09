@@ -124,6 +124,18 @@ is not proven by a parser or harness existing.
   printer state had `has_error:false`, ambient bed/nozzle temperatures, no
   stock `print_service.py`, and no `POSITION_ERROR`, `macro failed`, or
   print-ended-with-error log lines for the accepted run.
+- June 9, 2026 installed `dist/Deneb_Update_34518e8.deneb` evidence: a
+  supervised Cura cluster upload/start/abort smoke used a generated bounded
+  Z-only fixture at `/tmp/deneb-cura-z.gcode` with no heat, no extrusion, and no
+  X/Y motion. The cluster multipart upload/start returned success, the running
+  snapshots showed `status=printing`, `native_active:true`, and
+  `native_stop_allowed:true`, the cluster DELETE abort was accepted, the
+  immediate and draining snapshots showed `status=aborting` with Stop disabled,
+  and the final state returned to `idle` with `native_active:false`,
+  `native_stop_allowed:false`, blank filename, ambient temperatures, and no
+  stock `print_service.py`. This closes only the bounded cluster API
+  upload/start/abort slice, not representative Cura client or slicer-geometry
+  parity.
 
 ## Open Parity Work
 
@@ -132,11 +144,12 @@ is not proven by a parser or harness existing.
   Cura LAN, and Digital Factory without stock Python fallback or stale
   pending-job state. Current client-proof evidence covers observe-only UM API,
   Cura cluster status/material/job-list endpoints, and Digital Factory bridge
-  status; it does not prove LCD/Web UI user flows, Cura upload/start/abort, or
-  Digital Factory job lifecycle.
+  status, plus a bounded Z-only Cura cluster upload/start/abort run; it does
+  not prove LCD/Web UI user flows, representative Cura client/slicer geometry,
+  or Digital Factory job lifecycle.
 - Use [PRINTSVC_INTEGRATION_AUDIT.md](PRINTSVC_INTEGRATION_AUDIT.md) as the
   owner/removal-condition map for patched stock-driver client boundaries. The
   static integration audit is now gated in source/package/archive/installer
   paths, but it is not live parity evidence by itself.
-- Regenerate supervised Cura, representative completion, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort and pause/resume with a real representative print before broad parity is claimed; the current physical evidence is bounded Z-only plus low-temperature preheat.
+- Regenerate representative Cura, representative completion, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort and pause/resume with a real representative print before broad parity is claimed; the current physical evidence is bounded Z-only plus low-temperature preheat.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

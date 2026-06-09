@@ -568,8 +568,14 @@ deviation, not hidden under "stock parity."
   back to stock Python or carrying stale print state. Current observe-only
   client evidence covers native route ownership, UM API status/root/system,
   Cura cluster printers/print_jobs/materials, and Digital Factory bridge status
-  on hardware; it does not yet prove LCD UI interaction, Web UI workflows, Cura
-  upload/start/abort, or Digital Factory job lifecycle behavior.
+  on hardware. A later June 9, 2026 `34518e8` supervised Cura cluster
+  upload/start/abort smoke used a generated bounded Z-only fixture with no
+  heat, no extrusion, and no X/Y moves; it proved native route ownership, active
+  `printing` with Stop allowed, accepted cluster abort, native `aborting` with
+  Stop disabled while cleanup drained, and final `idle` with Stop disabled.
+  This still does not prove LCD UI interaction, Web UI workflows,
+  representative Cura geometry/client behavior, or Digital Factory job
+  lifecycle behavior.
 - [x] Finish the Deneb integration audit for code that patched around the stock
   Python driver: LCD `backend_comm`, web `backend_zmq`, `api_print_job`,
   `api_cluster`, `api_printer`, conflict/preheat bridges, pending-job metadata
@@ -737,7 +743,13 @@ deviation, not hidden under "stock parity."
   `POSITION_ERROR`, `macro failed`, or print-ended-with-error log lines. This
   closes the bounded native pause/resume smoke slice only; Cura-started
   pause/resume, representative slicer geometry, stock/native resource
-  comparison, and full smoke matrix remain open.
+  comparison, and full smoke matrix remain open. The later `34518e8`
+  supervised Cura cluster upload/start/abort run closes only the bounded
+  Z-only Cura cluster start/abort slice: `/tmp/deneb-cura-z.gcode` was
+  generated on-device, started through the cluster API, verified as
+  `printing` with `native_active:true` / `native_stop_allowed:true`, aborted
+  through the cluster API, observed as `aborting` with Stop disabled while
+  cleanup drained, and settled back to `idle` with active/stop false.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
   later live work exposed active/abort ProtoError desync and stale native
@@ -767,7 +779,11 @@ deviation, not hidden under "stock parity."
   `aborting` with `native_active:true` / `native_stop_allowed:false`, final
   state was `idle` with active/stop false and blank filename, and a log/summary
   grep found no `G28 X/Y/Z` or X/Y cleanup moves. Keep this open for a
-  representative supervised print path.
+  representative supervised print path. The later `34518e8` Cura cluster
+  upload/start/abort run repeated the abort-state proof through the cluster API
+  on a bounded Z-only fixture, with no heat, no extrusion, no X/Y motion, final
+  idle, and Stop disabled after abort; representative Cura/slicer geometry
+  remains open.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or
