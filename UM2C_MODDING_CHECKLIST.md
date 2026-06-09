@@ -831,12 +831,19 @@ Completed implementation slices:
   safety, flow control ACK/resend handling, status serialization, Marlin status
   parsing, G28/home-distance telemetry, heater target readiness, and abort
   state cleanup.
-- [ ] Complete stock Python source parity review item-by-item. Current evidence
-  confirms the ZMQ IPC framing, M105/M114 status poll shape, M105/M114/M115
-  parser fields, host-tested `G280`/`M109`/`M190` rewrite behavior, and the
-  unsafe stock abort cleanup sequence; remaining review must still reconcile
-  startup M115/version probing, completion/abort callback timing, and
-  pause/resume/abort motion-policy differences before claiming broad parity.
+- [x] Complete stock Python source parity review item-by-item. The review is
+  captured in
+  [docs/PRINTSVC_STOCK_PARITY_REVIEW.md](docs/PRINTSVC_STOCK_PARITY_REVIEW.md):
+  it maps the stock ZMQ IPC/status contract, sync/status polling,
+  firmware/version parsing, G-code rewrite behavior, completion callback
+  timing, abort cleanup timing, pause/resume position capture, and datalink
+  resend behavior to native owners and tests. It explicitly records the native
+  divergences: bounded diagnostic `M115`, safer no-XY-home abort cleanup, and
+  finish cleanup that stays active until planner-drain evidence. Native pause
+  now waits for a fresh `M114` position report before saving the restore point,
+  with host tests covering stale-position rejection. Live stock/native firmware,
+  representative slicer geometry, client-flow, and resource comparisons remain
+  separate open evidence items.
 - [x] Add a native serial response pump that reads Marlin lines, updates parsed
   status fields, accounts ACK/reject/resend responses, and re-emits resend
   packets through the flow-control queue.

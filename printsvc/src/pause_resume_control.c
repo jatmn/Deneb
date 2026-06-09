@@ -65,6 +65,8 @@ static int poll_pause_position_probe(deneb_print_service_t *svc)
 
     if (deneb_flow_inflight(&svc->flow) != 0)
         return 0;
+    if (svc->status.position_report_count <= svc->pause_position_report_start)
+        return 0;
 
     svc->pause_position_probe_pending = 0;
     svc->pause_position_probe_sent = 0;

@@ -358,6 +358,11 @@ static void test_pause_resume_control_policy(void)
     assert(svc.pause_position_probe_sent);
     assert(deneb_flow_inflight(&svc.flow) == 1);
     deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.pause_position_probe_pending);
+    assert(svc.pause_position_probe_sent);
+    assert(!svc.pause_policy_pending);
+    assert(!svc.paused_position_valid);
     svc.status.position_report_count = 2;
     svc.status.x = 121.0f;
     svc.status.y = 81.0f;
@@ -4385,6 +4390,10 @@ static void test_pause_gates_active_job_streaming(void)
     assert(svc.pause_position_probe_pending);
     assert(deneb_flow_inflight(&svc.flow) == 1);
     deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.pause_position_probe_pending);
+    assert(svc.pause_position_probe_sent);
+    assert(!svc.pause_policy_pending);
     svc.status.position_report_count = 2;
     svc.status.x = 121.0f;
     assert(deneb_pause_resume_control_poll(&svc) == 0);

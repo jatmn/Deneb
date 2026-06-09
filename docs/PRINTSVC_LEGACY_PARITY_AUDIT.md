@@ -6,6 +6,10 @@ read-only reference material. A checked Section 8 item should point to concrete
 native code, host tests, package gates, or live hardware evidence; broad parity
 is not proven by a parser or harness existing.
 
+The item-by-item source comparison is tracked in
+[PRINTSVC_STOCK_PARITY_REVIEW.md](PRINTSVC_STOCK_PARITY_REVIEW.md). This audit
+keeps the shorter evidence summary and the live-proof gaps.
+
 ## Source Anchors
 
 | Stock source | Legacy behavior | Native claim status |
