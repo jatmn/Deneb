@@ -1840,6 +1840,22 @@ Completed implementation slices:
   readings around 25.5 C / 28.3 C, and `print_service_py=0`. This was
   observe-only evidence; heat, motion, Cura job, pause/resume, completion, and
   active/preheat abort physical phases remain open.
+- [x] Deploy `Deneb_Update_f83c1a1` and refresh installed native ownership plus
+  observe-only client proof after the pause-position safety fix: on June 9,
+  2026, the package installed over SSH, `/etc/deneb/manifest.txt` reported
+  `version: f83c1a1`, and installed CLI, init-handoff, release-gate,
+  native-audit, integration-audit, and integration-audit selftests passed. The
+  installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync
+  --client-proof` summary passed `/usr/bin/deneb-printsvc-smoke-verify
+  --native --idle --boot-sync --client-proof`, proving native-only route, idle
+  native active/Stop flags false, no stock `print_service.py`, UM API
+  `/printer/status`, `/printer`, and `/system`, Cura cluster `/printers`,
+  `/print_jobs`, and `/materials`, installed Digital Factory bridge status,
+  nonzero ambient telemetry around 29.7 C bed and 32.7 C nozzle, and final
+  `/usr/bin/deneb-printsvc` RSS around 1576 KB. This refreshes the non-motion
+  client-surface proof for the current build; it does not close the supervised
+  all-axis pause/resume motion proof, representative Cura geometry, or
+  stock/native resource comparison gates.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
   refuses `nightly` or `stable` native-printsvc packages unless
