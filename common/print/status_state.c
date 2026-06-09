@@ -54,6 +54,14 @@ int deneb_status_state_has_print_context(
         deneb_print_file_is_candidate(state->filename));
 }
 
+int deneb_status_state_has_abort_context(
+    const deneb_backend_status_state_t *state,
+    int stop_inflight)
+{
+    return (state && deneb_print_req_is_abort(state->current_req)) ||
+           stop_inflight;
+}
+
 deneb_print_context_flags_t deneb_status_state_context_flags(
     const deneb_backend_status_state_t *state,
     int has_print_name)

@@ -1411,6 +1411,12 @@ Completed implementation slices:
   and storage-error transitions are not embedded directly in the service
   dispatcher/poller, with host tests covering source defaults, request labels,
   abort cleanup, and fault mapping.
+- [x] Move touchscreen abort-display context behind shared native status-state
+  helpers: LCD `backend_comm` now calls
+  `deneb_status_state_has_abort_context` instead of interpreting abort request
+  text locally, and host tests cover both native abort status and local
+  stop-inflight display context. This thins the LCD adapter but does not close
+  the required hardware LCD abort-flow proof.
 - [x] Make native abort/finish cleanup policy failures visible as serial faults
   when motion transport is marked ready, so the driver no longer reports
   successful abort or completion if the required cleanup G-code cannot be sent.

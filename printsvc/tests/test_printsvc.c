@@ -3160,6 +3160,8 @@ static void test_status_state_helpers(void)
     assert(strcmp(ctx.filename, "cube.gcode") == 0);
     assert(deneb_status_state_has_print_name(&state, NULL));
     assert(deneb_status_state_has_print_context(&state));
+    assert(!deneb_status_state_has_abort_context(&state, 0));
+    assert(deneb_status_state_has_abort_context(&state, 1));
     flags = deneb_status_state_context_flags(&state, 1);
     assert(flags.has_active_context);
     assert(flags.has_preparing_context);
@@ -3191,7 +3193,17 @@ static void test_status_state_helpers(void)
     assert(!state.native_stop_allowed);
     assert(state.filename[0] == '\0');
     assert(!deneb_status_state_has_print_context(&state));
+    assert(!deneb_status_state_has_abort_context(&state, 0));
     assert(!stop_guard.in_flight);
+
+    prev = state;
+    assert(deneb_status_state_apply_json(
+               &state, &prev,
+               "{\"file\":\"cube.gcode\",\"req\":\"Aborting\","
+               "\"denebActive\":true,\"denebStopAllowed\":false}",
+               retained, sizeof(retained), NULL, 4234) == 0);
+    assert(deneb_status_state_has_abort_context(&state, 0));
+    assert(deneb_status_state_has_abort_context(&state, 1));
 
     assert(deneb_status_state_apply_json(NULL, &prev, "{}", retained,
                                          sizeof(retained), &stop_guard,

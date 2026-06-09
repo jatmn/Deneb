@@ -64,6 +64,9 @@ int deneb_status_state_has_print_name(
     const char *display_name);
 int deneb_status_state_has_print_context(
     const deneb_backend_status_state_t *state);
+int deneb_status_state_has_abort_context(
+    const deneb_backend_status_state_t *state,
+    int stop_inflight);
 deneb_print_context_flags_t deneb_status_state_context_flags(
     const deneb_backend_status_state_t *state,
     int has_print_name);

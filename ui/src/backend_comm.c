@@ -412,8 +412,8 @@ int backend_has_stoppable_print_context(void)
 
 int backend_has_abort_print_context(void)
 {
-    return deneb_print_req_is_abort(state.current_req) ||
-           backend_is_stop_print_inflight();
+    return deneb_status_state_has_abort_context(
+        &state, backend_is_stop_print_inflight());
 }
 
 void backend_clear_print_display_context_if_idle(void)
