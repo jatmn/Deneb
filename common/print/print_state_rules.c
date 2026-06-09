@@ -360,6 +360,18 @@ const char *deneb_print_completion_state_label(int has_error, int time_total,
     return "stopped";
 }
 
+const char *deneb_print_completion_state_label_with_req(int has_error,
+                                                        int time_total,
+                                                        int time_left,
+                                                        const char *req)
+{
+    if (has_error)
+        return "error";
+    if (deneb_str_eq_ci(req, DENEB_PRINT_REQ_COMPLETE))
+        return "completed";
+    return deneb_print_completion_state_label(has_error, time_total, time_left);
+}
+
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active)
 {
     return has_error || is_paused || is_active;

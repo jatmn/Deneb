@@ -228,7 +228,10 @@ static void log_status_transition(const printer_state_t *curr)
     if (previous_state.is_printing && !curr->is_printing) {
         if (curr->has_error)
             fprintf(stderr, "deneb-api: print ended with error (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
-        else if (curr->time_total > 0 && curr->time_left <= 0)
+        else if (strcmp(deneb_print_completion_state_label_with_req(
+                            curr->has_error, previous_state.time_total,
+                            previous_state.time_left, curr->current_req),
+                        "completed") == 0)
             fprintf(stderr, "deneb-api: print completed (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
         else
             fprintf(stderr, "deneb-api: print stopped before completion (filename=%s)\n", previous_state.filename[0] ? previous_state.filename : "(unknown)");
@@ -271,9 +274,8 @@ static void append_print_history(const printer_state_t *prev, const printer_stat
     entry.name = prev->filename;
     entry.uuid = prev->uuid;
     entry.source = prev->source;
-    entry.state = deneb_print_completion_state_label(curr->has_error,
-                                                     prev->time_total,
-                                                     prev->time_left);
+    entry.state = deneb_print_completion_state_label_with_req(
+        curr->has_error, prev->time_total, prev->time_left, curr->current_req);
     entry.time_total = prev->time_total;
     entry.time_elapsed = deneb_print_elapsed_seconds(prev->time_total,
                                                      prev->time_left);

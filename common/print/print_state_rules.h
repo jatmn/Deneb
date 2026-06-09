@@ -162,6 +162,10 @@ const char *deneb_print_job_uuid_or_default(const char *uuid);
 const char *deneb_print_job_source_or_default(const char *source);
 const char *deneb_print_completion_state_label(int has_error, int time_total,
                                                int time_left);
+const char *deneb_print_completion_state_label_with_req(int has_error,
+                                                        int time_total,
+                                                        int time_left,
+                                                        const char *req);
 int deneb_print_job_is_active(int has_error, int is_paused, int is_active);
 int deneb_print_start_allowed(int connected, int has_error,
                               int is_paused, int is_active);

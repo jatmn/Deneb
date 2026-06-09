@@ -1820,6 +1820,15 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_completion_state_label(0, 120, 30), "stopped") == 0);
     assert(strcmp(deneb_print_completion_state_label(1, 120, 0), "error") == 0);
     assert(strcmp(deneb_print_completion_state_label(0, 0, 0), "stopped") == 0);
+    assert(strcmp(deneb_print_completion_state_label_with_req(
+                      0, 0, 0, DENEB_PRINT_REQ_COMPLETE),
+                  "completed") == 0);
+    assert(strcmp(deneb_print_completion_state_label_with_req(
+                      0, 0, 0, DENEB_PRINT_REQ_IDLE),
+                  "stopped") == 0);
+    assert(strcmp(deneb_print_completion_state_label_with_req(
+                      1, 0, 0, DENEB_PRINT_REQ_COMPLETE),
+                  "error") == 0);
     {
         int total = 120;
         int left = 180;
