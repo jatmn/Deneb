@@ -410,10 +410,12 @@ for phase in heating job-running job-resumed cura-job-running \
     preheat-abort-active active-abort-printing; do
     require_status_phase "$phase" printing
 done
-for phase in preheat-abort-requested active-abort-requested; do
+for phase in job-abort-requested cura-job-abort-requested \
+    preheat-abort-requested active-abort-requested; do
     require_abort_requested_phase "$phase"
 done
-for phase in preheat-abort-draining active-abort-draining; do
+for phase in job-abort-draining cura-job-abort-draining \
+    preheat-abort-draining active-abort-draining; do
     require_abort_draining_phase "$phase"
 done
 require_status_phase job-paused paused

@@ -174,6 +174,27 @@ require_completion_runtime_evidence() {
     fail "completion runtime evidence is neither active-running nor fast-completed"
 }
 
+require_abort_requested_phase() {
+    phase="$1"
+    label="$2"
+
+    require_pattern " phase=status-${phase} .*rc=0 .*status=aborting" "$label status is aborting"
+    require_pattern " phase=printer-${phase} .*rc=0 .*body=.*native_active:true.*native_stop_allowed:false" "$label native active stays true and stop is disabled"
+}
+
+require_abort_draining_phase() {
+    phase="$1"
+    label="$2"
+
+    if grep -Eq " phase=status-${phase} .*rc=0 .*status=aborting" "$SUMMARY"; then
+        require_pattern " phase=printer-${phase} .*rc=0 .*body=.*native_active:true.*native_stop_allowed:false" "$label draining abort state keeps native active and stop disabled"
+        return
+    fi
+
+    require_pattern " phase=status-${phase} .*rc=0 .*status=idle" "$label draining status is aborting or idle after cleanup"
+    require_pattern " phase=printer-${phase} .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false" "$label draining idle state clears native active/stop flags"
+}
+
 if [ ! -s "$SUMMARY" ]; then
     echo "summary file missing or empty: $SUMMARY" >&2
     exit 1
@@ -328,7 +349,9 @@ if [ "$REQUIRE_JOB" = "1" ]; then
         fail "job abort/stop passed"
     fi
     require_pattern ' snapshot=job-abort-requested' "job abort-requested snapshot present"
+    require_abort_requested_phase "job-abort-requested" "job abort requested"
     require_pattern ' snapshot=job-abort-draining' "job abort-draining snapshot present"
+    require_abort_draining_phase "job-abort-draining" "job abort"
     require_pattern ' snapshot=job-aborted' "job-aborted snapshot present"
     require_pattern ' phase=status-job-aborted .*rc=0 .*status=idle' "job-aborted status is idle"
     require_pattern ' phase=printer-job-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-aborted native active/stop flags are false"
@@ -342,7 +365,9 @@ if [ "$REQUIRE_CURA_JOB" = "1" ]; then
     require_pattern ' phase=printer-cura-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "Cura job-running native active/stop flags are true"
     require_pattern ' phase=cura-job-abort .*rc=0' "Cura job abort passed"
     require_pattern ' snapshot=cura-job-abort-requested' "Cura job abort-requested snapshot present"
+    require_abort_requested_phase "cura-job-abort-requested" "Cura job abort requested"
     require_pattern ' snapshot=cura-job-abort-draining' "Cura job abort-draining snapshot present"
+    require_abort_draining_phase "cura-job-abort-draining" "Cura job abort"
     require_pattern ' snapshot=cura-job-aborted' "Cura job-aborted snapshot present"
     require_pattern ' phase=status-cura-job-aborted .*rc=0 .*status=idle' "Cura job-aborted status is idle"
     require_pattern ' phase=printer-cura-job-aborted .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "Cura job-aborted native active/stop flags are false"

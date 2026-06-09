@@ -535,7 +535,8 @@ Material-profile USB import root/depth/suffix policy and the
   status-body evidence, reports the wrong status value for a required lifecycle
   phase, contains a stock `print_service.py` process sample, lacks native
   local/USB IPC job acceptance plus accepted stop-state and abort/idle-state
-  evidence, lacks explicit active-print abort evidence, lacks
+  evidence, lacks explicit generic-job, Cura-cluster, preheat, or active-print
+  abort-requested/draining evidence with Stop disabled during cleanup, lacks
   `deneb-printsvc` process ownership, or lacks native active/stop-allowed
   evidence in any required active or inactive printer-root lifecycle body. Its
   `--require-reduction` mode fails unless native memory, print-service RSS,
@@ -550,7 +551,10 @@ Material-profile USB import root/depth/suffix policy and the
   stop-safety evidence, missing status-body native-route evidence in verifier
   and comparator paths, missing native-route evidence in a single comparator
   lifecycle status snapshot, missing active-abort or natural-completion active
-  status evidence,
+  status evidence, missing generic-job or Cura-cluster
+  abort-requested/draining status evidence, Cura-cluster abort-requested with
+  Stop still enabled, Cura-cluster abort-draining that reports idle while
+  native active remains true,
   a wrong single-phase lifecycle status value, boot-sync summaries that put the
   full status response into `status=` or omit `status_body` native-route proof,
   missing client-proof rows, missing active or inactive stop-safety evidence in a single comparator

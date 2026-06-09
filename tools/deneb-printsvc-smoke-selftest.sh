@@ -339,6 +339,33 @@ expect_failure compare_rejects_missing_active_abort_requested_status \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-active-abort-requested-status.summary"
 
+grep -v 'phase=status-job-abort-requested ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-job-abort-requested-status.summary"
+expect_failure verify_rejects_missing_job_abort_requested_status \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-job-abort-requested-status.summary"
+expect_failure compare_rejects_missing_job_abort_requested_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-job-abort-requested-status.summary"
+
+grep -v 'phase=status-cura-job-abort-requested ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-cura-job-abort-requested-status.summary"
+expect_failure verify_rejects_missing_cura_job_abort_requested_status \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-cura-job-abort-requested-status.summary"
+expect_failure compare_rejects_missing_cura_job_abort_requested_status \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-missing-cura-job-abort-requested-status.summary"
+
+sed '/phase=printer-cura-job-abort-requested /s/native_stop_allowed:false/native_stop_allowed:true/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-cura-job-abort-requested-stop-enabled.summary"
+expect_failure verify_rejects_cura_job_abort_requested_stop_enabled \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-cura-job-abort-requested-stop-enabled.summary"
+expect_failure compare_rejects_cura_job_abort_requested_stop_enabled \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-cura-job-abort-requested-stop-enabled.summary"
+
 sed '/phase=status-active-abort-draining /s/status=aborting/status=idle/; /phase=status-active-abort-draining /s/body=aborting/body=idle/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-active-abort-draining-idle.summary"
 expect_failure verify_rejects_active_abort_draining_idle \
@@ -347,6 +374,15 @@ expect_failure verify_rejects_active_abort_draining_idle \
 expect_failure compare_rejects_active_abort_draining_idle \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-active-abort-draining-idle.summary"
+
+sed '/phase=status-cura-job-abort-draining /s/status=aborting/status=idle/; /phase=status-cura-job-abort-draining /s/body=aborting/body=idle/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-cura-job-abort-draining-idle-still-active.summary"
+expect_failure verify_rejects_cura_job_abort_draining_idle_still_active \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-cura-job-abort-draining-idle-still-active.summary"
+expect_failure compare_rejects_cura_job_abort_draining_idle_still_active \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-cura-job-abort-draining-idle-still-active.summary"
 
 sed '/phase=printer-preheat-abort-draining /s/native_stop_allowed:false/native_stop_allowed:true/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-preheat-abort-draining-stop-enabled.summary"

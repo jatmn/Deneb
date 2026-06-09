@@ -783,7 +783,11 @@ deviation, not hidden under "stock parity."
   upload/start/abort run repeated the abort-state proof through the cluster API
   on a bounded Z-only fixture, with no heat, no extrusion, no X/Y motion, final
   idle, and Stop disabled after abort; representative Cura/slicer geometry
-  remains open.
+  remains open. The smoke verifier and stock/native comparator now reject weak
+  generic-job or Cura-cluster abort evidence unless abort-requested captures
+  scalar `aborting` with `native_active:true` / `native_stop_allowed:false` and
+  abort-draining either remains in that aborting state or has already settled
+  to idle with active/stop false.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or
@@ -1720,6 +1724,10 @@ Completed implementation slices:
   lifecycle status during initial idle, preheat/abort, or active-abort evidence, putting the full status body
   into boot-sync `status=`, or omitting boot-sync `status_body` native-route
   proof.
+  It also now rejects missing generic-job and Cura-cluster
+  abort-requested/draining status evidence, so full-summary evidence cannot
+  skip the Stop-disabled abort cleanup window that caused earlier LCD/API
+  regressions.
 - [x] Capture observe-only client API/bridge evidence after package install: on
   June 9, 2026, `dist/Deneb_Update_fa29a67.deneb` installed over SSH and the
   installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof`
