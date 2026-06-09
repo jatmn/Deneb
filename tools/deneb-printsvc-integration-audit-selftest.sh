@@ -59,6 +59,8 @@ EOF
 #include "print_state_rules.h"
 int uses_flags(void) { return deneb_status_state_context_flags(0, 0).has_active_context; }
 int uses_abort_context(void) { return deneb_status_state_has_abort_context(0, 0); }
+int uses_transition(void) { deneb_status_transition_t t; return deneb_status_state_transition_from_pair(&t, 0, 0); }
+int uses_preheat(void) { return deneb_status_state_preheat_events(0, 0); }
 EOF
     cat > "$root/web/src/backend_zmq.c" <<'EOF'
 #include "print_backend_route.h"
@@ -67,6 +69,8 @@ EOF
 #include "print_history.h"
 #include "print_state_rules.h"
 const char *uses_label(void) { return deneb_print_status_label_with_req(1, 0, 0, 0, "", 0); }
+int uses_transition(void) { deneb_status_transition_t t; return deneb_status_state_transition_from_pair(&t, 0, 0); }
+int uses_preheat(void) { return deneb_status_state_preheat_events(0, 0); }
 EOF
     cat > "$root/web/src/api_print_job.c" <<'EOF'
 #include "pending_job_registration.h"
@@ -138,6 +142,18 @@ write_valid_source "$MISSING_LCD_ABORT_HELPER"
 grep -v 'deneb_status_state_has_abort_context' "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.c" > "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.tmp"
 mv "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.tmp" "$MISSING_LCD_ABORT_HELPER/ui/src/backend_comm.c"
 expect_failure rejects_missing_lcd_abort_helper "$AUDIT" --source "$MISSING_LCD_ABORT_HELPER"
+
+MISSING_LCD_TRANSITION_HELPER="$TMP_DIR/source-missing-lcd-transition-helper"
+write_valid_source "$MISSING_LCD_TRANSITION_HELPER"
+grep -v 'deneb_status_state_transition_from_pair' "$MISSING_LCD_TRANSITION_HELPER/ui/src/backend_comm.c" > "$MISSING_LCD_TRANSITION_HELPER/ui/src/backend_comm.tmp"
+mv "$MISSING_LCD_TRANSITION_HELPER/ui/src/backend_comm.tmp" "$MISSING_LCD_TRANSITION_HELPER/ui/src/backend_comm.c"
+expect_failure rejects_missing_lcd_transition_helper "$AUDIT" --source "$MISSING_LCD_TRANSITION_HELPER"
+
+MISSING_WEB_PREHEAT_HELPER="$TMP_DIR/source-missing-web-preheat-helper"
+write_valid_source "$MISSING_WEB_PREHEAT_HELPER"
+grep -v 'deneb_status_state_preheat_events' "$MISSING_WEB_PREHEAT_HELPER/web/src/backend_zmq.c" > "$MISSING_WEB_PREHEAT_HELPER/web/src/backend_zmq.tmp"
+mv "$MISSING_WEB_PREHEAT_HELPER/web/src/backend_zmq.tmp" "$MISSING_WEB_PREHEAT_HELPER/web/src/backend_zmq.c"
+expect_failure rejects_missing_web_preheat_helper "$AUDIT" --source "$MISSING_WEB_PREHEAT_HELPER"
 
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"

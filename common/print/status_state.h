@@ -56,7 +56,17 @@ typedef struct {
     uint32_t last_update_ms;
 } deneb_backend_status_state_t;
 
+typedef struct {
+    int req_changed;
+    int print_resumed;
+    int print_paused;
+    int print_ended;
+    int print_started;
+    const char *completion_label;
+} deneb_status_transition_t;
+
 void deneb_status_state_init(deneb_backend_status_state_t *state);
+void deneb_status_transition_init(deneb_status_transition_t *transition);
 deneb_status_filename_context_t deneb_status_state_filename_context(
     const deneb_backend_status_state_t *state);
 int deneb_status_state_has_print_name(
@@ -70,6 +80,13 @@ int deneb_status_state_has_abort_context(
 deneb_print_context_flags_t deneb_status_state_context_flags(
     const deneb_backend_status_state_t *state,
     int has_print_name);
+int deneb_status_state_transition_from_pair(
+    deneb_status_transition_t *transition,
+    const deneb_backend_status_state_t *prev,
+    const deneb_backend_status_state_t *curr);
+int deneb_status_state_preheat_events(
+    const deneb_backend_status_state_t *state,
+    deneb_print_preheat_tracker_t *tracker);
 int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
                                   const deneb_backend_status_state_t *prev,
                                   const char *json,

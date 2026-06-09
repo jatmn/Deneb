@@ -18,6 +18,15 @@ void deneb_status_state_init(deneb_backend_status_state_t *state)
         memset(state, 0, sizeof(*state));
 }
 
+void deneb_status_transition_init(deneb_status_transition_t *transition)
+{
+    if (!transition)
+        return;
+
+    memset(transition, 0, sizeof(*transition));
+    transition->completion_label = "";
+}
+
 deneb_status_filename_context_t deneb_status_state_filename_context(
     const deneb_backend_status_state_t *state)
 {
@@ -79,6 +88,42 @@ deneb_print_context_flags_t deneb_status_state_context_flags(
         state ? state->is_paused : 0,
         has_print_name);
     return flags;
+}
+
+int deneb_status_state_transition_from_pair(
+    deneb_status_transition_t *transition,
+    const deneb_backend_status_state_t *prev,
+    const deneb_backend_status_state_t *curr)
+{
+    if (!transition || !prev || !curr)
+        return -1;
+
+    deneb_status_transition_init(transition);
+    transition->req_changed =
+        strcmp(prev->current_req, curr->current_req) != 0;
+    transition->print_resumed = prev->is_paused && !curr->is_paused;
+    transition->print_paused = !prev->is_paused && curr->is_paused;
+    transition->print_ended = prev->is_printing && !curr->is_printing;
+    transition->print_started = !prev->is_printing && curr->is_printing;
+    if (transition->print_ended)
+        transition->completion_label =
+            deneb_print_completion_state_label_with_req(
+                curr->has_error, prev->time_total, prev->time_left,
+                curr->current_req);
+
+    return 0;
+}
+
+int deneb_status_state_preheat_events(
+    const deneb_backend_status_state_t *state,
+    deneb_print_preheat_tracker_t *tracker)
+{
+    if (!state || !tracker)
+        return 0;
+
+    return deneb_print_preheat_tracker_update(
+        tracker, state->bed_temp_cur, state->bed_temp_set,
+        state->nozzle_temp_cur, state->nozzle_temp_set);
 }
 
 int deneb_status_state_apply_json(deneb_backend_status_state_t *state,

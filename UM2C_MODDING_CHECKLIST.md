@@ -1199,6 +1199,10 @@ Completed implementation slices:
   rules so LCD and web/API ZMQ clients emit preheat-target-active and
   targets-ready transitions from one tested tracker instead of separate local
   `preheat_targets_logged` / `preheat_reached_logged` flags.
+- [x] Move LCD/web backend lifecycle transition classification into shared
+  native status-state helpers so pause/resume, start/end, completion/error,
+  and preheat-event logging use one tested transition owner while adapter code
+  keeps only transport, history, and display side effects.
 - [x] Move material-move minimum temperature and ready-window policy into
   `common/print/print_state_rules.*` so the touchscreen material workflow no
   longer owns its own hotend movement safety threshold beside shared heat-state
@@ -1417,6 +1421,12 @@ Completed implementation slices:
   text locally, and host tests cover both native abort status and local
   stop-inflight display context. This thins the LCD adapter but does not close
   the required hardware LCD abort-flow proof.
+- [x] Move LCD/web backend transition logging onto shared native status-state
+  helpers: `deneb_status_state_transition_from_pair` classifies request
+  changes, pause/resume, start/end, and completion labels, while
+  `deneb_status_state_preheat_events` wraps the shared preheat tracker for both
+  ZMQ clients. The integration audit now rejects either adapter if those helper
+  calls disappear.
 - [x] Make native abort/finish cleanup policy failures visible as serial faults
   when motion transport is marked ready, so the driver no longer reports
   successful abort or completion if the required cleanup G-code cannot be sent.

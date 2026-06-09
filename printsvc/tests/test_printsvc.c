@@ -3117,6 +3117,8 @@ static void test_status_state_helpers(void)
     deneb_status_filename_context_t ctx;
     deneb_print_context_flags_t flags;
     deneb_print_stop_guard_t stop_guard;
+    deneb_status_transition_t transition;
+    deneb_print_preheat_tracker_t preheat_tracker;
     char retained[128] = "";
 
     deneb_status_state_init(&state);
@@ -3204,6 +3206,53 @@ static void test_status_state_helpers(void)
                retained, sizeof(retained), NULL, 4234) == 0);
     assert(deneb_status_state_has_abort_context(&state, 0));
     assert(deneb_status_state_has_abort_context(&state, 1));
+
+    deneb_status_state_init(&prev);
+    deneb_status_state_init(&state);
+    snprintf(prev.current_req, sizeof(prev.current_req), "%s",
+             DENEB_PRINT_REQ_PAUSED);
+    snprintf(prev.filename, sizeof(prev.filename), "%s", "cube.gcode");
+    prev.is_printing = 1;
+    prev.is_paused = 1;
+    prev.time_total = 100;
+    prev.time_left = 25;
+    snprintf(state.current_req, sizeof(state.current_req), "%s",
+             DENEB_PRINT_REQ_PRINTING);
+    snprintf(state.filename, sizeof(state.filename), "%s", "cube.gcode");
+    state.is_printing = 1;
+    assert(deneb_status_state_transition_from_pair(
+               &transition, &prev, &state) == 0);
+    assert(transition.req_changed);
+    assert(transition.print_resumed);
+    assert(!transition.print_paused);
+    assert(!transition.print_started);
+    assert(!transition.print_ended);
+
+    state.time_total = 100;
+    state.time_left = 0;
+    prev = state;
+    deneb_status_state_init(&state);
+    snprintf(state.current_req, sizeof(state.current_req), "%s",
+             DENEB_PRINT_REQ_IDLE);
+    assert(deneb_status_state_transition_from_pair(
+               &transition, &prev, &state) == 0);
+    assert(transition.print_ended);
+    assert(!transition.print_started);
+    assert(strcmp(transition.completion_label, "completed") == 0);
+
+    deneb_print_preheat_tracker_init(&preheat_tracker);
+    state.bed_temp_set = 60.0f;
+    state.nozzle_temp_set = 210.0f;
+    state.bed_temp_cur = 28.0f;
+    state.nozzle_temp_cur = 31.0f;
+    assert(deneb_status_state_preheat_events(
+               &state, &preheat_tracker) ==
+           DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE);
+    state.bed_temp_cur = 60.0f;
+    state.nozzle_temp_cur = 210.0f;
+    assert(deneb_status_state_preheat_events(
+               &state, &preheat_tracker) ==
+           DENEB_PRINT_PREHEAT_EVENT_TARGETS_READY);
 
     assert(deneb_status_state_apply_json(NULL, &prev, "{}", retained,
                                          sizeof(retained), &stop_guard,

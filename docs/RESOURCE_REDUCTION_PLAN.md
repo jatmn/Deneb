@@ -116,8 +116,10 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   LCD/web ZMQ status consumers now also share
   `common/print/status_state.*` for status-to-state application, retained
   filename cleanup, stop-guard cleanup, timing normalization, and
-  active/preparing/stoppable context derivation instead of carrying separate
-  copies beside each backend or embedded Python/Gershwin launchers. Host
+  active/preparing/stoppable context derivation. Their lifecycle transition
+  logging and preheat event logging now also use shared `status_state.*`
+  wrappers instead of carrying separate pause/resume/completion/preheat
+  classifiers beside each backend or embedded Python/Gershwin launchers. Host
   regression coverage now exercises that shared owner for active/preheat stop
   allowance, retained filename behavior through transient macro statuses,
   firmware/topcap identity copying, and immediate stop-guard clearing once the

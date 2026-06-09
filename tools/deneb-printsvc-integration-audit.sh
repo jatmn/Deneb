@@ -121,6 +121,8 @@ audit_source() {
     require_pattern "${repo}/ui/src/backend_comm.c" '#include "print_state_rules\.h"' "LCD backend uses shared state rules"
     require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_context_flags' "LCD backend gets context flags from shared status helper"
     require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_has_abort_context' "LCD backend gets abort display context from shared status helper"
+    require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_transition_from_pair' "LCD backend gets lifecycle transition classification from shared status helper"
+    require_pattern "${repo}/ui/src/backend_comm.c" 'deneb_status_state_preheat_events' "LCD backend gets preheat transition classification from shared status helper"
 
     require_file "${repo}/web/src/backend_zmq.c" "web backend source exists"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_backend_route\.h"' "web backend uses shared route helper"
@@ -129,6 +131,8 @@ audit_source() {
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_history\.h"' "web backend uses shared print history"
     require_pattern "${repo}/web/src/backend_zmq.c" '#include "print_state_rules\.h"' "web backend uses shared state rules"
     require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_print_status_label_with_req' "web backend gets status labels from shared rules"
+    require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_status_state_transition_from_pair' "web backend gets lifecycle transition classification from shared status helper"
+    require_pattern "${repo}/web/src/backend_zmq.c" 'deneb_status_state_preheat_events' "web backend gets preheat transition classification from shared status helper"
 
     require_file "${repo}/web/src/api_print_job.c" "print job API source exists"
     require_pattern "${repo}/web/src/api_print_job.c" '#include "pending_job_registration\.h"' "print job API uses shared pending-job registration"

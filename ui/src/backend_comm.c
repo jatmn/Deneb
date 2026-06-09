@@ -179,6 +179,7 @@ static void retain_print_filename(const char *filename)
 
 static void log_status_transition(const printer_state_t *curr)
 {
+    deneb_status_transition_t transition;
     int preheat_events;
 
     if (!had_previous_status) {
@@ -187,25 +188,25 @@ static void log_status_transition(const printer_state_t *curr)
         return;
     }
 
-    if (strcmp(previous_state.current_req, curr->current_req) != 0)
+    if (deneb_status_state_transition_from_pair(
+            &transition, &previous_state, curr) != 0)
+        return;
+
+    if (transition.req_changed)
         fprintf(stderr, "backend: printer req changed: \"%s\" -> \"%s\"\n",
                 previous_state.current_req[0] ? previous_state.current_req : "none",
                 curr->current_req[0] ? curr->current_req : "none");
 
-    if (previous_state.is_paused && !curr->is_paused)
+    if (transition.print_resumed)
         fprintf(stderr, "backend: print resumed (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
-    if (!previous_state.is_paused && curr->is_paused)
+    if (transition.print_paused)
         fprintf(stderr, "backend: print paused (filename=%s)\n", curr->filename[0] ? curr->filename : "(unknown)");
 
-    if (previous_state.is_printing && !curr->is_printing) {
-        const char *completion =
-            deneb_print_completion_state_label_with_req(
-                curr->has_error, previous_state.time_total,
-                previous_state.time_left, curr->current_req);
-        if (strcmp(completion, "error") == 0)
+    if (transition.print_ended) {
+        if (strcmp(transition.completion_label, "error") == 0)
             fprintf(stderr, "backend: print ended with error (filename=%s)\n",
                     previous_state.filename[0] ? previous_state.filename : "(unknown)");
-        else if (strcmp(completion, "completed") == 0)
+        else if (strcmp(transition.completion_label, "completed") == 0)
             fprintf(stderr, "backend: print completed (filename=%s)\n",
                     previous_state.filename[0] ? previous_state.filename : "(unknown)");
         else
@@ -214,16 +215,15 @@ static void log_status_transition(const printer_state_t *curr)
         retained_print_filename[0] = '\0';
     }
 
-    if (!previous_state.is_printing && curr->is_printing)
+    if (transition.print_started)
         fprintf(stderr, "backend: print started (filename=%s, req=%s, uuid=%s, source=%s)\n",
                 curr->filename[0] ? curr->filename : "(unknown)",
                 curr->current_req[0] ? curr->current_req : "unknown",
                 curr->uuid[0] ? curr->uuid : "(none)",
                 curr->source[0] ? curr->source : "(none)");
 
-    preheat_events = deneb_print_preheat_tracker_update(
-        &preheat_tracker, curr->bed_temp_cur, curr->bed_temp_set,
-        curr->nozzle_temp_cur, curr->nozzle_temp_set);
+    preheat_events =
+        deneb_status_state_preheat_events(curr, &preheat_tracker);
 
     if (preheat_events & DENEB_PRINT_PREHEAT_EVENT_TARGETS_ACTIVE) {
         fprintf(stderr, "backend: print preheating targets active: bed=%0.1fC(nozzle=%0.1fC)\n",
