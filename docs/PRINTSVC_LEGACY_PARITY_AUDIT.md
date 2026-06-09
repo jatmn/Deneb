@@ -15,7 +15,7 @@ is not proven by a parser or harness existing.
 | `rootfs/home/cygnus/marlindriver/marlin_companion/protocol.py` | Parses `MACHINE_TYPE`, `PCB_ID`, and quoted `BUILD` version output when observed and reports `marlin-version`. | Native version parser support can be claimed when host-tested. Live firmware metadata parity must compare stock and native on the same firmware; `firmware:"none"` is acceptable if stock also reports `none`. |
 | `rootfs/home/cygnus/marlindriver/marlin_executor.py` | Rewrites `M190` to `M140` and `M109` to `M104`, treats `G280` through a prime replacement path, sends periodic priority `M105`/`M114`, and updates progress/finish callbacks. | Native now has a shared `gcode_rewrite.*` helper with host tests for `M117` skip, `M109` to `M104`, `M190` to `M140`, `G280` expansion, streamed job `M190` service-side waiting, raw multi-line `GCODE` wait-before-next-command sequencing, and macro-level heater wait callbacks. Broad parity remains open for callback timing and hardware proof where physical heat/motion is involved. |
 | `rootfs/home/cygnus/marlindriver/marlin_executor.py` | Abort cleanup restores paused queue if needed, aborts the normal queue, then sends relative XY wipe, Z move, `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and motor release. | Native intentionally diverges for safety by avoiding the stock duplicate/unsafe homing cleanup. Explicit and latched native aborts now route through the service abort owner so status remains aborting and active identity is retained until cleanup drains, then clears to idle. Hardware proof is still required for physical active/preheat abort motion. |
-| `rootfs/home/cygnus/marlindriver/print_service.py` | Completion callback clears the active service file/type after the executor's final queue-completed callback. | Native finish cleanup now keeps status active until the finish policy/drain completes, then marks complete and clears active file/source/UUID/heater targets with host tests. Hardware completion proof remains open. |
+| `rootfs/home/cygnus/marlindriver/print_service.py` | Completion callback clears the active service file/type after the executor's final queue-completed callback. | Native finish cleanup now keeps status active until the finish policy/drain completes, then marks complete and clears active file/source/UUID/heater targets with host tests. Bounded Z-only hardware completion proof now exists; representative Cura/slicer completion remains part of broader client parity. |
 | `rootfs/home/cygnus/marlindriver/marlin_executor.py` | Pause saves position with `M114`, retracts/wipes/parks/cools, waits with `M400`, then resumes through reheat, XY/Z restore, extrusion restore, `G10`, `G92`, and `M105`. | Native pause/resume policy can claim stock-derived design where host-tested. Active pause now requests and drains `M114` before saving the restore position and starting cleanup, matching the stock callback ordering. Hardware parity remains open until active-print pause/resume is proven with safe motion and correct stop/status transitions. |
 | `rootfs/home/cygnus/marlindriver/marlin_datalink.py` | Keeps pending packets, sends raw bytes, handles resend by sending two `0xff` bytes then replaying pending packets, clears resend state on acknowledge, and ignores nested rejects while resending. | Native flow-control behavior can be claimed where host tests cover ACK/reject/resend and repeated-reject failure handling. Active-print desync behavior still needs live proof because it affects physical job safety. |
 
@@ -64,10 +64,19 @@ is not proven by a parser or harness existing.
   `native_stop_allowed:true`, then final `idle` with `native_active:false` and
   `native_stop_allowed:false`. The active-abort fixture moved Z from 207.0 to
   202.6, away from homed Z max; it did not exercise X/Y print geometry.
+- June 9, 2026 installed `dist/Deneb_Update_7f070d7.deneb` evidence: a
+  bounded Z-only completion run using
+  `/tmp/deneb-complete-ui-label-fix.gcode` passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job`. The
+  summary kept the native-only route, no stock `print_service.py`, initial
+  idle with native active/stop false, final idle with native active/stop false,
+  and a `z_home` physical safety plan. The filtered device log reported both
+  `deneb-api: print completed` and `backend: print completed`, with no
+  `serial_fault` or flow-control desync line in that check.
 
 ## Open Parity Work
 
-- `G280`, `M109`, `M190`, raw multi-line `GCODE` wait sequencing, stock-order pause position capture, completion active-identity cleanup, and abort cleanup-before-idle timing have host-tested native coverage but still need hardware proof where they drive physical heat or motion.
+- `G280`, `M109`, `M190`, raw multi-line `GCODE` wait sequencing, stock-order pause position capture, and abort cleanup-before-idle timing have host-tested native coverage but still need hardware proof where they drive physical heat or motion. Completion active-identity cleanup has bounded Z-only hardware proof, but not representative Cura/slicer completion proof.
 - Prove native client behavior on hardware for coordinator, LCD UI, web/API, Cura LAN, and Digital Factory without stock Python fallback or stale pending-job state.
-- Regenerate supervised live pause/resume, completion, Cura, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort with a real representative print before broad parity is claimed; the current evidence is bounded Z-only plus low-temperature preheat.
+- Regenerate supervised live pause/resume, Cura, representative completion, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort with a real representative print before broad parity is claimed; the current physical evidence is bounded Z-only plus low-temperature preheat.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

@@ -1247,11 +1247,18 @@ Completed implementation slices:
   uses the same shared source default for its Cura owner field.
 - [x] Move print completion history labeling into shared native print-state
   rules so web history and future native diagnostics use the same
-  `"completed"`, `"stopped"`, and `"error"` decision.
+  `"completed"`, `"stopped"`, and `"error"` decision. Native completion
+  history now considers the final native request as well as timing/error state,
+  so a short job that reaches `Complete` without a nonzero stock timing window
+  is logged as completed instead of stopped.
 - [x] Match stock completion callback identity cleanup in native lifecycle:
   after finish policy/drain completes, native status marks completion and
   clears active file/source/UUID/heater targets so clients do not retain a
-  stale completed job as active print context.
+  stale completed job as active print context. A later live bounded-completion
+  run exposed a post-completion flow-control desync; native flow-control faults
+  are now fatal only while an active print phase remains, so late protocol
+  cleanup after `Complete` no longer flips the final idle state into
+  `serial_fault`.
 - [x] Move active/preparing/stoppable print-context decisions into shared
   native print-state rules so the touchscreen Stop button, preheat status, and
   abort cleanup use the same tested contract instead of local screen/backend
@@ -1543,6 +1550,18 @@ Completed implementation slices:
   Stop allowed during printing and final idle. This evidence is deliberately
   narrow and does not close representative Cura, pause/resume, completion, or
   stock/native resource gates.
+- [x] Deploy `Deneb_Update_7f070d7` and collect bounded Z-only completion
+  evidence on native `deneb-printsvc`: host CTest passed, the package was
+  installed over SSH, `/tmp/deneb-complete-ui-label-fix.gcode` ran through
+  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --complete-job`, and
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job`
+  accepted the summary. The run proved native-only route, no stock
+  `print_service.py`, initial/final idle with native active and Stop disabled,
+  a Z-home physical safety plan, and completion logs from both `deneb-api` and
+  `deneb-ui` without a filtered `serial_fault` or flow-control desync. This
+  closes the bounded completion regression only; it does not close
+  representative Cura/slicer completion, pause/resume, or stock/native
+  resource gates.
 - [x] Add a packaged shell-only verifier,
   `deneb-printsvc-smoke-verify`, so future live summary files can be checked
   for observe-only, native-route, explicit idle status, boot-sync readiness,

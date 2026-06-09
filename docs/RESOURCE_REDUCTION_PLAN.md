@@ -445,6 +445,16 @@ Material-profile USB import root/depth/suffix policy and the
   records. This is still only a harness contract; the live heat, motion, Cura,
   pause/resume, abort, completion, and stock/native resource matrix remains
   required before this can leave experimental builds.
+- A June 9, 2026 bounded Z-only completion rerun on
+  `dist/Deneb_Update_7f070d7.deneb` passed the native smoke verifier after two
+  native fixes: late post-`Complete` flow-control desyncs no longer force a
+  serial fault once there is no active print phase, and API/touch UI completion
+  labeling uses the final native request so short completions log as completed
+  instead of stopped. The live run proved native-only route, no stock
+  `print_service.py`, initial/final idle with native active/Stop false, Z-home
+  safety evidence, and matching `deneb-api` plus `deneb-ui` completion logs.
+  This narrows the completion regression but does not close Cura,
+  pause/resume, representative print, or stock/native resource evidence.
 - The native print-service handoff is owned by Deneb package scripts: native
   `deneb-printsvc` stops stock `printserver` on start, and the patched stock
   `printserver` init shim no longer launches the old driver from
