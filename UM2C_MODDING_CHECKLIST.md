@@ -738,54 +738,15 @@ deviation, not hidden under "stock parity."
   surfaces, heat/cool, home, macro execution, USB/local print, Cura-started
   print, pause, resume, abort during preheat, abort during active printing,
   print completion, and recovery after service restart.
-  Current `cd4724a` evidence closes the generated native smoke slices, not the
-  broader client/user-flow matrix. The accepted current-build reruns include
-  `/tmp/deneb-cd4724a-preheat55.summary`, where a generated preheat-abort job
-  reached `printing` with 35 C / 55 C bed/nozzle targets,
-  `native_active:true`, and `native_stop_allowed:true`, then settled
-  immediately to `idle` with active/Stop false; and
-  `/tmp/deneb-cd4724a-complete80.summary`, where a bounded completion fixture
-  showed active `printing` with Stop allowed, Z movement from 207.0 to 191.0,
-  final `idle`, and drained native flow with `flow_inflight=0` /
-  `flow_resend=0`. This keeps desktop Cura, LCD/Web UI hands-on flows,
-  Digital Factory lifecycle, representative slicer output, strict stock/native
-  resource comparison, and long-duration stability open.
-  Earlier evidence: June 9, 2026
-  `dist/Deneb_Update_d0b61f7.deneb` passed a supervised native
-  pause/resume/abort smoke using an all-axis prehome and a generated
-  absolute-mode bounded Z fixture:
-  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --job
-  /tmp/deneb-pause-z.gcode --pause-resume --prehome-action home`, verified by
-  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --job --pause-resume
-  /tmp/deneb-printsvc-smoke-pause-resume-home.summary`. The accepted run showed
-  native route ownership, no stock `print_service.py`, `printing` with Stop
-  allowed, `paused` with Stop allowed, resumed `printing`, `aborting` with Stop
-  disabled while cleanup drained, final `idle` with `native_active:false` and
-  `native_stop_allowed:false`, live ambient temperatures, and no
-  `POSITION_ERROR`, `macro failed`, or print-ended-with-error log lines. This
-  closes the bounded native pause/resume smoke slice only; Cura-started
-  pause/resume, representative slicer geometry, stock/native resource
-  comparison, and full smoke matrix remain open. The later `34518e8`
-  supervised Cura cluster upload/start/abort run closes only the bounded
-  Z-only Cura cluster start/abort slice: `/tmp/deneb-cura-z.gcode` was
-  generated on-device, started through the cluster API, verified as
-  `printing` with `native_active:true` / `native_stop_allowed:true`, aborted
-  through the cluster API, observed as `aborting` with Stop disabled while
-  cleanup drained, and settled back to `idle` with active/stop false. On
-  June 10, 2026, `Deneb_Update_b0fa27b` added a current bounded Z-only
-  completion/resource smoke: `/usr/bin/deneb-printsvc-smoke --physical-ok
-  --native --complete-job /tmp/deneb-b0fa27b-complete-z.gcode
-  --prehome-action z_home` passed
-  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job
-  --resources /tmp/deneb-printsvc-b0fa27b-complete.summary`. The run used a
-  mandatory Z-home safety plan, no heat/extrusion/X/Y motion, showed active
-  `printing` with `native_active:true` and `native_stop_allowed:true`, then
-  final `idle` with both flags false and blank filename. It also recorded
-  native driver RSS samples around 1.6 MiB and throughput of 1320 bytes over
-  42 seconds. A final API diagnostic recorded one sequence-number resync after
-  the job was already idle; `logread` showed no `POSITION_ERROR`, endstop,
-  homing, or fault lines for the accepted run. This closes only the bounded
-  native completion/resource smoke slice.
+  Current accepted evidence is indexed in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md). The
+  generated native smoke slices now cover boot/client/firmware proof, heat,
+  local job, generated Cura-cluster upload/start/abort, preheat abort, active
+  abort, pause/resume, completion, restart recovery, and final idle cleanup on
+  native `deneb-printsvc`. This item remains open for the broader user-facing
+  matrix: desktop Cura client behavior, LCD/Web hands-on flows, Digital Factory
+  lifecycle behavior, representative real slicer output, strict stock/native
+  resource comparison, and long-duration stability.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
   later live work exposed active/abort ProtoError desync and stale native
@@ -793,37 +754,9 @@ deviation, not hidden under "stock parity."
   active `printing` with Stop allowed, native `aborting` while cleanup drains,
   final idle with `native_active:false` and `native_stop_allowed:false`, no
   unsafe XY-home cleanup lines, no fault markers, and no manual recovery.
-  June 9, 2026 `Deneb_Update_be6a5b7` evidence now covers a bounded Z-only
-  active-abort fixture: native route owned the driver, active `printing` had
-  Stop allowed, API abort returned success, and final state was `idle` with
-  `native_active:false` / `native_stop_allowed:false`; Z ended at 202.6 after
-  starting from homed 207.0. Keep this open until a representative supervised
-  print path also proves no unsafe X/Y cleanup or fault markers.
-  A later June 9, 2026 dirty `b15786e` resync build first reproduced the stale
-  active-status risk on a 300-cycle bounded Z-only active-abort fixture: the
-  first run moved Z but had already fallen back to `idle` before the smoke
-  harness sent abort, because active ProtoError resync was treated as fatal.
-  After allowing active service-owned sequence resync, the same fixture passed:
-  native route owned the driver, the active snapshot was `printing` with Stop
-  allowed, `job_line_number` advanced to 50, API abort returned success, and
-  the final state was `idle` with `native_active:false` /
-  `native_stop_allowed:false`; Z ended at 197.8 after starting from homed
-  207.0. The June 9 status-label fix reran that bounded Z-only fixture with
-  immediate abort evidence in
-  `/tmp/deneb-printsvc-smoke-status-fix-active.summary`: active print was
-  `printing` with Stop allowed, immediate and draining snapshots were
-  `aborting` with `native_active:true` / `native_stop_allowed:false`, final
-  state was `idle` with active/stop false and blank filename, and a log/summary
-  grep found no `G28 X/Y/Z` or X/Y cleanup moves. Keep this open for a
-  representative supervised print path. The later `34518e8` Cura cluster
-  upload/start/abort run repeated the abort-state proof through the cluster API
-  on a bounded Z-only fixture, with no heat, no extrusion, no X/Y motion, final
-  idle, and Stop disabled after abort; representative Cura/slicer geometry
-  remains open. The smoke verifier and stock/native comparator now reject weak
-  generic-job or Cura-cluster abort evidence unless abort-requested captures
-  scalar `aborting` with `native_active:true` / `native_stop_allowed:false` and
-  abort-draining either remains in that aborting state or has already settled
-  to idle with active/stop false.
+  Bounded generated-fixture evidence now proves the native abort-state contract
+  and the safer no-XY-home cleanup policy; keep this item open until the same
+  contract is proven through a representative real slicer/Cura path.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or
@@ -851,26 +784,12 @@ deviation, not hidden under "stock parity."
   live heat, motion, Cura, pause/resume, abort, completion, and stock/native
   resource evidence still remain open.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
-  Current native-side-only evidence exists, but the required paired
-  stock/native comparison remains open. On June 10, 2026,
-  `/tmp/deneb-printsvc-b0fa27b-complete.summary` verified resource mode with
-  process RSS samples for `/usr/bin/deneb-printsvc` around 1.6 MiB and a
-  completed-job throughput record of 1320 bytes in 42 seconds. This is useful
-  native evidence for the reduction gate, not before/after proof.
-  Later June 10 `d82245c` paired stock/native resource evidence improved this
-  item but still does not close it: `/tmp/deneb-stock-resources-final.summary`
-  and `/tmp/deneb-native-resources-final.summary` passed their verifiers, and
-  strict comparison showed native improvements in free memory, driver RSS, CPU
-  interval, and boot-sync elapsed time. The same strict comparison still failed
-  throughput, with stock at 41 B/s and native at 31 B/s, so the
-  non-experimental resource gate remains unchecked.
-  The proof ledger records later safety/resource reruns. The accepted paired
-  stock/native comparison proves guarded prehome before upload, active print
-  Stop allowance, final idle/Stop-disabled cleanup, no resend debt, and native
-  driver RSS around 1.6 MiB, but the strict stock/native gate is still open:
-  that comparison improves memory/RSS while failing CPU interval and bounded
-  fixture throughput. The current `cd4724a` generated-smoke evidence also
-  closes the low-temperature preheat-abort and bounded completion slices.
+  Native-side RSS reduction is proven, but the non-experimental release gate
+  remains open until a fair paired stock/native reboot baseline passes
+  `deneb-printsvc-smoke-compare --require-reduction` for memory, driver RSS,
+  CPU interval, boot-sync elapsed time, and print throughput. The current
+  accepted status and failing comparison dimensions are tracked in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
   validation.
@@ -1966,88 +1885,24 @@ Completed implementation slices:
   when package sources are absent, and
   `/usr/bin/deneb-printsvc-release-gate-selftest` validates the installed
   manifest/toolchain instead of requiring `ui/build-package.sh` on target.
-- [x] Capture observe-only live native route evidence after package install:
-  on June 9, 2026, package `dist/Deneb_Update_8816c0b.deneb` installed over SSH
-  and rebooted cleanly. The installed CLI, init-handoff, release-gate, and
-  native-audit selftests passed under `set -e`; `ps` showed
-  `/usr/bin/deneb-printsvc` with no `print_service.py`; and
-  `/usr/bin/deneb-printsvc-smoke --native --restart --boot-sync` verified
-  native-only route, boot-sync readiness, idle status, service restart recovery,
-  `native_active:false`, `native_stop_allowed:false`, ambient bed/nozzle
-  readings around 25.5 C / 28.3 C, and `print_service_py=0`. This was
-  observe-only evidence; heat, motion, Cura job, pause/resume, completion, and
-  active/preheat abort physical phases remain open.
-- [x] Deploy `Deneb_Update_f83c1a1` and refresh installed native ownership plus
-  observe-only client proof after the pause-position safety fix: on June 9,
-  2026, the package installed over SSH, `/etc/deneb/manifest.txt` reported
-  `version: f83c1a1`, and installed CLI, init-handoff, release-gate,
-  native-audit, integration-audit, and integration-audit selftests passed. The
-  installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync
-  --client-proof` summary passed `/usr/bin/deneb-printsvc-smoke-verify
-  --native --idle --boot-sync --client-proof`, proving native-only route, idle
-  native active/Stop flags false, no stock `print_service.py`, UM API
-  `/printer/status`, `/printer`, and `/system`, Cura cluster `/printers`,
-  `/print_jobs`, and `/materials`, installed Digital Factory bridge status,
-  nonzero ambient telemetry around 29.7 C bed and 32.7 C nozzle, and final
-  `/usr/bin/deneb-printsvc` RSS around 1576 KB. This refreshes the non-motion
-  client-surface proof for the current build; it does not close the supervised
-  all-axis pause/resume motion proof, representative Cura geometry, or
-  stock/native resource comparison gates.
-- [x] Deploy `Deneb_Update_af12aaf` and refresh installed observe-only proof
-  after moving LCD abort-display context into shared status-state helpers: on
-  June 9, 2026, the package installed over SSH, `/etc/deneb/manifest.txt`
-  reported `version: af12aaf`, installer smoke/CLI/native-audit selftests
-  passed, and the installed `/usr/bin/deneb-printsvc-smoke --native
-  --boot-sync --client-proof` summary passed
-  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --boot-sync
-  --client-proof`. The run proved native-only route, no stock
-  `print_service.py`, idle native active/Stop flags false, UM API and Cura
-  cluster client surfaces, installed Digital Factory bridge status, nonzero
-  ambient telemetry around 29.9 C bed and 32.8 C nozzle, and final
-  `/usr/bin/deneb-printsvc` RSS around 1584 KB. This is non-motion evidence for
-  the current shared-helper build; hardware LCD abort-flow, representative
-  Cura geometry, and strict stock/native resource comparison remain open.
-- [x] Deploy `Deneb_Update_b0fa27b` and refresh current native ownership,
-  client/firmware proof, target selftests, and bounded completion/resource
-  evidence after sharing Cura cluster action routing. On June 10, 2026, the
-  target manifest reported `version: b0fa27b`; installed CLI, init-handoff,
-  release-gate, native-audit, and integration-audit selftests passed; `ps`
-  showed `/usr/bin/deneb-printsvc` and no stock `print_service.py`; and
-  observe-only `/usr/bin/deneb-printsvc-smoke --native --restart --boot-sync
-  --client-proof --firmware-proof` passed target verification with ambient
-  bed/nozzle/topcap telemetry and final idle active/Stop flags false. A
-  supervised bounded Z-only completion run then passed
-  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job
-  --resources`, proving active printing status/Stop allowance during the job,
-  final idle active/Stop false, and native-side RSS/throughput samples. This
-  refreshes current native proof only; representative Cura geometry, LCD/Web UI
-  user flows, and strict stock/native resource comparison remain open.
+- [x] Capture installed native route, boot-sync, client-surface, and
+  firmware/ambient telemetry proof after package install. The current accepted
+  evidence shows installed selftests passing, native `deneb-printsvc` owning the
+  print route with no stock `print_service.py`, idle native active/Stop flags
+  false, nonzero bed/nozzle/topcap telemetry, UM API surfaces, Cura cluster
+  surfaces, and observe-only Digital Factory bridge status. Current evidence
+  names and promotion status live in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Capture paired observe-only stock/native firmware and ambient telemetry
-  evidence for the current native-printsvc build. On June 10, 2026, the
-  `d82245c` stock-baseline helper ran against the backed-up stock `printserver`
-  and `/tmp/deneb-stock-d82245c.summary` passed
-  `/usr/bin/deneb-printsvc-smoke-verify --stock --firmware-proof`: stock
-  `print_service.py` owned the window, native `deneb-printsvc` was absent from
-  the stock summary, bed/nozzle/topcap ambient telemetry was nonzero, and native
-  was restored afterward. The paired native
-  `/tmp/deneb-native-d82245c-observe.summary` passed
-  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --boot-sync
-  --client-proof --firmware-proof` with native ownership, no stock
-  `print_service.py`, UM API/Cura cluster/Digital Factory status proof, and
-  final idle active/Stop flags false. This validates observe-only
-  firmware/temperature parity collection; strict stock/native `--resources`
-  comparison, representative Cura/slicer geometry, LCD/Web UI user flows, and
-  Digital Factory job lifecycle remain open.
-- [x] Deploy the representative-fixture harness update and validate the
-  no-motion target safety gate. On June 10, 2026, the updated
-  `Deneb_Update_d82245c.deneb` installed on the printer, the installed smoke
-  harness generated `/tmp/deneb-representative-xyz.gcode` with bounded
-  Cura-style XYZ moves, no heat, no extrusion, no dwell, and the
-  `DENEB_REPRESENTATIVE_XYZ_FIXTURE=1` marker, then rejected
-  `--job /tmp/deneb-representative-xyz.gcode` without `--prehome-action home`
-  before upload with `phase=representative-fixture-safety-gate rc=2
-  reason=requires_all_axis_home`. This proves the target-side safety tooling
-  for representative geometry input, not the physical representative Cura run.
+  proof. The guarded stock-baseline helper can temporarily run the backed-up
+  stock `printserver`, verify stock `print_service.py` ownership, and restore
+  native `deneb-printsvc`; paired native proof verifies the same ambient
+  telemetry and client surfaces without stock driver ownership. This proves
+  telemetry collection parity only, not strict resource or user-flow parity.
+- [x] Validate representative-fixture safety tooling before physical upload:
+  generated Cura-style XYZ fixtures contain bounded movement, no heat,
+  extrusion, dwell, or internal homing, carry the representative marker, and are
+  rejected by the harness unless the tester explicitly uses all-axis prehome.
 - [x] Make abort evidence wait for true native idle instead of fixed sleeps.
   During the June 10, 2026 representative Cura smoke, the native service
   settled from `ABORT` to `Idle` about one second after the old fixed
@@ -2057,44 +1912,14 @@ Completed implementation slices:
   `native_stop_allowed:false` before recording final `*-aborted` evidence, with
   `DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT` / `--abort-settle-timeout` as the
   bounded timeout.
-- [x] Capture supervised representative Cura-cluster abort evidence on hardware.
-  After redeploying the abort-settle harness on June 10, 2026,
-  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --cura-job
-  /tmp/deneb-representative-xyz.gcode --prehome-action home
-  --abort-settle-timeout 90` passed against the generated bounded
-  representative XYZ fixture. The run proved native ownership, all-axis
-  prehome, Cura cluster upload/start, active `printing` with
-  `native_active:true` / `native_stop_allowed:true`, cluster DELETE abort,
-  immediate and draining `aborting` with Stop disabled, `cura-job-aborted-wait
-  elapsed=10 rc=0 status=idle`, final `idle` with native active/Stop flags
-  false, ambient bed/nozzle targets still 0, and no pending Cura jobs. The
-  installed verifier passed with
-  `/usr/bin/deneb-printsvc-smoke-verify --native --cura-job
-  /tmp/deneb-cura-representative-xyz.summary`. This closes generated
-  representative Cura-cluster evidence; desktop Cura client behavior and
-  real slicer-output parity remain separate follow-up proof.
-- [x] Refresh heat, Stop-action abort, and local/USB native evidence after the
-  REST temperature-target compatibility fix. On June 10, 2026, the installed
-  `Deneb_Update_d82245c.deneb` package was rebuilt/redeployed and
-  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --heat` passed
-  `/usr/bin/deneb-printsvc-smoke-verify --native --heat` on
-  `/tmp/deneb-native-heat-fixed2.summary`: bed/nozzle targets reached
-  40 C / 50 C, `/printer/status` reported `printing`, `/printer` reported
-  `native_active:true` / `native_stop_allowed:true` during heat, and cooldown
-  returned to `idle` with native active/Stop flags false. The representative
-  Stop-action path also passed
-  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --active-abort
-  /tmp/deneb-representative-fixed.gcode --active-abort-delay 5
-  --prehome-action home` plus `--native --active-abort` verification, proving
-  all-axis prehome, active `printing` with Stop allowed, API abort
-  `aborting` with Stop disabled, and final `idle` with native active/Stop flags
-  false. Finally, `/usr/bin/deneb-printsvc-smoke --physical-ok --native
-  --local-job /tmp/deneb-representative-fixed.gcode --prehome-action home`
-  passed `--native --local-job`, proving native local/USB acceptance enters
-  stoppable `pre_print`, aborts, and settles idle. These runs close current
-  generated heat/Stop-action/local-job regressions; they do not replace desktop
-  Cura, LCD/Web UI hands-on, Digital Factory lifecycle, or strict stock/native
-  resource proof.
+- [x] Capture generated representative Cura-cluster, heat, Stop-action abort,
+  and local/USB native proof on hardware. Accepted generated-fixture evidence
+  shows all-axis prehome where required, native route ownership, active
+  `printing` or `pre_print` with Stop allowed, aborting with Stop disabled,
+  final `idle` with native active/Stop flags false, and no pending Cura jobs.
+  Desktop Cura client behavior, real slicer-output parity, LCD/Web UI
+  hands-on flows, Digital Factory lifecycle, and strict stock/native resource
+  proof remain separate open gates.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
   refuses `nightly` or `stable` native-printsvc packages unless
