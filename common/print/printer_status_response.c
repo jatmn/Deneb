@@ -114,6 +114,23 @@ int deneb_printer_status_response_format_um_bed(
     return n;
 }
 
+int deneb_printer_status_response_format_um_bed_preheat(
+    const deneb_printer_status_response_t *status,
+    char *out,
+    size_t out_sz)
+{
+    int n;
+
+    if (!status || !out || out_sz == 0)
+        return -1;
+
+    n = snprintf(out, out_sz, "{\"active\":%s}",
+                 bool_text(bed_preheat_active(status)));
+    if (n < 0 || (size_t)n >= out_sz)
+        return -1;
+    return n;
+}
+
 int deneb_printer_status_response_format_um_position(
     const deneb_printer_status_response_t *status,
     char *out,

@@ -2353,10 +2353,16 @@ static void test_printer_status_response(void)
     assert(strstr(json, "\"temperature\":{\"current\":57.8") != NULL);
     assert(strstr(json, "\"type\":\"glass\"") != NULL);
     assert(strstr(json, "\"pre_heat\":{\"active\":true}") != NULL);
+    assert(deneb_printer_status_response_format_um_bed_preheat(
+               &status, json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"active\":true}") == 0);
     status.bed_temp_set = 0.0f;
     assert(deneb_printer_status_response_format_um_bed(
                &status, json, sizeof(json)) > 0);
     assert(strstr(json, "\"pre_heat\":{\"active\":false}") != NULL);
+    assert(deneb_printer_status_response_format_um_bed_preheat(
+               &status, json, sizeof(json)) > 0);
+    assert(strcmp(json, "{\"active\":false}") == 0);
     status.bed_temp_set = 60.0f;
     assert(deneb_printer_status_response_format_um_temperature(
                status.bed_temp_cur, status.bed_temp_set,

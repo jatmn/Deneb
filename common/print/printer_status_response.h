@@ -57,6 +57,10 @@ int deneb_printer_status_response_format_um_bed(
     const deneb_printer_status_response_t *status,
     char *out,
     size_t out_sz);
+int deneb_printer_status_response_format_um_bed_preheat(
+    const deneb_printer_status_response_t *status,
+    char *out,
+    size_t out_sz);
 int deneb_printer_status_response_format_um_temperature(
     float current,
     float target,

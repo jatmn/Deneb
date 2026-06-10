@@ -153,7 +153,15 @@ void api_printer_bed_type_get(const http_request_t *req, http_response_t *resp)
 void api_printer_bed_preheat_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
-    api_http_set_body_str(resp, "{\"active\":false}");
+    char buf[32];
+    deneb_printer_status_response_t status;
+
+    backend_zmq_get_printer_status_response(&status);
+    set_printer_response(
+        resp,
+        deneb_printer_status_response_format_um_bed_preheat(
+            &status, buf, sizeof(buf)),
+        buf, "{\"message\":\"Printer bed preheat response too large\"}");
 }
 
 void api_printer_heads_get(const http_request_t *req, http_response_t *resp)

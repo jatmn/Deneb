@@ -1431,10 +1431,11 @@ Completed implementation slices:
   duplication: web print history now consumes the completion label returned by
   `deneb_status_state_transition_from_pair`, and
   `printer_status_response.c` reports UM bed `pre_heat.active` from
-  `deneb_print_has_temp_targets` for both printer root and `/printer/bed`
-  responses instead of hard-coding inactive JSON. Host tests cover active and
-  inactive bed targets, and the integration audit rejects client-side
-  completion reclassification or hard-coded inactive bed preheat output.
+  `deneb_print_has_temp_targets` for printer root, `/printer/bed`, and
+  `/printer/bed/pre_heat` responses instead of hard-coding inactive JSON. Host
+  tests cover active and inactive bed targets, and the integration audit
+  rejects client-side completion reclassification or hard-coded inactive bed
+  preheat output.
 - [x] Route web backend cached status JSON through the same request/native-aware
   status-label accessor used by REST and Cura cluster status, and add an
   integration-audit rejection for direct request-blind status-label calls in

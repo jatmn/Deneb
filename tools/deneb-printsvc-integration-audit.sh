@@ -152,6 +152,8 @@ audit_source() {
     require_pattern "${repo}/web/src/api_printer.c" '#include "gcode_command\.h"' "printer API uses shared G-code command helper"
     require_pattern "${repo}/web/src/api_printer.c" '#include "manual_motion\.h"' "printer API uses shared motion helper"
     require_pattern "${repo}/web/src/api_printer.c" '#include "printer_status_response\.h"' "printer API uses shared status response helper"
+    require_pattern "${repo}/web/src/api_printer.c" 'deneb_printer_status_response_format_um_bed_preheat' "printer API uses shared bed preheat response helper"
+    reject_pattern "${repo}/web/src/api_printer.c" '\\?"active\\?":false' "printer API does not hard-code bed preheat inactive"
     require_file "${repo}/common/print/printer_status_response.c" "printer status response helper exists"
     require_pattern "${repo}/common/print/printer_status_response.c" '#include "print_state_rules\.h"' "printer status response uses shared state rules"
     require_pattern "${repo}/common/print/printer_status_response.c" 'deneb_print_has_temp_targets' "printer status response uses shared heat-target rules"

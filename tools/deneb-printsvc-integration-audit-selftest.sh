@@ -92,6 +92,7 @@ EOF
 #include "gcode_command.h"
 #include "manual_motion.h"
 #include "printer_status_response.h"
+int uses_bed_preheat(void) { return deneb_printer_status_response_format_um_bed_preheat(0, 0, 0); }
 EOF
     cat > "$root/ui/build-package.sh" <<'EOF'
 deneb-printsvc-integration-audit
@@ -179,6 +180,13 @@ cat > "$BED_PREHEAT_HARDCODE/common/print/printer_status_response.c" <<'EOF'
 const char *bad_bed_preheat(void) { return "\"pre_heat\":{\"active\":false}"; }
 EOF
 expect_failure rejects_bed_preheat_hardcode "$AUDIT" --source "$BED_PREHEAT_HARDCODE"
+
+API_BED_PREHEAT_HARDCODE="$TMP_DIR/source-api-bed-preheat-hardcode"
+write_valid_source "$API_BED_PREHEAT_HARDCODE"
+cat >> "$API_BED_PREHEAT_HARDCODE/web/src/api_printer.c" <<'EOF'
+const char *bad_api_bed_preheat(void) { return "{\"active\":false}"; }
+EOF
+expect_failure rejects_api_bed_preheat_hardcode "$AUDIT" --source "$API_BED_PREHEAT_HARDCODE"
 
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"
