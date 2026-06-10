@@ -23,6 +23,11 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 #include <errno.h>
 #include <zmq.h>
 
+#define DENEB_PRINTSVC_IDLE_POLL_MS 250
+#define DENEB_PRINTSVC_ACTIVE_POLL_MS 10
+#define DENEB_PRINTSVC_JOB_POLL_BURST 8
+#define DENEB_PRINTSVC_STATUS_PUBLISH_MS 100
+
 static int publish_status(void *pub, const deneb_status_t *status)
 {
     char frame[1536];
@@ -32,12 +37,40 @@ static int publish_status(void *pub, const deneb_status_t *status)
     return zmq_send(pub, frame, (size_t)len, ZMQ_DONTWAIT) >= 0 ? 0 : -1;
 }
 
+static long long monotonic_ms(void)
+{
+    struct timespec ts;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+static int service_has_active_work(const deneb_print_service_t *svc)
+{
+    return svc &&
+           (svc->job_active || svc->gcode_queue_active ||
+            svc->abort_cleanup_pending || svc->finish_cleanup_pending ||
+            svc->pause_policy_pending || svc->pause_position_probe_pending ||
+            svc->resume_policy_pending || svc->heater_wait.active);
+}
+
+static void poll_job_burst(deneb_print_service_t *svc)
+{
+    for (int i = 0; i < DENEB_PRINTSVC_JOB_POLL_BURST; i++) {
+        int rc = deneb_print_service_poll_job(svc);
+        if (rc <= 0)
+            return;
+    }
+}
+
 int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 {
     void *ctx;
     void *pub;
     void *rep;
     int linger = 0;
+    long long last_status_publish_ms = 0;
 
     ctx = zmq_ctx_new();
     if (!ctx)
@@ -64,7 +97,10 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 
     for (;;) {
         zmq_pollitem_t items[] = {{rep, 0, ZMQ_POLLIN, 0}};
-        int rc = zmq_poll(items, 1, 250);
+        int timeout = service_has_active_work(svc) ?
+                          DENEB_PRINTSVC_ACTIVE_POLL_MS :
+                          DENEB_PRINTSVC_IDLE_POLL_MS;
+        int rc = zmq_poll(items, 1, timeout);
 
         if (rc > 0 && (items[0].revents & ZMQ_POLLIN)) {
             char buf[1024];
@@ -79,10 +115,18 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
         }
 
         deneb_print_service_poll_motion(svc);
-        deneb_print_service_poll_job(svc);
-        deneb_print_service_refresh_diagnostics(svc);
-        deneb_diagnostics_log_status(&svc->status, 0);
-        publish_status(pub, &svc->status);
+        poll_job_burst(svc);
+        {
+            long long now_ms = monotonic_ms();
+            if (last_status_publish_ms == 0 ||
+                now_ms - last_status_publish_ms >=
+                    DENEB_PRINTSVC_STATUS_PUBLISH_MS) {
+                deneb_print_service_refresh_diagnostics(svc);
+                deneb_diagnostics_log_status(&svc->status, 0);
+                publish_status(pub, &svc->status);
+                last_status_publish_ms = now_ms;
+            }
+        }
     }
 }
 

@@ -148,7 +148,7 @@ void backend_zmq_deinit(void) {}
 #include <errno.h>
 
 #define STATUS_TOPIC "10001"
-#define MAX_STATUS_MSGS 4
+#define MAX_STATUS_MSGS 64
 #define STOP_INFLIGHT_MS 3000
 
 static deneb_print_backend_route_t backend_route;

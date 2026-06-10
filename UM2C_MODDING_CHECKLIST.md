@@ -525,8 +525,10 @@ Current open focus:
 
 Resource rationale and measurement guardrails live in
 [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets);
-this section is the milestone checklist for that same work. Stock Python
-source comparison and no-overclaim rules live in
+this section is the milestone checklist for that same work. Current proof and
+remaining promotion gates live in
+[docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md). Stock
+Python source comparison and no-overclaim rules live in
 [docs/PRINTSVC_LEGACY_PARITY_AUDIT.md](docs/PRINTSVC_LEGACY_PARITY_AUDIT.md).
 
 Current native replacement progress lives under [printsvc/](printsvc/). The
@@ -850,6 +852,9 @@ deviation, not hidden under "stock parity."
   interval, and boot-sync elapsed time. The same strict comparison still failed
   throughput, with stock at 41 B/s and native at 31 B/s, so the
   non-experimental resource gate remains unchecked.
+  The current proof ledger records the later dirty `cd5eeba` scheduler fix,
+  including stock-matched bounded throughput and the still-open strict
+  non-experimental gate.
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
   validation.
@@ -2108,6 +2113,11 @@ Completed implementation slices:
   wrong Z height. The
   conservative stream window 4 and finish drain 8/3 remain intentional until a
   safer throughput fix is proven.
+- [x] Restore stock-matched native completion throughput without widening the
+  Marlin flow window. The follow-up dirty `cd5eeba` build keeps stream window
+  4, uses a faster active job cadence with throttled status publishing, excludes
+  idle telemetry flow debt from active cadence, and is indexed in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Match stock Python's Marlin sequence-number ring in native flow control.
   The stock `MarlinProtocolNode.send()` increments sequence numbers through
   254 and then wraps directly to 0; it never transmits sequence 255. Native

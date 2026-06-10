@@ -261,6 +261,15 @@ keeps the shorter evidence summary and the live-proof gaps.
   evidence has been regenerated successfully, but stock/native throughput
   comparison remains open until the stock side also proves positive fixture
   motion.
+- A later source-level parity pass found that stock Python can keep the Marlin
+  receive window fed promptly from executor callbacks, while native was only
+  polling one job line per 250 ms ZMQ loop. Native now uses a faster active
+  loop with bounded job-poll bursts, throttled status publishing, larger web/API
+  status drain, and idle telemetry excluded from active cadence. The current
+  hardware proof is indexed in
+  [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md); it restores
+  stock-matched bounded throughput without reopening the unsafe window-6
+  behavior, but it is not full stock/native release proof.
 
 ## Open Parity Work
 
