@@ -11,11 +11,11 @@ promotion status here so the checklist does not become a changelog.
 | Native route owns the print backend | Proven for experimental native packages | Release package audits; live native summaries with `native_only_route:true` and no stock `print_service.py` process | Stock Python is still present in the firmware image for baseline comparison, but native packages gate against launching it. |
 | No Python driver artifact in native package | Proven by static package gates | `deneb-printsvc-native-audit`, archive audit, installer manifest checks | Python source remains read-only reference material. |
 | Firmware/temperature observe-only parity | Proven for paired observe-only stock/native capture | `/tmp/deneb-stock-d82245c.summary`, `/tmp/deneb-native-d82245c-observe.summary` | Proves ambient telemetry/status collection, not physical heat or motion parity. |
-| Heat and preheat Stop safety | Proven for generated low-temperature native smoke | `/tmp/deneb-native-heat-fixed2.summary`; `/tmp/deneb-cd4724a-preheat55.summary` | Current `cd4724a` preheat-abort proof captured `printing` with bed/nozzle targets 35 C / 55 C, native active true, Stop allowed true, then fast cleanup to idle with active/Stop false. |
-| Active abort cleanup state | Proven for bounded native/generated representative paths | `/tmp/deneb-printsvc-smoke-status-fix-active.summary`; `/tmp/deneb-cura-representative-xyz.summary`; representative Stop-action smoke | Native intentionally avoids stock Python's unsafe XY/Z abort homing cleanup. |
-| Pause/resume | Proven for bounded native generated fixture | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary` | Cura-started representative pause/resume remains open. |
-| Cura cluster upload/start/abort | Proven for generated representative XYZ fixture through cluster API | `/tmp/deneb-cura-representative-xyz.summary` | Desktop Cura client behavior and arbitrary slicer output remain open. |
-| Completion flow drain | Proven for bounded native completion | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary` | Current `cd4724a` completion proof captured active `printing`, Stop allowed true, Z movement from 207.0 to 191.0, final `idle`, `flow_inflight=0`, and `flow_resend=0`. |
+| Heat and preheat Stop safety | Proven for generated low-temperature native smoke | `/tmp/deneb-native-heat-fixed2.summary`; `/tmp/deneb-cd4724a-preheat55.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current live proof captured preheat `printing` with bed/nozzle targets 35 C / 55 C, native active true, Stop allowed true, abort-requested `aborting` with Stop disabled, then idle with active/Stop false and heater targets cleared. |
+| Active abort cleanup state | Proven for bounded native/generated representative paths | `/tmp/deneb-printsvc-smoke-status-fix-active.summary`; `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current live proof captured native active-print and Cura-cluster abort transitions through `printing` -> `aborting` -> `idle`, with Stop disabled after abort and no resend/reject debt. Native intentionally avoids stock Python's unsafe XY/Z abort homing cleanup. |
+| Pause/resume | Proven for bounded native representative fixture | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current representative REST job proof captured `printing` -> `paused` -> `printing` with native active/Stop flags true before abort. Cura-started pause/resume remains open. |
+| Cura cluster upload/start/abort | Proven for generated representative XYZ fixture through cluster API | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current cluster proof captured representative XYZ motion via cluster upload/start/abort. Desktop Cura client behavior and arbitrary slicer output remain open. |
+| Completion flow drain | Proven for bounded native completion | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current completion proof captured active `printing`, Stop allowed true, Z movement from 207.0 to 191.0, final `idle`, `flow_inflight=0`, and `flow_resend=0`. |
 | Print throughput versus stock Python | Open on current paired evidence | Stock `/tmp/deneb-stock-3c91f5c-complete.summary`: 3641 bytes / 93 s / 39 B/s. Native `/tmp/deneb-native-3c91f5c-prehome200-complete-main.summary`: 3641 bytes / 104 s / 35 B/s. | The native run is safe and drains cleanly, but current strict comparison still rejects throughput. |
 | Native driver RSS reduction | Proven in current paired completion evidence | Stock final `print_service.py` RSS 14284 KiB; native final `deneb-printsvc` RSS 1668 KiB | System-wide memory still needs a clean paired reboot baseline before non-experimental promotion. |
 | Full strict stock/native resource release gate | Open | `deneb-printsvc-smoke-compare --require-reduction` | Current comparison improves memory and driver RSS but still fails CPU interval and print throughput, so this gate is not closed. |
@@ -39,6 +39,18 @@ promotion status here so the checklist does not become a changelog.
   finally, `rss_delta_kb=0`, and `phase=stability-result ... rc=0`. This proves
   the target-side stability harness is installed and functional; it does not
   close the long-duration/repeated-job stability gate.
+- Current physical lifecycle proof:
+  `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` was collected on the
+  currently installed `8e72da5-dirty` runtime with longer bounded fixtures and
+  verified with `/usr/bin/deneb-printsvc-smoke-verify --native --idle --job
+  --pause-resume --cura-job --preheat-abort --active-abort --complete-job
+  --resources`. It captured representative REST job `printing` -> `paused` ->
+  `printing` -> `aborting` -> `idle`, preheat abort `printing` -> `aborting` ->
+  `idle` with heater targets cleared, active-abort `printing` -> `aborting` ->
+  `idle`, Cura-cluster representative XYZ `printing` -> `aborting` -> `idle`,
+  and completion `printing` -> `idle` with Z movement from 207.0 to 191.0.
+  Final target status was idle with no pending jobs, native active/Stop false,
+  and `flow_resend=0` / `flow_reject=0`.
 - Current safety/evidence harness proof:
   `/tmp/deneb-cd4724a-preheat55.summary` verified the generated preheat-abort
   fixture remains observable after prior smoke heat: active snapshot showed
@@ -66,10 +78,11 @@ promotion status here so the checklist does not become a changelog.
 
 Section 8 remains experimental until all of these are captured and pass:
 
-- Full native smoke matrix on the current build. Current `cd4724a` evidence
-  verifies generated heat/preheat, pause/resume, abort, Cura-cluster, and
-  completion slices; desktop Cura, LCD/Web UI, and representative slicer-output
-  workflows remain separate gates.
+- Full native smoke matrix on the current build. Current physical evidence
+  verifies generated heat/preheat, pause/resume, active abort, Cura-cluster
+  representative XYZ, completion, and final idle cleanup slices; desktop Cura,
+  LCD/Web UI, Digital Factory lifecycle, and arbitrary slicer-output workflows
+  remain separate gates.
 - Clean paired stock/native resource comparison from a fair reboot baseline.
 - LCD and Web UI hands-on workflow proof.
 - Desktop Cura client proof.

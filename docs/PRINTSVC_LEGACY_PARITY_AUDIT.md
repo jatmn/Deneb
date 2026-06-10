@@ -301,5 +301,5 @@ keeps the shorter evidence summary and the live-proof gaps.
   owner/removal-condition map for patched stock-driver client boundaries. The
   static integration audit is now gated in source/package/archive/installer
   paths, but it is not live parity evidence by itself.
-- Regenerate representative Cura, representative completion, and resource comparison evidence using the new physical safety-plan records. Repeat active/preheat abort and pause/resume with a real representative print before broad parity is claimed; the current physical evidence is bounded Z-only plus low-temperature preheat.
+- Regenerate desktop Cura, arbitrary slicer-output, Digital Factory lifecycle, and resource comparison evidence using the physical safety-plan records. The June 10, 2026 `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` run refreshed representative REST pause/resume, preheat abort, active abort, Cura-cluster representative XYZ abort, and completion proof; broad parity still requires the user-facing and strict stock/native resource gates.
 - Keep Section 8 open until every checked live claim points to current hardware evidence, not just host tests or package gates.

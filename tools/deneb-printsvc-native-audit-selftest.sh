@@ -109,6 +109,7 @@ EOF
 write_valid_source() {
     root="$1"
     mkdir -p "$root/common/print" \
+        "$root/docs" \
         "$root/ui/src" "$root/ui/installer" "$root/ui/init" \
         "$root/web/src" "$root/web/init" \
         "$root/printsvc/src" "$root/printsvc/init" \
@@ -119,6 +120,16 @@ write_valid_source() {
 deneb_print_backend_route_t deneb_print_backend_route_default(void) {
     return deneb_print_backend_route(DENEB_PRINT_BACKEND_NATIVE);
 }
+EOF
+    cat > "$root/UM2C_MODDING_CHECKLIST.md" <<'EOF'
+- [x] Verify firmware/version status behavior live against stock and native.
+  The accepted paired summaries are /tmp/deneb-stock-d82245c.summary and
+  /tmp/deneb-native-d82245c-observe.summary.
+EOF
+    cat > "$root/docs/PRINTSVC_EVIDENCE_LEDGER.md" <<'EOF'
+| Gate | Status | Authoritative evidence | Notes |
+| --- | --- | --- | --- |
+| Firmware/temperature observe-only parity | Proven for paired observe-only stock/native capture | /tmp/deneb-stock-d82245c.summary, /tmp/deneb-native-d82245c-observe.summary | Observe-only telemetry proof. |
 EOF
     cat > "$root/common/print/print_backend_route.h" <<'EOF'
 #define DENEB_PRINT_BACKEND_NATIVE 0
@@ -405,6 +416,15 @@ SOURCE_MISSING_BASELINE_HELPER="$TMP_DIR/source-missing-baseline-helper"
 write_valid_source "$SOURCE_MISSING_BASELINE_HELPER"
 rm -f "$SOURCE_MISSING_BASELINE_HELPER/tools/deneb-printsvc-stock-baseline.sh"
 expect_failure rejects_source_missing_baseline_helper "$AUDIT" --source "$SOURCE_MISSING_BASELINE_HELPER"
+
+SOURCE_STALE_FIRMWARE_DOCS="$TMP_DIR/source-stale-firmware-docs"
+write_valid_source "$SOURCE_STALE_FIRMWARE_DOCS"
+sed 's/\[x\] Verify firmware\/version status behavior live against stock and native/[ ] Verify firmware\/version status behavior live against stock and native/' \
+    "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.md" > \
+    "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.tmp"
+mv "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.tmp" \
+    "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.md"
+expect_failure rejects_source_stale_firmware_docs "$AUDIT" --source "$SOURCE_STALE_FIRMWARE_DOCS"
 
 SOURCE_BASELINE_WITHOUT_ACK="$TMP_DIR/source-baseline-without-ack"
 write_valid_source "$SOURCE_BASELINE_WITHOUT_ACK"

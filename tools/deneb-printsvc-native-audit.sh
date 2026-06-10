@@ -278,6 +278,18 @@ audit_source() {
         "stability harness gates repeated jobs behind physical acknowledgement"
     require_file "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
         "stock baseline helper exists"
+    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
+        '^- \[x\] Verify firmware/version status behavior live against stock and native[.]$' \
+        "checklist records accepted paired firmware/ambient evidence"
+    require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
+        '^\| Firmware/temperature observe-only parity \| Proven for paired observe-only stock/native capture \|' \
+        "evidence ledger records paired firmware/ambient proof"
+    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
+        '/tmp/deneb-stock-d82245c[.]summary' \
+        "checklist cites accepted stock firmware/ambient summary"
+    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
+        '/tmp/deneb-native-d82245c-observe[.]summary' \
+        "checklist cites accepted native firmware/ambient summary"
     require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
         'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
         "stock baseline helper requires explicit stock-switch acknowledgement"

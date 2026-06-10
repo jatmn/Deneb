@@ -809,9 +809,10 @@ Material-profile USB import root/depth/suffix policy and the
   internal homing, and the harness rejected `--job` on that file without
   `--prehome-action home` using
   `phase=representative-fixture-safety-gate rc=2
-  reason=requires_all_axis_home`. This closes only the no-motion target-side
-  generator/gate check for representative input; the physical representative
-  print matrix remains open.
+  reason=requires_all_axis_home`. This closed the no-motion target-side
+  generator/gate check for representative input; the later
+  `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` run provides the current
+  physical representative proof.
 - The abort smoke harness now treats cleanup timing as evidence instead of a
   fixed delay. Abort-style phases retain immediate `aborting` snapshots, then
   wait up to `--abort-settle-timeout` for `idle` with
@@ -843,6 +844,18 @@ Material-profile USB import root/depth/suffix policy and the
   `pre_print` acceptance is stoppable and aborts back to idle. These are
   current native safety-state proofs; the strict stock/native `--resources`
   reduction comparison remains open.
+- A later June 10 physical lifecycle run,
+  `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`, used longer bounded
+  fixtures on the installed `8e72da5-dirty` runtime and passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --job --pause-resume
+  --cura-job --preheat-abort --active-abort --complete-job --resources`. It
+  captured representative REST job `printing`/`paused`/`printing`, preheat and
+  active abort `printing` -> `aborting` -> `idle`, Cura-cluster representative
+  XYZ `printing` -> `aborting` -> `idle`, and completion movement from
+  `z=207.0` to `z=191.0` with final native active/Stop false and no resend or
+  reject debt. Desktop Cura, arbitrary slicer output, Digital Factory
+  lifecycle, LCD/Web hands-on flows, and strict stock/native resource
+  comparison remain open.
 - Later June 10 paired resource runs exercised the strict stock/native path and
   exposed two harness assumptions. First, the synthetic bounded Z fixture must
   include an early `G280 S1` marker or stock Python inserts its cold prime

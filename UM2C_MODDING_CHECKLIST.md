@@ -634,34 +634,21 @@ deviation, not hidden under "stock parity."
   while keeping recurring status polling on the stock-shaped `M105`/`M114`
   cadence. Host tests prove startup `M115`/`M105`/`M114`, bounded retry, and
   periodic polling without duplicate `M115`.
-- [ ] Verify firmware/version status behavior live against stock and native.
-  Accepted evidence must compare stock Python and native `deneb-printsvc` on
-  the same old-Marlin firmware: `firmware:"none"` is acceptable only if stock
-  also reports `none` under the same conditions; native must preserve the field
-  and default, must parse non-`none` metadata if the controller emits version
-  output, and must not regress temperature/topcap/status updates while stock
-  Python is absent. The smoke harness now has an observe-only
-  `--firmware-proof` mode plus verifier/comparer checks for firmware,
-  machine/PCB metadata, nonzero ambient bed/nozzle temperatures, topcap
-  telemetry, and scalar status; this is tooling only until a live stock/native
-  pair is captured on the same printer. On June 9, 2026,
-  `dist/Deneb_Update_34518e8.deneb` was installed and an observe-only native
-  run passed `/usr/bin/deneb-printsvc-smoke-verify --native --idle
-  --boot-sync --client-proof --firmware-proof
-  /tmp/deneb-printsvc-firmware-proof.summary`; it proved native route
-  ownership, no stock `print_service.py`, `firmware=none`,
-  `machine_type=none`, `pcb_id_valid=false`, live ambient bed/nozzle
-  temperatures around 30.1 C / 33.2 C, topcap present/current around 30.0 C,
-  and scalar `idle` status. This closes the native-side observe-only capture,
-  not the required stock/native comparison. On June 10, 2026,
-  `dist/Deneb_Update_b0fa27b.deneb` refreshed the same native-side proof after
-  the shared Cura action-routing work: installed target selftests passed, the
-  observe-only `--native --restart --boot-sync --client-proof
-  --firmware-proof` summary captured ambient bed/nozzle/topcap telemetry
-  around 27.7 C / 30.8 C / 27.0 C with `firmware=none`,
-  `machine_type=none`, and no stock `print_service.py`, and the target
-  verifier accepted the client/firmware/idle evidence. This remains
-  native-side evidence only.
+- [x] Verify firmware/version status behavior live against stock and native.
+  Accepted evidence compares stock Python and native `deneb-printsvc` on the
+  same old-Marlin firmware: `firmware:"none"` is acceptable only when stock also
+  reports `none`; native must preserve the field/default, parse non-`none`
+  metadata if emitted, and keep temperature/topcap/status updates working
+  without stock Python. The smoke harness' observe-only `--firmware-proof` mode
+  plus `deneb-printsvc-smoke-verify` and `deneb-printsvc-smoke-compare` enforce
+  firmware, machine/PCB metadata, nonzero ambient bed/nozzle temperatures,
+  topcap telemetry, scalar status, and native fallback rejection when stock
+  reports real metadata. The accepted June 10, 2026 paired evidence is
+  `/tmp/deneb-stock-d82245c.summary` and
+  `/tmp/deneb-native-d82245c-observe.summary`, indexed in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md). This
+  closes only observe-only firmware/ambient telemetry parity; physical
+  heat/motion, user-flow, and strict resource evidence remain separate gates.
 - [x] Carry native firmware/version and topcap telemetry through the web/API
   backend state and shared printer response formatter, so clients consuming
   `/api/v1/printer`, `/api/v1/airmanager`, or Deneb's cached status JSON do not
@@ -687,7 +674,7 @@ deviation, not hidden under "stock parity."
 - [x] Remove stock Python's unsafe abort cleanup from the native design: no
   duplicate homing and no unsafe XY motion into unknown print geometry. Native
   abort deliberately deviates from stock Python's XY/Z homing cleanup.
-- [ ] Prove native abort status transitions on hardware after active-print and
+- [x] Prove native abort status transitions on hardware after active-print and
   preheat aborts: cancellation must remain visible while cleanup is pending,
   then settle to idle with Stop disabled, no stale `native_active`, no stale
   print filename/UUID/source, no stale temperature targets, and no manual
@@ -710,7 +697,16 @@ deviation, not hidden under "stock parity."
   passed: preheat was `printing` with Stop allowed, immediate abort was
   `aborting` with `native_active:true` / `native_stop_allowed:false`, cleanup
   then settled to `idle` with active/stop false, blank filename, cleared heater
-  targets, and no manual cluster cleanup.
+  targets, and no manual cluster cleanup. On June 10, 2026,
+  `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` refreshed this on the
+  installed `8e72da5-dirty` runtime with longer bounded physical fixtures and
+  passed `/usr/bin/deneb-printsvc-smoke-verify --native --idle --job
+  --pause-resume --cura-job --preheat-abort --active-abort --complete-job
+  --resources`: representative REST job, preheat abort, active abort, and
+  Cura-cluster representative XYZ abort all captured active `printing`, abort
+  `aborting` with `native_active:true` / `native_stop_allowed:false`, and final
+  `idle` with active/Stop false, blank filename, cleared targets, and no manual
+  cleanup.
 - [x] Keep native print completion in an active printing state until finish
   cleanup drains in host lifecycle coverage. End-of-file no longer marks the
   job idle immediately; the streamer dispatches the finish policy, keeps
@@ -743,10 +739,12 @@ deviation, not hidden under "stock parity."
   generated native smoke slices now cover boot/client/firmware proof, heat,
   local job, generated Cura-cluster upload/start/abort, preheat abort, active
   abort, pause/resume, completion, restart recovery, and final idle cleanup on
-  native `deneb-printsvc`. This item remains open for the broader user-facing
-  matrix: desktop Cura client behavior, LCD/Web hands-on flows, Digital Factory
-  lifecycle behavior, representative real slicer output, strict stock/native
-  resource comparison, and long-duration stability.
+  native `deneb-printsvc`. The June 10, 2026 physical lifecycle run refreshed
+  pause/resume, Cura-cluster representative XYZ, preheat abort, active abort,
+  and completion with longer bounded fixtures. This item remains open for the
+  broader user-facing matrix: desktop Cura client behavior, LCD/Web hands-on
+  flows, Digital Factory lifecycle behavior, arbitrary real slicer output,
+  strict stock/native resource comparison, and long-duration stability.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
   later live work exposed active/abort ProtoError desync and stale native
@@ -755,8 +753,10 @@ deviation, not hidden under "stock parity."
   final idle with `native_active:false` and `native_stop_allowed:false`, no
   unsafe XY-home cleanup lines, no fault markers, and no manual recovery.
   Bounded generated-fixture evidence now proves the native abort-state contract
-  and the safer no-XY-home cleanup policy; keep this item open until the same
-  contract is proven through a representative real slicer/Cura path.
+  and the safer no-XY-home cleanup policy; the June 10, 2026 physical lifecycle
+  run also proved the same abort contract through the cluster API using the
+  generated representative XYZ fixture. Keep this item open until the same
+  contract is proven through desktop Cura or arbitrary real slicer output.
 - [x] Add a hard safety interlock to the live smoke harness so heat, homing,
   macro motion, print starts, abort-path jobs, Cura jobs, and completion jobs
   refuse to run unless `--physical-ok` or
@@ -816,9 +816,9 @@ Completed implementation slices:
   divergences: bounded diagnostic `M115`, safer no-XY-home abort cleanup, and
   finish cleanup that stays active until planner-drain evidence. Native pause
   now waits for a fresh `M114` position report before saving the restore point,
-  with host tests covering stale-position rejection. Live stock/native firmware,
-  representative slicer geometry, client-flow, and resource comparisons remain
-  separate open evidence items.
+  with host tests covering stale-position rejection. Representative slicer
+  geometry, client-flow, and strict resource comparisons remain separate open
+  evidence items.
 - [x] Add a native serial response pump that reads Marlin lines, updates parsed
   status fields, accounts ACK/reject/resend responses, and re-emits resend
   packets through the flow-control queue.
