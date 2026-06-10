@@ -786,7 +786,10 @@ Material-profile USB import root/depth/suffix policy and the
   patchwork has to declare an owner and placement before it ships. The source
   audit also rejects raw motion/heater G-code string literals in UI and web/API
   `.c` client adapters, forcing those commands through shared/native policy
-  owners instead of allowing another private client-side command builder.
+  owners instead of allowing another private client-side command builder. It
+  also rejects direct pending-job file-path references in UI and web/API
+  adapters, keeping the current `/tmp` handoff confined to shared/native
+  pending-job owners until it can be replaced with a service-owned state API.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

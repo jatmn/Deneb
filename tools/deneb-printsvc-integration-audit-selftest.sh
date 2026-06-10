@@ -203,6 +203,20 @@ const char *bad_web_gcode(void) { return "G28 Z"; }
 EOF
 expect_failure rejects_web_raw_gcode_literal "$AUDIT" --source "$WEB_RAW_GCODE"
 
+LCD_PENDING_PATH="$TMP_DIR/source-lcd-pending-path"
+write_valid_source "$LCD_PENDING_PATH"
+cat >> "$LCD_PENDING_PATH/ui/src/backend_comm.c" <<'EOF'
+const char *bad_lcd_pending_path(void) { return "/tmp/deneb-cluster-print-job.json"; }
+EOF
+expect_failure rejects_lcd_pending_path_bypass "$AUDIT" --source "$LCD_PENDING_PATH"
+
+WEB_PENDING_PATH="$TMP_DIR/source-web-pending-path"
+write_valid_source "$WEB_PENDING_PATH"
+cat >> "$WEB_PENDING_PATH/web/src/api_cluster.c" <<'EOF'
+const char *bad_web_pending_path(void) { return DENEB_PENDING_JOB_PATH; }
+EOF
+expect_failure rejects_web_pending_path_bypass "$AUDIT" --source "$WEB_PENDING_PATH"
+
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"
 cat >> "$PYTHON_LAUNCH/web/src/backend_zmq.c" <<'EOF'

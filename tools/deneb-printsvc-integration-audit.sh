@@ -67,6 +67,21 @@ reject_c_tree_pattern() {
     pass "$label"
 }
 
+reject_tree_pattern() {
+    dir=$1
+    pattern=$2
+    label=$3
+    if find "$dir" -type f \( -name '*.c' -o -name '*.h' \) \
+        -exec grep -HE "$pattern" {} + >/tmp/deneb-integration-audit.$$ \
+        2>/dev/null; then
+        cat /tmp/deneb-integration-audit.$$ >&2
+        rm -f /tmp/deneb-integration-audit.$$
+        fail "$label"
+    fi
+    rm -f /tmp/deneb-integration-audit.$$
+    pass "$label"
+}
+
 require_doc_row() {
     doc=$1
     label=$2
@@ -177,6 +192,10 @@ audit_source() {
         "LCD client code does not embed raw motion/heater G-code literals"
     reject_c_tree_pattern "${repo}/web/src" '"(G[0-9]|M[0-9])' \
         "web/API client code does not embed raw motion/heater G-code literals"
+    reject_tree_pattern "${repo}/ui/src" 'deneb-cluster-print-job|DENEB_PENDING_JOB_PATH' \
+        "LCD client code does not bypass shared pending-job state owner"
+    reject_tree_pattern "${repo}/web/src" 'deneb-cluster-print-job|DENEB_PENDING_JOB_PATH' \
+        "web/API client code does not bypass shared pending-job state owner"
 
     require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-integration-audit" \

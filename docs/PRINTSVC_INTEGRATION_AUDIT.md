@@ -26,4 +26,7 @@ the source wiring so new client patches have to declare an owner, a migration
 boundary, and a removal condition instead of growing another private copy of
 print-state logic. It also rejects raw motion/heater G-code string literals in
 UI and web/API `.c` client adapters so those commands stay in shared/native
-policy owners rather than returning as per-client patches.
+policy owners rather than returning as per-client patches. Direct references to
+the pending-job file path are likewise rejected in UI and web/API adapters so
+the file-backed migration boundary stays confined to shared/native pending-job
+owners.

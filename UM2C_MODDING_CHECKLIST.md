@@ -1479,6 +1479,12 @@ Completed implementation slices:
   `common/print/gcode_command.*`, `manual_motion.*`, and native
   `printsvc/src/*` modules. The negative-fixture selftest proves both LCD and
   web/API regressions fail closed.
+- [x] Harden the integration audit against pending-job state bypasses: UI and
+  web/API client adapters now fail the source audit if they reference
+  `/tmp/deneb-cluster-print-job.json` or `DENEB_PENDING_JOB_PATH` directly
+  instead of going through `common/print/pending_job_file.*`,
+  `pending_job_dispatch.*`, or native pending-job registration owners. The
+  negative-fixture selftest proves both LCD and web/API bypasses fail closed.
 - [x] Make native abort/finish cleanup policy failures visible as serial faults
   when motion transport is marked ready, so the driver no longer reports
   successful abort or completion if the required cleanup G-code cannot be sent.
@@ -1850,7 +1856,8 @@ Completed implementation slices:
   package contains a Python driver artifact name.
 - [x] Extend the shell-only integration-audit selftest so source fixtures fail
   when touchscreen or web/API client adapters embed raw motion/heater G-code
-  literals instead of using shared print-control helpers.
+  literals or direct pending-job path references instead of using shared
+  print-control helpers.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
   contains `deneb-printsvc`,
