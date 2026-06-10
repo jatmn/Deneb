@@ -502,11 +502,12 @@ or lacks per-lifecycle native stop-safety flags.
 Use `--require-reduction` for the release-decision pass; it fails unless native
 system memory, driver-process RSS, CPU interval, and boot-sync elapsed time are
 lower than the stock summary, and unless native throughput is at least stock.
-The latest paired stock/native resource run passed the memory, driver RSS, CPU,
-and boot-sync clauses but still failed throughput: stock measured 41 B/s and
-native measured 31 B/s. That means the strict non-experimental release gate is
-working as intended and remains closed until throughput is improved without
-regressing completion correctness.
+The latest authoritative paired stock/native resource status is tracked in
+`docs/PRINTSVC_EVIDENCE_LEDGER.md`: native keeps the memory and driver-RSS win,
+but the strict comparison still rejects CPU interval and bounded-fixture
+throughput. That means the strict non-experimental release gate is working as
+intended and remains closed until resource and throughput behavior improve
+without regressing completion correctness.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also runs the

@@ -23,7 +23,8 @@ promotion status here so the checklist does not become a changelog.
 | Web UI hands-on workflow | Open | None accepted yet | API proofs exist; browser/user workflow proof remains separate. |
 | Digital Factory job lifecycle | Open | Observe-only bridge status only | Needs lifecycle behavior, not just bridge status endpoint reachability. |
 | Representative real slicer output | Open | Generated representative fixture only | Needs broader slicer geometry beyond generated bounded fixtures. |
-| Long-duration stability/leak behavior | Open | Stability harness tooling installed and short observe-only sanity run passed | Needs multi-hour or repeated-job native uptime/resource evidence from `deneb-printsvc-stability`; `/tmp/deneb-8e72da5-observe-stability.summary` proves only target-side tool operation and short no-motion sampling. |
+| Repeated-job stability/leak behavior | Proven for short bounded native completion loop | `/tmp/deneb-84376b4-stability-complete5.summary` plus iteration summaries `/tmp/deneb-printsvc-stability-16769-{1..5}.summary` | Five supervised Z-only completion jobs ran through the same native process with guarded Z-home before each job, `rss_delta_kb=0`, final idle, heater targets cleared, no jobs, and no flow resend/reject debt. Multi-hour soak remains a separate open promotion gate. |
+| Multi-hour stability/leak behavior | Open | None accepted yet | Needs a longer native uptime/resource soak after the repeated-job loop. |
 
 ## Latest Deployed Native Build
 
@@ -32,13 +33,21 @@ promotion status here so the checklist does not become a changelog.
 - Device install: completed over SSH; target logs show `deneb-api: starting
   (version=8e72da5-dirty)` and native package selftests passed, including
   `deneb-printsvc stability selftest passed`.
-- Current stability-tool proof:
+- Current stability proof:
   `/tmp/deneb-8e72da5-observe-stability.summary` ran the installed
   `deneb-printsvc-stability` harness in observe-only mode for two short
   samples. It recorded native `deneb-printsvc` RSS at 1152 KiB initially and
   finally, `rss_delta_kb=0`, and `phase=stability-result ... rc=0`. This proves
-  the target-side stability harness is installed and functional; it does not
-  close the long-duration/repeated-job stability gate.
+  the target-side stability harness is installed and functional.
+  `/tmp/deneb-84376b4-stability-complete5.summary` then ran five supervised
+  bounded Z-only completion jobs through the same native process, with per-run
+  summaries `/tmp/deneb-printsvc-stability-16769-{1..5}.summary`. Each
+  iteration pre-homed Z to 207.0, completed with final Z 191.0, recorded
+  `flow_inflight=0` and `flow_resend=0`, and the aggregate result ended with
+  `rss_initial_kb=1164`, `rss_final_kb=1164`, `rss_delta_kb=0`, and `rc=0`.
+  The post-run printer state was idle with no queued jobs, heater targets zero,
+  native active/Stop false, and no flow resend/reject debt. This closes the
+  short repeated-job stability slice, not the multi-hour soak gate.
 - Current physical lifecycle proof:
   `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` was collected on the
   currently installed `8e72da5-dirty` runtime with longer bounded fixtures and
@@ -88,5 +97,5 @@ Section 8 remains experimental until all of these are captured and pass:
 - Desktop Cura client proof.
 - Digital Factory lifecycle proof.
 - Representative slicer-output completion, pause/resume, and abort proof.
-- Long-duration stability/resource evidence from the repeated native stability
-  harness.
+- Multi-hour stability/resource evidence beyond the short repeated native
+  completion loop.

@@ -290,6 +290,15 @@ audit_source() {
     require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
         '/tmp/deneb-native-d82245c-observe[.]summary' \
         "checklist cites accepted native firmware/ambient summary"
+    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
+        '/tmp/deneb-84376b4-stability-complete5[.]summary' \
+        "checklist cites accepted repeated-job stability summary"
+    require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
+        '^\| Repeated-job stability/leak behavior \| Proven for short bounded native completion loop \|' \
+        "evidence ledger records repeated-job stability proof"
+    require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
+        '^\| Multi-hour stability/leak behavior \| Open \|' \
+        "evidence ledger keeps multi-hour stability gate open"
     require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
         'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
         "stock baseline helper requires explicit stock-switch acknowledgement"

@@ -950,7 +950,9 @@ Material-profile USB import root/depth/suffix policy and the
   Cura monitor polling, multipart upload, pending conflict/preheat flow,
   pause/resume/abort actions, and cleanup after failed uploads.
 
-Before treating a build as release-ready, run `deneb-printsvc-stability` for
-long-duration/repeated-job native samples and repeat memory and CPU sampling
-while idle, printing, installing a Deneb package, exporting diagnostics,
-switching languages, and using Digital Factory pairing/disconnect.
+Before treating a build as release-ready, extend the June 10 short repeated-job
+stability proof (`/tmp/deneb-84376b4-stability-complete5.summary`, five
+bounded Z-only completion jobs, `rss_delta_kb=0`) into a longer native soak,
+then repeat memory and CPU sampling while idle, printing, installing a Deneb
+package, exporting diagnostics, switching languages, and using Digital Factory
+pairing/disconnect.

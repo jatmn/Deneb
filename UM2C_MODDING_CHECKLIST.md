@@ -1785,8 +1785,13 @@ Completed implementation slices:
   prehome/completion/flow-drain checks, verify each iteration with the smoke
   verifier, and fail if native driver RSS grows beyond the configured threshold.
   Package build, installer, release-wrapper, CTest, and native audit paths now
-  include the stability selftest. This adds the evidence tool; the actual
-  long-duration/repeated-job live proof remains open until captured.
+  include the stability selftest. On June 10, 2026,
+  `/tmp/deneb-84376b4-stability-complete5.summary` captured the first
+  supervised repeated-job proof: five bounded Z-only completion jobs through
+  the same native process, guarded Z-home before each iteration, per-iteration
+  verifier success, final idle/no-job cleanup, no resend/reject debt, and
+  `rss_delta_kb=0`. This closes the short repeated-job stability slice; a
+  multi-hour soak remains open.
 - [x] Capture observe-only client API/bridge evidence after package install: on
   June 9, 2026, `dist/Deneb_Update_fa29a67.deneb` installed over SSH and the
   installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof`

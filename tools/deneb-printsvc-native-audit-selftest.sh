@@ -125,11 +125,16 @@ EOF
 - [x] Verify firmware/version status behavior live against stock and native.
   The accepted paired summaries are /tmp/deneb-stock-d82245c.summary and
   /tmp/deneb-native-d82245c-observe.summary.
+- [x] Add a packaged shell-only repeated stability harness,
+  `deneb-printsvc-stability`. /tmp/deneb-84376b4-stability-complete5.summary
+  closes the short repeated-job stability slice; a multi-hour soak remains open.
 EOF
     cat > "$root/docs/PRINTSVC_EVIDENCE_LEDGER.md" <<'EOF'
 | Gate | Status | Authoritative evidence | Notes |
 | --- | --- | --- | --- |
 | Firmware/temperature observe-only parity | Proven for paired observe-only stock/native capture | /tmp/deneb-stock-d82245c.summary, /tmp/deneb-native-d82245c-observe.summary | Observe-only telemetry proof. |
+| Repeated-job stability/leak behavior | Proven for short bounded native completion loop | /tmp/deneb-84376b4-stability-complete5.summary | Short repeated native completion proof. |
+| Multi-hour stability/leak behavior | Open | None accepted yet | Longer soak still required. |
 EOF
     cat > "$root/common/print/print_backend_route.h" <<'EOF'
 #define DENEB_PRINT_BACKEND_NATIVE 0
@@ -425,6 +430,15 @@ sed 's/\[x\] Verify firmware\/version status behavior live against stock and nat
 mv "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.tmp" \
     "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.md"
 expect_failure rejects_source_stale_firmware_docs "$AUDIT" --source "$SOURCE_STALE_FIRMWARE_DOCS"
+
+SOURCE_STALE_STABILITY_DOCS="$TMP_DIR/source-stale-stability-docs"
+write_valid_source "$SOURCE_STALE_STABILITY_DOCS"
+grep -v '/tmp/deneb-84376b4-stability-complete5[.]summary' \
+    "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.md" > \
+    "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.tmp"
+mv "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.tmp" \
+    "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.md"
+expect_failure rejects_source_stale_stability_docs "$AUDIT" --source "$SOURCE_STALE_STABILITY_DOCS"
 
 SOURCE_BASELINE_WITHOUT_ACK="$TMP_DIR/source-baseline-without-ack"
 write_valid_source "$SOURCE_BASELINE_WITHOUT_ACK"
