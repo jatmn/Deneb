@@ -728,6 +728,36 @@ Material-profile USB import root/depth/suffix policy and the
   `/usr/bin/deneb-printsvc` RSS around 1584 KB. This refreshes current-build
   observe-only evidence only; LCD hardware abort-flow, representative Cura
   geometry, and strict stock/native resource comparison remain open.
+- June 10, 2026 installed `dist/Deneb_Update_b0fa27b.deneb` after moving Cura
+  cluster action routing into shared print-state rules. The target manifest
+  reported `version: b0fa27b`; installed CLI, init-handoff, release-gate,
+  native-audit, and integration-audit selftests passed; `/cluster-api/v1/print_jobs`
+  returned `[]`; and process checks showed `/usr/bin/deneb-printsvc` without
+  stock `/home/cygnus/marlindriver/print_service.py`. An observe-only
+  `/usr/bin/deneb-printsvc-smoke --native --restart --boot-sync --client-proof
+  --firmware-proof` run passed target verification and captured native-only
+  route ownership, UM API, Cura cluster, and Digital Factory bridge proof,
+  final `idle` with native active/Stop flags false, `firmware=none`,
+  `machine_type=none`, `pcb_id_valid=false`, and live ambient telemetry around
+  27.7 C bed, 30.8 C nozzle, and 27.0 C topcap.
+- The same June 10, 2026 `b0fa27b` deployment also collected a guarded
+  native-side completion/resource sample. The generated
+  `/tmp/deneb-b0fa27b-complete-z.gcode` fixture was run with
+  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --complete-job
+  --prehome-action z_home` and verified with
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job
+  --resources /tmp/deneb-printsvc-b0fa27b-complete.summary`. The summary
+  recorded the required physical safety plan (`axes=Z`,
+  `required_home=z_home`, bounded relative negative Z travel), active
+  `printing` with `native_active:true` and `native_stop_allowed:true`, final
+  `idle` with active/Stop false and blank filename, `/usr/bin/deneb-printsvc`
+  RSS samples around 1.6 MiB, and print throughput of 1320 bytes over
+  42 seconds. The final API snapshot carried a post-idle sequence-number
+  resync diagnostic (`flow_resend=1`, `flow_reject=6`), while `logread` showed
+  no `POSITION_ERROR`, endstop, homing, or fault lines for the accepted run.
+  This is native-side current evidence only; it does not replace the required
+  stock/native before-and-after resource comparison or representative Cura
+  geometry validation.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action

@@ -651,7 +651,15 @@ deviation, not hidden under "stock parity."
   `machine_type=none`, `pcb_id_valid=false`, live ambient bed/nozzle
   temperatures around 30.1 C / 33.2 C, topcap present/current around 30.0 C,
   and scalar `idle` status. This closes the native-side observe-only capture,
-  not the required stock/native comparison.
+  not the required stock/native comparison. On June 10, 2026,
+  `dist/Deneb_Update_b0fa27b.deneb` refreshed the same native-side proof after
+  the shared Cura action-routing work: installed target selftests passed, the
+  observe-only `--native --restart --boot-sync --client-proof
+  --firmware-proof` summary captured ambient bed/nozzle/topcap telemetry
+  around 27.7 C / 30.8 C / 27.0 C with `firmware=none`,
+  `machine_type=none`, and no stock `print_service.py`, and the target
+  verifier accepted the client/firmware/idle evidence. This remains
+  native-side evidence only.
 - [x] Carry native firmware/version and topcap telemetry through the web/API
   backend state and shared printer response formatter, so clients consuming
   `/api/v1/printer`, `/api/v1/airmanager`, or Deneb's cached status JSON do not
@@ -749,7 +757,21 @@ deviation, not hidden under "stock parity."
   generated on-device, started through the cluster API, verified as
   `printing` with `native_active:true` / `native_stop_allowed:true`, aborted
   through the cluster API, observed as `aborting` with Stop disabled while
-  cleanup drained, and settled back to `idle` with active/stop false.
+  cleanup drained, and settled back to `idle` with active/stop false. On
+  June 10, 2026, `Deneb_Update_b0fa27b` added a current bounded Z-only
+  completion/resource smoke: `/usr/bin/deneb-printsvc-smoke --physical-ok
+  --native --complete-job /tmp/deneb-b0fa27b-complete-z.gcode
+  --prehome-action z_home` passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job
+  --resources /tmp/deneb-printsvc-b0fa27b-complete.summary`. The run used a
+  mandatory Z-home safety plan, no heat/extrusion/X/Y motion, showed active
+  `printing` with `native_active:true` and `native_stop_allowed:true`, then
+  final `idle` with both flags false and blank filename. It also recorded
+  native driver RSS samples around 1.6 MiB and throughput of 1320 bytes over
+  42 seconds. A final API diagnostic recorded one sequence-number resync after
+  the job was already idle; `logread` showed no `POSITION_ERROR`, endstop,
+  homing, or fault lines for the accepted run. This closes only the bounded
+  native completion/resource smoke slice.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
   later live work exposed active/abort ProtoError desync and stale native
@@ -815,6 +837,12 @@ deviation, not hidden under "stock parity."
   live heat, motion, Cura, pause/resume, abort, completion, and stock/native
   resource evidence still remain open.
 - [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
+  Current native-side-only evidence exists, but the required paired
+  stock/native comparison remains open. On June 10, 2026,
+  `/tmp/deneb-printsvc-b0fa27b-complete.summary` verified resource mode with
+  process RSS samples for `/usr/bin/deneb-printsvc` around 1.6 MiB and a
+  completed-job throughput record of 1320 bytes in 42 seconds. This is useful
+  native evidence for the reduction gate, not before/after proof.
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
   validation.
@@ -1906,6 +1934,21 @@ Completed implementation slices:
   `/usr/bin/deneb-printsvc` RSS around 1584 KB. This is non-motion evidence for
   the current shared-helper build; hardware LCD abort-flow, representative
   Cura geometry, and strict stock/native resource comparison remain open.
+- [x] Deploy `Deneb_Update_b0fa27b` and refresh current native ownership,
+  client/firmware proof, target selftests, and bounded completion/resource
+  evidence after sharing Cura cluster action routing. On June 10, 2026, the
+  target manifest reported `version: b0fa27b`; installed CLI, init-handoff,
+  release-gate, native-audit, and integration-audit selftests passed; `ps`
+  showed `/usr/bin/deneb-printsvc` and no stock `print_service.py`; and
+  observe-only `/usr/bin/deneb-printsvc-smoke --native --restart --boot-sync
+  --client-proof --firmware-proof` passed target verification with ambient
+  bed/nozzle/topcap telemetry and final idle active/Stop flags false. A
+  supervised bounded Z-only completion run then passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job
+  --resources`, proving active printing status/Stop allowance during the job,
+  final idle active/Stop false, and native-side RSS/throughput samples. This
+  refreshes current native proof only; representative Cura geometry, LCD/Web UI
+  user flows, and strict stock/native resource comparison remain open.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
   refuses `nightly` or `stable` native-printsvc packages unless

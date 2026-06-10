@@ -140,6 +140,24 @@ keeps the shorter evidence summary and the live-proof gaps.
   stock `print_service.py`. This closes only the bounded cluster API
   upload/start/abort slice, not representative Cura client or slicer-geometry
   parity.
+- June 10, 2026 installed `dist/Deneb_Update_b0fa27b.deneb` evidence:
+  installed CLI, init-handoff, release-gate, native-audit, and integration-audit
+  selftests passed; observe-only
+  `/usr/bin/deneb-printsvc-smoke --native --restart --boot-sync
+  --client-proof --firmware-proof` verified native-only ownership, no stock
+  `print_service.py`, UM API, Cura cluster, Digital Factory bridge, ambient
+  bed/nozzle/topcap telemetry, `firmware=none`, and final idle active/Stop
+  flags false. A supervised bounded Z-only completion/resource run using
+  `/tmp/deneb-b0fa27b-complete-z.gcode` passed
+  `/usr/bin/deneb-printsvc-smoke-verify --native --idle --complete-job
+  --resources /tmp/deneb-printsvc-b0fa27b-complete.summary`. It required
+  `z_home`, moved only bounded negative Z, showed active `printing` with Stop
+  allowed, then final `idle` with active/Stop false and blank filename, plus
+  native RSS and throughput samples. A post-idle sequence-number resync
+  diagnostic remained in the final API snapshot, but the accepted run's device
+  log check found no `POSITION_ERROR`, endstop, homing, or fault lines. This
+  refreshes bounded native completion evidence only; representative slicer
+  geometry and paired stock/native resource comparison remain open.
 
 ## Open Parity Work
 
