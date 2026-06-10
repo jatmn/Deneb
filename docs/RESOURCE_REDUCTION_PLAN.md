@@ -783,7 +783,10 @@ Material-profile USB import root/depth/suffix policy and the
   shared library/API boundary, or native service-owned. The shell-only
   `deneb-printsvc-integration-audit` and selftest are packaged and wired into
   CTest, package build, archive audit, and installer validation so new
-  patchwork has to declare an owner and placement before it ships.
+  patchwork has to declare an owner and placement before it ships. The source
+  audit also rejects raw motion/heater G-code string literals in UI and web/API
+  `.c` client adapters, forcing those commands through shared/native policy
+  owners instead of allowing another private client-side command builder.
 - Keep `onion-helper` under observation, but do not disable it yet. A live
   stop test showed SSH, Ethernet client networking, `udhcpc`, `deneb-ui`,
   `coordinator.py`, `print_service.py`, and the separate `onion` ubus API

@@ -1472,6 +1472,13 @@ Completed implementation slices:
   status-label accessor used by REST and Cura cluster status, and add an
   integration-audit rejection for direct request-blind status-label calls in
   `backend_zmq`.
+- [x] Harden the integration audit against new client-side raw G-code
+  patchwork: `deneb-printsvc-integration-audit` now rejects raw motion/heater
+  G-code string literals in UI and web/API `.c` client adapters, while keeping
+  those literals allowed only in shared/native policy owners such as
+  `common/print/gcode_command.*`, `manual_motion.*`, and native
+  `printsvc/src/*` modules. The negative-fixture selftest proves both LCD and
+  web/API regressions fail closed.
 - [x] Make native abort/finish cleanup policy failures visible as serial faults
   when motion transport is marked ready, so the driver no longer reports
   successful abort or completion if the required cleanup G-code cannot be sent.
@@ -1841,6 +1848,9 @@ Completed implementation slices:
   package contains a Python driver artifact name, an
   unpacked package omits the native-printsvc release gate, or when an archived
   package contains a Python driver artifact name.
+- [x] Extend the shell-only integration-audit selftest so source fixtures fail
+  when touchscreen or web/API client adapters embed raw motion/heater G-code
+  literals instead of using shared print-control helpers.
 - [x] Verify the `.deneb` release package includes the native smoke harness,
   `deneb-printsvc`, and its declared notices: local package build
   contains `deneb-printsvc`,

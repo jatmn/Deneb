@@ -189,6 +189,20 @@ const char *bad_api_bed_preheat(void) { return "{\"active\":false}"; }
 EOF
 expect_failure rejects_api_bed_preheat_hardcode "$AUDIT" --source "$API_BED_PREHEAT_HARDCODE"
 
+LCD_RAW_GCODE="$TMP_DIR/source-lcd-raw-gcode"
+write_valid_source "$LCD_RAW_GCODE"
+cat >> "$LCD_RAW_GCODE/ui/src/backend_comm.c" <<'EOF'
+const char *bad_lcd_gcode(void) { return "M104 S200"; }
+EOF
+expect_failure rejects_lcd_raw_gcode_literal "$AUDIT" --source "$LCD_RAW_GCODE"
+
+WEB_RAW_GCODE="$TMP_DIR/source-web-raw-gcode"
+write_valid_source "$WEB_RAW_GCODE"
+cat >> "$WEB_RAW_GCODE/web/src/api_printer.c" <<'EOF'
+const char *bad_web_gcode(void) { return "G28 Z"; }
+EOF
+expect_failure rejects_web_raw_gcode_literal "$AUDIT" --source "$WEB_RAW_GCODE"
+
 PYTHON_LAUNCH="$TMP_DIR/source-python-launch"
 write_valid_source "$PYTHON_LAUNCH"
 cat >> "$PYTHON_LAUNCH/web/src/backend_zmq.c" <<'EOF'

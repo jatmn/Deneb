@@ -53,6 +53,20 @@ reject_pattern() {
     pass "$label"
 }
 
+reject_c_tree_pattern() {
+    dir=$1
+    pattern=$2
+    label=$3
+    if find "$dir" -type f -name '*.c' -exec grep -HE "$pattern" {} + \
+        >/tmp/deneb-integration-audit.$$ 2>/dev/null; then
+        cat /tmp/deneb-integration-audit.$$ >&2
+        rm -f /tmp/deneb-integration-audit.$$
+        fail "$label"
+    fi
+    rm -f /tmp/deneb-integration-audit.$$
+    pass "$label"
+}
+
 require_doc_row() {
     doc=$1
     label=$2
@@ -159,6 +173,10 @@ audit_source() {
     require_pattern "${repo}/common/print/printer_status_response.c" '#include "print_state_rules\.h"' "printer status response uses shared state rules"
     require_pattern "${repo}/common/print/printer_status_response.c" 'deneb_print_has_temp_targets' "printer status response uses shared heat-target rules"
     reject_pattern "${repo}/common/print/printer_status_response.c" '"pre_heat":\{"active":false\}' "printer status response does not hard-code bed preheat inactive"
+    reject_c_tree_pattern "${repo}/ui/src" '"(G[0-9]|M[0-9])' \
+        "LCD client code does not embed raw motion/heater G-code literals"
+    reject_c_tree_pattern "${repo}/web/src" '"(G[0-9]|M[0-9])' \
+        "web/API client code does not embed raw motion/heater G-code literals"
 
     require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-integration-audit" \

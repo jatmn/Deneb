@@ -24,4 +24,6 @@ with the old Python driver is not a reason to keep duplicated behavior.
 The companion `deneb-printsvc-integration-audit` script checks this document and
 the source wiring so new client patches have to declare an owner, a migration
 boundary, and a removal condition instead of growing another private copy of
-print-state logic.
+print-state logic. It also rejects raw motion/heater G-code string literals in
+UI and web/API `.c` client adapters so those commands stay in shared/native
+policy owners rather than returning as per-client patches.
