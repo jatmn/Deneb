@@ -12,6 +12,7 @@ CLUSTER_API_BASE="${DENEB_CLUSTER_API_BASE:-http://127.0.0.1/cluster-api/v1}"
 LOG="${DENEB_PRINTSVC_SMOKE_LOG:-/tmp/deneb-printsvc-smoke.log}"
 SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 ENABLE_NATIVE=0
+NATIVE_RESTART=1
 EXPECT_STOCK=0
 STOCK_PREHOME_SETTLE_SECONDS="${DENEB_PRINTSVC_STOCK_PREHOME_SETTLE_SECONDS:-12}"
 RUN_HEAT=0
@@ -62,6 +63,7 @@ Usage: deneb-printsvc-smoke [options]
 
 Observe-only by default:
   --native              Restart and assert the native deneb-printsvc route
+  --native-no-restart   Assert native route/process ownership without restarting
   --stock               Assert the stock print_service.py route is active
   --no-restore          Accepted for older commands; native routing is not toggled
   --heat                Exercise low bed/nozzle heat targets, then cool down
@@ -125,6 +127,10 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) ENABLE_NATIVE=1 ;;
+        --native-no-restart)
+            ENABLE_NATIVE=1
+            NATIVE_RESTART=0
+            ;;
         --stock) EXPECT_STOCK=1 ;;
         --no-restore) ;;
         --heat) RUN_HEAT=1 ;;
@@ -1530,8 +1536,8 @@ if [ "$RUN_PARSER_SELFTEST" = "1" ]; then
 fi
 
 say "deneb-printsvc smoke started"
-say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE stock=$EXPECT_STOCK heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
-summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE stock=$EXPECT_STOCK heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
+say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE native_restart=$NATIVE_RESTART stock=$EXPECT_STOCK heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
+summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE native_restart=$NATIVE_RESTART stock=$EXPECT_STOCK heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
 
 if [ "$EXPECT_STOCK" = "1" ]; then
     say "stock mode: skipping native deneb-printsvc --smoke-test"
@@ -1552,11 +1558,15 @@ snapshot "initial"
 
 if [ "$ENABLE_NATIVE" = "1" ]; then
     say "asserting native deneb-printsvc route"
-    append_cmd /etc/init.d/printserver stop || true
-    append_cmd /etc/init.d/deneb-printsvc restart || true
-    append_cmd /etc/init.d/deneb-api restart || true
-    sleep 3
-    summary "phase=native-route-enabled previous=native-only"
+    if [ "$NATIVE_RESTART" = "1" ]; then
+        append_cmd /etc/init.d/printserver stop || true
+        append_cmd /etc/init.d/deneb-printsvc restart || true
+        append_cmd /etc/init.d/deneb-api restart || true
+        sleep 3
+        summary "phase=native-route-enabled previous=native-only restart=1"
+    else
+        summary "phase=native-route-enabled previous=native-only restart=0"
+    fi
     assert_native_driver_process "native-driver-process" || exit $?
     snapshot "native-enabled"
 fi

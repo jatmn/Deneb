@@ -578,6 +578,11 @@ Material-profile USB import root/depth/suffix policy and the
   RSS evidence, zero-throughput records, and nonzero
   throughput regressions under strict reduction mode, so the
   evidence contract can be tested without Python or live hardware.
+  `deneb-printsvc-stability` wraps the smoke harness for observe-only or
+  repeated-job stability runs without restarting native `deneb-printsvc` between
+  iterations; repeated-job mode keeps the existing physical acknowledgement,
+  prehome, completion, verifier, and flow-drain gates and records native RSS
+  growth against a configured threshold.
   `deneb-printsvc-cli-selftest` runs the actual native binary's `--smoke-test`
   and `--local-job-smoke` entry points against a temp G-code file without
   opening the motion serial device, then rejects missing accepted/aborted
@@ -592,8 +597,9 @@ Material-profile USB import root/depth/suffix policy and the
   The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
-  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-stock-baseline`,
-  `deneb-printsvc-cli-selftest`, `deneb-printsvc-init-selftest`,
+  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-stability`,
+  `deneb-printsvc-stock-baseline`, `deneb-printsvc-cli-selftest`,
+  `deneb-printsvc-init-selftest`,
   `deneb-printsvc-release-gate-selftest`,
   `deneb-printsvc-native-audit`,
   `deneb-printsvc-native-audit-selftest`,
@@ -931,6 +937,7 @@ Material-profile USB import root/depth/suffix policy and the
   Cura monitor polling, multipart upload, pending conflict/preheat flow,
   pause/resume/abort actions, and cleanup after failed uploads.
 
-Before treating a build as release-ready, repeat memory and CPU sampling while
-idle, printing, installing a Deneb package, exporting diagnostics, switching
-languages, and using Digital Factory pairing/disconnect.
+Before treating a build as release-ready, run `deneb-printsvc-stability` for
+long-duration/repeated-job native samples and repeat memory and CPU sampling
+while idle, printing, installing a Deneb package, exporting diagnostics,
+switching languages, and using Digital Factory pairing/disconnect.

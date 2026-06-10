@@ -38,6 +38,7 @@ write_valid_package() {
         "$root/deneb-printsvc-smoke-verify" \
         "$root/deneb-printsvc-smoke-compare" \
         "$root/deneb-printsvc-smoke-selftest" \
+        "$root/deneb-printsvc-stability" \
         "$root/deneb-printsvc-stock-baseline" \
         "$root/deneb-printsvc-cli-selftest" \
         "$root/deneb-printsvc-init-selftest" \
@@ -73,6 +74,11 @@ wait_for_abort_idle() {
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
 summary "phase=representative-fixture-safety-gate rc=2 reason=requires_all_axis_home"
+EOF
+    cat > "$root/deneb-printsvc-stability" <<'EOF'
+#!/bin/sh
+deneb-printsvc-smoke --native-no-restart
+echo "--complete-job requires --physical-ok"
 EOF
     cat > "$root/deneb-printsvc-stock-baseline" <<'EOF'
 #!/bin/sh
@@ -140,6 +146,8 @@ deneb-printsvc-native-audit-selftest
 deneb-printsvc-integration-audit --source .
 deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
+deneb-printsvc-stability
+deneb-printsvc-stability" --selftest
 find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \)
 EOF
 cat > "$root/tools/build-update-release.ps1" <<'EOF'
@@ -203,6 +211,11 @@ generated low-temperature preheat-abort fixture
 generated bounded representative XYZ fixture
 smoke_rejects_representative_without_all_axis_home
 EOF
+    cat > "$root/tools/deneb-printsvc-stability.sh" <<'EOF'
+#!/bin/sh
+deneb-printsvc-smoke --native-no-restart
+echo "--complete-job requires --physical-ok"
+EOF
     cat > "$root/tools/deneb-printsvc-stock-baseline.sh" <<'EOF'
 #!/bin/sh
 ALLOW_STOCK_SWITCH="${DENEB_PRINTSVC_STOCK_BASELINE_OK:-0}"
@@ -225,8 +238,10 @@ deneb-printsvc-native-audit-selftest
 deneb-printsvc-integration-audit --package-dir /tmp/update
 deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
+/usr/bin/deneb-printsvc-stability --selftest
 /etc/init.d/deneb-api restart
 /etc/init.d/deneb-web restart
+cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
 cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
 cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
 native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction
@@ -437,6 +452,11 @@ MISSING_SMOKE_SELFTEST="$TMP_DIR/missing-smoke-selftest"
 write_valid_package "$MISSING_SMOKE_SELFTEST"
 rm -f "$MISSING_SMOKE_SELFTEST/deneb-printsvc-smoke-selftest"
 expect_failure rejects_missing_smoke_selftest "$AUDIT" --package-dir "$MISSING_SMOKE_SELFTEST"
+
+MISSING_STABILITY="$TMP_DIR/missing-stability"
+write_valid_package "$MISSING_STABILITY"
+rm -f "$MISSING_STABILITY/deneb-printsvc-stability"
+expect_failure rejects_missing_stability "$AUDIT" --package-dir "$MISSING_STABILITY"
 
 MISSING_BASELINE_HELPER="$TMP_DIR/missing-baseline-helper"
 write_valid_package "$MISSING_BASELINE_HELPER"

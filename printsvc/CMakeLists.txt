@@ -168,6 +168,12 @@ if(SH_EXECUTABLE)
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-smoke-selftest.sh"
     )
     add_test(
+        NAME deneb-printsvc-stability-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-stability.sh"
+                --selftest
+    )
+    add_test(
         NAME deneb-printsvc-cli-selftest
         COMMAND "${SH_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-cli-selftest.sh"

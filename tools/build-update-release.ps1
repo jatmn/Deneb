@@ -236,6 +236,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-verify$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-compare$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc-stability$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-stock-baseline$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-cli-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-init-selftest$' /tmp/deneb-release-package-files.txt; " +
@@ -253,8 +254,9 @@ $verifyPackage = "set -euo pipefail; " +
                  "printf '%s\n' '$packageWsl' >&2; exit 1; " +
                  "fi; " +
                  "rm -rf /tmp/deneb-release-smoke-selftest; mkdir -p /tmp/deneb-release-smoke-selftest; " +
-                 "tar xf '$packageWsl' -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init update.sh manifest.txt; " +
+                 "tar xf '$packageWsl' -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init update.sh manifest.txt; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest >/tmp/deneb-release-smoke-selftest.log; " +
+                 "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-stability --selftest >/tmp/deneb-release-stability-selftest.log; " +
                  "DENEB_REPO_ROOT='$repoWsl' sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-release-gate-selftest >/tmp/deneb-release-gate-selftest.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit --archive '$packageWsl' >/tmp/deneb-release-native-audit.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest >/tmp/deneb-release-native-audit-selftest.log; " +

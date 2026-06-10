@@ -23,14 +23,22 @@ promotion status here so the checklist does not become a changelog.
 | Web UI hands-on workflow | Open | None accepted yet | API proofs exist; browser/user workflow proof remains separate. |
 | Digital Factory job lifecycle | Open | Observe-only bridge status only | Needs lifecycle behavior, not just bridge status endpoint reachability. |
 | Representative real slicer output | Open | Generated representative fixture only | Needs broader slicer geometry beyond generated bounded fixtures. |
-| Long-duration stability/leak behavior | Open | None accepted yet | Needs multi-hour or repeated-job native uptime/resource evidence. |
+| Long-duration stability/leak behavior | Open | Stability harness tooling installed and short observe-only sanity run passed | Needs multi-hour or repeated-job native uptime/resource evidence from `deneb-printsvc-stability`; `/tmp/deneb-8e72da5-observe-stability.summary` proves only target-side tool operation and short no-motion sampling. |
 
 ## Latest Deployed Native Build
 
-- Build: dirty `cd4724a` experimental package.
-- Package: `dist/Deneb_Update_cd4724a.deneb`.
+- Build: dirty `8e72da5` experimental package.
+- Package: `dist/Deneb_Update_8e72da5.deneb`.
 - Device install: completed over SSH; target logs show `deneb-api: starting
-  (version=cd4724a-dirty)` and native package selftests passed.
+  (version=8e72da5-dirty)` and native package selftests passed, including
+  `deneb-printsvc stability selftest passed`.
+- Current stability-tool proof:
+  `/tmp/deneb-8e72da5-observe-stability.summary` ran the installed
+  `deneb-printsvc-stability` harness in observe-only mode for two short
+  samples. It recorded native `deneb-printsvc` RSS at 1152 KiB initially and
+  finally, `rss_delta_kb=0`, and `phase=stability-result ... rc=0`. This proves
+  the target-side stability harness is installed and functional; it does not
+  close the long-duration/repeated-job stability gate.
 - Current safety/evidence harness proof:
   `/tmp/deneb-cd4724a-preheat55.summary` verified the generated preheat-abort
   fixture remains observable after prior smoke heat: active snapshot showed
@@ -67,4 +75,5 @@ Section 8 remains experimental until all of these are captured and pass:
 - Desktop Cura client proof.
 - Digital Factory lifecycle proof.
 - Representative slicer-output completion, pause/resume, and abort proof.
-- Long-duration stability/resource evidence.
+- Long-duration stability/resource evidence from the repeated native stability
+  harness.

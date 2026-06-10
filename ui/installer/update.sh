@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -142,6 +142,10 @@ install_web_runtime() {
     cp /tmp/update/deneb-printsvc-smoke-selftest /usr/bin/deneb-printsvc-smoke-selftest
     chmod 0755 /usr/bin/deneb-printsvc-smoke-selftest
     log "installed deneb-printsvc-smoke-selftest to /usr/bin/deneb-printsvc-smoke-selftest"
+
+    cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
+    chmod 0755 /usr/bin/deneb-printsvc-stability
+    log "installed deneb-printsvc-stability to /usr/bin/deneb-printsvc-stability"
 
     cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
     chmod 0755 /usr/bin/deneb-printsvc-stock-baseline
@@ -562,6 +566,13 @@ smoke_test_printsvc_tools() {
         exit 1
     fi
     log "deneb-printsvc smoke tool selftest passed"
+
+    if ! /usr/bin/deneb-printsvc-stability --selftest >/tmp/deneb-printsvc-stability-selftest.log 2>&1; then
+        log "ERROR: deneb-printsvc stability selftest failed"
+        cat /tmp/deneb-printsvc-stability-selftest.log 2>/dev/null || true
+        exit 1
+    fi
+    log "deneb-printsvc stability selftest passed"
 
     if ! /usr/bin/deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc >/tmp/deneb-printsvc-cli-selftest.log 2>&1; then
         log "ERROR: deneb-printsvc CLI selftest failed"

@@ -1776,6 +1776,17 @@ Completed implementation slices:
   abort-requested/draining status evidence, so full-summary evidence cannot
   skip the Stop-disabled abort cleanup window that caused earlier LCD/API
   regressions.
+- [x] Add a packaged shell-only repeated stability harness,
+  `deneb-printsvc-stability`, so long-duration or repeated-job native evidence
+  can be collected without restarting the service under test on every
+  iteration. The harness supports observe-only resource sampling and repeated
+  bounded completion jobs; repeated jobs delegate to `deneb-printsvc-smoke`
+  using `--native-no-restart`, require `--physical-ok`, preserve the existing
+  prehome/completion/flow-drain checks, verify each iteration with the smoke
+  verifier, and fail if native driver RSS grows beyond the configured threshold.
+  Package build, installer, release-wrapper, CTest, and native audit paths now
+  include the stability selftest. This adds the evidence tool; the actual
+  long-duration/repeated-job live proof remains open until captured.
 - [x] Capture observe-only client API/bridge evidence after package install: on
   June 9, 2026, `dist/Deneb_Update_fa29a67.deneb` installed over SSH and the
   installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof`
@@ -1827,7 +1838,8 @@ Completed implementation slices:
   contains `deneb-printsvc`,
   `deneb-printsvc-smoke`, `deneb-printsvc-smoke-verify`,
   `deneb-printsvc-smoke-compare`, `deneb-printsvc-smoke-selftest`,
-  `deneb-printsvc-stock-baseline`, `deneb-printsvc-cli-selftest`,
+  `deneb-printsvc-stability`, `deneb-printsvc-stock-baseline`,
+  `deneb-printsvc-cli-selftest`,
   `deneb-printsvc-init-selftest`,
   `deneb-printsvc-release-gate-selftest`, `deneb-printsvc-native-audit`,
   `deneb-printsvc-native-audit-selftest`, `deneb-printsvc-macros/`,
