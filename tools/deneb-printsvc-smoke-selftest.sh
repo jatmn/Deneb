@@ -208,6 +208,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:38Z phase=job-throughput path=/tmp/complete.gcode bytes=9000 elapsed_seconds=18 bytes_per_second=500 rc=0
 2026-06-08T00:00:38Z snapshot=job-completed
 2026-06-08T00:00:38Z phase=status-job-completed kind=api method=GET path=/printer/status rc=0 status=idle body=idle
+2026-06-08T00:00:38Z phase=printer-job-completed-flow-wait elapsed=0 status=idle native_active=false native_stop_allowed=false flow_inflight=0 flow_resend=0 rc=0
 2026-06-08T00:00:38Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false,flow_inflight:0,flow_resend:0}
 2026-06-08T00:00:38Z phase=complete-job-position running_z=207.0 final_z=111.0 delta_z=96.000 rc=0
 2026-06-08T00:00:39Z phase=service-restart kind=service-restart rc=0
@@ -229,7 +230,7 @@ sh "$VERIFY" --full "$NATIVE_SUMMARY"
 sh "$COMPARE" "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
 sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
 
-grep -E 'start |sample=initial |sample=final |phase=printsvc-self-test |phase=native-route-enabled |phase=native-driver-process |snapshot=initial|snapshot=native-enabled|snapshot=final|phase=route-initial |phase=status-initial |phase=printer-initial |phase=route-native-enabled |phase=status-native-enabled |phase=printer-native-enabled |phase=boot-sync-ready |snapshot=client-proof|phase=client-|snapshot=firmware-proof|phase=firmware-proof |phase=complete-job-|snapshot=complete-job-running|phase=status-complete-job-running |phase=printer-complete-job-running |phase=job-completion-wait |phase=job-throughput |phase=complete-job-position |snapshot=job-completed|phase=status-job-completed |phase=printer-job-completed |phase=service-restart |snapshot=service-restarted|phase=route-service-restarted |phase=status-service-restarted |phase=printer-service-restarted ' \
+grep -E 'start |sample=initial |sample=final |phase=printsvc-self-test |phase=native-route-enabled |phase=native-driver-process |snapshot=initial|snapshot=native-enabled|snapshot=final|phase=route-initial |phase=status-initial |phase=printer-initial |phase=route-native-enabled |phase=status-native-enabled |phase=printer-native-enabled |phase=boot-sync-ready |snapshot=client-proof|phase=client-|snapshot=firmware-proof|phase=firmware-proof |phase=complete-job-|snapshot=complete-job-running|phase=status-complete-job-running |phase=printer-complete-job-running |phase=job-completion-wait |phase=job-throughput |phase=complete-job-position |snapshot=job-completed|phase=status-job-completed |phase=printer-job-completed-flow-wait |phase=printer-job-completed |phase=service-restart |snapshot=service-restarted|phase=route-service-restarted |phase=status-service-restarted |phase=printer-service-restarted ' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-resource-only.summary"
 grep -E 'phase=heat-|phase=bed-|phase=nozzle-|snapshot=heating|snapshot=cooldown|phase=status-heating |phase=printer-heating |phase=status-cooldown |phase=printer-cooldown |phase=motion-|phase=z-home |snapshot=motion|phase=status-motion |phase=printer-motion |phase=macro-|snapshot=macro|phase=status-macro |phase=printer-macro |phase=local-job-|phase=job-safety |phase=job-start |snapshot=job-|phase=status-job-|phase=printer-job-|phase=job-pause |phase=job-resume |phase=job-abort |phase=cura-job-|snapshot=cura-job-|phase=status-cura-job-|phase=printer-cura-job-|phase=preheat-abort-|snapshot=preheat-|phase=status-preheat-|phase=printer-preheat-|phase=active-abort-|snapshot=active-|phase=status-active-|phase=printer-active-' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-workflow-only.summary"
@@ -582,10 +583,11 @@ if [ "$(grep -c '^G1 Z-0\.20 F30$' "$TMP_DIR/z-complete.gcode")" != "24" ]; then
     exit 1
 fi
 if ! grep -qx 'G28 Z' "$TMP_DIR/z-complete.gcode" ||
+   ! grep -qx 'G280 S1' "$TMP_DIR/z-complete.gcode" ||
    ! grep -qx 'G91' "$TMP_DIR/z-complete.gcode" ||
    ! grep -qx 'G90' "$TMP_DIR/z-complete.gcode"; then
     cat "$TMP_DIR/z-complete.gcode"
-    echo "FAIL: generated completion fixture missing Z-home/relative/absolute guards" >&2
+    echo "FAIL: generated completion fixture missing stock-prime/Z-home/relative/absolute guards" >&2
     exit 1
 fi
 if grep -Eq '^(G4|M400|M104|M109|M140|M190|M105)([[:space:]]|$)' \
@@ -628,9 +630,10 @@ if ! grep -qx 'G1 Z206.8 F30' "$TMP_DIR/z-active.gcode" ||
     exit 1
 fi
 if ! grep -qx 'G90' "$TMP_DIR/z-active.gcode" ||
+   ! grep -qx 'G280 S1' "$TMP_DIR/z-active.gcode" ||
    grep -qx 'G91' "$TMP_DIR/z-active.gcode"; then
     cat "$TMP_DIR/z-active.gcode"
-    echo "FAIL: generated active fixture must keep XYZ in absolute mode" >&2
+    echo "FAIL: generated active fixture must include stock-prime guard and keep XYZ in absolute mode" >&2
     exit 1
 fi
 if ! grep -Eq 'phase=make-active-fixture .*rc=0 .*command=G1_Z' \
@@ -655,9 +658,10 @@ if [ "$(grep -c '^G1 X' "$TMP_DIR/representative-xyz.gcode")" != "12" ]; then
     exit 1
 fi
 if ! grep -qx '; DENEB_REPRESENTATIVE_XYZ_FIXTURE=1' "$TMP_DIR/representative-xyz.gcode" ||
+   ! grep -qx 'G280 S1' "$TMP_DIR/representative-xyz.gcode" ||
    ! grep -qx 'G90' "$TMP_DIR/representative-xyz.gcode"; then
     cat "$TMP_DIR/representative-xyz.gcode"
-    echo "FAIL: generated representative fixture missing marker or absolute-mode guard" >&2
+    echo "FAIL: generated representative fixture missing marker, stock-prime guard, or absolute-mode guard" >&2
     exit 1
 fi
 if grep -Eq '^(G28|G4|M400|M104|M109|M140|M190|M105)([[:space:]]|$)' \
@@ -717,11 +721,12 @@ sh "$SMOKE" --make-preheat-abort-fixture "$TMP_DIR/preheat-abort.gcode" \
     --summary "$TMP_DIR/preheat-abort-fixture.summary" \
     --log "$TMP_DIR/preheat-abort-fixture.log"
 if ! grep -qx 'M140 S35' "$TMP_DIR/preheat-abort.gcode" ||
+   ! grep -qx 'G280 S1' "$TMP_DIR/preheat-abort.gcode" ||
    ! grep -qx 'M109 S45' "$TMP_DIR/preheat-abort.gcode" ||
    ! grep -qx 'M104 S0' "$TMP_DIR/preheat-abort.gcode" ||
    ! grep -qx 'M140 S0' "$TMP_DIR/preheat-abort.gcode"; then
     cat "$TMP_DIR/preheat-abort.gcode"
-    echo "FAIL: generated preheat-abort fixture missing low heat/cooldown commands" >&2
+    echo "FAIL: generated preheat-abort fixture missing stock-prime guard or low heat/cooldown commands" >&2
     exit 1
 fi
 if grep -Eq '^G1 [XYE]' "$TMP_DIR/preheat-abort.gcode"; then

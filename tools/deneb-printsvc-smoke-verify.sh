@@ -471,6 +471,7 @@ if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
     require_pattern ' phase=status-job-completed .*rc=0 .*status=idle' "job-completed status is idle"
     require_pattern ' phase=printer-job-completed .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-completed native active/stop flags are false"
     if [ "$REQUIRE_NATIVE" = "1" ]; then
+        require_pattern ' phase=printer-job-completed-flow-wait .*status=idle .*native_active=false .*native_stop_allowed=false .*flow_inflight=0 .*flow_resend=0 .*rc=0' "job-completed native flow wait observed idle drain"
         require_pattern ' phase=printer-job-completed .*rc=0 .*body=.*flow_inflight:0.*flow_resend:0' "job-completed native flow drained without resend debt"
     fi
 fi

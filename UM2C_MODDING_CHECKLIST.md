@@ -1705,14 +1705,18 @@ Completed implementation slices:
   `--make-complete-fixture`: it homes Z once, performs up to 480 small relative
   `G1 Z-0.20 F30` moves away from homed Z max, avoids heat/extrusion/dwell/newer
   commands and avoids moving farther into the Z max endstop, with total travel
-  capped to 96 mm away from homed Z max. The harness now also generates a
-  bounded Z-only active-job fixture with `--make-active-fixture` and a
-  low-temperature heater-wait fixture with `--make-preheat-abort-fixture`, so
-  active-abort, Cura-upload, pause/resume, and preheat-abort smoke runs can use
-  fresh, known fixtures instead of stale printer-side test files. The harness
+  capped to 96 mm away from homed Z max. Generated job fixtures now include an
+  early `G280 S1` stock-prime marker; stock `print_service.py` treats that as
+  an existing prime command and avoids adding its cold-extrusion startup prime,
+  while native rewrites it to a non-extruding `G92 E-16.5`. The harness now
+  also generates a bounded Z-only active-job fixture with
+  `--make-active-fixture` and a low-temperature heater-wait fixture with
+  `--make-preheat-abort-fixture`, so active-abort, Cura-upload, pause/resume,
+  and preheat-abort smoke runs can use fresh, known fixtures instead of stale
+  printer-side test files. The harness
   also generates a bounded Cura-style XYZ fixture with
   `--make-representative-fixture`; generated representative fixtures contain no
-  heat, extrusion, dwell, or internal homing commands and force
+  heat, material extrusion, dwell, or internal homing commands and force
   `--prehome-action home` before any smoke phase may upload them. The shell
   selftest covers those generators plus the dwell-only rejection path, and the
   native audit rejects packages missing the safe fixture generators or the
@@ -2112,17 +2116,24 @@ Completed implementation slices:
   without emitting 255 and verifies an `o00...` ACK drains 253, 254, and 0
   while leaving newer sequence 1 in flight. This targets the long-job
   sequence-wrap/resend instability seen during completion/resource runs.
-  After redeploying `Deneb_Update_d82245c.deneb`, the 480-cycle bounded
-  completion fixture passed native live verification with
-  `/tmp/deneb-native-seqwrap-resource2.summary`: `running_z=207.0`,
-  `final_z=111.0`, `delta_z=96.000`, `flow_inflight:0`, `flow_resend:0`, and
-  6920 bytes over 204 seconds. The same fixture through the guarded stock
-  baseline produced `/tmp/deneb-stock-seqwrap-resource2.summary` with
-  `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`; the tightened verifier
-  rejects that stock run even though it reports 314 B/s. Treat earlier stock
-  throughput from this synthetic fixture as suspect unless
-  `phase=complete-job-position` proves positive Z travel, so the strict
-  stock/native resource gate remains open.
+  After redeploying the dirty `Deneb_Update_560025d.deneb` harness build, the
+  native rerun `/tmp/deneb-native-g280-resource-v2.summary` passed
+  `--native --complete-job --resources`: `running_z=207.0`,
+  `final_z=111.0`, `delta_z=96.000`, `phase=printer-job-completed-flow-wait`
+  showed idle `flow_inflight=0`/`flow_resend=0`, and native driver RSS stayed
+  around 1.1 MB. This confirmed the previous native `flow_inflight:2` failure
+  was a smoke snapshot timing issue caused by normal idle `M105`/`M114`
+  telemetry, not unfinished job flow. The fresh guarded stock baseline
+  `/tmp/deneb-stock-g280-resource-v2.summary` is still invalid release
+  evidence: the stock log shows `Command 'b'JOB'' not supported when busy`
+  immediately after the harness pre-homed Z, because stock status looked idle
+  before the stock driver had left its internal busy state. The summary then
+  reported 318 B/s but was already idle at the delayed running snapshot and
+  stayed at `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`. The smoke
+  harness now waits for stock Z-home position plus a fixed stock prehome
+  settle window before uploading the completion job. The strict stock/native
+  resource gate remains open until that updated stock-baseline route proves the
+  bounded descent body executes under stock Python.
 
 ## 9. Motion Controller / Marlin Firmware
 

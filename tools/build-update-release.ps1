@@ -220,11 +220,15 @@ if ($LASTEXITCODE -ne 0) {
     throw "update release build failed with exit code $LASTEXITCODE"
 }
 
+$gitShort = (& git -C $repoRoot rev-parse --short HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitShort)) {
+    throw "failed to determine git short revision for package verification"
+}
+$packageWsl = "$repoWsl/dist/Deneb_Update_$gitShort.deneb"
+
 $verifyPackage = "set -euo pipefail; " +
-                 "rm -f /tmp/deneb-release-packages.txt; " +
-                 "ls -t '$repoWsl'/dist/Deneb_Update_*.deneb > /tmp/deneb-release-packages.txt 2>/dev/null || true; " +
-                 "test -s /tmp/deneb-release-packages.txt || { echo 'No Deneb update package found in dist' >&2; exit 1; }; " +
-                 "head -n 1 /tmp/deneb-release-packages.txt | xargs tar tf > /tmp/deneb-release-package-files.txt; " +
+                 "test -s '$packageWsl' || { echo 'No Deneb update package found: $packageWsl' >&2; exit 1; }; " +
+                 "tar tf '$packageWsl' > /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)update.sh$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc.init$' /tmp/deneb-release-package-files.txt; " +
@@ -240,24 +244,24 @@ $verifyPackage = "set -euo pipefail; " +
                  "grep -Eq '(^|/)deneb-printsvc-native-audit-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-integration-audit$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-integration-audit-selftest$' /tmp/deneb-release-package-files.txt; " +
-                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar -xOf {} manifest.txt > /tmp/deneb-release-manifest.txt; " +
+                 "tar -xOf '$packageWsl' manifest.txt > /tmp/deneb-release-manifest.txt; " +
                  "grep -Eq '^channel: $ReleaseChannel$' /tmp/deneb-release-manifest.txt; " +
                  "grep -Eq '^native_printsvc: experimental$' /tmp/deneb-release-manifest.txt; " +
                  "grep -Eq '^native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction$' /tmp/deneb-release-manifest.txt; " +
                  "if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' /tmp/deneb-release-package-files.txt; then " +
                  "echo 'Python driver artifact found in release package:' >&2; " +
-                 "head -n 1 /tmp/deneb-release-packages.txt >&2; exit 1; " +
+                 "printf '%s\n' '$packageWsl' >&2; exit 1; " +
                  "fi; " +
                  "rm -rf /tmp/deneb-release-smoke-selftest; mkdir -p /tmp/deneb-release-smoke-selftest; " +
-                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar xf {} -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init update.sh manifest.txt; " +
+                 "tar xf '$packageWsl' -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init update.sh manifest.txt; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest >/tmp/deneb-release-smoke-selftest.log; " +
                  "DENEB_REPO_ROOT='$repoWsl' sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-release-gate-selftest >/tmp/deneb-release-gate-selftest.log; " +
-                 "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit --archive `$(head -n 1 /tmp/deneb-release-packages.txt) >/tmp/deneb-release-native-audit.log; " +
+                 "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit --archive '$packageWsl' >/tmp/deneb-release-native-audit.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest >/tmp/deneb-release-native-audit-selftest.log; " +
-                 "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive `$(head -n 1 /tmp/deneb-release-packages.txt) >/tmp/deneb-release-integration-audit.log; " +
+                 "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive '$packageWsl' >/tmp/deneb-release-integration-audit.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit-selftest >/tmp/deneb-release-integration-audit-selftest.log; " +
                  "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log; " +
-                 "printf 'Verified native-only print service package: '; head -n 1 /tmp/deneb-release-packages.txt"
+                 "printf 'Verified native-only print service package: %s\n' '$packageWsl'"
 
 & wsl -d $Distro -- bash -lc $verifyPackage
 if ($LASTEXITCODE -ne 0) {

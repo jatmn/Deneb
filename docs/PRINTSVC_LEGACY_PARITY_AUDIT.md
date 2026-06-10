@@ -95,10 +95,13 @@ keeps the shorter evidence summary and the live-proof gaps.
 - The smoke harness now generates fresh bounded Z-only active/completion
   fixtures and a low-temperature preheat-abort fixture. These are safer inputs
   for live evidence collection than stale ad hoc files, but generated fixtures
-  still do not prove physical behavior until run under supervision. It also
+  still do not prove physical behavior until run under supervision. Generated
+  job fixtures include an early `G280 S1` marker so stock `print_service.py`
+  does not prepend its cold-extrusion prime sequence before no-heat test
+  motion; native rewrites the marker to non-extruding `G92 E-16.5`. It also
   generates a bounded Cura-style XYZ representative fixture with no heat,
-  extrusion, dwell, or internal homing commands; the smoke harness rejects that
-  fixture unless all-axis prehome is selected.
+  material extrusion, dwell, or internal homing commands; the smoke harness
+  rejects that fixture unless all-axis prehome is selected.
 - June 9, 2026 installed `dist/Deneb_Update_be6a5b7.deneb` evidence: installed
   package selftests passed, generated `/tmp/deneb-active-z.gcode` and
   `/tmp/deneb-preheat-abort.gcode` on-device, observe-only native
@@ -228,13 +231,21 @@ keeps the shorter evidence summary and the live-proof gaps.
   0..254 sequence-number ring, the accepted native summary
   `/tmp/deneb-native-seqwrap-resource2.summary` ended with completed-job flow
   debt drained (`flow_inflight=0`, `flow_resend=0`) and real Z travel
-  (`running_z=207.0`, `final_z=111.0`, `delta_z=96.000`). The guarded stock
-  baseline for the same fixture,
-  `/tmp/deneb-stock-seqwrap-resource2.summary`, reported completion and 314 B/s
-  throughput but did not move after the running snapshot
-  (`running_z=207.0`, `final_z=207.0`, `delta_z=0.000`). The verifier now
-  rejects that stock summary, so this is native completion-correctness evidence
-  and a stock-baseline harness finding, not a closed resource release gate.
+  (`running_z=207.0`, `final_z=111.0`, `delta_z=96.000`). A later guarded
+  stock baseline using a regenerated fixture with an early `G280 S1` marker
+  then exposed a different stock-baseline issue. The native rerun
+  `/tmp/deneb-native-g280-resource-v2.summary` passed native resource
+  verification with `running_z=207.0`, `final_z=111.0`, `delta_z=96.000`, and
+  `phase=printer-job-completed-flow-wait` proving idle
+  `flow_inflight=0`/`flow_resend=0`. The fresh stock rerun
+  `/tmp/deneb-stock-g280-resource-v2.summary` reported 318 B/s and Python RSS
+  around 15.2 MB, but stock `print_service.py` logged `Command 'b'JOB'' not
+  supported when busy` immediately after the prehome. The summary was idle at
+  the delayed running snapshot and stayed at `running_z=207.0`,
+  `final_z=207.0`, `delta_z=0.000`. The smoke harness now waits for stock
+  Z-home position plus a fixed stock settle window before job upload; that
+  stock path is still invalid resource evidence until a rerun proves the
+  bounded descent body executes under stock Python.
 - The failed June 10 optimization attempts are intentionally preserved as
   negative parity evidence. Raising the native stream window to the stock
   Python buffer size of 6 caused resend storms and partial completion on this

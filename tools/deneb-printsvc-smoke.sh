@@ -13,6 +13,7 @@ LOG="${DENEB_PRINTSVC_SMOKE_LOG:-/tmp/deneb-printsvc-smoke.log}"
 SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 ENABLE_NATIVE=0
 EXPECT_STOCK=0
+STOCK_PREHOME_SETTLE_SECONDS="${DENEB_PRINTSVC_STOCK_PREHOME_SETTLE_SECONDS:-12}"
 RUN_HEAT=0
 RUN_MOTION=0
 RUN_LOCAL_JOB=0
@@ -314,6 +315,13 @@ if [ "$ENABLE_NATIVE" = "1" ] && [ "$EXPECT_STOCK" = "1" ]; then
     exit 2
 fi
 
+case "$STOCK_PREHOME_SETTLE_SECONDS" in
+    ''|*[!0-9]*)
+        echo "invalid DENEB_PRINTSVC_STOCK_PREHOME_SETTLE_SECONDS: $STOCK_PREHOME_SETTLE_SECONDS" >&2
+        exit 2
+        ;;
+esac
+
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 : >"$LOG" || {
     echo "cannot write log: $LOG" >&2
@@ -353,7 +361,9 @@ write_complete_fixture() {
     {
         printf '; Deneb native print-service completion smoke fixture\n'
         printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
+        printf '; G280 S1 keeps stock print_service.py from adding cold prime extrusion.\n'
         printf '; Homes Z once to max, then performs bounded relative moves away from max.\n'
+        printf 'G280 S1\n'
         printf 'G28 Z\n'
         printf 'G91\n'
         i=1
@@ -387,8 +397,10 @@ write_active_fixture() {
     {
         printf '; Deneb native print-service active smoke fixture\n'
         printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
+        printf '; G280 S1 keeps stock print_service.py from adding cold prime extrusion.\n'
         printf '; Requires the smoke harness pre-home step; moves only away from homed Z max.\n'
         printf '; Keep XYZ in absolute mode so pause/resume matches Cura-style jobs.\n'
+        printf 'G280 S1\n'
         printf 'G90\n'
         i=1
         while [ "$i" -le "$cycle_count" ]; do
@@ -409,6 +421,8 @@ write_preheat_abort_fixture() {
     {
         printf '; Deneb native print-service preheat-abort smoke fixture\n'
         printf '; Low targets only; abort this during heater wait before motion.\n'
+        printf '; G280 S1 keeps stock print_service.py from adding cold prime extrusion.\n'
+        printf 'G280 S1\n'
         printf 'M140 S35\n'
         printf 'M109 S45\n'
         printf 'G91\n'
@@ -441,7 +455,9 @@ write_representative_fixture() {
         printf '; Deneb native print-service representative XYZ smoke fixture\n'
         printf '; DENEB_REPRESENTATIVE_XYZ_FIXTURE=1\n'
         printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
+        printf '; G280 S1 keeps stock print_service.py from adding cold prime extrusion.\n'
         printf '; Requires smoke harness --prehome-action home before upload.\n'
+        printf 'G280 S1\n'
         printf 'G90\n'
         i=1
         while [ "$i" -le "$cycle_count" ]; do
@@ -691,6 +707,13 @@ positive_number_value() {
     awk -v value="$value" 'BEGIN { exit !(value + 0 > 0) }' 2>/dev/null
 }
 
+number_at_least_value() {
+    value="$1"
+    minimum="$2"
+    awk -v value="$value" -v minimum="$minimum" \
+        'BEGIN { exit !(value + 0 >= minimum + 0) }' 2>/dev/null
+}
+
 extract_status_value() {
     raw="$1"
     value="$(printf '%s' "$raw" |
@@ -860,6 +883,21 @@ wait_for_prehome_idle() {
         if [ "$status_rc" = "0" ] && [ "$printer_rc" = "0" ] &&
            [ "$status_value" = "idle" ] &&
            printf '%s' "$printer_raw" | grep -q '"has_error":false'; then
+            if [ "$EXPECT_STOCK" = "1" ]; then
+                stock_z="$(extract_json_position_z "$printer_raw")"
+                if ! number_at_least_value "$stock_z" 150; then
+                    rm -f "$status_file" "$printer_file"
+                    sleep "$interval"
+                    elapsed=$((elapsed + interval))
+                    continue
+                fi
+                if [ "${STOCK_PREHOME_SETTLE_SECONDS:-0}" -gt 0 ]; then
+                    say "$label: stock prehome reached z=${stock_z}; settling ${STOCK_PREHOME_SETTLE_SECONDS}s before job upload"
+                    summary "phase=${label}-stock-settle z=${stock_z} seconds=${STOCK_PREHOME_SETTLE_SECONDS} rc=pending"
+                    sleep "$STOCK_PREHOME_SETTLE_SECONDS"
+                    summary "phase=${label}-stock-settle z=${stock_z} seconds=${STOCK_PREHOME_SETTLE_SECONDS} rc=0"
+                fi
+            fi
             rm -f "$status_file" "$printer_file"
             summary "phase=${label}-ready elapsed=$elapsed status=$status_value rc=0"
             return 0
@@ -1171,6 +1209,64 @@ wait_for_job_inactive() {
     summary "phase=job-completion-wait elapsed=$elapsed rc=1 status=${status_value:-unknown} status_rc=$status_rc status_body=${status_body:-unknown} printer_rc=$printer_rc printer_body=${printer_body:-unknown}"
     api_step "completion-timeout-abort" PUT /print_job/state '{"action":"abort"}' || true
     return 1
+}
+
+printer_native_idle_flow_step() {
+    label="$1"
+    timeout="$2"
+    elapsed=0
+    interval=1
+    body_file="/tmp/deneb-printsvc-smoke-native-flow.$$"
+
+    while [ "$elapsed" -le "$timeout" ]; do
+        http_get_capture /printer "$body_file"
+        rc=$?
+        if [ -s "$body_file" ]; then
+            cat "$body_file" >>"$LOG"
+            printf '\n' >>"$LOG"
+        fi
+        raw_body="$(cat "$body_file" 2>/dev/null || true)"
+        body_value="$(sanitize_summary_value "$raw_body")"
+        status_value="$(extract_status_value "$raw_body")"
+        native_active="$(extract_json_bool_field "$raw_body" native_active)"
+        native_stop_allowed="$(extract_json_bool_field "$raw_body" native_stop_allowed)"
+        flow_inflight="$(extract_json_number_field "$raw_body" flow_inflight)"
+        flow_resend="$(extract_json_number_field "$raw_body" flow_resend)"
+
+        if [ "$rc" = "0" ] &&
+           [ "$status_value" = "idle" ] &&
+           [ "$native_active" = "false" ] &&
+           [ "$native_stop_allowed" = "false" ] &&
+           [ "${flow_inflight:-unknown}" = "0" ] &&
+           [ "${flow_resend:-unknown}" = "0" ]; then
+            say "$label rc=0 body=${body_value:-unknown}"
+            summary "phase=${label}-flow-wait elapsed=$elapsed status=idle native_active=false native_stop_allowed=false flow_inflight=0 flow_resend=0 rc=0"
+            summary "phase=$label kind=api method=GET path=/printer rc=0 body=${body_value:-unknown}"
+            rm -f "$body_file"
+            return 0
+        fi
+
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+
+    say "$label rc=${rc:-unknown} body=${body_value:-unknown}"
+    summary "phase=${label}-flow-wait elapsed=$elapsed status=${status_value:-unknown} native_active=${native_active:-unknown} native_stop_allowed=${native_stop_allowed:-unknown} flow_inflight=${flow_inflight:-unknown} flow_resend=${flow_resend:-unknown} rc=1"
+    summary "phase=$label kind=api method=GET path=/printer rc=${rc:-1} body=${body_value:-unknown}"
+    rm -f "$body_file"
+    return 1
+}
+
+job_completed_snapshot() {
+    say "===== snapshot: job-completed ====="
+    summary "snapshot=job-completed"
+    status_step "status-job-completed" || return $?
+    if [ "$ENABLE_NATIVE" = "1" ]; then
+        printer_native_idle_flow_step "printer-job-completed" 20 || return $?
+    else
+        printer_root_step "printer-job-completed" || return $?
+    fi
+    return 0
 }
 
 wait_for_abort_idle() {
@@ -1736,8 +1832,10 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
     [ "$complete_job_elapsed" -gt 0 ] || complete_job_elapsed=1
     complete_job_bps=$((complete_job_bytes / complete_job_elapsed))
     summary "phase=job-throughput path=$COMPLETE_JOB_PATH bytes=$complete_job_bytes elapsed_seconds=$complete_job_elapsed bytes_per_second=$complete_job_bps rc=0"
-    sleep 5
-    snapshot "job-completed"
+    if [ "$ENABLE_NATIVE" != "1" ]; then
+        sleep 5
+    fi
+    job_completed_snapshot || exit $?
     final_printer_file="/tmp/deneb-printsvc-complete-final-printer.$$"
     http_get_capture /printer "$final_printer_file" || true
     complete_job_final_z="$(extract_json_position_z "$(cat "$final_printer_file" 2>/dev/null || true)")"

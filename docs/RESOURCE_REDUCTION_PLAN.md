@@ -635,10 +635,13 @@ Material-profile USB import root/depth/suffix policy and the
   fixtures and low-temperature preheat-abort fixtures, so active-abort,
   pause/resume, Cura, and preheat smoke evidence can use fresh known inputs
   instead of stale device-side files. It also generates bounded Cura-style XYZ
-  representative fixtures with no heat, extrusion, dwell, or internal homing
-  commands; the smoke harness rejects those fixtures unless the run uses
+  representative fixtures with no heat, material extrusion, dwell, or internal
+  homing commands; the smoke harness rejects those fixtures unless the run uses
   all-axis prehome, so representative geometry cannot be tested after only a
-  Z-home guard. The generated Z fixture cap is 480
+  Z-home guard. Generated job fixtures include an early `G280 S1` marker so the
+  stock Python executor does not prepend its cold-extrusion prime sequence
+  before no-heat test motion; native rewrites the marker to non-extruding
+  `G92 E-16.5`. The generated Z fixture cap is 480
   relative `G1 Z-0.20 F30` moves, keeping total travel to 96 mm away from homed
   Z max while providing enough runtime for pause/resume, Cura-running,
   completion, and sequence-wrap smoke evidence. Packages default
@@ -834,21 +837,27 @@ Material-profile USB import root/depth/suffix policy and the
   `pre_print` acceptance is stoppable and aborts back to idle. These are
   current native safety-state proofs; the strict stock/native `--resources`
   reduction comparison remains open.
-- Later June 10 `d82245c` paired resource runs exercised the strict
-  stock/native path but exposed a bad baseline assumption: the stock Python
-  helper can report completion/idle for the synthetic bounded Z fixture without
-  proving that the fixture moved. The verifier and comparator now require
-  `phase=complete-job-position` with positive post-running Z travel before a
-  completion throughput sample can count. After redeploying the sequence-wrap
-  fix, `/tmp/deneb-native-seqwrap-resource2.summary` passed native
-  `--complete-job --resources` verification with `running_z=207.0`,
-  `final_z=111.0`, `delta_z=96.000`, drained flow (`flow_inflight:0`,
-  `flow_resend:0`), and 6920 bytes over 204 seconds. The guarded stock
-  baseline `/tmp/deneb-stock-seqwrap-resource2.summary` reported 314 B/s but
-  had `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`, so it is rejected
-  as invalid physical completion evidence. Non-experimental packages must still
-  stay blocked by the strict gate until stock and native both provide valid
-  positive-motion resource summaries.
+- Later June 10 paired resource runs exercised the strict stock/native path and
+  exposed two harness assumptions. First, the synthetic bounded Z fixture must
+  include an early `G280 S1` marker or stock Python inserts its cold prime
+  startup sequence, invalidating no-heat motion baselines. Second, the native
+  `job-completed` snapshot must be captured after an explicit idle flow-drain
+  sample because normal idle `M105`/`M114` telemetry can briefly repopulate
+  `flow_inflight`. With the corrected completion snapshot, the native rerun
+  `/tmp/deneb-native-g280-resource-v2.summary` passed native
+  `--complete-job --resources`: it moved `running_z=207.0` to
+  `final_z=111.0`, emitted `phase=printer-job-completed-flow-wait` with
+  `flow_inflight=0`/`flow_resend=0`, completed 7001 bytes over 205 seconds,
+  and sampled native driver RSS around 1.1 MB. The fresh stock rerun
+  `/tmp/deneb-stock-g280-resource-v2.summary` is not valid release evidence:
+  stock Python logged `Command 'b'JOB'' not supported when busy` immediately
+  after the harness pre-homed Z, then the summary reported 318 B/s while idle
+  by the delayed running snapshot and stayed at `running_z=207.0`,
+  `final_z=207.0`, `delta_z=0.000`. The smoke harness now treats stock
+  prehome as stale-status-prone by requiring a high Z position plus a fixed
+  stock settle window before job upload. The strict stock/native gate remains
+  blocked until the guarded stock baseline proves the bounded descent body
+  executes under stock Python.
 - The latest completion/resource fix intentionally favors correctness over
   throughput. Native now keeps a job active when EOF arrives with Marlin flow
   packets still in flight and only enters finish cleanup after the in-flight

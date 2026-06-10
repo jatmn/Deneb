@@ -40,11 +40,18 @@ different for safety/resource reasons.
 
 - Full stock/native resource, boot-time, and throughput comparison using the
   guarded stock-baseline helper plus a full native smoke summary remains open.
-  A current native long-completion run passed with sequence-wrap parity,
-  drained flow, and positive Z travel, but the paired stock run reported
-  completion without moving after the running snapshot. Throughput samples are
-  no longer accepted unless `phase=complete-job-position` proves positive Z
-  travel on both sides.
+  A regenerated fixture with an early `G280 S1` marker now avoids the stock
+  cold-prime insertion, but it did not close the stock baseline. Native
+  `/tmp/deneb-native-g280-resource-v2.summary` passed resource verification and
+  moved `running_z=207.0` to `final_z=111.0` with an explicit
+  `phase=printer-job-completed-flow-wait` row. Fresh stock
+  `/tmp/deneb-stock-g280-resource-v2.summary` reported 318 B/s, but stock
+  `print_service.py` logged `Command 'b'JOB'' not supported when busy` after
+  prehome; the summary was idle by the delayed running snapshot and stayed at
+  `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`. The smoke harness now
+  waits for stock Z-home position plus a fixed stock settle window before job
+  upload. Throughput/resource samples are still not accepted until the guarded
+  stock route proves the bounded descent body executes.
 - Representative Cura/slicer geometry for completion, pause/resume, and abort.
 - LCD UI, Web UI, Cura client, coordinator, and Digital Factory lifecycle proof
   against native service without Python fallback.
