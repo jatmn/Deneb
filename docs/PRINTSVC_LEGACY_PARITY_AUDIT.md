@@ -267,9 +267,10 @@ keeps the shorter evidence summary and the live-proof gaps.
   loop with bounded job-poll bursts, throttled status publishing, larger web/API
   status drain, and idle telemetry excluded from active cadence. The current
   hardware proof is indexed in
-  [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md); it restores
-  stock-matched bounded throughput without reopening the unsafe window-6
-  behavior, but it is not full stock/native release proof.
+  [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md); it keeps the
+  safer window-4 native path drained and RSS-small, but the latest strict
+  stock/native comparison still rejects CPU interval and bounded fixture
+  throughput.
 
 ## Open Parity Work
 

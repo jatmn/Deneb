@@ -883,19 +883,23 @@ wait_for_prehome_idle() {
         if [ "$status_rc" = "0" ] && [ "$printer_rc" = "0" ] &&
            [ "$status_value" = "idle" ] &&
            printf '%s' "$printer_raw" | grep -q '"has_error":false'; then
-            if [ "$EXPECT_STOCK" = "1" ]; then
-                stock_z="$(extract_json_position_z "$printer_raw")"
-                if ! number_at_least_value "$stock_z" 150; then
+            if [ "$PREHOME_ACTION" = "z_home" ] ||
+               [ "$PREHOME_ACTION" = "home" ]; then
+                prehome_z="$(extract_json_position_z "$printer_raw")"
+                if ! number_at_least_value "$prehome_z" 200; then
                     rm -f "$status_file" "$printer_file"
                     sleep "$interval"
                     elapsed=$((elapsed + interval))
                     continue
                 fi
+                summary "phase=${label}-position-ready z=${prehome_z} rc=0"
+            fi
+            if [ "$EXPECT_STOCK" = "1" ]; then
                 if [ "${STOCK_PREHOME_SETTLE_SECONDS:-0}" -gt 0 ]; then
-                    say "$label: stock prehome reached z=${stock_z}; settling ${STOCK_PREHOME_SETTLE_SECONDS}s before job upload"
-                    summary "phase=${label}-stock-settle z=${stock_z} seconds=${STOCK_PREHOME_SETTLE_SECONDS} rc=pending"
+                    say "$label: stock prehome reached z=${prehome_z}; settling ${STOCK_PREHOME_SETTLE_SECONDS}s before job upload"
+                    summary "phase=${label}-stock-settle z=${prehome_z} seconds=${STOCK_PREHOME_SETTLE_SECONDS} rc=pending"
                     sleep "$STOCK_PREHOME_SETTLE_SECONDS"
-                    summary "phase=${label}-stock-settle z=${stock_z} seconds=${STOCK_PREHOME_SETTLE_SECONDS} rc=0"
+                    summary "phase=${label}-stock-settle z=${prehome_z} seconds=${STOCK_PREHOME_SETTLE_SECONDS} rc=0"
                 fi
             fi
             rm -f "$status_file" "$printer_file"

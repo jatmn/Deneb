@@ -852,9 +852,12 @@ deviation, not hidden under "stock parity."
   interval, and boot-sync elapsed time. The same strict comparison still failed
   throughput, with stock at 41 B/s and native at 31 B/s, so the
   non-experimental resource gate remains unchecked.
-  The current proof ledger records the later dirty `cd5eeba` scheduler fix,
-  including stock-matched bounded throughput and the still-open strict
-  non-experimental gate.
+  The current proof ledger records the later dirty `3c91f5c` safety/resource
+  rerun. That run proves guarded prehome before upload, active print Stop
+  allowance, final idle/Stop-disabled cleanup, no resend debt, and native
+  driver RSS around 1.6 MiB, but the strict stock/native gate is still open:
+  the current comparison improves memory/RSS while failing CPU interval and
+  bounded fixture throughput.
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
   validation.
@@ -2113,10 +2116,13 @@ Completed implementation slices:
   wrong Z height. The
   conservative stream window 4 and finish drain 8/3 remain intentional until a
   safer throughput fix is proven.
-- [x] Restore stock-matched native completion throughput without widening the
-  Marlin flow window. The follow-up dirty `cd5eeba` build keeps stream window
-  4, uses a faster active job cadence with throttled status publishing, excludes
-  idle telemetry flow debt from active cadence, and is indexed in
+- [x] Restore the native active-streaming cadence without widening the Marlin
+  flow window. The follow-up dirty `cd5eeba` build kept stream window 4, used a
+  faster active job cadence with throttled status publishing, and excluded idle
+  telemetry flow debt from active cadence. The current dirty `3c91f5c` evidence
+  proves the guarded native completion path still drains safely, but the
+  strict stock/native release gate is open again on CPU interval and bounded
+  fixture throughput. Track the accepted current status in
   [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Match stock Python's Marlin sequence-number ring in native flow control.
   The stock `MarlinProtocolNode.send()` increments sequence numbers through
