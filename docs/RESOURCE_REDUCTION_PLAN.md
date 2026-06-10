@@ -880,10 +880,10 @@ Material-profile USB import root/depth/suffix policy and the
   without increasing the Marlin stream window. Native now runs a faster active
   service cadence, fills available flow slots in bounded bursts, throttles
   status publishes independently, drains larger web/API status bursts, and
-  excludes idle telemetry flow debt from active cadence. Current dirty
-  `3c91f5c` evidence keeps the native completion path safe and RSS-small, but
-  the strict stock/native release gate remains open on CPU interval and bounded
-  fixture throughput. The authoritative current status is tracked in
+  excludes idle telemetry flow debt from active cadence. Later accepted native
+  evidence keeps the completion path safe and RSS-small, but the strict
+  stock/native release gate remains open on CPU interval and bounded fixture
+  throughput. The authoritative current status is tracked in
   [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md).
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,

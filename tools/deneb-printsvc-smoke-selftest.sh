@@ -722,7 +722,7 @@ sh "$SMOKE" --make-preheat-abort-fixture "$TMP_DIR/preheat-abort.gcode" \
     --log "$TMP_DIR/preheat-abort-fixture.log"
 if ! grep -qx 'M140 S35' "$TMP_DIR/preheat-abort.gcode" ||
    ! grep -qx 'G280 S1' "$TMP_DIR/preheat-abort.gcode" ||
-   ! grep -qx 'M109 S45' "$TMP_DIR/preheat-abort.gcode" ||
+   ! grep -qx 'M109 S55' "$TMP_DIR/preheat-abort.gcode" ||
    ! grep -qx 'M104 S0' "$TMP_DIR/preheat-abort.gcode" ||
    ! grep -qx 'M140 S0' "$TMP_DIR/preheat-abort.gcode"; then
     cat "$TMP_DIR/preheat-abort.gcode"

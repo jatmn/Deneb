@@ -421,10 +421,11 @@ write_preheat_abort_fixture() {
     {
         printf '; Deneb native print-service preheat-abort smoke fixture\n'
         printf '; Low targets only; abort this during heater wait before motion.\n'
+        printf '; The nozzle target stays above warmed smoke-test ambient so the abort window remains observable.\n'
         printf '; G280 S1 keeps stock print_service.py from adding cold prime extrusion.\n'
         printf 'G280 S1\n'
         printf 'M140 S35\n'
-        printf 'M109 S45\n'
+        printf 'M109 S55\n'
         printf 'G91\n'
         printf 'G1 Z-0.20 F30\n'
         printf 'G90\n'

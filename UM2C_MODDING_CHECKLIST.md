@@ -738,7 +738,19 @@ deviation, not hidden under "stock parity."
   surfaces, heat/cool, home, macro execution, USB/local print, Cura-started
   print, pause, resume, abort during preheat, abort during active printing,
   print completion, and recovery after service restart.
-  Current evidence is partial, not full-matrix closure. June 9, 2026
+  Current `cd4724a` evidence closes the generated native smoke slices, not the
+  broader client/user-flow matrix. The accepted current-build reruns include
+  `/tmp/deneb-cd4724a-preheat55.summary`, where a generated preheat-abort job
+  reached `printing` with 35 C / 55 C bed/nozzle targets,
+  `native_active:true`, and `native_stop_allowed:true`, then settled
+  immediately to `idle` with active/Stop false; and
+  `/tmp/deneb-cd4724a-complete80.summary`, where a bounded completion fixture
+  showed active `printing` with Stop allowed, Z movement from 207.0 to 191.0,
+  final `idle`, and drained native flow with `flow_inflight=0` /
+  `flow_resend=0`. This keeps desktop Cura, LCD/Web UI hands-on flows,
+  Digital Factory lifecycle, representative slicer output, strict stock/native
+  resource comparison, and long-duration stability open.
+  Earlier evidence: June 9, 2026
   `dist/Deneb_Update_d0b61f7.deneb` passed a supervised native
   pause/resume/abort smoke using an all-axis prehome and a generated
   absolute-mode bounded Z fixture:
@@ -852,12 +864,13 @@ deviation, not hidden under "stock parity."
   interval, and boot-sync elapsed time. The same strict comparison still failed
   throughput, with stock at 41 B/s and native at 31 B/s, so the
   non-experimental resource gate remains unchecked.
-  The current proof ledger records the later dirty `3c91f5c` safety/resource
-  rerun. That run proves guarded prehome before upload, active print Stop
-  allowance, final idle/Stop-disabled cleanup, no resend debt, and native
+  The proof ledger records later safety/resource reruns. The accepted paired
+  stock/native comparison proves guarded prehome before upload, active print
+  Stop allowance, final idle/Stop-disabled cleanup, no resend debt, and native
   driver RSS around 1.6 MiB, but the strict stock/native gate is still open:
-  the current comparison improves memory/RSS while failing CPU interval and
-  bounded fixture throughput.
+  that comparison improves memory/RSS while failing CPU interval and bounded
+  fixture throughput. The current `cd4724a` generated-smoke evidence also
+  closes the low-temperature preheat-abort and bounded completion slices.
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
   validation.
@@ -2119,10 +2132,10 @@ Completed implementation slices:
 - [x] Restore the native active-streaming cadence without widening the Marlin
   flow window. The follow-up dirty `cd5eeba` build kept stream window 4, used a
   faster active job cadence with throttled status publishing, and excluded idle
-  telemetry flow debt from active cadence. The current dirty `3c91f5c` evidence
-  proves the guarded native completion path still drains safely, but the
-  strict stock/native release gate is open again on CPU interval and bounded
-  fixture throughput. Track the accepted current status in
+  telemetry flow debt from active cadence. Later accepted native evidence
+  proves the guarded completion path still drains safely, but the strict
+  stock/native release gate is open again on CPU interval and bounded fixture
+  throughput. Track the accepted current status in
   [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Match stock Python's Marlin sequence-number ring in native flow control.
   The stock `MarlinProtocolNode.send()` increments sequence numbers through

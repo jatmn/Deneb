@@ -35,9 +35,9 @@ different for safety/resource reasons.
   live hardware showed that a window of 6 caused resend debt and partial
   completion on this old Marlin path. This is a deliberate safety/stability
   divergence. A later active-loop scheduler fix improved native streaming
-  without widening the window, and current `3c91f5c` evidence keeps window 4 as
-  the accepted native policy while the strict stock/native throughput gate
-  remains open.
+  without widening the window, and the latest accepted paired comparison keeps
+  window 4 as the accepted native policy while the strict stock/native
+  throughput gate remains open.
 
 ## Remaining proof after source review
 
@@ -56,11 +56,11 @@ different for safety/resource reasons.
   upload. Throughput/resource samples are still not accepted until the guarded
   stock route proves the bounded descent body executes.
 - A later dirty native build from `cd5eeba` fixed the native scheduler side of
-  that comparison, and the current dirty `3c91f5c` evidence keeps the native
-  route safe with drained flow and low RSS. However, the latest accepted paired
-  strict comparison still rejects native CPU interval and bounded fixture
-  throughput, so the full release proof remains open until current stock and
-  native summaries both pass the complete smoke/resource gates.
+  that comparison, and later accepted native evidence keeps the route safe with
+  drained flow and low RSS. However, the latest accepted paired strict
+  comparison still rejects native CPU interval and bounded fixture throughput,
+  so the full release proof remains open until current stock and native
+  summaries both pass the complete smoke/resource gates.
 - Representative Cura/slicer geometry for completion, pause/resume, and abort.
 - LCD UI, Web UI, Cura client, coordinator, and Digital Factory lifecycle proof
   against native service without Python fallback.
