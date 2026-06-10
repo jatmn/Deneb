@@ -1276,6 +1276,10 @@ Completed implementation slices:
   print-state rules so a missing action body only defaults to `print` when a
   pending job exists, instead of keeping that compatibility rule inside the
   REST endpoint.
+- [x] Move Cura cluster pending-versus-normal action routing into shared native
+  print-state rules (`deneb_print_cluster_action_plan`) so the HTTP adapter no
+  longer decides whether `print`/`cancel` should drive pending-job
+  continue/cancel or normal resume/abort behavior.
 - [x] Move web print-job action planning into shared native print-state rules
   so pause, resume/start, abort/cancel, and stop share one owner for backend
   command selection, failure classification, and pending-job cleanup intent.

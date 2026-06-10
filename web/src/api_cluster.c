@@ -219,7 +219,8 @@ static void log_cluster_action(const char *action, int has_pending_job, const ch
 void api_cluster_print_job_action_put(const http_request_t *req, http_response_t *resp)
 {
     char action[16];
-    deneb_print_action_plan_t pending_plan;
+    deneb_print_action_plan_t action_plan;
+    deneb_print_action_route_t action_route;
     int pending_job = deneb_pending_job_file_has_pending_default();
     if (!strstr(req->path, "/action")) {
         api_cluster_print_job_put(req, resp);
@@ -236,15 +237,20 @@ void api_cluster_print_job_action_put(const http_request_t *req, http_response_t
 
     log_cluster_action(action, pending_job, req->path);
 
-    if (pending_job &&
-        deneb_print_pending_action_plan(action, &pending_plan) == 0) {
-        if (backend_zmq_send_pending_instruction(pending_plan.command) != 0) {
-            set_json_message(resp, 503, pending_plan.failure_message);
+    if (deneb_print_cluster_action_plan(action, pending_job, &action_plan,
+                                        &action_route) != 0) {
+        resp->status_code = 400;
+        api_http_set_body_str(resp, deneb_print_action_unknown_response());
+        return;
+    }
+
+    if (action_route == DENEB_PRINT_ACTION_ROUTE_PENDING) {
+        if (backend_zmq_send_pending_instruction(action_plan.command) != 0) {
+            set_json_message(resp, 503, action_plan.failure_message);
             return;
         }
     } else {
-        api_print_job_dispatch_action(action, resp,
-                                      deneb_print_action_unknown_response());
+        api_print_job_dispatch_plan(&action_plan, resp);
         return;
     }
 

@@ -87,6 +87,7 @@ EOF
 #include "print_job_summary.h"
 #include "print_profile.h"
 #include "print_state_rules.h"
+int uses_cluster_action(void) { return deneb_print_cluster_action_plan("print", 1, 0, 0); }
 EOF
     cat > "$root/web/src/api_printer.c" <<'EOF'
 #include "gcode_command.h"

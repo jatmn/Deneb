@@ -1902,6 +1902,7 @@ static void test_print_state_rules(void)
     }
     {
         char action[16];
+        deneb_print_action_route_t action_route;
         assert(deneb_print_action_parse("\"Pause\"", action, sizeof(action)) == 0);
         assert(strcmp(action, DENEB_PRINT_ACTION_PAUSE_TEXT) == 0);
         assert(deneb_print_action_is_pause(action));
@@ -2036,6 +2037,37 @@ static void test_print_state_rules(void)
         assert(deneb_print_pending_action_plan("pause", &action_plan) != 0);
         assert(deneb_print_pending_action_plan(
                    DENEB_PRINT_ACTION_PRINT_TEXT, NULL) != 0);
+        assert(deneb_print_cluster_action_plan(
+                   DENEB_PRINT_ACTION_PRINT_TEXT, 1, &action_plan,
+                   &action_route) == 0);
+        assert(action_route == DENEB_PRINT_ACTION_ROUTE_PENDING);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_RESUME);
+        assert(strcmp(action_plan.command, DENEB_PRINT_REQ_PREPARE) == 0);
+        assert(deneb_print_cluster_action_plan(
+                   DENEB_PRINT_ACTION_CANCEL_TEXT, 1, &action_plan,
+                   &action_route) == 0);
+        assert(action_route == DENEB_PRINT_ACTION_ROUTE_PENDING);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT);
+        assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_ABORT) == 0);
+        assert(deneb_print_cluster_action_plan(
+                   DENEB_PRINT_ACTION_PRINT_TEXT, 0, &action_plan,
+                   &action_route) == 0);
+        assert(action_route == DENEB_PRINT_ACTION_ROUTE_NORMAL);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_RESUME);
+        assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_RESUME) == 0);
+        assert(deneb_print_cluster_action_plan(
+                   DENEB_PRINT_ACTION_CANCEL_TEXT, 0, &action_plan,
+                   &action_route) == 0);
+        assert(action_route == DENEB_PRINT_ACTION_ROUTE_NORMAL);
+        assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT);
+        assert(deneb_print_cluster_action_plan("bogus", 1, &action_plan,
+                                               &action_route) != 0);
+        assert(deneb_print_cluster_action_plan(
+                   DENEB_PRINT_ACTION_PRINT_TEXT, 1, NULL,
+                   &action_route) != 0);
+        assert(deneb_print_cluster_action_plan(
+                   DENEB_PRINT_ACTION_PRINT_TEXT, 1, &action_plan,
+                   NULL) != 0);
         assert(deneb_print_delete_action_plan(1, &action_plan) == 0);
         assert(action_plan.kind == DENEB_PRINT_ACTION_PLAN_ABORT);
         assert(strcmp(action_plan.command, DENEB_COMMAND_VERB_ABORT) == 0);

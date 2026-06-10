@@ -238,3 +238,26 @@ int deneb_print_delete_action_plan(int has_active_job,
     plan->clear_pending_after_success = 1;
     return 0;
 }
+
+int deneb_print_cluster_action_plan(const char *action,
+                                    int has_pending_job,
+                                    deneb_print_action_plan_t *plan,
+                                    deneb_print_action_route_t *route)
+{
+    if (!plan || !route)
+        return -1;
+
+    deneb_print_action_plan_init(plan);
+    *route = DENEB_PRINT_ACTION_ROUTE_NORMAL;
+
+    if (has_pending_job &&
+        deneb_print_pending_action_plan(action, plan) == 0) {
+        *route = DENEB_PRINT_ACTION_ROUTE_PENDING;
+        return 0;
+    }
+
+    if (deneb_print_action_plan(action, plan) == 0)
+        return 0;
+
+    return -1;
+}

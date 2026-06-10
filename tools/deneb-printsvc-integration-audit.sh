@@ -147,6 +147,7 @@ audit_source() {
     require_pattern "${repo}/web/src/api_cluster.c" '#include "print_job_summary\.h"' "cluster API uses shared job summary"
     require_pattern "${repo}/web/src/api_cluster.c" '#include "print_profile\.h"' "cluster API uses shared print profile"
     require_pattern "${repo}/web/src/api_cluster.c" '#include "print_state_rules\.h"' "cluster API uses shared state rules"
+    require_pattern "${repo}/web/src/api_cluster.c" 'deneb_print_cluster_action_plan' "cluster API uses shared cluster action routing"
 
     require_file "${repo}/web/src/api_printer.c" "printer API source exists"
     require_pattern "${repo}/web/src/api_printer.c" '#include "gcode_command\.h"' "printer API uses shared G-code command helper"

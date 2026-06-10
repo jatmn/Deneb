@@ -76,6 +76,11 @@ typedef enum {
 } deneb_print_action_plan_kind_t;
 
 typedef enum {
+    DENEB_PRINT_ACTION_ROUTE_NORMAL = 0,
+    DENEB_PRINT_ACTION_ROUTE_PENDING
+} deneb_print_action_route_t;
+
+typedef enum {
     DENEB_PRINT_DISPLAY_STATE_IDLE = 0,
     DENEB_PRINT_DISPLAY_STATE_PRINTING,
     DENEB_PRINT_DISPLAY_STATE_PAUSED,
@@ -213,6 +218,10 @@ int deneb_print_pending_action_plan(const char *action,
                                     deneb_print_action_plan_t *plan);
 int deneb_print_delete_action_plan(int has_active_job,
                                    deneb_print_action_plan_t *plan);
+int deneb_print_cluster_action_plan(const char *action,
+                                    int has_pending_job,
+                                    deneb_print_action_plan_t *plan,
+                                    deneb_print_action_route_t *route);
 int deneb_print_elapsed_seconds(int time_total, int time_left);
 float deneb_print_progress_percent(int time_total, int time_left);
 float deneb_print_progress_fraction(float progress_percent);
