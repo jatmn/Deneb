@@ -17,6 +17,9 @@ static int job_control_abortable(const deneb_print_service_t *svc)
     if (!svc)
         return 0;
     return svc->job_active ||
+           svc->gcode_queue_active ||
+           svc->status.bed_t_set > 0.0f ||
+           svc->status.head_t_set > 0.0f ||
            svc->status.state == DENEB_PRINT_STATE_PREPARING ||
            svc->status.state == DENEB_PRINT_STATE_PRINTING ||
            svc->status.state == DENEB_PRINT_STATE_PAUSED ||
@@ -106,6 +109,9 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     svc->resume_policy_pending = 0;
     svc->resume_policy_index = 0;
     svc->paused_position_valid = 0;
+    svc->gcode_queue_count = 0;
+    svc->gcode_queue_index = 0;
+    svc->gcode_queue_active = 0;
     svc->finish_drain_ticks = 0;
     svc->finish_position_report_count = 0;
     svc->finish_stable_reports = 0;
@@ -113,6 +119,8 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     svc->abort_cleanup_index = 0;
     svc->abort_cleanup_pending = 1;
     svc->heater_wait.active = 0;
+    svc->status.bed_t_set = 0.0f;
+    svc->status.head_t_set = 0.0f;
     deneb_job_lifecycle_aborting(&svc->status);
     if (!svc->serial_ready) {
         deneb_flow_clear_inflight(&svc->flow);

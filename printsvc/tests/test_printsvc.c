@@ -244,6 +244,7 @@ static void test_gcode_control_policy(void)
     deneb_print_service_t svc;
     deneb_command_t cmd;
     char reply[256];
+    char payload[1536];
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M105\",\"G28 X Y\"]", &cmd) == 0);
@@ -257,11 +258,37 @@ static void test_gcode_control_policy(void)
     assert(strstr(reply, "\"status\":\"ok\"") != NULL);
     assert(svc.status.bed_t_set == 40.0f);
     assert(svc.status.head_t_set == 50.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(strcmp(svc.status.req, DENEB_PRINT_REQ_PREHEATING) == 0);
+    assert(deneb_status_serialize_payload(&svc.status, payload,
+                                          sizeof(payload)) > 0);
+    assert(strstr(payload, "\"denebActive\":true") != NULL);
+    assert(strstr(payload, "\"denebStopAllowed\":true") != NULL);
 
     assert(deneb_command_parse("GCODE<[\"M140 S0\",\"M104 S0\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.bed_t_set == 0.0f);
     assert(svc.status.head_t_set == 0.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(deneb_status_serialize_payload(&svc.status, payload,
+                                          sizeof(payload)) > 0);
+    assert(strstr(payload, "\"denebActive\":false") != NULL);
+    assert(strstr(payload, "\"denebStopAllowed\":false") != NULL);
+
+    deneb_print_service_init(&svc);
+    assert(deneb_command_parse("GCODE<[\"M190 S55\",\"G1 X2\"]", &cmd) == 0);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(svc.gcode_queue_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(svc.status.bed_t_set == 55.0f);
+    assert(deneb_command_parse("ABORT<{}", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply,
+                                              sizeof(reply)) == 0);
+    assert(!svc.gcode_queue_active);
+    assert(svc.gcode_queue_count == 0);
+    assert(svc.status.bed_t_set == 0.0f);
+    assert(svc.status.head_t_set == 0.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M117 hello\",\"M190 S55\",\"M109 S205\"]", &cmd) == 0);
@@ -835,18 +862,19 @@ static void test_job_streamer_policy(void)
     assert(starvation == 1);
     assert(deneb_flow_inflight(&flow) == 1);
 
+    assert(deneb_job_streamer_poll(&streamer) == 0);
+    assert(job_active);
+    assert(!finish_cleanup_pending);
+    assert(finish_cleanup_index == 0);
+    assert(status.state == DENEB_PRINT_STATE_PRINTING);
+    deneb_flow_clear_inflight(&flow);
+    assert(deneb_flow_inflight(&flow) == 0);
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(job_active);
     assert(finish_cleanup_pending);
     assert(finish_cleanup_policy.count > 0);
     assert(finish_cleanup_index == 0);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
-    assert(deneb_job_streamer_poll(&streamer) == 0);
-    assert(job_active);
-    assert(finish_cleanup_pending);
-    assert(status.state == DENEB_PRINT_STATE_PRINTING);
-    deneb_flow_clear_inflight(&flow);
-    assert(deneb_flow_inflight(&flow) == 0);
 
     deneb_status_init(&status);
     deneb_flow_init(&flow);
@@ -2752,10 +2780,22 @@ static void test_gcode_command_helpers(void)
         assert(strcmp(value, "M104 S215") == 0);
 
         assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_BED, "{\"target\":40}",
+                   &temp, value, sizeof(value)) == 0);
+        assert(temp == 40.0f);
+        assert(strcmp(value, "M140 S40") == 0);
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
                    DENEB_GCODE_HEATER_NOZZLE, "{\"temperature\":999}",
                    &temp, value, sizeof(value)) == 0);
         assert(temp == DENEB_GCODE_MAX_NOZZLE_TEMP_C);
         assert(strcmp(value, "M104 S260") == 0);
+
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_BED, "{\"target\":999}",
+                   &temp, value, sizeof(value)) == 0);
+        assert(temp == DENEB_GCODE_MAX_BED_TEMP_C);
+        assert(strcmp(value, "M140 S110") == 0);
 
         assert(deneb_gcode_plan_temperature_target_from_json(
                    DENEB_GCODE_HEATER_BED, "{\"temperature\":-10}",
@@ -2771,6 +2811,9 @@ static void test_gcode_command_helpers(void)
 
         assert(deneb_gcode_plan_temperature_target_from_json(
                    DENEB_GCODE_HEATER_BED, "{\"temperature\":\"hot\"}",
+                   &temp, value, sizeof(value)) != 0);
+        assert(deneb_gcode_plan_temperature_target_from_json(
+                   DENEB_GCODE_HEATER_BED, "{\"target\":\"hot\"}",
                    &temp, value, sizeof(value)) != 0);
         assert(deneb_gcode_plan_temperature_target_from_json(
                    (deneb_gcode_heater_t)99, "{\"temperature\":1}",
@@ -4751,6 +4794,37 @@ static void test_flow_control(void)
     deneb_flow_clear_inflight(&flow);
     assert(deneb_flow_prepare_packet(&flow, "G1 Z0.20 F60", packet,
                                      sizeof(packet), &written, &seq) == 0);
+
+    deneb_flow_init(&flow);
+    for (int i = 0; i < 260; i++) {
+        assert(deneb_flow_prepare_packet(&flow, "M105", packet,
+                                         sizeof(packet), &written, &seq) == 0);
+        assert(seq != 255);
+        format_sync_packet('o', seq, 5, sync);
+        assert(deneb_flow_handle_response(&flow, sync, &resend) == 1);
+    }
+    assert(flow.next_sequence == 5);
+    assert(deneb_flow_inflight(&flow) == 0);
+
+    deneb_flow_init(&flow);
+    flow.next_sequence = 253;
+    assert(deneb_flow_prepare_packet(&flow, "G1 Z-0.20 F60", packet,
+                                     sizeof(packet), &written, &seq) == 0);
+    assert(seq == 253);
+    assert(deneb_flow_prepare_packet(&flow, "G1 Z-0.20 F60", packet,
+                                     sizeof(packet), &written, &seq) == 0);
+    assert(seq == 254);
+    assert(deneb_flow_prepare_packet(&flow, "G1 Z-0.20 F60", packet,
+                                     sizeof(packet), &written, &seq) == 0);
+    assert(seq == 0);
+    assert(deneb_flow_prepare_packet(&flow, "G1 Z-0.20 F60", packet,
+                                     sizeof(packet), &written, &seq) == 0);
+    assert(seq == 1);
+    assert(deneb_flow_inflight(&flow) == 4);
+    format_sync_packet('o', 0, 5, sync);
+    assert(deneb_flow_handle_response(&flow, sync, &resend) == 1);
+    assert(deneb_flow_inflight(&flow) == 1);
+    assert(flow.ack_count == 3);
 }
 
 static void test_service_poll_motion_stub(void)

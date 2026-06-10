@@ -11,6 +11,7 @@ param(
     [string]$ReleaseChannel = "experimental",
     [string]$PrintsvcStockSummary = "",
     [string]$PrintsvcNativeSummary = "",
+    [string[]]$PrintsvcNativeEvidenceSummary = @(),
     [switch]$RebuildZmq,
     [switch]$RebuildLighttpd
 )
@@ -52,11 +53,17 @@ if ($ReleaseChannel -ne "experimental" -and
 
 $printsvcStockSummaryWsl = ""
 $printsvcNativeSummaryWsl = ""
+$printsvcNativeEvidenceSummaryWsl = @()
 if (-not [string]::IsNullOrWhiteSpace($PrintsvcStockSummary)) {
     $printsvcStockSummaryWsl = ConvertTo-WslInputPath $PrintsvcStockSummary
 }
 if (-not [string]::IsNullOrWhiteSpace($PrintsvcNativeSummary)) {
     $printsvcNativeSummaryWsl = ConvertTo-WslInputPath $PrintsvcNativeSummary
+}
+foreach ($summary in $PrintsvcNativeEvidenceSummary) {
+    if (-not [string]::IsNullOrWhiteSpace($summary)) {
+        $printsvcNativeEvidenceSummaryWsl += (ConvertTo-WslInputPath $summary)
+    }
 }
 
 $buildPackageEnv = "DENEB_RELEASE_CHANNEL='$ReleaseChannel'"
@@ -65,6 +72,9 @@ if ($printsvcStockSummaryWsl) {
 }
 if ($printsvcNativeSummaryWsl) {
     $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
+}
+if ($printsvcNativeEvidenceSummaryWsl.Count -gt 0) {
+    $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativeEvidenceSummaryWsl -join ' ')'"
 }
 
 $toolchainCheck = "/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version >/dev/null"
@@ -222,6 +232,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-verify$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-compare$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke-selftest$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-printsvc-stock-baseline$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-cli-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-init-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-release-gate-selftest$' /tmp/deneb-release-package-files.txt; " +
@@ -238,7 +249,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "head -n 1 /tmp/deneb-release-packages.txt >&2; exit 1; " +
                  "fi; " +
                  "rm -rf /tmp/deneb-release-smoke-selftest; mkdir -p /tmp/deneb-release-smoke-selftest; " +
-                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar xf {} -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init update.sh manifest.txt; " +
+                 "head -n 1 /tmp/deneb-release-packages.txt | xargs -I{} tar xf {} -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init update.sh manifest.txt; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest >/tmp/deneb-release-smoke-selftest.log; " +
                  "DENEB_REPO_ROOT='$repoWsl' sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-release-gate-selftest >/tmp/deneb-release-gate-selftest.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit --archive `$(head -n 1 /tmp/deneb-release-packages.txt) >/tmp/deneb-release-native-audit.log; " +

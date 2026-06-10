@@ -149,8 +149,17 @@ audit_source() {
         'DENEB_PRINTSVC_NATIVE_SUMMARY' \
         "package builder requires native smoke summary input"
     require_pattern "${repo}/ui/build-package.sh" \
+        'DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES' \
+        "package builder accepts split native evidence summaries"
+    require_pattern "${repo}/ui/build-package.sh" \
+        'deneb-printsvc-smoke-verify" --native --idle --restart --boot-sync --client-proof --firmware-proof --complete-job --resources' \
+        "package builder verifies primary native resource summary"
+    require_pattern "${repo}/ui/build-package.sh" \
         'deneb-printsvc-smoke-verify" --full' \
-        "package builder verifies full native smoke summary"
+        "package builder still verifies single full native smoke summary"
+    require_pattern "${repo}/ui/build-package.sh" \
+        'deneb-printsvc-smoke-verify" --stock --resources' \
+        "package builder verifies stock smoke summary ownership/resources"
     require_pattern "${repo}/ui/build-package.sh" \
         'deneb-printsvc-smoke-compare" --require-reduction' \
         "package builder requires strict stock/native reduction comparison"
@@ -166,6 +175,9 @@ audit_source() {
     require_pattern "${repo}/tools/build-update-release.ps1" \
         'DENEB_PRINTSVC_NATIVE_SUMMARY=' \
         "release wrapper forwards native smoke summary"
+    require_pattern "${repo}/tools/build-update-release.ps1" \
+        'DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES=' \
+        "release wrapper forwards split native evidence summaries"
     require_pattern "${repo}/tools/build-update-release.ps1" \
         'deneb-printsvc-release-gate-selftest' \
         "release wrapper runs release gate selftest"
@@ -184,6 +196,9 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-release-gate-selftest.sh" \
         'nightly_invalid_native_summary' \
         "release gate selftest rejects invalid native summary"
+    require_pattern "${repo}/tools/deneb-printsvc-release-gate-selftest.sh" \
+        'nightly_invalid_stock_summary' \
+        "release gate selftest rejects invalid stock summary"
     require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
         'physical-safety-gate' \
         "live smoke harness gates physical phases"
@@ -214,6 +229,18 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
         'write_preheat_abort_fixture' \
         "live smoke harness generates low-temperature preheat-abort fixtures"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'write_representative_fixture' \
+        "live smoke harness generates bounded representative XYZ fixtures"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'representative-fixture-safety-gate' \
+        "live smoke harness requires all-axis home for representative XYZ fixtures"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'wait_for_abort_idle' \
+        "live smoke harness waits for aborts to settle idle"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke.sh" \
+        'DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT' \
+        "live smoke harness makes abort settle wait bounded"
     require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
         'smoke_requires_physical_ack' \
         "smoke selftest covers physical safety gate"
@@ -229,6 +256,35 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
         'generated low-temperature preheat-abort fixture' \
         "smoke selftest covers preheat-abort fixture generation"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
+        'generated bounded representative XYZ fixture' \
+        "smoke selftest covers representative XYZ fixture generation"
+    require_pattern "${repo}/tools/deneb-printsvc-smoke-selftest.sh" \
+        'smoke_rejects_representative_without_all_axis_home' \
+        "smoke selftest covers representative fixture all-axis-home gate"
+    require_file "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
+        "stock baseline helper exists"
+    require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
+        'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
+        "stock baseline helper requires explicit stock-switch acknowledgement"
+    require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
+        'restore_native\(\)' \
+        "stock baseline helper restores native printsvc"
+    require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
+        '/home/deneb/backups/deneb-ui/init/printserver\.orig' \
+        "stock baseline helper uses backed-up stock printserver when available"
+    require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
+        '/rom/etc/init\.d/printserver' \
+        "stock baseline helper falls back to read-only stock printserver"
+    require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
+        'wait_for_stock_api_ready "stock-api-ready"' \
+        "stock baseline helper waits for stock API telemetry readiness"
+    require_pattern "${repo}/ui/build-package.sh" \
+        'deneb-printsvc-stock-baseline' \
+        "package builder includes stock baseline helper"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        'cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline' \
+        "installer preserves stock baseline helper"
     require_pattern "${repo}/web/init/deneb-web.init" \
         'procd_open_instance api' \
         "web init supervises API dependency before lighttpd"
@@ -288,6 +344,7 @@ audit_package_dir() {
     require_file "${root}/deneb-printsvc-smoke-verify" "package includes smoke verifier"
     require_file "${root}/deneb-printsvc-smoke-compare" "package includes smoke comparator"
     require_file "${root}/deneb-printsvc-smoke-selftest" "package includes smoke verifier selftest"
+    require_file "${root}/deneb-printsvc-stock-baseline" "package includes stock baseline helper"
     require_file "${root}/deneb-printsvc-cli-selftest" "package includes native CLI selftest"
     require_file "${root}/deneb-printsvc-init-selftest" "package includes native init selftest"
     require_file "${root}/deneb-printsvc-release-gate-selftest" "package includes release gate selftest"
@@ -328,6 +385,30 @@ audit_package_dir() {
     require_pattern "${root}/deneb-printsvc-smoke" \
         'write_preheat_abort_fixture' \
         "packaged smoke harness generates low-temperature preheat-abort fixtures"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'write_representative_fixture' \
+        "packaged smoke harness generates bounded representative XYZ fixtures"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'representative-fixture-safety-gate' \
+        "packaged smoke harness requires all-axis home for representative XYZ fixtures"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'wait_for_abort_idle' \
+        "packaged smoke harness waits for aborts to settle idle"
+    require_pattern "${root}/deneb-printsvc-smoke" \
+        'DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT' \
+        "packaged smoke harness makes abort settle wait bounded"
+    require_pattern "${root}/deneb-printsvc-stock-baseline" \
+        'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
+        "packaged stock baseline helper requires explicit stock-switch acknowledgement"
+    require_pattern "${root}/deneb-printsvc-stock-baseline" \
+        'restore_native\(\)' \
+        "packaged stock baseline helper restores native printsvc"
+    require_pattern "${root}/deneb-printsvc-stock-baseline" \
+        '/rom/etc/init\.d/printserver' \
+        "packaged stock baseline helper can use read-only stock printserver"
+    require_pattern "${root}/deneb-printsvc-stock-baseline" \
+        'wait_for_stock_api_ready "stock-api-ready"' \
+        "packaged stock baseline helper waits for stock API telemetry readiness"
 
     require_pattern "${root}/manifest.txt" '^native_printsvc: experimental$' \
         "package manifest marks native printsvc experimental"
@@ -357,6 +438,8 @@ audit_archive() {
         "archive includes de-Python audit"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-native-audit-selftest$' \
         "archive includes de-Python audit selftest"
+    require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-stock-baseline$' \
+        "archive includes stock baseline helper"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit$' \
         "archive includes integration audit"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit-selftest$' \

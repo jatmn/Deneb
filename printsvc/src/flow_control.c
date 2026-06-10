@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define DENEB_FLOW_SEQUENCE_MODULO 255
+
 static int command_starts_with(const char *command, const char *prefix)
 {
     size_t len;
@@ -142,7 +144,22 @@ static int parse_sync_packet(const char *line, char *code, uint8_t *sequence,
 
 static int sequence_is_not_newer(uint8_t sequence, uint8_t acknowledged)
 {
-    return (uint8_t)(acknowledged - sequence) < DENEB_FLOW_WINDOW;
+    unsigned int seq = sequence;
+    unsigned int ack = acknowledged;
+    unsigned int diff;
+
+    if (seq >= DENEB_FLOW_SEQUENCE_MODULO ||
+        ack >= DENEB_FLOW_SEQUENCE_MODULO)
+        return sequence == acknowledged;
+
+    diff = ack >= seq ? ack - seq : ack + DENEB_FLOW_SEQUENCE_MODULO - seq;
+    return diff < DENEB_FLOW_WINDOW;
+}
+
+static uint8_t next_sequence(uint8_t sequence)
+{
+    sequence++;
+    return sequence >= DENEB_FLOW_SEQUENCE_MODULO ? 0 : sequence;
 }
 
 static void acknowledge_through(deneb_flow_control_t *flow, uint8_t sequence,
@@ -222,7 +239,8 @@ int deneb_flow_prepare_packet(deneb_flow_control_t *flow, const char *command,
     if (!slot)
         return -2;
 
-    seq = flow->next_sequence++;
+    seq = flow->next_sequence;
+    flow->next_sequence = next_sequence(flow->next_sequence);
     if (deneb_marlin_packet_encode(seq, command, out, out_sz, written) != 0)
         return -1;
 

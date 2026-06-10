@@ -8,6 +8,7 @@ set -u
 
 SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 REQUIRE_NATIVE=0
+REQUIRE_STOCK=0
 REQUIRE_IDLE=0
 REQUIRE_HEAT=0
 REQUIRE_MOTION=0
@@ -33,6 +34,7 @@ Checks a deneb-printsvc-smoke summary for required evidence.
 
 Options:
   --native      Require native route enable evidence
+  --stock       Require stock print_service.py process evidence
   --idle        Require initial idle status and inactive stop state
   --heat        Require heat/cool evidence
   --motion      Require Z-home motion evidence
@@ -67,6 +69,7 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) REQUIRE_NATIVE=1 ;;
+        --stock) REQUIRE_STOCK=1 ;;
         --idle) REQUIRE_IDLE=1 ;;
         --heat) REQUIRE_HEAT=1 ;;
         --motion) REQUIRE_MOTION=1 ;;
@@ -127,6 +130,11 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
+if [ "$REQUIRE_NATIVE" = "1" ] && [ "$REQUIRE_STOCK" = "1" ]; then
+    echo "--native and --stock are mutually exclusive" >&2
+    exit 2
+fi
+
 failures=0
 
 fail() {
@@ -159,9 +167,22 @@ reject_pattern() {
 }
 
 require_completion_runtime_evidence() {
+    if [ "$REQUIRE_STOCK" = "1" ] &&
+       grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=printing' "$SUMMARY"; then
+        pass "stock completion job-running status evidence captured"
+        return
+    fi
+
     if grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=printing' "$SUMMARY" &&
        grep -Eq ' phase=printer-complete-job-running .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "$SUMMARY"; then
         pass "completion job-running status/stop evidence captured"
+        return
+    fi
+
+    if [ "$REQUIRE_STOCK" = "1" ] &&
+       grep -Eq ' phase=status-complete-job-running .*rc=0 .*status=idle' "$SUMMARY" &&
+       grep -Eq ' phase=job-completion-wait .*elapsed=0 .*rc=0' "$SUMMARY"; then
+        pass "stock completion finished before delayed running snapshot"
         return
     fi
 
@@ -205,7 +226,14 @@ require_pattern '(^| )start .*native=' "start record present"
 require_pattern ' phase=printsvc-self-test rc=0' "printsvc self-test passed"
 require_pattern ' snapshot=initial' "initial snapshot present"
 require_pattern ' snapshot=final' "final snapshot present"
-require_pattern ' phase=route-initial .*rc=0 .*body=.*native_only_route:true' "initial native-only route query passed"
+if [ "$REQUIRE_STOCK" = "1" ]; then
+    require_pattern ' phase=stock-driver-process .*deneb_printsvc=0 .*print_service_py=1 .*rc=0' "stock driver process owns marlindriver route"
+    require_pattern 'sample=initial pid=[0-9]+ .*command="?.*print_service[.]py' "initial stock print_service.py RSS sample present"
+    require_pattern 'sample=final pid=[0-9]+ .*command="?.*print_service[.]py' "final stock print_service.py RSS sample present"
+    reject_pattern 'sample=[^ ]+ .*command="?.*/usr/bin/deneb-printsvc' "stock summary has no native deneb-printsvc process samples"
+else
+    require_pattern ' phase=route-initial .*rc=0 .*body=.*native_only_route:true' "initial native-only route query passed"
+fi
 require_pattern ' phase=status-initial .*rc=0 .*status=' "initial status query passed with body"
 require_pattern ' phase=printer-initial .*rc=0 .*body=' "initial printer root query passed with body"
 require_pattern 'sample=initial .*mem_total_kb=' "initial memory sample present"
@@ -239,13 +267,13 @@ if [ "$REQUIRE_HEAT" = "1" ]; then
     require_pattern ' phase=bed-low-heat .*rc=0' "bed heat command passed"
     require_pattern ' phase=nozzle-low-heat .*rc=0' "nozzle heat command passed"
     require_pattern ' snapshot=heating' "heating snapshot present"
-    require_pattern ' phase=status-heating .*rc=0 .*status=' "heating status query passed"
-    require_pattern ' phase=printer-heating .*rc=0 .*body=' "heating printer root query passed"
+    require_pattern ' phase=status-heating .*rc=0 .*status=printing' "heating status is active"
+    require_pattern ' phase=printer-heating .*rc=0 .*body=.*native_active:true.*native_stop_allowed:true' "heating printer root is active and stoppable"
     require_pattern ' phase=bed-cooldown .*rc=0' "bed cooldown command passed"
     require_pattern ' phase=nozzle-cooldown .*rc=0' "nozzle cooldown command passed"
     require_pattern ' snapshot=cooldown' "cooldown snapshot present"
-    require_pattern ' phase=status-cooldown .*rc=0 .*status=' "cooldown status query passed"
-    require_pattern ' phase=printer-cooldown .*rc=0 .*body=' "cooldown printer root query passed"
+    require_pattern ' phase=status-cooldown .*rc=0 .*status=idle' "cooldown status is idle"
+    require_pattern ' phase=printer-cooldown .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "cooldown printer root clears active/stop flags"
 fi
 
 if [ "$REQUIRE_MOTION" = "1" ]; then
@@ -332,7 +360,7 @@ if [ "$REQUIRE_JOB" = "1" ]; then
     if [ "$REQUIRE_PAUSE_RESUME" = "1" ]; then
         require_pattern ' phase=job-safety .*kind=physical .*axes=XYZ .*required_home=home .*rc=0' "pause/resume job physical safety plan uses all-axis home"
     else
-        require_pattern ' phase=job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "job physical safety plan present"
+        require_pattern ' phase=job-safety .*kind=physical .*axes=(job_defined|XYZ) .*required_home=(z_home|home) .*rc=0' "job physical safety plan present"
     fi
     require_pattern ' phase=job-start .*rc=0' "job start passed"
     require_pattern ' snapshot=job-running' "job-running snapshot present"
@@ -363,7 +391,7 @@ if [ "$REQUIRE_JOB" = "1" ]; then
 fi
 
 if [ "$REQUIRE_CURA_JOB" = "1" ]; then
-    require_pattern ' phase=cura-job-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "Cura job physical safety plan present"
+    require_pattern ' phase=cura-job-safety .*kind=physical .*axes=(job_defined|XYZ) .*required_home=(z_home|home) .*rc=0' "Cura job physical safety plan present"
     require_pattern ' phase=cura-job-start .*rc=0' "Cura job start passed"
     require_pattern ' snapshot=cura-job-running' "Cura job-running snapshot present"
     require_pattern ' phase=status-cura-job-running .*rc=0 .*status=printing' "Cura job-running status is printing"
@@ -379,7 +407,7 @@ if [ "$REQUIRE_CURA_JOB" = "1" ]; then
 fi
 
 if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
-    require_pattern ' phase=preheat-abort-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "preheat-abort physical safety plan present"
+    require_pattern ' phase=preheat-abort-safety .*kind=physical .*axes=(job_defined|XYZ) .*required_home=(z_home|home) .*rc=0' "preheat-abort physical safety plan present"
     require_pattern ' phase=preheat-abort-start .*rc=0' "preheat abort job start passed"
     require_pattern ' snapshot=preheat-abort-active' "preheat-abort active snapshot present"
     require_pattern ' phase=status-preheat-abort-active .*rc=0 .*status=printing' "preheat-abort active status is printing"
@@ -405,7 +433,7 @@ if [ "$REQUIRE_PREHEAT_ABORT" = "1" ]; then
 fi
 
 if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
-    require_pattern ' phase=active-abort-safety .*kind=physical .*axes=job_defined .*required_home=(z_home|home) .*rc=0' "active-abort physical safety plan present"
+    require_pattern ' phase=active-abort-safety .*kind=physical .*axes=(job_defined|XYZ) .*required_home=(z_home|home) .*rc=0' "active-abort physical safety plan present"
     require_pattern ' phase=active-abort-start .*rc=0' "active abort job start passed"
     require_pattern ' snapshot=active-abort-printing' "active-abort printing snapshot present"
     require_pattern ' phase=status-active-abort-printing .*rc=0 .*status=printing' "active-abort printing status is printing"
@@ -431,16 +459,20 @@ if [ "$REQUIRE_ACTIVE_ABORT" = "1" ]; then
 fi
 
 if [ "$REQUIRE_COMPLETE_JOB" = "1" ]; then
-    require_pattern ' phase=complete-job-safety .*kind=physical .*axes=Z .*required_home=(z_home|home) .*travel=bounded_relative_Z_negative_max_96mm .*rc=0' "completion physical safety plan present"
+    require_pattern ' phase=complete-job-safety .*kind=physical .*((axes=Z .*required_home=(z_home|home) .*travel=bounded_relative_Z_negative_max_96mm)|(axes=XYZ .*required_home=home .*travel=bounded_cura_style_xyz_no_heat_no_extrusion_to_completion)) .*rc=0' "completion physical safety plan present"
     require_pattern ' phase=complete-job-fixture-check .*rc=0 .*reason=progress_command' "completion fixture passed non-dwell check"
     require_pattern ' phase=complete-job-start .*rc=0' "completion job start passed"
     require_pattern ' snapshot=complete-job-running' "completion job-running snapshot present"
     require_completion_runtime_evidence
     require_pattern ' phase=job-completion-wait .*rc=0' "completion wait observed inactive job"
     require_pattern ' phase=job-throughput .*bytes=[1-9][0-9]* .*elapsed_seconds=[1-9][0-9]* .*bytes_per_second=[1-9][0-9]* .*rc=0' "completion throughput sample present"
+    require_pattern ' phase=complete-job-position .*running_z=[0-9][0-9.]* .*final_z=[0-9][0-9.]* .*delta_z=[1-9][0-9.]* .*rc=0' "completion job moved after running snapshot"
     require_pattern ' snapshot=job-completed' "job-completed snapshot present"
     require_pattern ' phase=status-job-completed .*rc=0 .*status=idle' "job-completed status is idle"
     require_pattern ' phase=printer-job-completed .*rc=0 .*body=.*native_active:false.*native_stop_allowed:false' "job-completed native active/stop flags are false"
+    if [ "$REQUIRE_NATIVE" = "1" ]; then
+        require_pattern ' phase=printer-job-completed .*rc=0 .*body=.*flow_inflight:0.*flow_resend:0' "job-completed native flow drained without resend debt"
+    fi
 fi
 
 if [ "$failures" -ne 0 ]; then

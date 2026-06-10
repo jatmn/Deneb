@@ -110,6 +110,30 @@ expect_failure() {
     echo "PASS: expected release-gate failure: $label"
 }
 
+write_valid_stock_summary() {
+    path="$1"
+    cat > "$path" <<'EOF'
+2026-06-08T00:00:00Z start api=http://127.0.0.1/api/v1 cluster_api=http://127.0.0.1 native=0 stock=1 heat=0 motion=0 macro=0 local_job=0 job=0 cura_job=0 preheat_abort=0 active_abort=0 active_abort_delay=60 complete_job=1 pause_resume=0 restart=0 boot_sync=1 client_proof=0 firmware_proof=1
+2026-06-08T00:00:00Z phase=printsvc-self-test rc=0
+2026-06-08T00:00:00Z phase=stock-driver-process kind=process deneb_printsvc=0 print_service_py=1 rc=0
+2026-06-08T00:00:00Z snapshot=initial
+2026-06-08T00:00:00Z phase=status-initial kind=api method=GET path=/printer/status rc=0 status=idle body=idle
+2026-06-08T00:00:00Z phase=printer-initial kind=api method=GET path=/printer rc=0 body={status:idle}
+2026-06-08T00:00:00Z sample=initial mem_total_kb=250000 mem_used_kb=120000
+2026-06-08T00:00:00Z sample=initial uptime_seconds=100
+2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
+2026-06-08T00:00:00Z sample=initial load1=0.20
+2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
+2026-06-08T00:01:00Z phase=job-throughput path=/tmp/stock.gcode bytes=10000 elapsed_seconds=20 bytes_per_second=500 rc=0
+2026-06-08T00:02:00Z sample=final mem_total_kb=250000 mem_used_kb=122000
+2026-06-08T00:02:00Z sample=final uptime_seconds=220
+2026-06-08T00:02:00Z sample=final cpu_total_jiffies=1500
+2026-06-08T00:02:00Z sample=final load1=0.30
+2026-06-08T00:02:00Z sample=final pid=111 vmsize_kb=33000 vmrss_kb=12100 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
+2026-06-08T00:02:00Z snapshot=final
+EOF
+}
+
 expect_failure invalid_channel \
     'DENEB_RELEASE_CHANNEL must be experimental, nightly, or stable' \
     env DENEB_RELEASE_CHANNEL=beta \
@@ -160,6 +184,20 @@ expect_failure nightly_missing_native_summary \
         "$TMP_DIR/bin/deneb-printsvc"
 
 touch "$TMP_DIR/native.summary"
+expect_failure nightly_invalid_stock_summary \
+    'summary file missing or empty' \
+    env DENEB_RELEASE_CHANNEL=nightly \
+        DENEB_PACKAGE_VERSION_OVERRIDE="$PACKAGE_VERSION" \
+        DENEB_PRINTSVC_STOCK_SUMMARY="$TMP_DIR/stock.summary" \
+        DENEB_PRINTSVC_NATIVE_SUMMARY="$TMP_DIR/native.summary" \
+    sh "$BUILD_PACKAGE" \
+        "$TMP_DIR/bin/deneb-ui" \
+        "$TMP_DIR/bin/deneb-api" \
+        "$TMP_DIR/bin/lighttpd" \
+        "$TMP_DIR/bin/deneb-mdns" \
+        "$TMP_DIR/bin/deneb-printsvc"
+
+write_valid_stock_summary "$TMP_DIR/stock.summary"
 expect_failure nightly_invalid_native_summary \
     'summary file missing or empty' \
     env DENEB_RELEASE_CHANNEL=nightly \

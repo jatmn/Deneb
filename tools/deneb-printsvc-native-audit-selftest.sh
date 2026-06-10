@@ -38,6 +38,7 @@ write_valid_package() {
         "$root/deneb-printsvc-smoke-verify" \
         "$root/deneb-printsvc-smoke-compare" \
         "$root/deneb-printsvc-smoke-selftest" \
+        "$root/deneb-printsvc-stock-baseline" \
         "$root/deneb-printsvc-cli-selftest" \
         "$root/deneb-printsvc-init-selftest" \
         "$root/deneb-printsvc-release-gate-selftest" \
@@ -50,6 +51,7 @@ write_valid_package() {
 #!/bin/sh
 PHYSICAL_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_OK:-0}"
 PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
+ABORT_SETTLE_TIMEOUT="${DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT:-60}"
 guarded_prehome() {
     summary "phase=$1 action=z_home rc=0 reason=pre_physical_home"
 }
@@ -62,8 +64,30 @@ write_active_fixture() {
 write_preheat_abort_fixture() {
     :
 }
+write_representative_fixture() {
+    :
+}
+wait_for_abort_idle() {
+    :
+}
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
+summary "phase=representative-fixture-safety-gate rc=2 reason=requires_all_axis_home"
+EOF
+    cat > "$root/deneb-printsvc-stock-baseline" <<'EOF'
+#!/bin/sh
+ALLOW_STOCK_SWITCH="${DENEB_PRINTSVC_STOCK_BASELINE_OK:-0}"
+restore_native() {
+    /etc/init.d/deneb-printsvc restart
+}
+find_stock_init() {
+    /home/deneb/backups/deneb-ui/init/printserver.orig
+    /rom/etc/init.d/printserver
+}
+wait_for_stock_api_ready() {
+    :
+}
+wait_for_stock_api_ready "stock-api-ready"
 EOF
     cat > "$root/manifest.txt" <<'EOF'
 package: Deneb_Update_test
@@ -103,10 +127,14 @@ DENEB_RELEASE_CHANNEL="${DENEB_RELEASE_CHANNEL:-experimental}"
 VERSION="${DENEB_PACKAGE_VERSION_OVERRIDE:-test}"
 PRINTSVC_STOCK_SUMMARY="${DENEB_PRINTSVC_STOCK_SUMMARY:-}"
 PRINTSVC_NATIVE_SUMMARY="${DENEB_PRINTSVC_NATIVE_SUMMARY:-}"
+PRINTSVC_NATIVE_EVIDENCE_SUMMARIES="${DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES:-}"
 if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
+deneb-printsvc-smoke-verify" --stock --resources "$PRINTSVC_STOCK_SUMMARY"
+    deneb-printsvc-smoke-verify" --native --idle --restart --boot-sync --client-proof --firmware-proof --complete-job --resources "$PRINTSVC_NATIVE_SUMMARY"
     deneb-printsvc-smoke-verify" --full "$PRINTSVC_NATIVE_SUMMARY"
-    deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY"
+    deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY" $PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
 fi
+deneb-printsvc-stock-baseline
 deneb-printsvc-native-audit --source .
 deneb-printsvc-native-audit-selftest
 deneb-printsvc-integration-audit --source .
@@ -122,6 +150,7 @@ if ($ReleaseChannel -ne "experimental") {
 }
 $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
+$buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativeEvidenceSummaryWsl -join ' ')'"
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-integration-audit
 deneb-printsvc-integration-audit-selftest
@@ -134,12 +163,14 @@ cleanup() {
     rm -rf "$PACKAGE_STAGING"
 }
 DENEB_PACKAGE_VERSION_OVERRIDE="$PACKAGE_VERSION"
+nightly_invalid_stock_summary
 nightly_invalid_native_summary
 EOF
     cat > "$root/tools/deneb-printsvc-smoke.sh" <<'EOF'
 #!/bin/sh
 PHYSICAL_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_OK:-0}"
 PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
+ABORT_SETTLE_TIMEOUT="${DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT:-60}"
 guarded_prehome() {
     summary "phase=$1 action=z_home rc=0 reason=pre_physical_home"
 }
@@ -152,8 +183,15 @@ write_active_fixture() {
 write_preheat_abort_fixture() {
     :
 }
+write_representative_fixture() {
+    :
+}
+wait_for_abort_idle() {
+    :
+}
 summary "phase=physical-safety-gate rc=2 reason=missing_physical_ok"
 summary "phase=physical-bundle-safety-gate rc=2 reason=missing_physical_bundle_ok count=2"
+summary "phase=representative-fixture-safety-gate rc=2 reason=requires_all_axis_home"
 EOF
     cat > "$root/tools/deneb-printsvc-smoke-selftest.sh" <<'EOF'
 #!/bin/sh
@@ -162,6 +200,23 @@ smoke_rejects_physical_bundle
 verify_rejects_missing_physical_safety
 generated bounded Z active fixture
 generated low-temperature preheat-abort fixture
+generated bounded representative XYZ fixture
+smoke_rejects_representative_without_all_axis_home
+EOF
+    cat > "$root/tools/deneb-printsvc-stock-baseline.sh" <<'EOF'
+#!/bin/sh
+ALLOW_STOCK_SWITCH="${DENEB_PRINTSVC_STOCK_BASELINE_OK:-0}"
+restore_native() {
+    /etc/init.d/deneb-printsvc restart
+}
+find_stock_init() {
+    /home/deneb/backups/deneb-ui/init/printserver.orig
+    /rom/etc/init.d/printserver
+}
+wait_for_stock_api_ready() {
+    :
+}
+wait_for_stock_api_ready "stock-api-ready"
 EOF
 cat > "$root/ui/installer/update.sh" <<'EOF'
 #!/bin/sh
@@ -172,6 +227,7 @@ deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
 /etc/init.d/deneb-api restart
 /etc/init.d/deneb-web restart
+cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
 cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
 native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction
 EOF
@@ -321,6 +377,38 @@ mv "$SOURCE_MISSING_WRAPPER_PREFLIGHT/tools/build-update-release.tmp" \
     "$SOURCE_MISSING_WRAPPER_PREFLIGHT/tools/build-update-release.ps1"
 expect_failure rejects_source_missing_wrapper_preflight "$AUDIT" --source "$SOURCE_MISSING_WRAPPER_PREFLIGHT"
 
+SOURCE_MISSING_STOCK_SUMMARY_VERIFY="$TMP_DIR/source-missing-stock-summary-verify"
+write_valid_source "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY"
+grep -v 'deneb-printsvc-smoke-verify" --stock --resources' \
+    "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY/ui/build-package.sh" > \
+    "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY/ui/build-package.tmp"
+mv "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY/ui/build-package.tmp" \
+    "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY/ui/build-package.sh"
+expect_failure rejects_source_missing_stock_summary_verify "$AUDIT" --source "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY"
+
+SOURCE_MISSING_BASELINE_HELPER="$TMP_DIR/source-missing-baseline-helper"
+write_valid_source "$SOURCE_MISSING_BASELINE_HELPER"
+rm -f "$SOURCE_MISSING_BASELINE_HELPER/tools/deneb-printsvc-stock-baseline.sh"
+expect_failure rejects_source_missing_baseline_helper "$AUDIT" --source "$SOURCE_MISSING_BASELINE_HELPER"
+
+SOURCE_BASELINE_WITHOUT_ACK="$TMP_DIR/source-baseline-without-ack"
+write_valid_source "$SOURCE_BASELINE_WITHOUT_ACK"
+grep -v 'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
+    "$SOURCE_BASELINE_WITHOUT_ACK/tools/deneb-printsvc-stock-baseline.sh" > \
+    "$SOURCE_BASELINE_WITHOUT_ACK/tools/deneb-printsvc-stock-baseline.tmp"
+mv "$SOURCE_BASELINE_WITHOUT_ACK/tools/deneb-printsvc-stock-baseline.tmp" \
+    "$SOURCE_BASELINE_WITHOUT_ACK/tools/deneb-printsvc-stock-baseline.sh"
+expect_failure rejects_source_baseline_without_ack "$AUDIT" --source "$SOURCE_BASELINE_WITHOUT_ACK"
+
+SOURCE_BASELINE_WITHOUT_RESTORE="$TMP_DIR/source-baseline-without-restore"
+write_valid_source "$SOURCE_BASELINE_WITHOUT_RESTORE"
+grep -v 'restore_native' \
+    "$SOURCE_BASELINE_WITHOUT_RESTORE/tools/deneb-printsvc-stock-baseline.sh" > \
+    "$SOURCE_BASELINE_WITHOUT_RESTORE/tools/deneb-printsvc-stock-baseline.tmp"
+mv "$SOURCE_BASELINE_WITHOUT_RESTORE/tools/deneb-printsvc-stock-baseline.tmp" \
+    "$SOURCE_BASELINE_WITHOUT_RESTORE/tools/deneb-printsvc-stock-baseline.sh"
+expect_failure rejects_source_baseline_without_restore "$AUDIT" --source "$SOURCE_BASELINE_WITHOUT_RESTORE"
+
 SOURCE_MISSING_INSTALLER_SELFTEST="$TMP_DIR/source-missing-installer-selftest"
 write_valid_source "$SOURCE_MISSING_INSTALLER_SELFTEST"
 grep -v 'deneb-printsvc-native-audit-selftest' "$SOURCE_MISSING_INSTALLER_SELFTEST/ui/installer/update.sh" > "$SOURCE_MISSING_INSTALLER_SELFTEST/ui/installer/update.tmp"
@@ -349,6 +437,20 @@ MISSING_SMOKE_SELFTEST="$TMP_DIR/missing-smoke-selftest"
 write_valid_package "$MISSING_SMOKE_SELFTEST"
 rm -f "$MISSING_SMOKE_SELFTEST/deneb-printsvc-smoke-selftest"
 expect_failure rejects_missing_smoke_selftest "$AUDIT" --package-dir "$MISSING_SMOKE_SELFTEST"
+
+MISSING_BASELINE_HELPER="$TMP_DIR/missing-baseline-helper"
+write_valid_package "$MISSING_BASELINE_HELPER"
+rm -f "$MISSING_BASELINE_HELPER/deneb-printsvc-stock-baseline"
+expect_failure rejects_missing_baseline_helper "$AUDIT" --package-dir "$MISSING_BASELINE_HELPER"
+
+BASELINE_WITHOUT_ACK="$TMP_DIR/baseline-without-ack"
+write_valid_package "$BASELINE_WITHOUT_ACK"
+grep -v 'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
+    "$BASELINE_WITHOUT_ACK/deneb-printsvc-stock-baseline" > \
+    "$BASELINE_WITHOUT_ACK/deneb-printsvc-stock-baseline.tmp"
+mv "$BASELINE_WITHOUT_ACK/deneb-printsvc-stock-baseline.tmp" \
+    "$BASELINE_WITHOUT_ACK/deneb-printsvc-stock-baseline"
+expect_failure rejects_baseline_without_ack "$AUDIT" --package-dir "$BASELINE_WITHOUT_ACK"
 
 MISSING_PHYSICAL_GATE="$TMP_DIR/missing-physical-gate"
 write_valid_package "$MISSING_PHYSICAL_GATE"
@@ -379,9 +481,17 @@ expect_failure rejects_missing_physical_plan "$AUDIT" --package-dir "$MISSING_PH
 MISSING_SAFE_FIXTURES="$TMP_DIR/missing-safe-fixtures"
 write_valid_package "$MISSING_SAFE_FIXTURES"
 grep -v 'write_active_fixture' "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke" |
-    grep -v 'write_preheat_abort_fixture' > "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke.tmp"
+    grep -v 'write_preheat_abort_fixture' |
+    grep -v 'write_representative_fixture' > "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke.tmp"
 mv "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke.tmp" "$MISSING_SAFE_FIXTURES/deneb-printsvc-smoke"
 expect_failure rejects_missing_safe_fixtures "$AUDIT" --package-dir "$MISSING_SAFE_FIXTURES"
+
+MISSING_ABORT_WAIT="$TMP_DIR/missing-abort-wait"
+write_valid_package "$MISSING_ABORT_WAIT"
+grep -v 'wait_for_abort_idle' "$MISSING_ABORT_WAIT/deneb-printsvc-smoke" |
+    grep -v 'DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT' > "$MISSING_ABORT_WAIT/deneb-printsvc-smoke.tmp"
+mv "$MISSING_ABORT_WAIT/deneb-printsvc-smoke.tmp" "$MISSING_ABORT_WAIT/deneb-printsvc-smoke"
+expect_failure rejects_missing_abort_wait "$AUDIT" --package-dir "$MISSING_ABORT_WAIT"
 
 MISSING_CLI_SELFTEST="$TMP_DIR/missing-cli-selftest"
 write_valid_package "$MISSING_CLI_SELFTEST"

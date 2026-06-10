@@ -337,14 +337,21 @@ int deneb_gcode_plan_temperature_target_from_json(
 {
     float temp = 0.0f;
     float max_temp = heater_max_temp(heater);
+    const char *temp_key = NULL;
 
     if (max_temp < 0.0f || !out_temp_c || !out_gcode || out_gcode_sz == 0)
         return -1;
 
-    if (deneb_json_field_present(json, "temperature") &&
-        (deneb_json_get_float_value(json, "temperature", &temp) < 0 ||
-         !isfinite(temp)))
-        return -1;
+    if (deneb_json_field_present(json, "temperature"))
+        temp_key = "temperature";
+    else if (deneb_json_field_present(json, "target"))
+        temp_key = "target";
+
+    if (temp_key) {
+        if (deneb_json_get_float_value(json, temp_key, &temp) < 0 ||
+            !isfinite(temp))
+            return -1;
+    }
 
     if (temp > max_temp)
         temp = max_temp;

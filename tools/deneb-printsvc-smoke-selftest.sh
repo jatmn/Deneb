@@ -44,22 +44,30 @@ trap cleanup EXIT HUP INT TERM
 mkdir -p "$TMP_DIR"
 
 cat > "$STOCK_SUMMARY" <<'EOF'
+2026-06-08T00:00:00Z start api=http://127.0.0.1/api/v1 cluster_api=http://127.0.0.1 stock=1 native=0 heat=0 motion=0 macro=0 local_job=0 job=0 cura_job=0 preheat_abort=0 active_abort=0 active_abort_delay=60 complete_job=1 pause_resume=0 restart=0 boot_sync=1
 2026-06-08T00:00:00Z sample=initial mem_total_kb=250000 mem_used_kb=120000
 2026-06-08T00:00:00Z sample=initial uptime_seconds=100
 2026-06-08T00:00:00Z sample=initial cpu_total_jiffies=1000
 2026-06-08T00:00:00Z sample=initial load1=0.20
+2026-06-08T00:00:00Z phase=printsvc-self-test rc=0
+2026-06-08T00:00:00Z phase=stock-driver-process kind=process deneb_printsvc=0 print_service_py=1 rc=0
+2026-06-08T00:00:00Z snapshot=initial
+2026-06-08T00:00:00Z phase=status-initial kind=api method=GET path=/printer/status rc=0 status=idle body=idle
+2026-06-08T00:00:00Z phase=printer-initial kind=api method=GET path=/printer rc=0 body={status:idle}
 2026-06-08T00:00:00Z sample=initial pid=111 vmsize_kb=33000 vmrss_kb=12000 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
 2026-06-08T00:00:00Z sample=initial pid=112 vmsize_kb=42000 vmrss_kb=30000 command="/usr/bin/python3 /home/cygnus/coordinator.py"
 2026-06-08T00:00:10Z phase=boot-sync-ready elapsed_seconds=10 uptime_delta_seconds=10 route_body=_print_backend:native_native_only_route:true status=idle status_body=idle rc=0
 2026-06-08T00:00:11Z snapshot=firmware-proof
 2026-06-08T00:00:11Z phase=firmware-proof kind=api root_rc=0 bed_rc=0 nozzle_rc=0 airmanager_rc=0 rc=0 firmware=Apr_30_2020 machine_type=E2 pcb_id=4 pcb_id_valid=true bed_current=29.5 bed_target=0.0 nozzle_current=31.2 nozzle_target=0.0 topcap_present=true topcap_current=30.1 status=idle
 2026-06-08T00:01:00Z phase=job-throughput path=/home/3D/stock.gcode bytes=10000 elapsed_seconds=20 bytes_per_second=500 rc=0
+2026-06-08T00:01:00Z phase=complete-job-position running_z=207.0 final_z=111.0 delta_z=96.000 rc=0
 2026-06-08T00:02:00Z sample=final mem_total_kb=250000 mem_used_kb=122000
 2026-06-08T00:02:00Z sample=final uptime_seconds=220
 2026-06-08T00:02:00Z sample=final cpu_total_jiffies=1500
 2026-06-08T00:02:00Z sample=final load1=0.30
 2026-06-08T00:02:00Z sample=final pid=111 vmsize_kb=33000 vmrss_kb=12100 command="/usr/bin/python3 /home/cygnus/marlindriver/print_service.py"
 2026-06-08T00:02:00Z sample=final pid=112 vmsize_kb=42000 vmrss_kb=30000 command="/usr/bin/python3 /home/cygnus/coordinator.py"
+2026-06-08T00:02:00Z snapshot=final
 EOF
 
 cat > "$NATIVE_SUMMARY" <<'EOF'
@@ -200,7 +208,8 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:38Z phase=job-throughput path=/tmp/complete.gcode bytes=9000 elapsed_seconds=18 bytes_per_second=500 rc=0
 2026-06-08T00:00:38Z snapshot=job-completed
 2026-06-08T00:00:38Z phase=status-job-completed kind=api method=GET path=/printer/status rc=0 status=idle body=idle
-2026-06-08T00:00:38Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false}
+2026-06-08T00:00:38Z phase=printer-job-completed kind=api method=GET path=/printer rc=0 body={status:idle,native_active:false,native_stop_allowed:false,flow_inflight:0,flow_resend:0}
+2026-06-08T00:00:38Z phase=complete-job-position running_z=207.0 final_z=111.0 delta_z=96.000 rc=0
 2026-06-08T00:00:39Z phase=service-restart kind=service-restart rc=0
 2026-06-08T00:00:39Z snapshot=service-restarted
 2026-06-08T00:00:39Z phase=route-service-restarted kind=api method=GET path=/api/v1/deneb/print_backend rc=0 body=_print_backend:native_native_only_route:true
@@ -215,9 +224,19 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:01:00Z snapshot=final
 EOF
 
+sh "$VERIFY" --stock --resources "$STOCK_SUMMARY"
 sh "$VERIFY" --full "$NATIVE_SUMMARY"
 sh "$COMPARE" "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
 sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
+
+grep -E 'start |sample=initial |sample=final |phase=printsvc-self-test |phase=native-route-enabled |phase=native-driver-process |snapshot=initial|snapshot=native-enabled|snapshot=final|phase=route-initial |phase=status-initial |phase=printer-initial |phase=route-native-enabled |phase=status-native-enabled |phase=printer-native-enabled |phase=boot-sync-ready |snapshot=client-proof|phase=client-|snapshot=firmware-proof|phase=firmware-proof |phase=complete-job-|snapshot=complete-job-running|phase=status-complete-job-running |phase=printer-complete-job-running |phase=job-completion-wait |phase=job-throughput |phase=complete-job-position |snapshot=job-completed|phase=status-job-completed |phase=printer-job-completed |phase=service-restart |snapshot=service-restarted|phase=route-service-restarted |phase=status-service-restarted |phase=printer-service-restarted ' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-resource-only.summary"
+grep -E 'phase=heat-|phase=bed-|phase=nozzle-|snapshot=heating|snapshot=cooldown|phase=status-heating |phase=printer-heating |phase=status-cooldown |phase=printer-cooldown |phase=motion-|phase=z-home |snapshot=motion|phase=status-motion |phase=printer-motion |phase=macro-|snapshot=macro|phase=status-macro |phase=printer-macro |phase=local-job-|phase=job-safety |phase=job-start |snapshot=job-|phase=status-job-|phase=printer-job-|phase=job-pause |phase=job-resume |phase=job-abort |phase=cura-job-|snapshot=cura-job-|phase=status-cura-job-|phase=printer-cura-job-|phase=preheat-abort-|snapshot=preheat-|phase=status-preheat-|phase=printer-preheat-|phase=active-abort-|snapshot=active-|phase=status-active-|phase=printer-active-' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-workflow-only.summary"
+sh "$COMPARE" --require-reduction "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-resource-only.summary" \
+    "$TMP_DIR/native-workflow-only.summary"
+echo "PASS: split native resource/workflow evidence accepted"
 
 sed '/phase=status-complete-job-running /s/status=printing/status=idle/; /phase=status-complete-job-running /s/body=printing/body=idle/; /phase=printer-complete-job-running /s/status:printing/status:idle/; /phase=printer-complete-job-running /s/native_active:true/native_active:false/; /phase=printer-complete-job-running /s/native_stop_allowed:true/native_stop_allowed:false/; /phase=job-completion-wait /s/elapsed=20/elapsed=0/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-fast-complete.summary"
@@ -242,6 +261,9 @@ grep -v 'phase=active-abort-safety ' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-physical-safety.summary"
 expect_failure verify_rejects_missing_physical_safety \
     sh "$VERIFY" --full \
+    "$TMP_DIR/native-missing-physical-safety.summary"
+expect_failure compare_rejects_missing_physical_safety \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-physical-safety.summary"
 
 sed '/phase=status-initial /s/status=idle/status=printing/; /phase=status-initial /s/status:idle/status:printing/; /phase=printer-initial /s/native_active:false/native_active:true/; /phase=printer-initial /s/native_stop_allowed:false/native_stop_allowed:true/' \
@@ -270,6 +292,21 @@ sed '/phase=printer-job-completed /s/native_stop_allowed:false/native_stop_allow
 expect_failure compare_rejects_missing_one_inactive_stop \
     sh "$COMPARE" "$STOCK_SUMMARY" \
     "$TMP_DIR/native-missing-one-inactive-stop.summary"
+
+sed '/phase=printer-job-completed /s/flow_inflight:0,flow_resend:0/flow_inflight:1,flow_resend:16/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-completed-with-flow-debt.summary"
+expect_failure verify_rejects_completed_flow_debt \
+    sh "$VERIFY" --full \
+    "$TMP_DIR/native-completed-with-flow-debt.summary"
+expect_failure compare_rejects_completed_flow_debt \
+    sh "$COMPARE" "$STOCK_SUMMARY" \
+    "$TMP_DIR/native-completed-with-flow-debt.summary"
+
+sed '/phase=complete-job-position /s/delta_z=96.000/delta_z=0.000/' \
+    "$NATIVE_SUMMARY" > "$TMP_DIR/native-completed-without-z-travel.summary"
+expect_failure verify_rejects_completed_without_z_travel \
+    sh "$VERIFY" --native --complete-job \
+    "$TMP_DIR/native-completed-without-z-travel.summary"
 
 sed '/phase=printer-service-restarted /s/native_active:false/native_active:true/' \
     "$NATIVE_SUMMARY" > "$TMP_DIR/native-service-restart-active-stuck.summary"
@@ -460,6 +497,28 @@ expect_failure compare_rejects_missing_stock_python_baseline \
     sh "$COMPARE" \
     "$TMP_DIR/stock-missing-python.summary" "$NATIVE_SUMMARY"
 
+sed '/phase=stock-driver-process /s/deneb_printsvc=0 print_service_py=1/deneb_printsvc=1 print_service_py=1/' \
+    "$STOCK_SUMMARY" > "$TMP_DIR/stock-native-also-running.summary"
+expect_failure verify_rejects_stock_native_also_running \
+    sh "$VERIFY" --stock --resources \
+    "$TMP_DIR/stock-native-also-running.summary"
+expect_failure compare_rejects_stock_native_also_running \
+    sh "$COMPARE" \
+    "$TMP_DIR/stock-native-also-running.summary" "$NATIVE_SUMMARY"
+
+awk '
+    { print }
+    /sample=initial pid=112/ {
+        print "2026-06-08T00:00:00Z sample=initial pid=222 vmsize_kb=9000 vmrss_kb=3000 command=\"/usr/bin/deneb-printsvc\""
+    }
+' "$STOCK_SUMMARY" > "$TMP_DIR/stock-native-process-sample.summary"
+expect_failure verify_rejects_stock_native_process_sample \
+    sh "$VERIFY" --stock --resources \
+    "$TMP_DIR/stock-native-process-sample.summary"
+expect_failure compare_rejects_stock_native_process_sample \
+    sh "$COMPARE" \
+    "$TMP_DIR/stock-native-process-sample.summary" "$NATIVE_SUMMARY"
+
 grep -v 'command="/usr/bin/deneb-printsvc"' "$NATIVE_SUMMARY" > "$TMP_DIR/native-missing-driver-rss.summary"
 expect_failure verify_rejects_missing_native_driver_rss \
     sh "$VERIFY" --full \
@@ -586,6 +645,61 @@ expect_failure smoke_rejects_oversized_active_fixture \
     sh "$SMOKE" --make-active-fixture "$TMP_DIR/z-active-too-large.gcode" 481 \
     --summary "$TMP_DIR/z-active-too-large.summary" \
     --log "$TMP_DIR/z-active-too-large.log"
+
+sh "$SMOKE" --make-representative-fixture "$TMP_DIR/representative-xyz.gcode" 12 \
+    --summary "$TMP_DIR/representative-xyz.summary" \
+    --log "$TMP_DIR/representative-xyz.log"
+if [ "$(grep -c '^G1 X' "$TMP_DIR/representative-xyz.gcode")" != "12" ]; then
+    cat "$TMP_DIR/representative-xyz.gcode"
+    echo "FAIL: generated representative fixture did not contain 12 XYZ move commands" >&2
+    exit 1
+fi
+if ! grep -qx '; DENEB_REPRESENTATIVE_XYZ_FIXTURE=1' "$TMP_DIR/representative-xyz.gcode" ||
+   ! grep -qx 'G90' "$TMP_DIR/representative-xyz.gcode"; then
+    cat "$TMP_DIR/representative-xyz.gcode"
+    echo "FAIL: generated representative fixture missing marker or absolute-mode guard" >&2
+    exit 1
+fi
+if grep -Eq '^(G28|G4|M400|M104|M109|M140|M190|M105)([[:space:]]|$)' \
+    "$TMP_DIR/representative-xyz.gcode"; then
+    cat "$TMP_DIR/representative-xyz.gcode"
+    echo "FAIL: generated representative fixture contains home, dwell, sync, heat, or polling commands" >&2
+    exit 1
+fi
+if grep -Eq '[[:space:]]E-?[0-9]' "$TMP_DIR/representative-xyz.gcode"; then
+    cat "$TMP_DIR/representative-xyz.gcode"
+    echo "FAIL: generated representative fixture extrudes material" >&2
+    exit 1
+fi
+if ! grep -qx 'G1 X30.0 Y30.0 Z205.0 F1800' "$TMP_DIR/representative-xyz.gcode" ||
+   ! grep -qx 'G1 X150.0 Y150.0 Z204.6 F1800' "$TMP_DIR/representative-xyz.gcode"; then
+    cat "$TMP_DIR/representative-xyz.gcode"
+    echo "FAIL: generated representative fixture missing bounded Cura-style XYZ moves" >&2
+    exit 1
+fi
+if ! grep -Eq 'phase=make-representative-fixture .*rc=0 .*command=G1_XYZ' \
+    "$TMP_DIR/representative-xyz.summary"; then
+    cat "$TMP_DIR/representative-xyz.summary"
+    echo "FAIL: generated representative fixture summary missing success evidence" >&2
+    exit 1
+fi
+echo "PASS: generated bounded representative XYZ fixture"
+
+expect_failure smoke_rejects_oversized_representative_fixture \
+    sh "$SMOKE" --make-representative-fixture "$TMP_DIR/representative-too-large.gcode" 121 \
+    --summary "$TMP_DIR/representative-too-large.summary" \
+    --log "$TMP_DIR/representative-too-large.log"
+
+expect_failure smoke_rejects_representative_without_all_axis_home \
+    sh "$SMOKE" --physical-ok --job "$TMP_DIR/representative-xyz.gcode" \
+    --summary "$TMP_DIR/representative-home-gate.summary" \
+    --log "$TMP_DIR/representative-home-gate.log"
+if ! grep -Eq 'phase=representative-fixture-safety-gate .*reason=requires_all_axis_home' \
+    "$TMP_DIR/representative-home-gate.summary"; then
+    cat "$TMP_DIR/representative-home-gate.summary"
+    echo "FAIL: representative fixture missing all-axis-home safety summary" >&2
+    exit 1
+fi
 
 touch "$TMP_DIR/z-active.gcode"
 expect_failure smoke_rejects_pause_resume_without_all_axis_home \

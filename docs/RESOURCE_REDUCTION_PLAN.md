@@ -529,13 +529,18 @@ Material-profile USB import root/depth/suffix policy and the
   evidence, observe-only UM API/Cura cluster/Digital Factory bridge proof, and
   resource/throughput evidence that includes native `deneb-printsvc` driver RSS
   when native mode is required, so live runs can be checked on target without
-  Python. Packages also include
+  Python. Its `--stock` mode explicitly asserts that stock
+  `/home/cygnus/marlindriver/print_service.py` is running and native
+  `deneb-printsvc` is absent before baseline snapshots are accepted.
+  Packages also include
   `deneb-printsvc-smoke-compare`, a shell-only stock/native summary comparator
   that emits before/after deltas for system memory, driver-process RSS, raw
   CPU jiffies, initial-to-final CPU jiffies, boot-sync elapsed time, and print throughput
   without exporting data to an external Python script. It also fails if the
-  stock summary lacks initial/final `print_service.py` process evidence, CPU
-  or throughput intervals are not positive, or the native summary lacks
+  stock summary lacks explicit stock process ownership evidence, lacks
+  initial/final `print_service.py` process evidence, includes a native
+  `deneb-printsvc` process sample, has CPU or throughput intervals that are
+  not positive, or the native summary lacks
   native-only route evidence in route diagnostics or any required status
   lifecycle body, lacks scalar boot-sync status plus native-only boot-sync
   status-body evidence, reports the wrong status value for a required lifecycle
@@ -568,7 +573,8 @@ Material-profile USB import root/depth/suffix policy and the
   native local/USB job evidence, a non-native-only route diagnostic, a returned
   stock `print_service.py` process in a native run,
   missing stock
-  `print_service.py` baseline evidence, missing native `deneb-printsvc`
+  `print_service.py` baseline evidence, a stock baseline captured while native
+  `deneb-printsvc` is still sampled, missing native `deneb-printsvc`
   RSS evidence, zero-throughput records, and nonzero
   throughput regressions under strict reduction mode, so the
   evidence contract can be tested without Python or live hardware.
@@ -586,8 +592,9 @@ Material-profile USB import root/depth/suffix policy and the
   The local release
   package build was inspected and contains `deneb-printsvc`, `deneb-printsvc-smoke`,
   `deneb-printsvc-smoke-verify`, `deneb-printsvc-smoke-compare`,
-  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-cli-selftest`,
-  `deneb-printsvc-init-selftest`, `deneb-printsvc-release-gate-selftest`,
+  `deneb-printsvc-smoke-selftest`, `deneb-printsvc-stock-baseline`,
+  `deneb-printsvc-cli-selftest`, `deneb-printsvc-init-selftest`,
+  `deneb-printsvc-release-gate-selftest`,
   `deneb-printsvc-native-audit`,
   `deneb-printsvc-native-audit-selftest`,
   `manifest.txt`, and the declared
@@ -610,7 +617,16 @@ Material-profile USB import root/depth/suffix policy and the
   `deneb-printsvc-release-gate-selftest` behaviorally covers invalid channels
   plus missing or malformed stable/nightly live-summary inputs while using an
   isolated package-version override so expected-failure runs cannot disturb the
-  active package staging. The live smoke harness now also generates a bounded
+  active package staging. Packages now also include
+  `deneb-printsvc-stock-baseline`, a guarded stock-driver baseline helper that
+  requires explicit acknowledgement, starts the backed-up stock printserver or
+  `/rom/etc/init.d/printserver`, runs the smoke harness in `--stock` mode, and
+  restores native `deneb-printsvc` in a trap. It deletes the active native procd
+  service and keeps a scoped native guard running during the stock smoke window
+  so delayed respawn cannot contaminate stock process/resource samples. The
+  native audit and negative-fixture selftest fail closed if that helper is
+  missing or loses its acknowledgement/restore hooks. The live smoke harness now
+  also generates a bounded
   old-Marlin Z movement completion fixture with
   `--make-complete-fixture` and rejects dwell/M400-only completion fixtures
   before upload, keeping local completion-test tooling from confusing firmware
@@ -618,14 +634,19 @@ Material-profile USB import root/depth/suffix policy and the
   stream completion evidence. It now also generates bounded Z-only active-job
   fixtures and low-temperature preheat-abort fixtures, so active-abort,
   pause/resume, Cura, and preheat smoke evidence can use fresh known inputs
-  instead of stale device-side files. The generated Z fixture cap is 480
+  instead of stale device-side files. It also generates bounded Cura-style XYZ
+  representative fixtures with no heat, extrusion, dwell, or internal homing
+  commands; the smoke harness rejects those fixtures unless the run uses
+  all-axis prehome, so representative geometry cannot be tested after only a
+  Z-home guard. The generated Z fixture cap is 480
   relative `G1 Z-0.20 F30` moves, keeping total travel to 96 mm away from homed
   Z max while providing enough runtime for pause/resume, Cura-running,
   completion, and sequence-wrap smoke evidence. Packages default
   to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` and `stable` package
   builds now require live stock/native smoke summary paths in
   `DENEB_PRINTSVC_STOCK_SUMMARY` and `DENEB_PRINTSVC_NATIVE_SUMMARY`, then run
-  `deneb-printsvc-smoke-verify --full` and
+  `deneb-printsvc-smoke-verify --stock --resources`,
+  `deneb-printsvc-smoke-verify --full`, and
   `deneb-printsvc-smoke-compare --require-reduction` before the archive is
   created. The PowerShell release entry point exposes the same boundary through
   `-ReleaseChannel`, `-PrintsvcStockSummary`, and
@@ -758,6 +779,94 @@ Material-profile USB import root/depth/suffix policy and the
   This is native-side current evidence only; it does not replace the required
   stock/native before-and-after resource comparison or representative Cura
   geometry validation.
+- June 10, 2026 `dist/Deneb_Update_d82245c.deneb` added a current paired
+  observe-only stock/native proof. The stock side used
+  `/usr/bin/deneb-printsvc-stock-baseline --allow-stock-switch -- --boot-sync
+  --firmware-proof` against the backed-up stock `printserver`; verification of
+  `/tmp/deneb-stock-d82245c.summary` passed with stock `print_service.py`
+  present, native `deneb-printsvc` absent, and ambient bed/nozzle/topcap
+  telemetry around 28.3 C / 31.8 C / 28.0 C. The paired native
+  `/tmp/deneb-native-d82245c-observe.summary` passed native idle, boot-sync,
+  client-proof, and firmware-proof verification with `/usr/bin/deneb-printsvc`
+  present and stock `print_service.py` absent. This validates the stock-baseline
+  collection lane and current observe-only firmware/temperature parity, not the
+  non-experimental resource gate: `--stock --resources`, full native
+  `--resources`, strict comparison, LCD/Web UI flows, Digital Factory job
+  lifecycle, and representative Cura/slicer geometry remain open.
+- The same `d82245c` package was redeployed after adding representative-fixture
+  tooling. On target, `/usr/bin/deneb-printsvc-smoke
+  --make-representative-fixture /tmp/deneb-representative-xyz.gcode 8`
+  generated bounded Cura-style XYZ moves with no heat, extrusion, dwell, or
+  internal homing, and the harness rejected `--job` on that file without
+  `--prehome-action home` using
+  `phase=representative-fixture-safety-gate rc=2
+  reason=requires_all_axis_home`. This closes only the no-motion target-side
+  generator/gate check for representative input; the physical representative
+  print matrix remains open.
+- The abort smoke harness now treats cleanup timing as evidence instead of a
+  fixed delay. Abort-style phases retain immediate `aborting` snapshots, then
+  wait up to `--abort-settle-timeout` for `idle` with
+  `native_active:false`/`native_stop_allowed:false` before final
+  `*-aborted` snapshots. This change came from the June 10 representative Cura
+  run, where native cleanup settled correctly just after the old 8-second final
+  sample.
+- After redeploying that harness, a supervised generated representative
+  Cura-cluster run passed on hardware:
+  `/usr/bin/deneb-printsvc-smoke --physical-ok --native --cura-job
+  /tmp/deneb-representative-xyz.gcode --prehome-action home
+  --abort-settle-timeout 90`. The run used all-axis prehome, showed
+  `printing` with Stop allowed, accepted cluster DELETE abort, preserved
+  `aborting` with Stop disabled while cleanup drained, recorded
+  `cura-job-aborted-wait elapsed=10 rc=0 status=idle`, and verified final
+  `idle` with native active/Stop flags false. The installed verifier passed
+  `--native --cura-job` on `/tmp/deneb-cura-representative-xyz.summary`.
+  This proves the generated representative Cura-cluster path, not a desktop
+  Cura client or full slicer-output matrix.
+- A later June 10 `d82245c` redeploy refreshed current heat and abort-state
+  proof after the REST temperature command accepted the stock/Cura `target`
+  field. The installed `--native --heat` summary showed low bed/nozzle targets
+  of 40 C / 50 C, `printing` status, and native active/Stop flags true during
+  heat, then cooldown `idle` with both flags false. The generated
+  representative `--native --active-abort` path used all-axis prehome and
+  `PUT /print_job/state {"action":"abort"}`, showed active `printing` with
+  Stop allowed, `aborting` with Stop disabled, and final idle active/Stop
+  false. The `--native --local-job` run also proved native local/USB
+  `pre_print` acceptance is stoppable and aborts back to idle. These are
+  current native safety-state proofs; the strict stock/native `--resources`
+  reduction comparison remains open.
+- Later June 10 `d82245c` paired resource runs exercised the strict
+  stock/native path but exposed a bad baseline assumption: the stock Python
+  helper can report completion/idle for the synthetic bounded Z fixture without
+  proving that the fixture moved. The verifier and comparator now require
+  `phase=complete-job-position` with positive post-running Z travel before a
+  completion throughput sample can count. After redeploying the sequence-wrap
+  fix, `/tmp/deneb-native-seqwrap-resource2.summary` passed native
+  `--complete-job --resources` verification with `running_z=207.0`,
+  `final_z=111.0`, `delta_z=96.000`, drained flow (`flow_inflight:0`,
+  `flow_resend:0`), and 6920 bytes over 204 seconds. The guarded stock
+  baseline `/tmp/deneb-stock-seqwrap-resource2.summary` reported 314 B/s but
+  had `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`, so it is rejected
+  as invalid physical completion evidence. Non-experimental packages must still
+  stay blocked by the strict gate until stock and native both provide valid
+  positive-motion resource summaries.
+- The latest completion/resource fix intentionally favors correctness over
+  throughput. Native now keeps a job active when EOF arrives with Marlin flow
+  packets still in flight and only enters finish cleanup after the in-flight
+  queue drains. The verifier/comparator reject completed native summaries with
+  `flow_inflight` or `flow_resend` debt. Hardware trials that tried to regain
+  throughput by raising the stream window to 6 or shortening finish drain were
+  rejected by this stricter evidence: the window-6 run left resend debt and a
+  partial Z completion, while the fast-finish run reported idle at the wrong Z
+  height. Keep stream window 4 and finish drain 8/3 until a safer optimization
+  is proven against stock Python behavior and live hardware.
+- Native flow control now also matches stock Python's sequence-number ring.
+  Stock `MarlinProtocolNode.send()` wraps from sequence 254 to 0 and never
+  sends 255; native previously used plain 8-bit increment semantics. Long
+  completion/resource fixtures cross that boundary, so native now skips 255 and
+  uses wrap-aware ACK ordering for 0..254. Host tests cover 260 sends plus
+  ACK-through behavior across 253, 254, and 0. The fresh native deployed run
+  confirms long completion now drains without resend debt; the resource gate is
+  still open because the paired stock run did not prove physical Z travel.
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,
   `common/print/print_action_rules.*` owns REST/Cura action parsing and action

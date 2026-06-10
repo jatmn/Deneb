@@ -83,6 +83,10 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     }
 
     if (rc == 0) {
+        if (deneb_flow_inflight(streamer->flow) != 0) {
+            deneb_job_lifecycle_streaming(streamer->status);
+            return 0;
+        }
         deneb_gcode_stream_close(streamer->stream);
         streamer->heater_wait->active = 0;
         deneb_motion_policy_finish(streamer->finish_cleanup_policy);

@@ -209,28 +209,29 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 
 The release builder verifies the produced `.deneb` archive after packaging: it
 must contain `deneb-printsvc` plus the shell smoke/CLI/init/native-audit
-selftests, the release-gate selftest, `deneb-printsvc-native-audit`, and the
-declared TLSF notice, and must not contain Python driver artifacts such as
-`*.py`, `*python*`, or `print_service.py`. The package builder runs the staged
-selftests and native audit before creating the archive, then inspects the
-archive for the same native/no-Python invariant; the PowerShell release builder
-extracts the archived copies and runs the shell-only
-smoke/release-gate/init/native-audit checks again before accepting the release
-package.
+selftests, the guarded stock-baseline collector, the release-gate selftest,
+`deneb-printsvc-native-audit`, and the declared TLSF notice, and must not
+contain Python driver artifacts such as `*.py`, `*python*`, or
+`print_service.py`. The package builder runs the staged selftests and native
+audit before creating the archive, then inspects the archive for the same
+native/no-Python invariant; the PowerShell release builder extracts the
+archived copies and runs the shell-only smoke/release-gate/init/native-audit
+checks again before accepting the release package.
 Packages default to `DENEB_RELEASE_CHANNEL=experimental`; `nightly` or
 `stable` builds must provide `DENEB_PRINTSVC_STOCK_SUMMARY` and
-`DENEB_PRINTSVC_NATIVE_SUMMARY`, and the package builder verifies the native
-summary with `deneb-printsvc-smoke-verify --full` plus the strict
-`deneb-printsvc-smoke-compare --require-reduction` resource gate before
+`DENEB_PRINTSVC_NATIVE_SUMMARY`, and the package builder verifies the stock
+summary with `deneb-printsvc-smoke-verify --stock --resources`, verifies the
+native summary with `deneb-printsvc-smoke-verify --full`, then applies the
+strict `deneb-printsvc-smoke-compare --require-reduction` resource gate before
 creating the archive. The PowerShell release entry point exposes the same gate
 as `-ReleaseChannel`, `-PrintsvcStockSummary`, and `-PrintsvcNativeSummary`.
 The native source audit checks that both release entry points retain this
 non-experimental live-evidence boundary, and
 `deneb-printsvc-release-gate-selftest` behaviorally checks invalid channels,
-stable builds without summaries, missing nightly summary files, and malformed
-native summary files. It uses `DENEB_PACKAGE_VERSION_OVERRIDE` so these
-expected-failure package-builder checks run in isolated staging and clean that
-staging/output afterward.
+stable builds without summaries, missing nightly summary files, malformed stock
+summaries, and malformed native summary files. It uses
+`DENEB_PACKAGE_VERSION_OVERRIDE` so these expected-failure package-builder
+checks run in isolated staging and clean that staging/output afterward.
 Both the shell package builder and PowerShell wrapper inspect the archived
 manifest so the channel and native-printsvc evidence boundary travel with the
 artifact.
@@ -260,6 +261,17 @@ route diagnostic does not report `native_only_route:true` or if
 `print_service.py` is still running during native validation.
 Process RSS samples are matched by executable name, not substring, so the smoke
 harness shell is not counted as `deneb-printsvc` resource evidence.
+Release packages also install `/usr/bin/deneb-printsvc-stock-baseline`, a
+guarded shell-only helper for collecting paired stock baseline summaries. It
+requires `--allow-stock-switch` or `DENEB_PRINTSVC_STOCK_BASELINE_OK=1`, starts
+the backed-up stock `printserver` init script or `/rom/etc/init.d/printserver`,
+runs `deneb-printsvc-smoke --stock`, and restores native `deneb-printsvc` in an
+EXIT trap unless `--no-restore-native` is explicitly supplied. During the stock
+smoke window it deletes the active native procd service and runs a scoped native
+guard so delayed `deneb-printsvc` respawn cannot contaminate stock process
+evidence. Treat it as a supervised service-switch test, not a passive
+measurement: the stock driver startup path runs the motion-controller
+verification path before opening the serial stack.
 Every snapshot records the selected print-backend route body, the scalar
 `/printer/status` status value plus sanitized full body, and `/printer` root body in
 the summary so preheat, pause/resume, abort, completion, and restart runs prove
@@ -314,6 +326,7 @@ deneb-printsvc-smoke --make-complete-fixture /tmp/deneb-complete-z.gcode 80
 deneb-printsvc-smoke --physical-ok --native --complete-job /tmp/deneb-complete-z.gcode
 deneb-printsvc-smoke --native --restart
 deneb-printsvc-smoke --native --summary /tmp/native-printsvc.summary
+deneb-printsvc-stock-baseline --allow-stock-switch --summary /tmp/stock-printsvc.summary -- --boot-sync --firmware-proof
 ```
 
 Use only under supervision with clear motion axes and a ready power cutoff.
@@ -342,6 +355,17 @@ writes a bounded Z-only, no-heat, no-extrusion job that relies on the harness
 pre-home step and moves only away from homed Z max. `--make-preheat-abort-fixture`
 writes low bed/nozzle targets followed by a heater wait so Stop behavior can be
 checked during preparation before any print motion is expected.
+`--make-representative-fixture` writes a bounded Cura-style XYZ job with no
+heat, no extrusion, no dwell, and an embedded
+`DENEB_REPRESENTATIVE_XYZ_FIXTURE=1` marker. Any smoke phase that consumes that
+fixture fails closed unless `--prehome-action home` is set, so representative
+geometry evidence cannot run after only Z homing.
+Abort-style job phases keep their immediate abort-requested and draining
+snapshots, then poll `/printer/status` and `/printer` until native status is
+`idle` with `native_active:false` and `native_stop_allowed:false` before taking
+the final `*-aborted` snapshot. `--abort-settle-timeout` bounds that wait
+instead of relying on a fixed sleep, so slow target cleanup is recorded as
+evidence and real stuck-abort states fail the run.
 `--local-job` requires `--native`, runs the native
 `deneb-printsvc --local-job-smoke` path through the shared IPC frame helper, and
 proves native route ownership, local/USB job acceptance with native `pre_print`
@@ -357,6 +381,7 @@ Verify a captured summary on-device without Python:
 
 ```sh
 deneb-printsvc-smoke-verify /tmp/deneb-printsvc-smoke.summary
+deneb-printsvc-smoke-verify --stock --resources /tmp/stock-printsvc.summary
 deneb-printsvc-smoke-verify --native --idle --heat --motion --macro --local-job --job --preheat-abort --active-abort --cura-job --pause-resume /tmp/native-printsvc.summary
 deneb-printsvc-smoke-verify --native --complete-job --restart --resources --boot-sync /tmp/native-printsvc.summary
 deneb-printsvc-smoke-compare /tmp/stock-printsvc.summary /tmp/native-printsvc.summary
@@ -384,9 +409,9 @@ that UM2C Z homes to max travel, so generated completion fixtures now use
 bounded `G1 Z-0.20 F30` moves away from the homed max position. Later
 full-matrix work also exposed active/abort ProtoError desync and stale native
 status risk, so the earlier active-abort evidence is no longer accepted as
-Section 8 proof. Completion and active-abort evidence must be regenerated with
-the corrected away-from-max fixture and must settle to idle with native
-active/stop flags false without manual recovery.
+Section 8 proof. Completion evidence and any future active-abort refreshes must
+use corrected bounded fixtures and must settle to idle with native active/stop
+flags false without manual recovery.
 The old positive-Z fixture timed out at the Z max travel boundary, so
 completion evidence must be regenerated with the corrected away-from-max fixture
 before Section 8 can be marked complete.
@@ -394,6 +419,39 @@ Native completion also deliberately waits for finish cleanup to drain before
 reporting idle, so the live verifier samples the active/stop-allowed state
 during planner-drain cleanup instead of accepting an immediate EOF-to-idle
 transition.
+The June 10, 2026 generated representative Cura-cluster smoke passed after the
+abort-settle harness update: all-axis prehome, bounded XYZ moves, active
+`printing` with Stop allowed, cluster DELETE abort, `aborting` with Stop
+disabled while cleanup drained, `cura-job-aborted-wait elapsed=10 rc=0
+status=idle`, and final native `idle` with active/Stop flags false. This is
+representative generated geometry proof for the cluster API path, not a full
+desktop Cura client or arbitrary slicer-output matrix.
+The later June 10 `d82245c` redeploy also passed the stricter heat,
+Stop-action abort, and local/USB native smokes. `--native --heat` showed
+40 C / 50 C low targets as `printing` with native active/Stop flags true, then
+cooldown idle with both flags false. `--native --active-abort` used the
+representative fixture with all-axis prehome and the UI/API stop action,
+observed active `printing` with Stop allowed, `aborting` with Stop disabled,
+and final idle with active/Stop false. `--native --local-job` proved native
+USB/local `pre_print` acceptance is stoppable and aborts back to idle.
+The final June 10 `d82245c` completion/resource refresh fixed the remaining
+EOF completion race by keeping active state when the G-code stream is exhausted
+but Marlin flow packets remain in flight. Completed native resource summaries
+are now rejected unless the final completion row has drained flow
+(`flow_inflight:0`, `flow_resend:0`). The accepted
+`/tmp/deneb-native-resources-final.summary` matched the paired stock final Z
+height and drained without resend debt.
+Do not raise `DENEB_PRINTSVC_STREAM_WINDOW` or shorten finish-drain timing as a
+throughput shortcut without new hardware proof. A window-6 trial produced
+resend debt and partial Z completion, and a fast-finish trial reported idle
+before the printer reached the expected final Z. The conservative stream window
+4 and finish drain 8/3 are currently part of the safety contract.
+One stock-parity detail matters for long jobs: the Python driver wraps Marlin
+sequence numbers from 254 back to 0 and never sends 255. Native flow control
+uses the same 0..254 ring and ACK ordering across wrap, with host tests for 260
+sent commands and for an ACK at 0 draining older 253/254 packets. This should
+be preserved when tuning throughput, because long resource fixtures cross the
+sequence boundary.
 `--idle` requires the initial status sample to be `idle` and the initial
 printer-root native active/stop flags to be false.
 Heat, motion, and macro verification require their snapshot status and printer
@@ -419,6 +477,17 @@ proved native-only route, boot-sync readiness, service restart recovery, idle
 nonzero ambient bed/nozzle readings around 25.5 C / 28.3 C. It did not run
 physical heat, motion, Cura, pause/resume, abort, completion, or throughput
 phases.
+The June 10, 2026 `Deneb_Update_d82245c.deneb` observe-only stock/native pair
+verified the stock-baseline collection lane on hardware:
+`/tmp/deneb-stock-d82245c.summary` passed
+`deneb-printsvc-smoke-verify --stock --firmware-proof` with stock
+`print_service.py` present, native `deneb-printsvc` absent, and ambient
+bed/nozzle/topcap telemetry around 28.3 C / 31.8 C / 28.0 C. The paired native
+`/tmp/deneb-native-d82245c-observe.summary` passed
+`deneb-printsvc-smoke-verify --native --idle --boot-sync --client-proof
+--firmware-proof` with native ownership and final idle active/Stop flags false.
+This is observe-only firmware/temperature parity evidence, not the required
+stock/native `--resources` release gate.
 The compare tool reports before/after deltas for system memory,
 driver-process RSS, CPU jiffies, CPU jiffies consumed between initial/final
 samples, boot-sync elapsed time, and print throughput. It fails if the stock summary lacks
@@ -433,6 +502,11 @@ or lacks per-lifecycle native stop-safety flags.
 Use `--require-reduction` for the release-decision pass; it fails unless native
 system memory, driver-process RSS, CPU interval, and boot-sync elapsed time are
 lower than the stock summary, and unless native throughput is at least stock.
+The latest paired stock/native resource run passed the memory, driver RSS, CPU,
+and boot-sync clauses but still failed throughput: stock measured 41 B/s and
+native measured 31 B/s. That means the strict non-experimental release gate is
+working as intended and remains closed until throughput is improved without
+regressing completion correctness.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also runs the

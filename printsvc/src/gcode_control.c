@@ -5,6 +5,7 @@
 #include "gcode_rewrite.h"
 #include "motion_send_error.h"
 #include "motion_sender.h"
+#include "print_state_rules.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -54,6 +55,46 @@ static void apply_accepted_heater_target(deneb_print_service_t *svc,
         svc->status.bed_t_set = target;
     else
         svc->status.head_t_set = target;
+}
+
+static int service_has_lifecycle_work(const deneb_print_service_t *svc)
+{
+    return svc && (svc->job_active || svc->abort_cleanup_pending ||
+                   svc->finish_cleanup_pending);
+}
+
+static int heater_targets_active(const deneb_print_service_t *svc)
+{
+    return svc && (svc->status.bed_t_set > 0.0f ||
+                   svc->status.head_t_set > 0.0f);
+}
+
+static void update_manual_heater_status(deneb_print_service_t *svc)
+{
+    if (!svc || service_has_lifecycle_work(svc) ||
+        svc->status.state == DENEB_PRINT_STATE_ERROR)
+        return;
+
+    if (heater_targets_active(svc)) {
+        svc->status.state = DENEB_PRINT_STATE_PREPARING;
+        snprintf(svc->status.req, sizeof(svc->status.req), "%s",
+                 DENEB_PRINT_REQ_PREHEATING);
+        return;
+    }
+
+    svc->status.state = DENEB_PRINT_STATE_IDLE;
+    snprintf(svc->status.req, sizeof(svc->status.req), "%s",
+             DENEB_PRINT_REQ_IDLE);
+}
+
+static void apply_queued_heater_targets(deneb_print_service_t *svc)
+{
+    if (!svc)
+        return;
+
+    for (size_t i = 0; i < svc->gcode_queue_count; i++)
+        apply_accepted_heater_target(svc, svc->gcode_queue[i]);
+    update_manual_heater_status(svc);
 }
 
 static void clear_queue(deneb_print_service_t *svc)
@@ -169,6 +210,7 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
             return -1;
         }
     }
+    apply_queued_heater_targets(svc);
 
     if (svc->gcode_queue_count > 0) {
         int rc;
@@ -179,6 +221,7 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
             return -1;
         }
     }
+    update_manual_heater_status(svc);
 
     deneb_command_reply_ok(reply, reply_sz, "gcode accepted");
     return 0;

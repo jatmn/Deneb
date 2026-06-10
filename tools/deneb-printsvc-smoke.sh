@@ -12,6 +12,7 @@ CLUSTER_API_BASE="${DENEB_CLUSTER_API_BASE:-http://127.0.0.1/cluster-api/v1}"
 LOG="${DENEB_PRINTSVC_SMOKE_LOG:-/tmp/deneb-printsvc-smoke.log}"
 SUMMARY="${DENEB_PRINTSVC_SMOKE_SUMMARY:-/tmp/deneb-printsvc-smoke.summary}"
 ENABLE_NATIVE=0
+EXPECT_STOCK=0
 RUN_HEAT=0
 RUN_MOTION=0
 RUN_LOCAL_JOB=0
@@ -30,6 +31,7 @@ RUN_PARSER_SELFTEST=0
 MAKE_COMPLETE_FIXTURE=0
 MAKE_ACTIVE_FIXTURE=0
 MAKE_PREHEAT_ABORT_FIXTURE=0
+MAKE_REPRESENTATIVE_FIXTURE=0
 PHYSICAL_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_OK:-0}"
 PHYSICAL_BUNDLE_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_BUNDLE_OK:-0}"
 JOB_PATH=""
@@ -43,9 +45,13 @@ MAKE_COMPLETE_FIXTURE_CYCLES=80
 MAKE_ACTIVE_FIXTURE_PATH=""
 MAKE_ACTIVE_FIXTURE_CYCLES=120
 MAKE_PREHEAT_ABORT_FIXTURE_PATH=""
+MAKE_REPRESENTATIVE_FIXTURE_PATH=""
+MAKE_REPRESENTATIVE_FIXTURE_CYCLES=24
 MACRO_ACTION=""
 COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-300}"
+ABORT_SETTLE_TIMEOUT="${DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT:-60}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
+FIRMWARE_PROOF_READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_FIRMWARE_PROOF_READY_TIMEOUT:-45}"
 ACTIVE_ABORT_DELAY="${DENEB_PRINTSVC_SMOKE_ACTIVE_ABORT_DELAY:-60}"
 PREHOME_ACTION="${DENEB_PRINTSVC_SMOKE_PREHOME_ACTION:-z_home}"
 
@@ -55,6 +61,7 @@ Usage: deneb-printsvc-smoke [options]
 
 Observe-only by default:
   --native              Restart and assert the native deneb-printsvc route
+  --stock               Assert the stock print_service.py route is active
   --no-restore          Accepted for older commands; native routing is not toggled
   --heat                Exercise low bed/nozzle heat targets, then cool down
   --motion              Exercise a Z-home request through the REST API
@@ -70,18 +77,26 @@ Observe-only by default:
   --complete-job PATH   Start PATH and wait for it to leave the active job API
   --completion-timeout SEC
                         Max seconds to wait for --complete-job, default 300
+  --abort-settle-timeout SEC
+                        Max seconds to wait for an abort to report idle,
+                        default 60
   --make-complete-fixture PATH [CYCLES]
                         Write a bounded old-Marlin Z-move completion fixture and exit
   --make-active-fixture PATH [CYCLES]
                         Write a bounded Z-only active-job fixture and exit
   --make-preheat-abort-fixture PATH
                         Write a low-temperature preheat-abort fixture and exit
+  --make-representative-fixture PATH [CYCLES]
+                        Write a bounded Cura-style XYZ fixture and exit
   --restart             Restart deneb-printsvc and deneb-api, then sample recovery
   --boot-sync           Wait for print backend route/status readiness evidence
   --client-proof        Observe-only proof for local UM API, Cura cluster API,
                         Deneb route diagnostics, and Digital Factory bridge status
   --firmware-proof      Observe-only proof for firmware/version fields and
                         ambient bed/nozzle/topcap telemetry
+  --firmware-proof-ready-timeout SEC
+                        Max seconds to wait for nonzero ambient telemetry,
+                        default 45
   --summary-parser-selftest
                         Exercise summary status/body parsing without hardware
   --physical-ok        Required for any phase that heats, homes, moves axes,
@@ -109,6 +124,7 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) ENABLE_NATIVE=1 ;;
+        --stock) EXPECT_STOCK=1 ;;
         --no-restore) ;;
         --heat) RUN_HEAT=1 ;;
         --motion) RUN_MOTION=1 ;;
@@ -179,6 +195,14 @@ while [ "$#" -gt 0 ]; do
             esac
             COMPLETION_TIMEOUT="$1"
             ;;
+        --abort-settle-timeout)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing seconds after --abort-settle-timeout" >&2; exit 2; }
+            case "$1" in
+                ''|*[!0-9]*) echo "invalid abort settle timeout: $1" >&2; exit 2 ;;
+            esac
+            ABORT_SETTLE_TIMEOUT="$1"
+            ;;
         --make-complete-fixture)
             shift
             [ "$#" -gt 0 ] || { echo "missing path after --make-complete-fixture" >&2; exit 2; }
@@ -205,10 +229,33 @@ while [ "$#" -gt 0 ]; do
             MAKE_PREHEAT_ABORT_FIXTURE=1
             MAKE_PREHEAT_ABORT_FIXTURE_PATH="$1"
             ;;
+        --make-representative-fixture)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing path after --make-representative-fixture" >&2; exit 2; }
+            MAKE_REPRESENTATIVE_FIXTURE=1
+            MAKE_REPRESENTATIVE_FIXTURE_PATH="$1"
+            if [ "$#" -gt 1 ]; then
+                case "$2" in
+                    ''|*[!0-9]*) ;;
+                    *)
+                        MAKE_REPRESENTATIVE_FIXTURE_CYCLES="$2"
+                        shift
+                        ;;
+                esac
+            fi
+            ;;
         --restart) RUN_RESTART=1 ;;
         --boot-sync) RUN_BOOT_SYNC=1 ;;
         --client-proof) RUN_CLIENT_PROOF=1 ;;
         --firmware-proof) RUN_FIRMWARE_PROOF=1 ;;
+        --firmware-proof-ready-timeout)
+            shift
+            [ "$#" -gt 0 ] || { echo "missing seconds after --firmware-proof-ready-timeout" >&2; exit 2; }
+            case "$1" in
+                ''|*[!0-9]*) echo "invalid firmware proof ready timeout: $1" >&2; exit 2 ;;
+            esac
+            FIRMWARE_PROOF_READY_TIMEOUT="$1"
+            ;;
         --summary-parser-selftest) RUN_PARSER_SELFTEST=1 ;;
         --physical-ok) PHYSICAL_OK=1 ;;
         --physical-bundle-ok) PHYSICAL_BUNDLE_OK=1 ;;
@@ -261,6 +308,11 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
+
+if [ "$ENABLE_NATIVE" = "1" ] && [ "$EXPECT_STOCK" = "1" ]; then
+    echo "--native and --stock are mutually exclusive" >&2
+    exit 2
+fi
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 : >"$LOG" || {
@@ -368,6 +420,49 @@ write_preheat_abort_fixture() {
     return 0
 }
 
+write_representative_fixture() {
+    path="$1"
+    cycle_count="$2"
+
+    case "$cycle_count" in
+        ''|*[!0-9]*) echo "invalid fixture cycle count: $cycle_count" >&2; return 2 ;;
+    esac
+    if [ "$cycle_count" -lt 1 ]; then
+        echo "fixture cycle count must be greater than zero" >&2
+        return 2
+    fi
+    if [ "$cycle_count" -gt 120 ]; then
+        echo "fixture cycle count must be 120 or lower to keep XYZ travel bounded" >&2
+        return 2
+    fi
+
+    mkdir -p "$(dirname "$path")" 2>/dev/null || true
+    {
+        printf '; Deneb native print-service representative XYZ smoke fixture\n'
+        printf '; DENEB_REPRESENTATIVE_XYZ_FIXTURE=1\n'
+        printf '; Old-Marlin-safe, no heat, no extrusion, no dwell.\n'
+        printf '; Requires smoke harness --prehome-action home before upload.\n'
+        printf 'G90\n'
+        i=1
+        while [ "$i" -le "$cycle_count" ]; do
+            case $((i % 4)) in
+                1) printf 'G1 X30.0 Y30.0 Z205.0 F1800\n' ;;
+                2) printf 'G1 X150.0 Y30.0 Z204.8 F1800\n' ;;
+                3) printf 'G1 X150.0 Y150.0 Z204.6 F1800\n' ;;
+                0) printf 'G1 X30.0 Y150.0 Z204.4 F1800\n' ;;
+            esac
+            i=$((i + 1))
+        done
+        printf 'M114\n'
+    } >"$path" || return 1
+    return 0
+}
+
+fixture_has_representative_geometry() {
+    [ -n "$1" ] && [ -f "$1" ] &&
+        grep -Eq '^; DENEB_REPRESENTATIVE_XYZ_FIXTURE=1$' "$1"
+}
+
 if [ "$MAKE_COMPLETE_FIXTURE" = "1" ]; then
     write_complete_fixture "$MAKE_COMPLETE_FIXTURE_PATH" "$MAKE_COMPLETE_FIXTURE_CYCLES"
     rc=$?
@@ -401,6 +496,18 @@ if [ "$MAKE_PREHEAT_ABORT_FIXTURE" = "1" ]; then
     fi
     summary "phase=make-preheat-abort-fixture path=$MAKE_PREHEAT_ABORT_FIXTURE_PATH rc=0 command=M109_low_target"
     say "wrote preheat-abort fixture: $MAKE_PREHEAT_ABORT_FIXTURE_PATH"
+    exit 0
+fi
+
+if [ "$MAKE_REPRESENTATIVE_FIXTURE" = "1" ]; then
+    write_representative_fixture "$MAKE_REPRESENTATIVE_FIXTURE_PATH" "$MAKE_REPRESENTATIVE_FIXTURE_CYCLES"
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        summary "phase=make-representative-fixture path=$MAKE_REPRESENTATIVE_FIXTURE_PATH cycles=$MAKE_REPRESENTATIVE_FIXTURE_CYCLES rc=$rc"
+        exit "$rc"
+    fi
+    summary "phase=make-representative-fixture path=$MAKE_REPRESENTATIVE_FIXTURE_PATH cycles=$MAKE_REPRESENTATIVE_FIXTURE_CYCLES rc=0 command=G1_XYZ"
+    say "wrote representative XYZ fixture: $MAKE_REPRESENTATIVE_FIXTURE_PATH cycles=$MAKE_REPRESENTATIVE_FIXTURE_CYCLES"
     exit 0
 fi
 
@@ -442,6 +549,17 @@ if [ "$RUN_JOB" = "1" ] && [ "$RUN_PAUSE_RESUME" = "1" ] &&
     say "ERROR: --job --pause-resume moves X/Y during pause and resume; use --prehome-action home"
     summary "phase=pause-resume-safety-gate rc=2 reason=requires_all_axis_home"
     exit 2
+fi
+
+if { [ "$RUN_JOB" = "1" ] && fixture_has_representative_geometry "$JOB_PATH"; } ||
+   { [ "$RUN_CURA_JOB" = "1" ] && fixture_has_representative_geometry "$CURA_JOB_PATH"; } ||
+   { [ "$RUN_ACTIVE_ABORT" = "1" ] && fixture_has_representative_geometry "$ACTIVE_ABORT_PATH"; } ||
+   { [ "$RUN_COMPLETE_JOB" = "1" ] && fixture_has_representative_geometry "$COMPLETE_JOB_PATH"; }; then
+    if [ "$PREHOME_ACTION" != "home" ]; then
+        say "ERROR: representative XYZ fixture moves X/Y; use --prehome-action home"
+        summary "phase=representative-fixture-safety-gate rc=2 reason=requires_all_axis_home"
+        exit 2
+    fi
 fi
 
 PHYSICAL_PHASE_COUNT="$(physical_phase_count)"
@@ -549,6 +667,15 @@ extract_json_number_field() {
     sanitize_summary_value "$value"
 }
 
+extract_json_position_z() {
+    raw="$1"
+
+    value="$(printf '%s' "$raw" |
+        sed -n 's/.*"position"[[:space:]]*:{[^}]*"z"[[:space:]]*:[[:space:]]*\(-\{0,1\}[0-9][0-9.]*\).*/\1/p' |
+        head -n 1)"
+    sanitize_summary_value "$value"
+}
+
 extract_json_bool_field() {
     raw="$1"
     key="$2"
@@ -557,6 +684,11 @@ extract_json_bool_field() {
         sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\\(true\\|false\\).*/\\1/p" |
         head -n 1)"
     sanitize_summary_value "$value"
+}
+
+positive_number_value() {
+    value="$1"
+    awk -v value="$value" 'BEGIN { exit !(value + 0 > 0) }' 2>/dev/null
 }
 
 extract_status_value() {
@@ -898,22 +1030,38 @@ firmware_proof() {
     say "===== firmware proof ====="
     summary "snapshot=firmware-proof"
 
-    http_get_capture /printer "$root_file"
-    root_rc=$?
-    [ "$root_rc" = "0" ] || rc=1
-    http_get_capture /printer/bed/temperature "$bed_file"
-    bed_rc=$?
-    [ "$bed_rc" = "0" ] || rc=1
-    http_get_capture /printer/heads/0/extruders/0/hotend/temperature "$nozzle_file"
-    nozzle_rc=$?
-    [ "$nozzle_rc" = "0" ] || rc=1
-    http_get_capture_base "$API_BASE" /airmanager "$air_file"
-    air_rc=$?
+    elapsed=0
+    interval=2
+    while [ "$elapsed" -le "$FIRMWARE_PROOF_READY_TIMEOUT" ]; do
+        http_get_capture /printer "$root_file"
+        root_rc=$?
+        [ "$root_rc" = "0" ] || rc=1
+        http_get_capture /printer/bed/temperature "$bed_file"
+        bed_rc=$?
+        [ "$bed_rc" = "0" ] || rc=1
+        http_get_capture /printer/heads/0/extruders/0/hotend/temperature "$nozzle_file"
+        nozzle_rc=$?
+        [ "$nozzle_rc" = "0" ] || rc=1
+        http_get_capture_base "$API_BASE" /airmanager "$air_file"
+        air_rc=$?
 
-    root_raw="$(cat "$root_file" 2>/dev/null || true)"
-    bed_raw="$(cat "$bed_file" 2>/dev/null || true)"
-    nozzle_raw="$(cat "$nozzle_file" 2>/dev/null || true)"
-    air_raw="$(cat "$air_file" 2>/dev/null || true)"
+        root_raw="$(cat "$root_file" 2>/dev/null || true)"
+        bed_raw="$(cat "$bed_file" 2>/dev/null || true)"
+        nozzle_raw="$(cat "$nozzle_file" 2>/dev/null || true)"
+        air_raw="$(cat "$air_file" 2>/dev/null || true)"
+
+        bed_current="$(extract_json_number_field "$bed_raw" current)"
+        nozzle_current="$(extract_json_number_field "$nozzle_raw" current)"
+        topcap_current="$(extract_json_number_field "$air_raw" current)"
+        [ -n "$topcap_current" ] || topcap_current="$(extract_json_number_field "$root_raw" current)"
+        if positive_number_value "$bed_current" &&
+           positive_number_value "$nozzle_current" &&
+           positive_number_value "$topcap_current"; then
+            break
+        fi
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
 
     if [ -s "$root_file" ]; then cat "$root_file" >>"$LOG"; printf '\n' >>"$LOG"; fi
     if [ -s "$bed_file" ]; then cat "$bed_file" >>"$LOG"; printf '\n' >>"$LOG"; fi
@@ -935,11 +1083,16 @@ firmware_proof() {
     topcap_present="$(extract_json_bool_field "$root_raw" present)"
     topcap_current="$(extract_json_number_field "$air_raw" current)"
     [ -n "$topcap_current" ] || topcap_current="$(extract_json_number_field "$root_raw" current)"
+    if ! positive_number_value "$bed_current" ||
+       ! positive_number_value "$nozzle_current" ||
+       ! positive_number_value "$topcap_current"; then
+        rc=1
+    fi
 
     rm -f "$root_file" "$bed_file" "$nozzle_file" "$air_file"
 
     say "firmware-proof rc=$rc firmware=${firmware:-unknown} machine_type=${machine_type:-unknown} bed=${bed_current:-unknown}/${bed_target:-unknown} nozzle=${nozzle_current:-unknown}/${nozzle_target:-unknown}"
-    summary "phase=firmware-proof kind=api root_rc=$root_rc bed_rc=$bed_rc nozzle_rc=$nozzle_rc airmanager_rc=$air_rc rc=$rc firmware=${firmware:-unknown} machine_type=${machine_type:-unknown} pcb_id=${pcb_id:-unknown} pcb_id_valid=${pcb_id_valid:-unknown} bed_current=${bed_current:-unknown} bed_target=${bed_target:-unknown} nozzle_current=${nozzle_current:-unknown} nozzle_target=${nozzle_target:-unknown} topcap_present=${topcap_present:-unknown} topcap_current=${topcap_current:-unknown} status=${status_value:-unknown}"
+    summary "phase=firmware-proof kind=api root_rc=$root_rc bed_rc=$bed_rc nozzle_rc=$nozzle_rc airmanager_rc=$air_rc rc=$rc wait_seconds=$elapsed firmware=${firmware:-unknown} machine_type=${machine_type:-unknown} pcb_id=${pcb_id:-unknown} pcb_id_valid=${pcb_id_valid:-unknown} bed_current=${bed_current:-unknown} bed_target=${bed_target:-unknown} nozzle_current=${nozzle_current:-unknown} nozzle_target=${nozzle_target:-unknown} topcap_present=${topcap_present:-unknown} topcap_current=${topcap_current:-unknown} status=${status_value:-unknown}"
     return "$rc"
 }
 
@@ -1020,6 +1173,45 @@ wait_for_job_inactive() {
     return 1
 }
 
+wait_for_abort_idle() {
+    label="$1"
+    timeout="$2"
+    elapsed=0
+    interval=2
+    status_file="/tmp/deneb-printsvc-smoke-abort-status.$$"
+    printer_file="/tmp/deneb-printsvc-smoke-abort-printer.$$"
+
+    while [ "$elapsed" -le "$timeout" ]; do
+        http_get_capture /printer/status "$status_file"
+        status_rc=$?
+        status_raw="$(cat "$status_file" 2>/dev/null || true)"
+        status_value="$(extract_status_value "$status_raw")"
+        http_get_capture /printer "$printer_file"
+        printer_rc=$?
+        printer_raw="$(cat "$printer_file" 2>/dev/null || true)"
+        printer_body="$(sanitize_summary_value "$printer_raw")"
+
+        if [ "$status_rc" = "0" ] &&
+           [ "$printer_rc" = "0" ] &&
+           [ "$status_value" = "idle" ] &&
+           printf '%s\n' "$printer_body" | grep -q 'native_active:false' &&
+           printf '%s\n' "$printer_body" | grep -q 'native_stop_allowed:false'; then
+            summary "phase=${label}-wait elapsed=$elapsed rc=0 status=idle"
+            rm -f "$status_file" "$printer_file"
+            return 0
+        fi
+
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+
+    status_body="$(sanitize_summary_value "$status_raw")"
+    say "$label timeout after ${elapsed}s status=${status_value:-unknown}"
+    summary "phase=${label}-wait elapsed=$elapsed rc=1 status=${status_value:-unknown} status_rc=$status_rc status_body=${status_body:-unknown} printer_rc=$printer_rc printer_body=${printer_body:-unknown}"
+    rm -f "$status_file" "$printer_file"
+    return 1
+}
+
 completion_fixture_has_progress_command() {
     path="$1"
 
@@ -1070,8 +1262,9 @@ wait_for_boot_sync() {
         rm -f "$route_file" "$status_file"
 
         if [ "$route_rc" = "0" ] && [ "$status_rc" = "0" ] && \
-           printf '%s' "$route_value" | grep -q 'native_only_route:true' && \
-           [ -n "$status_value" ] && [ "$status_value" != "unknown" ]; then
+           [ -n "$status_value" ] && [ "$status_value" != "unknown" ] && \
+           { [ "$EXPECT_STOCK" = "1" ] ||
+             printf '%s' "$route_value" | grep -q 'native_only_route:true'; }; then
             uptime_now="$(monotonic_seconds)"
             boot_elapsed=$((uptime_now - start_uptime))
             [ "$boot_elapsed" -ge 0 ] || boot_elapsed=0
@@ -1144,6 +1337,31 @@ assert_native_driver_process() {
     return "$rc"
 }
 
+assert_stock_driver_process() {
+    label="$1"
+    deneb_running=0
+    stock_running=0
+
+    if ps w | grep -E '(^|[ /])deneb-printsvc([ ]|$)' |
+       grep -v grep >/dev/null 2>&1; then
+        deneb_running=1
+    fi
+    if ps w | grep '/home/cygnus/marlindriver/print_service.py' |
+       grep -v grep >/dev/null 2>&1; then
+        stock_running=1
+    fi
+
+    if [ "$stock_running" = "1" ] && [ "$deneb_running" = "0" ]; then
+        rc=0
+    else
+        rc=1
+    fi
+
+    say "$label: stock process check deneb_printsvc=$deneb_running print_service_py=$stock_running rc=$rc"
+    summary "phase=$label kind=process deneb_printsvc=$deneb_running print_service_py=$stock_running rc=$rc"
+    return "$rc"
+}
+
 snapshot() {
     snapshot_label="$1"
     say "===== snapshot: $snapshot_label ====="
@@ -1211,15 +1429,23 @@ if [ "$RUN_PARSER_SELFTEST" = "1" ]; then
 fi
 
 say "deneb-printsvc smoke started"
-say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
-summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
+say "log=$LOG summary=$SUMMARY api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE stock=$EXPECT_STOCK heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
+summary "start api=$API_BASE cluster_api=$CLUSTER_API_BASE native=$ENABLE_NATIVE stock=$EXPECT_STOCK heat=$RUN_HEAT motion=$RUN_MOTION macro=$RUN_MACRO local_job=$RUN_LOCAL_JOB job=$RUN_JOB cura_job=$RUN_CURA_JOB preheat_abort=$RUN_PREHEAT_ABORT active_abort=$RUN_ACTIVE_ABORT active_abort_delay=$ACTIVE_ABORT_DELAY complete_job=$RUN_COMPLETE_JOB pause_resume=$RUN_PAUSE_RESUME restart=$RUN_RESTART boot_sync=$RUN_BOOT_SYNC client_proof=$RUN_CLIENT_PROOF firmware_proof=$RUN_FIRMWARE_PROOF"
 
-append_cmd /usr/bin/deneb-printsvc --smoke-test
-summary "phase=printsvc-self-test rc=$?"
+if [ "$EXPECT_STOCK" = "1" ]; then
+    say "stock mode: skipping native deneb-printsvc --smoke-test"
+    summary "phase=printsvc-self-test rc=0 mode=stock-skipped"
+else
+    append_cmd /usr/bin/deneb-printsvc --smoke-test
+    summary "phase=printsvc-self-test rc=$?"
+fi
 if [ "$RUN_BOOT_SYNC" = "1" ]; then
     wait_for_boot_sync "$READY_TIMEOUT"
     rc=$?
     [ "$rc" = "0" ] || exit "$rc"
+fi
+if [ "$EXPECT_STOCK" = "1" ]; then
+    assert_stock_driver_process "stock-driver-process" || exit $?
 fi
 snapshot "initial"
 
@@ -1347,6 +1573,8 @@ fi
 if [ "$RUN_JOB" = "1" ]; then
     if [ "$RUN_PAUSE_RESUME" = "1" ]; then
         physical_safety_plan "job" "XYZ" "home" "pause_resume_restore_and_user_supplied_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
+    elif fixture_has_representative_geometry "$JOB_PATH"; then
+        physical_safety_plan "job" "XYZ" "home" "bounded_cura_style_xyz_no_heat_no_extrusion_until_abort" "endstop_or_unexpected_motion"
     else
         physical_safety_plan "job" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
     fi
@@ -1373,8 +1601,10 @@ if [ "$RUN_JOB" = "1" ]; then
     api_snapshot "job-abort-requested"
     sleep 2
     snapshot "job-abort-draining"
-    sleep 8
+    abort_wait_rc=0
+    wait_for_abort_idle "job-aborted" "$ABORT_SETTLE_TIMEOUT" || abort_wait_rc=$?
     snapshot "job-aborted"
+    [ "$abort_wait_rc" = "0" ] || exit "$abort_wait_rc"
 fi
 
 if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
@@ -1394,12 +1624,18 @@ if [ "$RUN_PREHEAT_ABORT" = "1" ]; then
     api_snapshot "preheat-abort-requested"
     sleep 2
     snapshot "preheat-abort-draining"
-    sleep 8
+    abort_wait_rc=0
+    wait_for_abort_idle "preheat-aborted" "$ABORT_SETTLE_TIMEOUT" || abort_wait_rc=$?
     snapshot "preheat-aborted"
+    [ "$abort_wait_rc" = "0" ] || exit "$abort_wait_rc"
 fi
 
 if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
-    physical_safety_plan "active-abort" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_active_abort" "endstop_temperature_or_unexpected_motion"
+    if fixture_has_representative_geometry "$ACTIVE_ABORT_PATH"; then
+        physical_safety_plan "active-abort" "XYZ" "home" "bounded_cura_style_xyz_no_heat_no_extrusion_until_active_abort" "endstop_or_unexpected_motion"
+    else
+        physical_safety_plan "active-abort" "job_defined" "$PREHOME_ACTION" "user_supplied_gcode_until_active_abort" "endstop_temperature_or_unexpected_motion"
+    fi
     guarded_prehome "active-abort-prehome" || exit $?
     say "active-abort-start: multipart upload $ACTIVE_ABORT_PATH"
     multipart_post "${API_BASE}/print_job" "$ACTIVE_ABORT_PATH" \
@@ -1415,12 +1651,18 @@ if [ "$RUN_ACTIVE_ABORT" = "1" ]; then
     api_snapshot "active-abort-requested"
     sleep 2
     snapshot "active-abort-draining"
-    sleep 8
+    abort_wait_rc=0
+    wait_for_abort_idle "active-aborted" "$ABORT_SETTLE_TIMEOUT" || abort_wait_rc=$?
     snapshot "active-aborted"
+    [ "$abort_wait_rc" = "0" ] || exit "$abort_wait_rc"
 fi
 
 if [ "$RUN_CURA_JOB" = "1" ]; then
-    physical_safety_plan "cura-job" "job_defined" "$PREHOME_ACTION" "cura_uploaded_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
+    if fixture_has_representative_geometry "$CURA_JOB_PATH"; then
+        physical_safety_plan "cura-job" "XYZ" "home" "bounded_cura_style_xyz_no_heat_no_extrusion_until_abort" "endstop_or_unexpected_motion"
+    else
+        physical_safety_plan "cura-job" "job_defined" "$PREHOME_ACTION" "cura_uploaded_gcode_until_abort" "endstop_temperature_or_unexpected_motion"
+    fi
     guarded_prehome "cura-job-prehome" || exit $?
     say "cura-job-start: cluster multipart upload $CURA_JOB_PATH"
     multipart_post "${CLUSTER_API_BASE}/print_jobs" "$CURA_JOB_PATH" \
@@ -1444,11 +1686,16 @@ if [ "$RUN_CURA_JOB" = "1" ]; then
     api_snapshot "cura-job-abort-requested"
     sleep 2
     snapshot "cura-job-abort-draining"
-    sleep 8
+    abort_wait_rc=0
+    wait_for_abort_idle "cura-job-aborted" "$ABORT_SETTLE_TIMEOUT" || abort_wait_rc=$?
     snapshot "cura-job-aborted"
+    [ "$abort_wait_rc" = "0" ] || exit "$abort_wait_rc"
 fi
 
 if [ "$RUN_COMPLETE_JOB" = "1" ]; then
+    complete_job_running_z=""
+    complete_job_final_z=""
+    complete_job_delta_z=""
     if [ ! -f "$COMPLETE_JOB_PATH" ]; then
         say "ERROR: complete-job path does not exist: $COMPLETE_JOB_PATH"
         exit 1
@@ -1459,7 +1706,11 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
         exit 1
     fi
     summary "phase=complete-job-fixture-check path=$COMPLETE_JOB_PATH rc=0 reason=progress_command"
-    physical_safety_plan "complete-job" "Z" "$PREHOME_ACTION" "bounded_relative_Z_negative_max_96mm" "z_endstop_or_unexpected_direction"
+    if fixture_has_representative_geometry "$COMPLETE_JOB_PATH"; then
+        physical_safety_plan "complete-job" "XYZ" "home" "bounded_cura_style_xyz_no_heat_no_extrusion_to_completion" "endstop_or_unexpected_motion"
+    else
+        physical_safety_plan "complete-job" "Z" "$PREHOME_ACTION" "bounded_relative_Z_negative_max_96mm" "z_endstop_or_unexpected_direction"
+    fi
     guarded_prehome "complete-job-prehome" || exit $?
     complete_job_bytes="$(wc -c <"$COMPLETE_JOB_PATH" 2>/dev/null | awk '{print $1}')"
     complete_job_bytes="${complete_job_bytes:-0}"
@@ -1473,6 +1724,10 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
     [ "$rc" = "0" ] || exit "$rc"
     sleep 20
     snapshot "complete-job-running"
+    running_printer_file="/tmp/deneb-printsvc-complete-running-printer.$$"
+    http_get_capture /printer "$running_printer_file" || true
+    complete_job_running_z="$(extract_json_position_z "$(cat "$running_printer_file" 2>/dev/null || true)")"
+    rm -f "$running_printer_file"
     wait_for_job_inactive "$COMPLETION_TIMEOUT"
     rc=$?
     [ "$rc" = "0" ] || exit "$rc"
@@ -1483,6 +1738,20 @@ if [ "$RUN_COMPLETE_JOB" = "1" ]; then
     summary "phase=job-throughput path=$COMPLETE_JOB_PATH bytes=$complete_job_bytes elapsed_seconds=$complete_job_elapsed bytes_per_second=$complete_job_bps rc=0"
     sleep 5
     snapshot "job-completed"
+    final_printer_file="/tmp/deneb-printsvc-complete-final-printer.$$"
+    http_get_capture /printer "$final_printer_file" || true
+    complete_job_final_z="$(extract_json_position_z "$(cat "$final_printer_file" 2>/dev/null || true)")"
+    rm -f "$final_printer_file"
+    complete_job_delta_z="$(awk -v running="$complete_job_running_z" -v final="$complete_job_final_z" 'BEGIN {
+        if (running == "" || final == "") {
+            print ""
+        } else if ((running + 0) >= (final + 0)) {
+            printf("%.3f", (running + 0) - (final + 0))
+        } else {
+            printf("%.3f", (final + 0) - (running + 0))
+        }
+    }' 2>/dev/null)"
+    summary "phase=complete-job-position running_z=${complete_job_running_z:-unknown} final_z=${complete_job_final_z:-unknown} delta_z=${complete_job_delta_z:-unknown} rc=0"
 fi
 
 snapshot "final"
