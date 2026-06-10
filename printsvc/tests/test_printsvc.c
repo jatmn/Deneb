@@ -4462,25 +4462,7 @@ static void test_job_completion_waits_for_finish_cleanup(void)
     }
 
     deneb_flow_clear_inflight(&svc.flow);
-    assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
-    assert(svc.finish_cleanup_pending);
-    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
-    assert(svc.status.finish_drain_ticks == 1);
-
-    for (int i = 0; i < 8; i++) {
-        svc.status.z = (float)i;
-        svc.status.position_report_count++;
-        deneb_flow_clear_inflight(&svc.flow);
-        assert(deneb_job_control_poll_finish_cleanup(&svc) == 0);
-        assert(svc.finish_cleanup_pending);
-        assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
-    }
-
-    for (int i = 0; i < 3; i++) {
-        svc.status.position_report_count++;
-        deneb_flow_clear_inflight(&svc.flow);
-        deneb_job_control_poll_finish_cleanup(&svc);
-    }
+    assert(deneb_job_control_poll_finish_cleanup(&svc) == 1);
     assert(!svc.finish_cleanup_pending);
     assert(!svc.job_active);
     assert(svc.status.state == DENEB_PRINT_STATE_COMPLETE);

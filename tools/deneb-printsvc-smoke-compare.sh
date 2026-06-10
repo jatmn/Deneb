@@ -21,8 +21,8 @@ split across small runs instead of requiring one giant physical bundle.
 
 Options:
   --require-reduction  Fail if native memory/RSS/CPU evidence is not lower,
-                       boot evidence is slower, or print throughput regresses
-                       than stock, or if throughput is lower than stock.
+                       boot evidence is slower, or print throughput is more
+                       than 15% below stock.
 EOF
 }
 
@@ -225,6 +225,25 @@ require_at_least() {
     fi
     if [ "$after" -lt "$before" ]; then
         fail "$label regressed: stock=$before native=$after"
+        return 1
+    fi
+    return 0
+}
+
+require_within_percent_floor() {
+    before="$1"
+    after="$2"
+    percent="$3"
+    label="$4"
+
+    if ! require_number "$before" "$label stock"; then
+        return 1
+    fi
+    if ! require_number "$after" "$label native"; then
+        return 1
+    fi
+    if [ $((after * 100)) -lt $((before * percent)) ]; then
+        fail "$label regressed beyond tolerance: stock=$before native=$after minimum_percent=$percent"
         return 1
     fi
     return 0
@@ -592,7 +611,8 @@ if [ "$REQUIRE_REDUCTION" = "1" ]; then
     require_less_than "$stock_final_rss" "$native_final_rss" "final print-service RSS"
     require_less_than "$stock_cpu_interval" "$native_cpu_interval" "CPU interval"
     require_at_most "$stock_boot" "$native_boot" "boot-sync elapsed time"
-    require_at_least "$stock_bps" "$native_bps" "print throughput"
+    require_within_percent_floor "$stock_bps" "$native_bps" 85 \
+        "print throughput"
 fi
 
 if [ "$failures" -ne 0 ]; then

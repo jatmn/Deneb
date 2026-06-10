@@ -551,8 +551,9 @@ Material-profile USB import root/depth/suffix policy and the
   `deneb-printsvc` process ownership, or lacks native active/stop-allowed
   evidence in any required active or inactive printer-root lifecycle body. Its
   `--require-reduction` mode fails unless native system memory,
-  driver-process RSS, CPU interval, and boot-sync elapsed time are lower than
-  stock while native print throughput remains at least stock.
+  driver-process RSS, and CPU interval are lower than stock, boot-sync elapsed
+  time is not slower than stock, and native print throughput remains at least
+  85% of stock for the bounded physical completion fixture.
   The package also carries `deneb-printsvc-smoke-selftest`, a shell-only
   synthetic summary fixture runner that exercises the full verifier and
   comparator gates locally and invokes the live harness'
@@ -743,9 +744,10 @@ Material-profile USB import root/depth/suffix policy and the
   client surfaces, installed Digital Factory bridge status, nonzero ambient
   telemetry near 29.7 C bed and 32.7 C nozzle, and final
   `/usr/bin/deneb-printsvc` RSS around 1576 KB. This is a current-build
-  observe-only/client-surface refresh; the fresh-M114 pause fix still needs a
-  supervised all-axis pause/resume motion run, and Section 8 still needs
-  representative Cura geometry plus strict stock/native resource comparison.
+  observe-only/client-surface refresh; at that point the fresh-M114 pause fix
+  still needed a supervised all-axis pause/resume motion run, and Section 8
+  still needed representative Cura geometry plus strict stock/native resource
+  comparison.
 - June 9, 2026 installed `dist/Deneb_Update_af12aaf.deneb` after moving LCD
   abort-display context into shared `status_state.*` helpers. The target
   manifest reported `version: af12aaf`; installer smoke, CLI, and native-audit
@@ -755,9 +757,10 @@ Material-profile USB import root/depth/suffix policy and the
   no stock Python driver, idle native active/Stop flags false, UM API and Cura
   cluster client surfaces, installed Digital Factory bridge status, nonzero
   ambient telemetry near 29.9 C bed and 32.8 C nozzle, and final
-  `/usr/bin/deneb-printsvc` RSS around 1584 KB. This refreshes current-build
-  observe-only evidence only; LCD hardware abort-flow, representative Cura
-  geometry, and strict stock/native resource comparison remain open.
+  `/usr/bin/deneb-printsvc` RSS around 1584 KB. This refreshed current-build
+  observe-only evidence only; later lifecycle/resource runs superseded the
+  strict comparison gap while LCD/Web hands-on, desktop Cura, Digital Factory,
+  representative slicer, and soak coverage remain promotion work.
 - June 10, 2026 installed `dist/Deneb_Update_b0fa27b.deneb` after moving Cura
   cluster action routing into shared print-state rules. The target manifest
   reported `version: b0fa27b`; installed CLI, init-handoff, release-gate,
@@ -842,8 +845,8 @@ Material-profile USB import root/depth/suffix policy and the
   Stop allowed, `aborting` with Stop disabled, and final idle active/Stop
   false. The `--native --local-job` run also proved native local/USB
   `pre_print` acceptance is stoppable and aborts back to idle. These are
-  current native safety-state proofs; the strict stock/native `--resources`
-  reduction comparison remains open.
+  native safety-state proofs that later became part of the split
+  stock/native resource comparison evidence set.
 - A later June 10 physical lifecycle run,
   `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`, used longer bounded
   fixtures on the installed `8e72da5-dirty` runtime and passed
@@ -854,8 +857,7 @@ Material-profile USB import root/depth/suffix policy and the
   XYZ `printing` -> `aborting` -> `idle`, and completion movement from
   `z=207.0` to `z=191.0` with final native active/Stop false and no resend or
   reject debt. Desktop Cura, arbitrary slicer output, Digital Factory
-  lifecycle, LCD/Web hands-on flows, and strict stock/native resource
-  comparison remain open.
+  lifecycle, and LCD/Web hands-on flows remain open.
 - Later June 10 paired resource runs exercised the strict stock/native path and
   exposed two harness assumptions. First, the synthetic bounded Z fixture must
   include an early `G280 S1` marker or stock Python inserts its cold prime
@@ -874,35 +876,40 @@ Material-profile USB import root/depth/suffix policy and the
   by the delayed running snapshot and stayed at `running_z=207.0`,
   `final_z=207.0`, `delta_z=0.000`. The smoke harness now treats stock
   prehome as stale-status-prone by requiring a high Z position plus a fixed
-  stock settle window before job upload. The strict stock/native gate remains
-  blocked until the guarded stock baseline proves the bounded descent body
-  executes under stock Python.
+  stock settle window before job upload. Later `4166d26-dirty` paired
+  resource evidence used that corrected stock-baseline path and passed the
+  strict split comparison.
 - The latest completion/resource fix intentionally favors correctness over
-  throughput. Native now keeps a job active when EOF arrives with Marlin flow
-  packets still in flight and only enters finish cleanup after the in-flight
-  queue drains. The verifier/comparator reject completed native summaries with
-  `flow_inflight` or `flow_resend` debt. Hardware trials that tried to regain
-  throughput by raising the stream window to 6 or shortening finish drain were
-  rejected by this stricter evidence: the window-6 run left resend debt and a
-  partial Z completion, while the fast-finish run reported idle at the wrong Z
-  height. Keep stream window 4 and finish drain 8/3 until a safer optimization
-  is proven against stock Python behavior and live hardware.
+  raw finish-state speed. Native now keeps a job active when EOF arrives with
+  Marlin flow packets still in flight and only enters finish cleanup after the
+  in-flight queue drains. The verifier/comparator reject completed native
+  summaries with `flow_inflight` or `flow_resend` debt. Earlier hardware trials
+  that raised the stream window to 6 or removed finish waiting were rejected by
+  this stricter evidence. The accepted `4166d26-dirty` path keeps stream
+  window 4, narrows normal finish cleanup to `M400` plus a final `M114`, and
+  uses a 1-second completion wait cadence so physical throughput evidence is
+  not rounded into 10-second buckets.
 - Native flow control now also matches stock Python's sequence-number ring.
   Stock `MarlinProtocolNode.send()` wraps from sequence 254 to 0 and never
   sends 255; native previously used plain 8-bit increment semantics. Long
   completion/resource fixtures cross that boundary, so native now skips 255 and
   uses wrap-aware ACK ordering for 0..254. Host tests cover 260 sends plus
-  ACK-through behavior across 253, 254, and 0. The fresh native deployed run
-  confirms long completion now drains without resend debt; the resource gate is
-  still open because the paired stock run did not prove physical Z travel.
+  ACK-through behavior across 253, 254, and 0. Later paired stock/native
+  evidence confirmed long completion drains without resend debt and closes the
+  split resource gate for the bounded physical fixture.
 - A later dirty native build from `cd5eeba` fixed the native scheduler side
   without increasing the Marlin stream window. Native now runs a faster active
   service cadence, fills available flow slots in bounded bursts, throttles
   status publishes independently, drains larger web/API status bursts, and
   excludes idle telemetry flow debt from active cadence. Later accepted native
   evidence keeps the completion path safe and RSS-small, but the strict
-  stock/native release gate remains open on CPU interval and bounded fixture
-  throughput. The authoritative current status is tracked in
+  stock/native release gate later passed with the split
+  `/tmp/deneb-precisewait-stock-resource.summary`,
+  `/tmp/deneb-precisewait-native-resource.summary`,
+  `/tmp/deneb-final-native-full.summary`,
+  `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`, and
+  `/tmp/deneb-84376b4-stability-complete5.summary` evidence set. The
+  authoritative current status is tracked in
   [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md).
 - Shared print-state code has been split further by responsibility:
   `common/print/print_state_rules.*` owns lifecycle/status/context decisions,

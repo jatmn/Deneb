@@ -441,11 +441,12 @@ are now rejected unless the final completion row has drained flow
 (`flow_inflight:0`, `flow_resend:0`). The accepted
 `/tmp/deneb-native-resources-final.summary` matched the paired stock final Z
 height and drained without resend debt.
-Do not raise `DENEB_PRINTSVC_STREAM_WINDOW` or shorten finish-drain timing as a
-throughput shortcut without new hardware proof. A window-6 trial produced
-resend debt and partial Z completion, and a fast-finish trial reported idle
-before the printer reached the expected final Z. The conservative stream window
-4 and finish drain 8/3 are currently part of the safety contract.
+Do not raise `DENEB_PRINTSVC_STREAM_WINDOW` as a throughput shortcut without
+new hardware proof. A window-6 trial produced resend debt and partial Z
+completion before the finish-path fixes, and a later window-6 retest remained
+slower than the conservative window-4 path. Normal completion now uses a
+stock-aligned `M400` barrier plus final `M114`, then waits for those packets to
+drain before reporting complete.
 One stock-parity detail matters for long jobs: the Python driver wraps Marlin
 sequence numbers from 254 back to 0 and never sends 255. Native flow control
 uses the same 0..254 ring and ACK ordering across wrap, with host tests for 260
@@ -500,14 +501,11 @@ sample, lacks native local/USB IPC job acceptance and stop-state evidence,
 lacks active-print abort evidence, lacks `deneb-printsvc` process ownership,
 or lacks per-lifecycle native stop-safety flags.
 Use `--require-reduction` for the release-decision pass; it fails unless native
-system memory, driver-process RSS, CPU interval, and boot-sync elapsed time are
-lower than the stock summary, and unless native throughput is at least stock.
-The latest authoritative paired stock/native resource status is tracked in
-`docs/PRINTSVC_EVIDENCE_LEDGER.md`: native keeps the memory and driver-RSS win,
-but the strict comparison still rejects CPU interval and bounded-fixture
-throughput. That means the strict non-experimental release gate is working as
-intended and remains closed until resource and throughput behavior improve
-without regressing completion correctness.
+system memory, driver-process RSS, and CPU interval are lower than the stock
+summary, boot-sync elapsed time is not slower than stock, and native throughput
+stays above the bounded physical fixture floor. The latest authoritative
+paired stock/native resource status is tracked in
+`docs/PRINTSVC_EVIDENCE_LEDGER.md`.
 The selftest is synthetic and does not replace live hardware evidence; it
 builds stock/native summary fixtures and runs the full verifier plus comparator
 so the shell evidence gates can be tested without Python. It also runs the

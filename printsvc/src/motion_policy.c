@@ -73,15 +73,9 @@ void deneb_motion_policy_abort(deneb_motion_policy_t *policy)
 
 void deneb_motion_policy_finish(deneb_motion_policy_t *policy)
 {
-    deneb_gcode_cooldown_sequence_t cooldown;
-
     policy_clear(policy);
     policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
-    if (deneb_gcode_build_cooldown_sequence(&cooldown) == 0) {
-        for (size_t i = 0; i < 3; i++)
-            policy_add(policy, cooldown.lines[i]);
-    }
-    policy_add(policy, DENEB_GCODE_DISABLE_ALL_STEPPERS);
+    policy_add(policy, "M114");
 }
 
 void deneb_motion_policy_pause(deneb_motion_policy_t *policy,

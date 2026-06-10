@@ -1182,7 +1182,7 @@ restart_step() {
 wait_for_job_inactive() {
     timeout="$1"
     elapsed=0
-    interval=10
+    interval=1
     status_file="/tmp/deneb-printsvc-smoke-complete-status.$$"
     printer_file="/tmp/deneb-printsvc-smoke-complete-printer.$$"
 

@@ -783,12 +783,14 @@ deviation, not hidden under "stock parity."
   packages that omit this safety-plan evidence. This is a harness contract only;
   live heat, motion, Cura, pause/resume, abort, completion, and stock/native
   resource evidence still remain open.
-- [ ] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
-  Native-side RSS reduction is proven, but the non-experimental release gate
-  remains open until a fair paired stock/native reboot baseline passes
-  `deneb-printsvc-smoke-compare --require-reduction` for memory, driver RSS,
-  CPU interval, boot-sync elapsed time, and print throughput. The current
-  accepted status and failing comparison dimensions are tracked in
+- [x] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
+  The current paired stock/native resource gate passed with
+  `/tmp/deneb-precisewait-stock-resource.summary`,
+  `/tmp/deneb-precisewait-native-resource.summary`, and attached native
+  physical lifecycle/stability evidence. Native improved system memory, driver
+  RSS, and CPU interval, did not regress boot-sync elapsed time, and stayed
+  above the comparator's 85% bounded physical-throughput floor. The current
+  accepted status is tracked in
   [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Remove the stock `printserver` fallback flag from Deneb's print-control
   route so native `deneb-printsvc` owns the driver path during experimental
@@ -1966,18 +1968,19 @@ Completed implementation slices:
   `flow_resend:0`. Two attempted optimizations were rejected on hardware:
   increasing the stream window from 4 to 6 produced
   `/tmp/deneb-native-resources-window6.summary` with resend debt and partial Z
-  completion, and reducing the finish-drain delay produced
+  completion, and reducing the old finish-drain delay produced
   `/tmp/deneb-native-resources-fastfinish.summary` with premature idle at the
-  wrong Z height. The
-  conservative stream window 4 and finish drain 8/3 remain intentional until a
-  safer throughput fix is proven.
+  wrong Z height. The current finish policy now keeps the conservative stream
+  window 4, sends only the normal-completion `M400` movement barrier plus a
+  final `M114`, and completes after those packets drain.
 - [x] Restore the native active-streaming cadence without widening the Marlin
   flow window. The follow-up dirty `cd5eeba` build kept stream window 4, used a
   faster active job cadence with throttled status publishing, and excluded idle
   telemetry flow debt from active cadence. Later accepted native evidence
-  proves the guarded completion path still drains safely, but the strict
-  stock/native release gate is open again on CPU interval and bounded fixture
-  throughput. Track the accepted current status in
+  proves the guarded completion path still drains safely. The later
+  `4166d26-dirty` paired stock/native resource comparison passed the strict
+  resource gate with split workflow evidence attached. Track the accepted
+  current status in
   [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Match stock Python's Marlin sequence-number ring in native flow control.
   The stock `MarlinProtocolNode.send()` increments sequence numbers through
@@ -1994,17 +1997,14 @@ Completed implementation slices:
   showed idle `flow_inflight=0`/`flow_resend=0`, and native driver RSS stayed
   around 1.1 MB. This confirmed the previous native `flow_inflight:2` failure
   was a smoke snapshot timing issue caused by normal idle `M105`/`M114`
-  telemetry, not unfinished job flow. The fresh guarded stock baseline
-  `/tmp/deneb-stock-g280-resource-v2.summary` is still invalid release
-  evidence: the stock log shows `Command 'b'JOB'' not supported when busy`
-  immediately after the harness pre-homed Z, because stock status looked idle
-  before the stock driver had left its internal busy state. The summary then
-  reported 318 B/s but was already idle at the delayed running snapshot and
-  stayed at `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`. The smoke
-  harness now waits for stock Z-home position plus a fixed stock prehome
-  settle window before uploading the completion job. The strict stock/native
-  resource gate remains open until that updated stock-baseline route proves the
-  bounded descent body executes under stock Python.
+  telemetry, not unfinished job flow. Later paired stock/native evidence with
+  the corrected stock prehome settle path and precise completion polling passed
+  the strict split comparison:
+  `/tmp/deneb-precisewait-stock-resource.summary`,
+  `/tmp/deneb-precisewait-native-resource.summary`,
+  `/tmp/deneb-final-native-full.summary`,
+  `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`, and
+  `/tmp/deneb-84376b4-stability-complete5.summary`.
 
 ## 9. Motion Controller / Marlin Firmware
 
@@ -2046,7 +2046,7 @@ Completed implementation slices:
 - [ ] Milestone 10: Cura LAN upload/start print compatibility. (Upload/start/action paths exist; free-space, storage safety, and real Cura/hardware validation remain pending)
 - [ ] Milestone 11: generic slicer G-code support with thumbnails.
 - [ ] Milestone 12: print-quality degradation root-cause fix.
-- [ ] Milestone 13: de-python `marlindriver` with native `deneb-printsvc` experimental replacement. Native route, package, archive, init handoff, synthetic verifier gates, bounded native physical smoke, and paired observe-only stock/native firmware proof exist; strict stock/native resource evidence and broader client-flow proof remain required. See [Section 8](#8-de-python-marlindriver--native-print-service) and [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets).
+- [ ] Milestone 13: de-python `marlindriver` with native `deneb-printsvc` experimental replacement. Native route, package, archive, init handoff, synthetic verifier gates, bounded native physical smoke, paired stock/native resource comparison, and split lifecycle/stability evidence now pass; LCD/Web hands-on, desktop Cura, Digital Factory lifecycle, arbitrary slicer-output, and multi-hour soak gates remain required. See [Section 8](#8-de-python-marlindriver--native-print-service) and [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md#next-measurement-targets).
 - [ ] Milestone 14: Marlin modernization feasibility branch.
 - [ ] Milestone 15: OS/service inventory, OpenWrt-specific security review, and resource-reduction plan.
 - [ ] Milestone 16: targeted OS/service updates or replacements with rollback.

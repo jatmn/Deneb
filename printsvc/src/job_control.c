@@ -8,10 +8,6 @@
 #include "motion_send_error.h"
 #include "motion_sender.h"
 
-#define DENEB_FINISH_DRAIN_MIN_TICKS 8
-#define DENEB_FINISH_DRAIN_STABLE_REPORTS 3
-#define DENEB_FINISH_POSITION_EPSILON 0.01f
-
 static int job_control_abortable(const deneb_print_service_t *svc)
 {
     if (!svc)
@@ -219,44 +215,6 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
         svc->job_active = 0;
         return 1;
     }
-
-    if (svc->finish_drain_ticks == 0) {
-        svc->finish_position_report_count = svc->status.position_report_count;
-        svc->finish_last_x = svc->status.x;
-        svc->finish_last_y = svc->status.y;
-        svc->finish_last_z = svc->status.z;
-        svc->finish_stable_reports = 0;
-    }
-
-    svc->finish_drain_ticks++;
-    if (svc->status.position_report_count != svc->finish_position_report_count) {
-        float dx = svc->status.x - svc->finish_last_x;
-        float dy = svc->status.y - svc->finish_last_y;
-        float dz = svc->status.z - svc->finish_last_z;
-        if (dx < 0.0f)
-            dx = -dx;
-        if (dy < 0.0f)
-            dy = -dy;
-        if (dz < 0.0f)
-            dz = -dz;
-        if (dx <= DENEB_FINISH_POSITION_EPSILON &&
-            dy <= DENEB_FINISH_POSITION_EPSILON &&
-            dz <= DENEB_FINISH_POSITION_EPSILON) {
-            svc->finish_stable_reports++;
-        } else {
-            svc->finish_stable_reports = 0;
-        }
-        svc->finish_last_x = svc->status.x;
-        svc->finish_last_y = svc->status.y;
-        svc->finish_last_z = svc->status.z;
-        svc->finish_position_report_count = svc->status.position_report_count;
-    }
-
-    svc->status.finish_drain_ticks = svc->finish_drain_ticks;
-    svc->status.finish_stable_reports = svc->finish_stable_reports;
-    if (svc->finish_drain_ticks < DENEB_FINISH_DRAIN_MIN_TICKS ||
-        svc->finish_stable_reports < DENEB_FINISH_DRAIN_STABLE_REPORTS)
-        return 0;
 
     svc->finish_cleanup_pending = 0;
     svc->finish_cleanup_index = 0;
