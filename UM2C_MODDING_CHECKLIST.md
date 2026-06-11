@@ -744,7 +744,7 @@ deviation, not hidden under "stock parity."
   and completion with longer bounded fixtures. This item remains open for the
   broader user-facing matrix: desktop Cura client behavior, LCD/Web hands-on
   flows, Digital Factory lifecycle behavior, arbitrary real slicer output,
-  strict stock/native resource comparison, and long-duration stability.
+  and long-duration active stability.
 - [ ] Capture supervised live active-print abort evidence on native
   `deneb-printsvc`. Earlier 2026-06-08 evidence is not sufficient anymore:
   later live work exposed active/abort ProtoError desync and stale native
@@ -781,8 +781,9 @@ deviation, not hidden under "stock parity."
   axes involved, required homing action, expected travel/range, and stop
   conditions. The verifier and native audit selftests reject full summaries or
   packages that omit this safety-plan evidence. This is a harness contract only;
-  live heat, motion, Cura, pause/resume, abort, completion, and stock/native
-  resource evidence still remain open.
+  the remaining live proof gaps are LCD/Web hands-on, desktop Cura,
+  Digital Factory lifecycle, arbitrary slicer output, and multi-hour active
+  stability.
 - [x] Require before/after RAM, CPU, boot-time, and print-throughput measurements before this replacement can ship outside experimental builds.
   The current paired stock/native resource gate passed with
   `/tmp/deneb-precisewait-stock-resource.summary`,
@@ -819,8 +820,8 @@ Completed implementation slices:
   finish cleanup that stays active until planner-drain evidence. Native pause
   now waits for a fresh `M114` position report before saving the restore point,
   with host tests covering stale-position rejection. Representative slicer
-  geometry, client-flow, and strict resource comparisons remain separate open
-  evidence items.
+  geometry, client-flow, and multi-hour stability remain separate open evidence
+  items.
 - [x] Add a native serial response pump that reads Marlin lines, updates parsed
   status fields, accounts ACK/reject/resend responses, and re-emits resend
   packets through the flow-control queue.
@@ -1800,25 +1801,11 @@ Completed implementation slices:
   native `deneb-printsvc`. The runner records native RSS and `/tmp` tmpfs
   usage, and removes successful per-iteration logs by default so harness logs
   do not masquerade as firmware memory growth. It is packaged, installed, and
-  covered by the native route/package audit. On June 11, 2026,
-  `/tmp/deneb-56c2bb5-active-physical-soak-memory2.summary` completed four
-  active cycles and showed native RSS moving only 1172 -> 1180 KiB at
-  completed-cycle samples while `/tmp` usage fell after successful artifact
-  cleanup. The fifth cycle exposed an overly short cooldown wait. After the
-  manual heater-status fix, the current
-  `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary` active run
-  reached cycle 9 with completed-cycle RSS settling around 1688 KiB after a
-  1592 KiB initial sample. After switching active G-code streaming to a
-  fixed-buffer reader, bounding/conflating native status ZeroMQ queues,
-  deploying, and rebooting, the current
-  `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary` run completed ten
-  comparable active cycles with RSS 1028, 1028, 1032, 1036, 1036, 1036, 1044,
-  1044, 1044, and 1044 KiB after a 1020 KiB initial sample. Active phases reported
-  `printing` with Stop allowed true, and completed cycles returned idle with
-  native active/Stop false. Live `/proc` checks showed stable `VmSize`,
-  `VmData`, thread count, and fd count during the RSS steps. These are active
-  leak-triage evidence only; idle observe-only samples do not close the
-  multi-hour soak gate.
+  covered by the native route/package audit. Current active-run history and
+  accepted summary paths live in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md);
+  these runs prove the active leak-triage harness, not the multi-hour
+  promotion gate.
 - [x] Add repeatable host-side native memory tooling. `tools/deneb-printsvc-valgrind.sh`
   builds the host-stub debug `deneb-printsvc-tests` binary and runs it under
   Valgrind Memcheck from WSL/Linux. On June 11, 2026, Valgrind 3.24.0 reported
@@ -1829,29 +1816,18 @@ Completed implementation slices:
   entries. These checks prove the current host-native C test surface is clean,
   but they do not explain or close the live MIPS resident-page staircase by
   themselves.
-- [ ] Continue active resident-page triage after terminal job cleanup and
-  native status publish-cadence reduction. The latest
-  `/tmp/deneb-56c2bb5-cadence-cleanup-active-soak.summary` run completed eight
-  low heat/cool, guarded-home, home-macro, representative XYZ completion cycles
-  through one native process. Settled post-cycle RSS/private samples were
-  1148/348 KiB for cycles 1-3, 1156/356 KiB for cycles 4-6, and 1164/364 KiB
-  for cycles 7-8 after a reboot baseline of 1144/344 KiB. `VmSize` 2124 KiB,
-  `VmData` 748 KiB, three threads, and fd count 20 stayed flat, so the remaining
-  steps are still tracked as resident-page growth rather than proven heap
-  growth. This remains leak-triage evidence only, not multi-hour promotion
-  proof.
-- [ ] Continue active resident-page triage after ZMQ context tuning and IPC init
-  cleanup. Target `/proc` inspection showed the native service is mostly static
-  (`VmLib` 4 KiB), has a tiny 4 KiB heap mapping, and keeps two ZMQ background
-  threads (`ZMQbg/Reaper`, `ZMQbg/IO/0`). After requesting a smaller ZMQ thread
-  stack, keeping one IO thread, capping ZMQ max sockets, rebuilding, deploying,
-  and rebooting, the baseline fell to 1004/328 KiB RSS/private with `VmSize`
-  2108 KiB and `VmData` 732 KiB. The new
-  `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary` run completed seven settled
-  low heat/cool, guarded-home, home-macro, representative XYZ completion cycles
-  at 1012/336, 1012/336, 1016/340, 1020/344, 1020/344, 1020/344, and 1028/352
-  KiB. `VmSize`, `VmData`, thread count, and settled fd count stayed flat, so
-  the remaining staircase is still resident-page growth, not proven heap growth.
+- [ ] Continue active resident-page triage on the current native build. The
+  latest active soak evidence shows much lower RSS/private baselines after
+  fixed-buffer streaming, bounded/conflated ZeroMQ queues, diagnostics
+  throttling, ZMQ context tuning, and IPC cleanup, with flat `VmSize`,
+  `VmData`, thread count, and file-descriptor counts at settled samples. The
+  remaining small RSS staircase is still tracked as resident-page growth rather
+  than proven heap growth. The current follow-up active run has reached at
+  least ten verified heat/cool, guarded-home, motion, and completion cycles,
+  but the next accepted promotion proof still needs a longer active soak that
+  proves plateau behavior over the target duration; idle observe-only sampling
+  is only baseline context. Keep exact summary paths and current run values in
+  [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Fix native diagnostics log growth so it does not masquerade as memory
   growth or burn flash during multi-day prints. A June 11, 2026 live idle check
   found `/var/log/ultimaker/deneb-printsvc.log` at 198.6 MiB after roughly 90
@@ -1877,8 +1853,8 @@ Completed implementation slices:
   32.8 C nozzle, and process RSS samples for `/usr/bin/deneb-printsvc`,
   `/usr/bin/deneb-api`, and `/usr/bin/deneb-ui`. This closes only the
   observe-only client-surface proof; it does not close LCD/Web workflows, Cura
-  upload/start/abort, Digital Factory job lifecycle, heat/motion, or
-  stock/native resource comparison.
+  upload/start/abort, Digital Factory job lifecycle, or heat/motion. Later
+  paired evidence closes the bounded stock/native resource gate.
 - [x] Add a shell-only native binary CLI selftest,
   `deneb-printsvc-cli-selftest`, that runs the real `deneb-printsvc`
   `--smoke-test` and `--local-job-smoke` entry points against a temp G-code
@@ -2007,8 +1983,8 @@ Completed implementation slices:
   `printing` or `pre_print` with Stop allowed, aborting with Stop disabled,
   final `idle` with native active/Stop flags false, and no pending Cura jobs.
   Desktop Cura client behavior, real slicer-output parity, LCD/Web UI
-  hands-on flows, Digital Factory lifecycle, and strict stock/native resource
-  proof remain separate open gates.
+  hands-on flows, Digital Factory lifecycle, and multi-hour active stability
+  remain separate open gates.
 - [x] Gate non-experimental native print-service packages on live evidence:
   `ui/build-package.sh` defaults to `DENEB_RELEASE_CHANNEL=experimental` and
   refuses `nightly` or `stable` native-printsvc packages unless

@@ -106,7 +106,11 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   the bundled ZMQ header supports it. After deploy/reboot, printsvc baseline
   dropped from the prior 1144/344 KiB RSS/private sample to 1004/328 KiB, with
   `VmSize` 2108 KiB, `VmData` 732 KiB, three threads, and fd count 20. Active
-  seven-cycle proof still shows small settled resident-page steps, so this is a
+  proof still shows small settled resident-page steps: the first seven-cycle
+  run reached 1028/352 KiB, and the follow-up active run held 1028/352 KiB
+  through cycle 10 before cycles 11-14 settled at 1036/360 KiB, cycle 15 at
+  1048/372 KiB, cycle 16 at 1052/376 KiB, and cycle 17 at 1056/380 KiB.
+  `VmData`, thread count, and settled fd count stayed flat, so this is a
   resource reduction and triage improvement, not a closed multi-hour stability
   gate.
 - Web/API status plumbing now carries those native fields beyond the parser when
@@ -729,7 +733,9 @@ Material-profile USB import root/depth/suffix policy and the
   does not satisfy or fail the required client proof. This closes only
   observe-only client-surface evidence; LCD/Web UI workflows, Cura
   upload/start/abort, Digital Factory job lifecycle, physical phases, and
-  stock/native resource comparison remain open.
+  stock/native resource comparison remained open at that point. Later paired
+  evidence in [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md)
+  supersedes the resource-comparison gap.
 - June 9, 2026 installed `dist/Deneb_Update_be6a5b7.deneb` and verified the
   packaged safe fixture generators on-device. The installed observe-only smoke
   again passed native restart/boot-sync with nonzero ambient temperatures and no
@@ -749,8 +755,9 @@ Material-profile USB import root/depth/suffix policy and the
   resumed `printing`, `aborting` with Stop disabled during cleanup, and final
   `idle` with `native_active:false`, `native_stop_allowed:false`, live ambient
   temperatures, and no firmware error. This closes only the bounded generated
-  pause/resume smoke slice; representative Cura geometry and stock/native
-  resource comparison remain required before promotion beyond experimental.
+  pause/resume smoke slice; representative Cura geometry and, at that point,
+  stock/native resource comparison remained required before promotion beyond
+  experimental. Later paired evidence supersedes the resource-comparison gap.
 - June 9, 2026 installed `dist/Deneb_Update_f83c1a1.deneb` after the native
   pause-position freshness fix. The target manifest reported `version:
   f83c1a1`; installed CLI, init-handoff, release-gate, native-audit,
@@ -765,7 +772,7 @@ Material-profile USB import root/depth/suffix policy and the
   observe-only/client-surface refresh; at that point the fresh-M114 pause fix
   still needed a supervised all-axis pause/resume motion run, and Section 8
   still needed representative Cura geometry plus strict stock/native resource
-  comparison.
+  comparison. Later paired evidence supersedes the resource-comparison gap.
 - June 9, 2026 installed `dist/Deneb_Update_af12aaf.deneb` after moving LCD
   abort-display context into shared `status_state.*` helpers. The target
   manifest reported `version: af12aaf`; installer smoke, CLI, and native-audit
@@ -983,32 +990,16 @@ bounded Z-only completion jobs, `rss_delta_kb=0`) with the cleaned active
 physical soak harness. The June 11 active-run investigations showed why this
 distinction matters: retained smoke logs in `/tmp` tmpfs can look like firmware
 memory growth, and idle observe-only sampling does not exercise the heater,
-motion, job-start, or stream-cleanup paths used by real prints. The earlier
-`/tmp/deneb-56c2bb5-active-physical-soak-memory2.summary` run moved from
-1172 KiB to 1180 KiB across four completed heat/motion/representative-job
-cycles before exposing a too-short cooldown wait. The post-fix
-`/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary` run reached cycle 9
-with RSS settling around 1688 KiB after a 1592 KiB initial sample. After
-switching active G-code streaming to a fixed-buffer reader, bounding and
-conflating native status ZeroMQ queues, deploying, and rebooting, the current
-`/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary` run completed ten comparable
-active cycles with RSS samples 1028, 1028, 1032, 1036, 1036, 1036, 1044, 1044,
-1044, and 1044 KiB after a 1020 KiB initial sample. Active phases reported
-`printing` with Stop allowed true, and completed cycles returned idle with
-native active/Stop false. During the same window, `/proc` reported stable
-`VmSize` 2124 KiB, `VmData` 748 KiB, three threads, and stable fd count, so the
-remaining RSS steps are being tracked as unresolved resident-page growth rather
-than proven heap growth.
-A follow-up live check also found
-`/var/log/ultimaker/deneb-printsvc.log` at 198.6 MiB after roughly 90 minutes
-because diagnostics status logging treated normal flow ACK, line-number, and
-`flow_last_response` churn as immediate status changes. Native diagnostics now
-keeps resend/reject/error/state changes immediate, logs high-churn status
-counters on a 60-second heartbeat, and truncates an oversized diagnostics log at
-service startup. After deploying the fix and restarting idle `deneb-printsvc`,
-the log dropped to 26.3 KiB, then a corrected rebuild showed one steady-state
-heartbeat line over a 70-second idle window (`366677 -> 367363` bytes,
-`535 -> 536` lines) while printer status stayed idle with heater targets zero.
+motion, job-start, or stream-cleanup paths used by real prints. The current
+active-soak series is indexed in
+[PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md): fixed-buffer
+streaming, bounded/conflated ZeroMQ queues, status-cadence cleanup,
+diagnostics throttling, ZMQ context tuning, and IPC cleanup substantially
+reduced the native resident baseline, but the remaining RSS staircase is still
+tracked as resident-page growth rather than proven heap growth. The
+diagnostics logger also now treats normal flow ACK, line-number, and
+`flow_last_response` churn as heartbeat data instead of immediate status
+changes, and truncates oversized logs at service startup.
 Future multi-hour evidence should track both `deneb_printsvc_rss_kb` and
 `tmp_used_kb`, keep successful per-iteration logs disabled unless debugging a
 failure, track Deneb diagnostics log size/line count beside RSS, and make the
