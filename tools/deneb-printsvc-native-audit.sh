@@ -72,6 +72,36 @@ reject_name_artifacts() {
     pass "$label"
 }
 
+reject_df_python_bridge_source() {
+    repo=$1
+    if [ -e "${repo}/ui/scripts/deneb-df-bridge.py" ]; then
+        fail "Deneb-owned Python Digital Factory bridge is not a runtime or source fallback"
+    fi
+    pass "Deneb-owned Python Digital Factory bridge source is absent"
+}
+
+reject_df_python_bridge_artifacts() {
+    root=$1
+    label=$2
+    if find "$root" \( -name 'deneb-df-bridge.py' -o -name '*df-bridge.py' \) \
+        -print | grep . >/dev/null 2>&1; then
+        find "$root" \( -name 'deneb-df-bridge.py' -o -name '*df-bridge.py' \) \
+            -print >&2
+        fail "$label"
+    fi
+    pass "$label"
+}
+
+reject_df_standalone_bridge_artifact() {
+    root=$1
+    label=$2
+    if find "$root" -name 'deneb-df-bridge' -print | grep . >/dev/null 2>&1; then
+        find "$root" -name 'deneb-df-bridge' -print >&2
+        fail "$label"
+    fi
+    pass "$label"
+}
+
 audit_source() {
     repo=$1
 
@@ -82,6 +112,27 @@ audit_source() {
     require_file "${repo}/tools/build-update-release.ps1" "release wrapper exists"
     require_file "${repo}/printsvc/init/deneb-printsvc.init" "native printsvc init exists"
     require_file "${repo}/web/init/deneb-web.init" "web init exists"
+    require_file "${repo}/web/src/df_bridge.c" "deneb-api Digital Factory command source exists"
+    require_file "${repo}/web/src/df_bridge.h" "deneb-api Digital Factory command header exists"
+    reject_df_python_bridge_source "$repo"
+    reject_pattern "${repo}/ui/CMakeLists.txt" \
+        'deneb-df-bridge[.]c|df-bridge/deneb-df-bridge' \
+        "deneb-ui build does not embed Digital Factory bridge source"
+    reject_pattern "${repo}/ui/src/main.c" \
+        'deneb_df_bridge_main|program_basename\(argv\[0\]\).*deneb-df-bridge' \
+        "deneb-ui main does not dispatch external bridge mode"
+    require_pattern "${repo}/web/CMakeLists.txt" \
+        'src/df_bridge[.]c' \
+        "deneb-api build includes Digital Factory command source"
+    require_pattern "${repo}/web/src/main.c" \
+        'digital-factory' \
+        "deneb-api exposes local Digital Factory command mode"
+    require_pattern "${repo}/web/src/main.c" \
+        'deneb_df_bridge_run' \
+        "deneb-api command mode invokes Digital Factory bridge"
+    reject_pattern "${repo}/web/src/api_http.c" \
+        '/api/v1/deneb/digital_factory|digital_factory' \
+        "Digital Factory bridge is not exposed as a new HTTP/cloud endpoint"
 
     require_pattern "${repo}/common/print/print_backend_route.c" \
         'deneb_print_backend_route\(DENEB_PRINT_BACKEND_NATIVE\)' \
@@ -118,6 +169,18 @@ audit_source() {
     require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-native-audit" \
         "package builder runs de-Python audit"
+    reject_pattern "${repo}/tools/build-update-release.ps1" \
+        'zig.*deneb_df_bridge|build-exe.*deneb-df-bridge|ui/src/df-bridge' \
+        "release wrapper does not build a standalone Digital Factory bridge"
+    require_pattern "${repo}/ui/build-package.sh" \
+        'deneb-df-bridge[.]py' \
+        "package builder rejects Python Digital Factory bridge artifacts"
+    require_pattern "${repo}/ui/build-package.sh" \
+        'deneb-api digital-factory' \
+        "package manifest documents deneb-api Digital Factory command mode"
+    require_pattern "${repo}/ui/build-package.sh" \
+        '![[:space:]]+grep -Eq.*deneb-df-bridge' \
+        "package builder rejects standalone Digital Factory bridge"
     require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-native-audit-selftest" \
         "package builder runs de-Python audit selftest"
@@ -293,25 +356,25 @@ audit_source() {
     require_file "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
         "stock baseline helper exists"
     require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
-        '^- \[x\] Verify firmware/version status behavior live against stock and native[.]$' \
-        "checklist records accepted paired firmware/ambient evidence"
+        'Accepted bounded hardware evidence covers native route ownership,' \
+        "checklist records accepted bounded hardware evidence"
     require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
-        '^\| Firmware/temperature observe-only parity \| Proven for paired observe-only stock/native capture \|' \
+        '^\| Observe-only firmware/temperature parity \| Proven for paired stock/native capture \|' \
         "evidence ledger records paired firmware/ambient proof"
-    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
-        '/tmp/deneb-stock-d82245c[.]summary' \
-        "checklist cites accepted stock firmware/ambient summary"
-    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
-        '/tmp/deneb-native-d82245c-observe[.]summary' \
-        "checklist cites accepted native firmware/ambient summary"
-    require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
-        '/tmp/deneb-84376b4-stability-complete5[.]summary' \
-        "checklist cites accepted repeated-job stability summary"
     require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
-        '^\| Repeated-job stability/leak behavior \| Proven for short bounded native completion loop \|' \
+        '/tmp/deneb-stock-d82245c[.]summary' \
+        "evidence ledger cites accepted stock firmware/ambient summary"
+    require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
+        '/tmp/deneb-native-d82245c-observe[.]summary' \
+        "evidence ledger cites accepted native firmware/ambient summary"
+    require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
+        '/tmp/deneb-84376b4-stability-complete5[.]summary' \
+        "evidence ledger cites accepted repeated-job stability summary"
+    require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
+        '^\| Short repeated-job stability \| Proven for five bounded Z-only completion jobs \|' \
         "evidence ledger records repeated-job stability proof"
     require_pattern "${repo}/docs/PRINTSVC_EVIDENCE_LEDGER.md" \
-        '^\| Multi-hour stability/leak behavior \| Open \|' \
+        '^\| Active physical soak memory behavior \| Investigated, not promotion-complete \|' \
         "evidence ledger keeps multi-hour stability gate open"
     require_pattern "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
         'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
@@ -368,6 +431,27 @@ audit_source() {
         "deneb-printsvc-native-audit" \
         "installer runs de-Python audit"
     require_pattern "${repo}/ui/installer/update.sh" \
+        'rm -f /usr/bin/deneb-df-bridge' \
+        "installer removes stale standalone Digital Factory bridge"
+    reject_pattern "${repo}/ui/installer/update.sh" \
+        'ln -sf /usr/bin/deneb-ui /usr/bin/deneb-df-bridge' \
+        "installer does not symlink Digital Factory bridge to deneb-ui"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        'configure_digitalfactory_boot' \
+        "installer gates Digital Factory service at boot"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        '/etc/init.d/digitalfactory disable' \
+        "installer disables Digital Factory service when unconfigured"
+    require_pattern "${repo}/ui/src/screens/screen_digital_factory.c" \
+        '/etc/init.d/digitalfactory enable' \
+        "Digital Factory screen enables service for explicit user setup"
+    require_pattern "${repo}/ui/src/screens/screen_digital_factory.c" \
+        '/usr/bin/deneb-api digital-factory connect' \
+        "Digital Factory screen calls deneb-api connect command"
+    require_pattern "${repo}/ui/src/screens/screen_digital_factory.c" \
+        '/usr/bin/deneb-api digital-factory disconnect' \
+        "Digital Factory screen calls deneb-api disconnect command"
+    require_pattern "${repo}/ui/installer/update.sh" \
         "deneb-printsvc-native-audit-selftest" \
         "installer runs de-Python audit selftest"
     require_pattern "${repo}/ui/installer/update.sh" \
@@ -415,6 +499,8 @@ audit_package_dir() {
     require_dir "${root}/deneb-printsvc-macros" "package includes Deneb macro directory"
     require_file "${root}/LVGL_LICENSE_TLSF.txt" "package includes declared TLSF notice"
     reject_name_artifacts "$root" "package has no Python driver artifact names"
+    reject_df_python_bridge_artifacts "$root" "package has no Python Digital Factory bridge artifact"
+    reject_df_standalone_bridge_artifact "$root" "package has no standalone Digital Factory bridge artifact"
     require_pattern "${root}/deneb-printsvc-smoke" \
         'physical-safety-gate' \
         "packaged smoke harness gates physical phases"
@@ -506,6 +592,14 @@ audit_archive() {
         fail "archive has no Python driver artifact names"
     fi
     pass "archive has no Python driver artifact names"
+    if grep -Ei '(^|/)deneb-df-bridge[.]py$|(^|/).*df-bridge[.]py$' "${tmp_dir}/files.txt"; then
+        fail "archive has no Python Digital Factory bridge artifact"
+    fi
+    pass "archive has no Python Digital Factory bridge artifact"
+    if grep -Ei '(^|/)deneb-df-bridge$' "${tmp_dir}/files.txt"; then
+        fail "archive has no standalone Digital Factory bridge artifact"
+    fi
+    pass "archive has no standalone Digital Factory bridge artifact"
 
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc$' \
         "archive includes native printsvc"

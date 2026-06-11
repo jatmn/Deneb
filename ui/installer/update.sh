@@ -106,8 +106,23 @@ install_binary() {
     chmod 0755 /usr/bin/deneb-ui
     log "installed deneb-ui to /usr/bin/deneb-ui"
 
-    ln -sf /usr/bin/deneb-ui /usr/bin/deneb-df-bridge
-    log "installed deneb-df-bridge symlink to /usr/bin/deneb-ui"
+    rm -f /usr/bin/deneb-df-bridge
+    log "removed standalone deneb-df-bridge; Digital Factory command mode is provided by deneb-api"
+}
+
+configure_digitalfactory_boot() {
+    local cluster_id
+    cluster_id="$(uci -q get ultimaker.option.cluster_id 2>/dev/null || true)"
+
+    if [ -n "${cluster_id}" ]; then
+        /etc/init.d/digitalfactory enable 2>/dev/null || true
+        /etc/init.d/digitalfactory start 2>/dev/null || true
+        log "enabled Digital Factory service because cluster_id is configured"
+    else
+        /etc/init.d/digitalfactory stop 2>/dev/null || true
+        /etc/init.d/digitalfactory disable 2>/dev/null || true
+        log "disabled Digital Factory service because cluster_id is not configured"
+    fi
 }
 
 install_web_runtime() {
@@ -656,6 +671,7 @@ trap schedule_reboot EXIT
 validate_package
 backup_stock
 install_binary
+configure_digitalfactory_boot
 install_web_runtime
 smoke_test_printsvc_tools
 install_motion_firmware_verify_cache

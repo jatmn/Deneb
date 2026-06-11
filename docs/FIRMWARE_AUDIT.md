@@ -134,7 +134,7 @@ with static C binaries:
 
 | Component | Lines | Complexity | Impact |
 |-----------|-------|------------|--------|
-| deneb-df-bridge.py | ~155 | LOW | Eliminates Python + gershwin + umsgpack + zmq |
+| deneb-df-bridge.py | ~155 | DONE | Removed from Deneb source/runtime; replaced by local `deneb-api digital-factory` command mode |
 
 ### Phase 2: Stock service replacements (clean-room only)
 
@@ -156,7 +156,14 @@ with static C binaries:
 - [x] SSH bootstrap package (Deneb_get_started.img)
 - [x] Deneb .deneb package update system
 - [x] Branding assets, splash screen
-- [x] Digital Factory bridge C rewrite embedded in `deneb-ui`; `/usr/bin/deneb-df-bridge` is installed as a symlink entry point
+- [x] Digital Factory bridge moved out of `deneb-ui`; `deneb-api digital-factory`
+  handles local status, connect, and disconnect commands without adding a
+  web/cloud endpoint
+- [x] Deneb-owned Python Digital Factory bridge removed from source and blocked
+  from release packages by the native de-Python audit
+- [x] Stock `digitalfactory` service is disabled at install when no
+  `ultimaker.option.cluster_id` is configured, then enabled/started by the
+  Digital Factory screen when the user begins pairing
 - [x] WiFi setup replacement: USB `wifi.txt` import, stock AP/captive portal disabled by installer
 - [x] Lightweight web runtime bundled into Deneb update releases: `lighttpd`,
   `deneb-api`, static web UI, and `deneb-mdns`
@@ -255,8 +262,8 @@ This means opkg updates require the Onion repo to be reachable.
 
 | Binary | Size | Type |
 |--------|------|------|
-| /usr/bin/deneb-ui | ~1.8 MB stripped package binary | ELF MIPS (static, musl) with embedded C Digital Factory bridge |
-| /usr/bin/deneb-df-bridge | symlink | Entry point to `deneb-ui` bridge mode |
+| /usr/bin/deneb-ui | ~1.8 MB stripped package binary | ELF MIPS (static, musl) native LVGL UI |
+| /usr/bin/deneb-api | existing C API binary | Provides the local `digital-factory` command mode for UI-side status, connect, and disconnect actions over stock Gershwin coordinator IPC |
 
 ### Stock Menu Tree
 

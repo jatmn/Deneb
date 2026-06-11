@@ -51,9 +51,6 @@ int print_conflict_has_pending(void);
 #ifdef BACKEND_COMM_STUB
 void screen_network_set_catalog_placeholder_mode(int enabled);
 #endif
-#ifndef BACKEND_COMM_STUB
-int deneb_df_bridge_main(int argc, char *argv[]);
-#endif
 
 static volatile int running = 1;
 
@@ -167,11 +164,6 @@ static int run_screenshot_catalog(const char *dir)
 
 int main(int argc, char *argv[])
 {
-#ifndef BACKEND_COMM_STUB
-    if (argc > 0 && strcmp(program_basename(argv[0]), "deneb-df-bridge") == 0)
-        return deneb_df_bridge_main(argc, argv);
-#endif
-
     const char *lang = "en";
     const char *screenshot_dir = NULL;
 

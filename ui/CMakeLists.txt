@@ -145,9 +145,6 @@ else()
         src/drivers/fb_driver.c
         src/drivers/touch_driver.c
     )
-    set(DF_BRIDGE_SOURCES
-        src/df-bridge/deneb-df-bridge.c
-    )
     message(STATUS "Using real Linux drivers")
 endif()
 
@@ -212,7 +209,6 @@ set(DENEB_SOURCES
     ../common/print/status_state.c
     ../common/print/system_language.c
     ${DRIVER_SOURCES}
-    ${DF_BRIDGE_SOURCES}
 )
 
 add_executable(deneb-ui ${DENEB_SOURCES} ${LVGL_SOURCES})

@@ -324,7 +324,7 @@ if [ "$REQUIRE_CLIENT_PROOF" = "1" ]; then
     require_pattern ' phase=client-cura-printers .*rc=0 .*body=' "client Cura printers endpoint responds"
     require_pattern ' phase=client-cura-print-jobs .*rc=0 .*body=' "client Cura print_jobs endpoint responds"
     require_pattern ' phase=client-cura-materials .*rc=0 .*body=' "client Cura materials endpoint responds"
-    require_pattern ' phase=client-digital-factory-status .*installed=1 .*body=.*(status_timeout|state_[A-Za-z0-9_.:-]+|accepted_[01])' "client Digital Factory bridge reports status"
+    require_pattern ' phase=client-digital-factory-status .*installed=1 .*body=.*(status[_=]timeout|state[_=][A-Za-z0-9_.:-]+|accepted[_=][01])' "client Digital Factory bridge reports status"
     require_pattern ' phase=client-proof-complete .*rc=0' "client-proof completed"
 fi
 

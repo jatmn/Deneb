@@ -67,6 +67,7 @@ set(DENEB_API_SOURCES
     src/api_auth.c
     src/api_deneb.c
     src/backend_zmq.c
+    src/df_bridge.c
     src/json_writer.c
     src/md5.c
     ../common/print/buildplate_level.c

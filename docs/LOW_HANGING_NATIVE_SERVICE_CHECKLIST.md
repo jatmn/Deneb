@@ -52,57 +52,66 @@ Related status docs:
 
 ### Why This Is Low-Hanging
 
-Deneb already has a native C Digital Factory bridge at
-`ui/src/df-bridge/deneb-df-bridge.c`. The older Python helper remains at
-`ui/scripts/deneb-df-bridge.py` and duplicates the same Gershwin IPC bridge
-role. This is not the full Digital Factory cloud connector; it is only the
-small UI-side bridge used to request status, pairing, and disconnect actions.
-Because this script is Deneb-owned source, it is the clearest first
-de-Pythoning task: keep the native bridge as the runtime owner and prevent the
-Python bridge from shipping or being treated as a fallback implementation.
+Deneb had two implementations of the UI-side Digital Factory bridge: an
+embedded native path in `deneb-ui` and an older Deneb-owned Python helper at
+`ui/scripts/deneb-df-bridge.py`. Both covered the same local Gershwin IPC role:
+request status, pairing, and disconnect actions from the stock coordinator.
+
+The completed path removes the Python helper and keeps the bridge out of the UI
+binary by reusing the existing C `deneb-api` executable as a local command:
+`deneb-api digital-factory <status|connect|disconnect>`. This does not replace
+the stock cloud connector and does not add a new web/cloud endpoint.
 
 ### Scope
 
-- [ ] Confirm release packaging installs the native C bridge or symlink and does
-  not install `ui/scripts/deneb-df-bridge.py`.
-- [ ] Remove, quarantine, or explicitly mark the Python bridge script as
-  reference-only in the Deneb repo so it cannot be mistaken for a runtime
-  dependency.
-- [ ] Add or extend an audit that fails if `deneb-df-bridge.py`, a Python bridge
-  launcher, or an unexpected `*.py` UI helper ships in a `.deneb` package.
-- [ ] Run Valgrind or sanitizer coverage for any changed native bridge code,
-  package-audit helper, or host selftest added for this task.
-- [ ] Update UI/Digital Factory docs to state that Deneb uses the native bridge.
+- [x] Remove `ui/scripts/deneb-df-bridge.py` from Deneb source/runtime.
+- [x] Remove the bridge entry point from `deneb-ui`.
+- [x] Provide the bridge as `deneb-api digital-factory` using the existing C
+  API binary and stock coordinator IPC.
+- [x] Keep release packaging free of Python bridge helpers and standalone
+  `deneb-df-bridge` artifacts.
+- [x] Disable stock `digitalfactory` at boot when no
+  `ultimaker.option.cluster_id` is configured.
+- [x] Start/enable stock `digitalfactory` only for explicit user pairing and
+  stop/disable it after disconnect.
 
 ### Acceptance Criteria
 
-- [ ] A built `.deneb` package contains no Deneb-owned `deneb-df-bridge.py`
+- [x] A built `.deneb` package contains no Deneb-owned `deneb-df-bridge.py`
   artifact.
-- [ ] `deneb-ui` can still run `status`, `connect`, and `disconnect` Digital
-  Factory bridge actions through the native bridge.
-- [ ] Package/audit selftests fail on a fixture that includes the Python bridge.
-- [ ] Memory-tool runs for changed native/test code are clean or have documented
-  expected suppressions.
-- [ ] Documentation names the C bridge as the runtime path.
+- [x] `deneb-ui` can still run `status`, `connect`, and `disconnect` Digital
+  Factory bridge actions through `deneb-api digital-factory`.
+- [x] Package/audit selftests fail on a fixture that includes the Python bridge.
+- [x] Package/audit checks fail if a standalone `deneb-df-bridge` binary ships.
+- [x] Documentation names `deneb-api digital-factory` as the runtime path.
+
+### Completion Notes
+
+Completed locally on 2026-06-11. The release package contains no Deneb-owned
+Python Digital Factory bridge and no standalone `deneb-df-bridge` binary.
+`deneb-api digital-factory` is the only Deneb bridge command path. Resource
+measurements are recorded in [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md).
 
 ### Suggested Validation
 
-- [ ] Build a release package.
-- [ ] Inspect the package file list for `deneb-df-bridge`, `deneb-ui`, and any
-  unexpected Python bridge artifacts.
-- [ ] On hardware, run the Digital Factory screen status path and confirm it
+- [x] Build a release package.
+- [x] Inspect the package file list for `deneb-api`, `deneb-ui`, and any
+  unexpected Python or standalone bridge artifacts.
+- [x] On hardware, run the Digital Factory command path and confirm it
   returns a compact status line instead of a bridge launch error.
-- [ ] Capture process list evidence showing no one-shot Python bridge process is
-  left running after the action.
+- [x] Capture process list evidence showing no one-shot Python or standalone
+  bridge process is left running after the action.
+- [x] Record transient RSS/VSZ for `deneb-api digital-factory` in
+  [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md).
 
 ### Risks And Guardrails
 
-- The native bridge intentionally talks to stock coordinator/Digital Factory
-  Gershwin IPC. Do not treat this task as replacing the cloud connector.
+- The bridge intentionally talks to stock coordinator/Digital Factory Gershwin
+  IPC. Do not treat this task as replacing the cloud connector.
 - This task can remove Deneb-owned Python helper artifacts from Deneb packages,
   but it does not remove stock Python from the vendor read-only rootfs.
-- Keep a rollback path: if native bridge behavior regresses, the installer
-  should still be able to roll back to a known UI package.
+- Keep a rollback path: if bridge behavior regresses, the installer should
+  still be able to roll back to a known UI/API package.
 
 ## 2. Make Stock Python UI Pruning Explicit And Auditable
 

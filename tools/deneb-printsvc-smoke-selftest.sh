@@ -99,7 +99,7 @@ cat > "$NATIVE_SUMMARY" <<'EOF'
 2026-06-08T00:00:02Z phase=client-cura-printers kind=client-get method=GET path=/printers rc=0 body=[{status:idle}]
 2026-06-08T00:00:02Z phase=client-cura-print-jobs kind=client-get method=GET path=/print_jobs rc=0 body=[]
 2026-06-08T00:00:02Z phase=client-cura-materials kind=client-get method=GET path=/materials rc=0 body=[]
-2026-06-08T00:00:02Z phase=client-digital-factory-status kind=digital-factory command=deneb-df-bridge_status installed=1 rc=0 body=status_timeout
+2026-06-08T00:00:02Z phase=client-digital-factory-status kind=digital-factory command=deneb-api_digital-factory_status installed=1 rc=0 body=status=timeout
 2026-06-08T00:00:02Z phase=client-proof-complete rc=0
 2026-06-08T00:00:02Z snapshot=firmware-proof
 2026-06-08T00:00:02Z phase=firmware-proof kind=api root_rc=0 bed_rc=0 nozzle_rc=0 airmanager_rc=0 rc=0 firmware=Apr_30_2020 machine_type=E2 pcb_id=4 pcb_id_valid=true bed_current=30.3 bed_target=0.0 nozzle_current=32.8 nozzle_target=0.0 topcap_present=true topcap_current=31.0 status=idle

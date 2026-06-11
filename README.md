@@ -48,7 +48,7 @@ This repository is private while the project is being organized.
 
 ## Touchscreen UI
 
-The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 1.5-2 MB RSS at idle. The native UI release artifact was about 1.8 MiB before the web runtime was bundled, after adding stock-menu coverage, generated i18n fonts, and the embedded C Digital Factory bridge. See [ui/README.md](ui/README.md) for build instructions and architecture details.
+The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced with a native LVGL v9 C implementation. The current measured Deneb UI process is about 2.7 MB VSZ / about 1.5-2 MB RSS at idle. The native UI release artifact was about 1.8 MiB before the web runtime was bundled, after adding stock-menu coverage and generated i18n fonts. Digital Factory UI actions now call the local `deneb-api digital-factory` command mode so the connector logic stays out of the UI binary without adding another packaged runtime. See [ui/README.md](ui/README.md) for build instructions and architecture details.
 
 ## Web UI
 

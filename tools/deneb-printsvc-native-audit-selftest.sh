@@ -116,7 +116,7 @@ write_valid_source() {
     root="$1"
     mkdir -p "$root/common/print" \
         "$root/docs" \
-        "$root/ui/src" "$root/ui/installer" "$root/ui/init" \
+        "$root/ui/src/screens" "$root/ui/installer" "$root/ui/init" \
         "$root/web/src" "$root/web/init" \
         "$root/printsvc/src" "$root/printsvc/init" \
         "$root/tools"
@@ -128,19 +128,21 @@ deneb_print_backend_route_t deneb_print_backend_route_default(void) {
 }
 EOF
     cat > "$root/UM2C_MODDING_CHECKLIST.md" <<'EOF'
-- [x] Verify firmware/version status behavior live against stock and native.
-  The accepted paired summaries are /tmp/deneb-stock-d82245c.summary and
-  /tmp/deneb-native-d82245c-observe.summary.
-- [x] Add a packaged shell-only repeated stability harness,
-  `deneb-printsvc-stability`. /tmp/deneb-84376b4-stability-complete5.summary
-  closes the short repeated-job stability slice; a multi-hour soak remains open.
+- [x] Accepted bounded hardware evidence covers native route ownership,
+  observe-only firmware/temperature telemetry, low-temperature heat/preheat
+  abort, active abort cleanup, bounded pause/resume, generated cluster API
+  upload/start/abort, completion flow drain, native driver RSS reduction,
+  diagnostics-log mitigation, short repeated-job stability, and strict
+  stock/native resource comparison for the current bounded evidence set.
+  /tmp/deneb-stock-d82245c.summary, /tmp/deneb-native-d82245c-observe.summary,
+  and /tmp/deneb-84376b4-stability-complete5.summary are accepted summaries.
 EOF
     cat > "$root/docs/PRINTSVC_EVIDENCE_LEDGER.md" <<'EOF'
 | Gate | Status | Authoritative evidence | Notes |
 | --- | --- | --- | --- |
-| Firmware/temperature observe-only parity | Proven for paired observe-only stock/native capture | /tmp/deneb-stock-d82245c.summary, /tmp/deneb-native-d82245c-observe.summary | Observe-only telemetry proof. |
-| Repeated-job stability/leak behavior | Proven for short bounded native completion loop | /tmp/deneb-84376b4-stability-complete5.summary | Short repeated native completion proof. |
-| Multi-hour stability/leak behavior | Open | None accepted yet | Longer soak still required. |
+| Observe-only firmware/temperature parity | Proven for paired stock/native capture | /tmp/deneb-stock-d82245c.summary, /tmp/deneb-native-d82245c-observe.summary | Observe-only telemetry proof. |
+| Short repeated-job stability | Proven for five bounded Z-only completion jobs | /tmp/deneb-84376b4-stability-complete5.summary | Short repeated native completion proof. |
+| Active physical soak memory behavior | Investigated, not promotion-complete | /tmp/deneb-a6fe410-long-active-soak.summary | Longer soak still required. |
 EOF
     cat > "$root/common/print/print_backend_route.h" <<'EOF'
 #define DENEB_PRINT_BACKEND_NATIVE 0
@@ -148,6 +150,23 @@ EOF
 #define DENEB_PRINTSVC_COMMAND_URL "tcp://127.0.0.1:5556"
 typedef struct { int backend; } deneb_print_backend_route_t;
 deneb_print_backend_route_t deneb_print_backend_route(int backend);
+EOF
+    cat > "$root/web/src/df_bridge.c" <<'EOF'
+#include "df_bridge.h"
+int deneb_df_bridge_run(const char *action, int timeout_seconds, char *out, unsigned long out_size) {
+    return 0;
+}
+EOF
+    cat > "$root/web/src/df_bridge.h" <<'EOF'
+int deneb_df_bridge_run(const char *action, int timeout_seconds, char *out, unsigned long out_size);
+EOF
+    cat > "$root/ui/CMakeLists.txt" <<'EOF'
+add_executable(deneb-ui src/main.c)
+EOF
+    cat > "$root/ui/src/main.c" <<'EOF'
+int main(void) {
+    return 0;
+}
 EOF
     cat > "$root/ui/build-package.sh" <<'EOF'
 #!/bin/sh
@@ -170,8 +189,11 @@ deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-stability
 deneb-active-physical-soak-runner
+deneb-api digital-factory
 deneb-printsvc-stability" --selftest
 find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \)
+find "$STAGING_DIR" \( -name 'deneb-df-bridge.py' \)
+! grep -Eq '(^|/)deneb-df-bridge$' "$STAGING_DIR/package-files.txt"
 EOF
 cat > "$root/tools/build-update-release.ps1" <<'EOF'
 [ValidateSet("experimental", "nightly", "stable")]
@@ -269,11 +291,38 @@ deneb-printsvc-release-gate-selftest
 /usr/bin/deneb-printsvc-stability --selftest
 /etc/init.d/deneb-api restart
 /etc/init.d/deneb-web restart
+configure_digitalfactory_boot() {
+    /etc/init.d/digitalfactory disable
+}
+configure_digitalfactory_boot
+rm -f /usr/bin/deneb-df-bridge
 cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
 cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner
 cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
 cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
 native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction
+EOF
+    cat > "$root/ui/src/screens/screen_digital_factory.c" <<'EOF'
+void connect_cb(void) {
+    /etc/init.d/digitalfactory enable
+    /usr/bin/deneb-api digital-factory connect
+    /usr/bin/deneb-api digital-factory disconnect
+}
+EOF
+    cat > "$root/web/CMakeLists.txt" <<'EOF'
+add_executable(deneb-api src/main.c src/df_bridge.c)
+EOF
+    cat > "$root/web/src/main.c" <<'EOF'
+int deneb_df_bridge_run(const char *action, int timeout_seconds, char *out, unsigned long out_size);
+int main(int argc, char **argv) {
+    if (argc > 1 && argv[1][0] && "digital-factory"[0]) {
+        return deneb_df_bridge_run("status", 3, 0, 0);
+    }
+    return 0;
+}
+EOF
+    cat > "$root/web/src/api_http.c" <<'EOF'
+void api_http(void) {}
 EOF
     cat > "$root/printsvc/init/deneb-printsvc.init" <<'EOF'
 #!/bin/sh /etc/rc.common
@@ -342,6 +391,12 @@ cat >> "$SOURCE_PYTHON_LAUNCH/ui/src/native_client.c" <<'EOF'
 const char *bad_driver = "/usr/bin/python3 /home/cygnus/marlindriver/print_service.py";
 EOF
 expect_failure rejects_source_python_launcher "$AUDIT" --source "$SOURCE_PYTHON_LAUNCH"
+
+SOURCE_DF_PYTHON_BRIDGE="$TMP_DIR/source-df-python-bridge"
+write_valid_source "$SOURCE_DF_PYTHON_BRIDGE"
+mkdir -p "$SOURCE_DF_PYTHON_BRIDGE/ui/scripts"
+touch "$SOURCE_DF_PYTHON_BRIDGE/ui/scripts/deneb-df-bridge.py"
+expect_failure rejects_source_df_python_bridge "$AUDIT" --source "$SOURCE_DF_PYTHON_BRIDGE"
 
 SOURCE_MISSING_PACKAGE_AUDIT="$TMP_DIR/source-missing-package-audit"
 write_valid_source "$SOURCE_MISSING_PACKAGE_AUDIT"
@@ -437,20 +492,20 @@ expect_failure rejects_source_missing_baseline_helper "$AUDIT" --source "$SOURCE
 
 SOURCE_STALE_FIRMWARE_DOCS="$TMP_DIR/source-stale-firmware-docs"
 write_valid_source "$SOURCE_STALE_FIRMWARE_DOCS"
-sed 's/\[x\] Verify firmware\/version status behavior live against stock and native/[ ] Verify firmware\/version status behavior live against stock and native/' \
-    "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.md" > \
-    "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.tmp"
-mv "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.tmp" \
-    "$SOURCE_STALE_FIRMWARE_DOCS/UM2C_MODDING_CHECKLIST.md"
+grep -v '/tmp/deneb-stock-d82245c[.]summary' \
+    "$SOURCE_STALE_FIRMWARE_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.md" > \
+    "$SOURCE_STALE_FIRMWARE_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.tmp"
+mv "$SOURCE_STALE_FIRMWARE_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.tmp" \
+    "$SOURCE_STALE_FIRMWARE_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.md"
 expect_failure rejects_source_stale_firmware_docs "$AUDIT" --source "$SOURCE_STALE_FIRMWARE_DOCS"
 
 SOURCE_STALE_STABILITY_DOCS="$TMP_DIR/source-stale-stability-docs"
 write_valid_source "$SOURCE_STALE_STABILITY_DOCS"
 grep -v '/tmp/deneb-84376b4-stability-complete5[.]summary' \
-    "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.md" > \
-    "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.tmp"
-mv "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.tmp" \
-    "$SOURCE_STALE_STABILITY_DOCS/UM2C_MODDING_CHECKLIST.md"
+    "$SOURCE_STALE_STABILITY_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.md" > \
+    "$SOURCE_STALE_STABILITY_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.tmp"
+mv "$SOURCE_STALE_STABILITY_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.tmp" \
+    "$SOURCE_STALE_STABILITY_DOCS/docs/PRINTSVC_EVIDENCE_LEDGER.md"
 expect_failure rejects_source_stale_stability_docs "$AUDIT" --source "$SOURCE_STALE_STABILITY_DOCS"
 
 SOURCE_BASELINE_WITHOUT_ACK="$TMP_DIR/source-baseline-without-ack"
@@ -589,6 +644,11 @@ DRIVER_ARTIFACT="$TMP_DIR/driver-artifact"
 write_valid_package "$DRIVER_ARTIFACT"
 touch "$DRIVER_ARTIFACT/print_service.py"
 expect_failure rejects_driver_artifact "$AUDIT" --package-dir "$DRIVER_ARTIFACT"
+
+DF_BRIDGE_ARTIFACT="$TMP_DIR/df-bridge-artifact"
+write_valid_package "$DF_BRIDGE_ARTIFACT"
+touch "$DF_BRIDGE_ARTIFACT/deneb-df-bridge.py"
+expect_failure rejects_df_bridge_artifact "$AUDIT" --package-dir "$DF_BRIDGE_ARTIFACT"
 
 MISSING_GATE="$TMP_DIR/missing-gate"
 write_valid_package "$MISSING_GATE"

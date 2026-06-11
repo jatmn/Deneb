@@ -37,9 +37,43 @@ Swap:            0          0          0
 
 | Build | Toolchain | Size | Notes |
 |-------|-----------|----------|-------|
-| musl (production) | mipsel-linux-musl-gcc 11.2.1 | ~1.8 MiB stripped | Static, musl libc, LVGL, ZMQ, generated i18n fonts, embedded C Digital Factory bridge |
+| musl (production) | mipsel-linux-musl-gcc 11.2.1 | ~1.8 MiB stripped | Static, musl libc, LVGL, ZMQ, generated i18n fonts; Digital Factory UI actions call `deneb-api digital-factory` |
 | glibc | mipsel-linux-gnu-gcc 14.2.0 | 2.5 MB | Static, glibc |
 | host (testing) | gcc under WSL/Linux | 1.5 MB | Stub drivers, no ZMQ |
+
+## Digital Factory Bridge Footprint
+
+Measured on hardware after installing `dist/Deneb_Update_0e8e562.deneb` on
+2026-06-11. The package is 5,703,680 bytes and does not include a standalone
+Digital Factory bridge binary. UI Digital Factory actions use the existing C
+`deneb-api digital-factory` command mode, which keeps steady-state bridge
+footprint at zero when no action is running.
+
+| Artifact / run | Size or peak | Notes |
+|----------------|--------------|-------|
+| `/usr/bin/deneb-ui` | 1,862,180 bytes | Installed stripped UI binary |
+| `/usr/bin/deneb-api` | 1,410,108 bytes | Installed stripped API binary with local `digital-factory` command mode |
+| Current `deneb-api digital-factory status --timeout 10` | 2,368 kB peak VSZ / 1,036 kB peak RSS | Returned `status=timeout` with rc 0 on an unpaired printer; reuses the existing API binary and stock Gershwin coordinator IPC |
+| Idle after command exit | no bridge process | No lingering bridge process after the one-shot status action |
+| Stock `digitalfactory` boot gate | disabled when unpaired | With no `ultimaker.option.cluster_id`, `/etc/init.d/digitalfactory enabled` returned rc 1 |
+
+### Standalone Bridge And Shared ZMQ Probe
+
+Before settling on `deneb-api digital-factory`, a standalone MIPS musl bridge
+was measured and rejected because it duplicated runtime weight already present
+in the API binary.
+
+| Probe | Size or peak | Result |
+|-------|--------------|--------|
+| Standalone static `deneb-df-bridge` | 1,711,428 bytes installed; 19,972 kB peak VSZ / 1,568 kB peak RSS for `status --timeout 10` | Rejected in favor of `deneb-api digital-factory` |
+| Scratch shared `libzmq.so.5.2.5` plus dynamic Zig bridge | 2,112,196 bytes + 226,804 bytes = 2,339,000 bytes | Larger than the standalone static bridge for this use |
+
+Deneb still ships statically linked native ZMQ consumers. Sharing ZMQ across
+`deneb-ui`, `deneb-api`, and `deneb-printsvc` may become a package-size win,
+but it is not a drop-in change: scratch dynamic C builds hit MIPS non-PIC
+relocation errors, and the dynamic Zig probe requested
+`/lib/ld-musl-mipsel.so.1` while the printer exposes
+`/lib/ld-musl-mipsel-sf.so.1`.
 
 The earlier 8.6 MiB package number included unstripped MIPS debug info. Release
 packaging now strips the staged binary, and the current packaged release

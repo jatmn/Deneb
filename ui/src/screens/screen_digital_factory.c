@@ -38,7 +38,11 @@ static void read_command(char *dst, size_t dst_size, const char *cmd)
 static void restart_cb(lv_event_t *e)
 {
     (void)e;
-    system("/etc/init.d/digitalfactory restart >/tmp/deneb-df.log 2>&1 &");
+    system("(if uci -q get ultimaker.option.cluster_id >/dev/null 2>&1; then "
+           "/etc/init.d/digitalfactory restart; "
+           "else /etc/init.d/digitalfactory stop; "
+           "/etc/init.d/digitalfactory disable; fi) "
+           ">/tmp/deneb-df.log 2>&1 &");
     lv_label_set_text(status_label, locale_get("digital_factory.restarting"));
 }
 
@@ -88,7 +92,9 @@ static void connect_cb(lv_event_t *e)
 
     system("rm -f /tmp/deneb-df-status; "
            "(mkdir " DF_LOCK_DIR " 2>/dev/null || exit 0; "
-           "/usr/bin/deneb-df-bridge connect --timeout 35 "
+           "/etc/init.d/digitalfactory enable >/tmp/deneb-df.log 2>&1; "
+           "/etc/init.d/digitalfactory start >>/tmp/deneb-df.log 2>&1; "
+           "/usr/bin/deneb-api digital-factory connect --timeout 35 "
            ">/tmp/deneb-df-status 2>&1; "
            "rmdir " DF_LOCK_DIR " 2>/dev/null) &");
     lv_label_set_text(status_label, locale_get("digital_factory.requesting_pin"));
@@ -113,11 +119,12 @@ static void disconnect_cb(lv_event_t *e)
     disconnect_armed = 0;
     system("rm -f /tmp/deneb-df-status; "
            "(mkdir " DF_LOCK_DIR " 2>/dev/null || exit 0; "
-           "/usr/bin/deneb-df-bridge disconnect --timeout 10 "
-           ">/tmp/deneb-df-status 2>&1 || "
-           "(uci -q delete ultimaker.option.cluster_id; "
+           "/usr/bin/deneb-api digital-factory disconnect --timeout 10 "
+           ">/tmp/deneb-df-status 2>&1; "
+           "uci -q delete ultimaker.option.cluster_id; "
            "uci -q commit ultimaker; "
-           "/etc/init.d/digitalfactory restart); "
+           "/etc/init.d/digitalfactory stop; "
+           "/etc/init.d/digitalfactory disable; "
            "rmdir " DF_LOCK_DIR " 2>/dev/null) >/tmp/deneb-df.log 2>&1 &");
     lv_label_set_text(status_label,
                       locale_get("digital_factory.disconnect_requested"));

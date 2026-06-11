@@ -27,6 +27,7 @@
 
 #include "api_http.h"
 #include "backend_zmq.h"
+#include "df_bridge.h"
 
 #define SOCKET_PATH     "/var/run/deneb-api.sock"
 #define MAX_EVENTS      16
@@ -304,8 +305,25 @@ static void handle_client(int fd)
 
 int main(int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
+    if (argc >= 2 && strcmp(argv[1], "digital-factory") == 0) {
+        if (argc < 3) {
+            fprintf(stderr,
+                    "Usage: %s digital-factory <connect|disconnect|status> "
+                    "[--timeout SECS]\n",
+                    argv[0]);
+            return 1;
+        }
+        int timeout = 20;
+        for (int i = 3; i < argc; i++) {
+            if (strcmp(argv[i], "--timeout") == 0 && i + 1 < argc) {
+                timeout = atoi(argv[++i]);
+            }
+        }
+        char result[160];
+        int rc = deneb_df_bridge_run(argv[2], timeout, result, sizeof(result));
+        printf("%s\n", result);
+        return rc == 0 ? 0 : 1;
+    }
 
 #if !defined(_WIN32)
     openlog("deneb-api", LOG_PID, LOG_DAEMON);

@@ -130,7 +130,9 @@ powershell -ExecutionPolicy Bypass -File tools/build-ui-host.ps1
 The installer will:
 - Back up the stock menu init script
 - Disable the stock Cygnus menu (S96)
-- Install the Deneb UI, web/API runtime, init scripts, locales, and Digital Factory bridge
+- Install the Deneb UI, web/API runtime, init scripts, and locales. Digital
+  Factory touchscreen actions are handled by the local `deneb-api
+  digital-factory` command mode.
 - Patch the stock coordinator ZMQ poll-state issue that can pin CPU after updates
 - Disable the stock WiFi AP/captive portal, remove the obsolete stock web
   assets from the live filesystem view with overlayfs, disable AP-side
@@ -164,6 +166,24 @@ Command format: `COMMAND<json_payload`
 - `PAUSE<{} / RESUME<{} / ABORT<{} - Print control
 
 See docs/BACKEND_IPC_PROTOCOL.md for full details.
+
+## Digital Factory Bridge
+
+Deneb uses the existing `/usr/bin/deneb-api digital-factory` local command mode
+for UI-side Digital Factory status, connect, and disconnect actions. This keeps
+the connector logic out of `deneb-ui` while reusing the C web/API binary that
+already links the coordinator ZeroMQ stack. No Deneb-owned Python Digital
+Factory bridge and no standalone `deneb-df-bridge` binary are packaged or kept
+as runtime fallbacks.
+
+This is not a new web or cloud API endpoint. The command talks to the existing
+stock Gershwin coordinator/Digital Factory IPC path used by the previous Python
+helper.
+
+The installer disables the stock `digitalfactory` init service when no
+`ultimaker.option.cluster_id` is configured. The Digital Factory screen enables
+and starts that service before an explicit user pairing request, and disables it
+again after disconnect.
 
 ## Screen Navigation
 

@@ -230,6 +230,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "test -s '$packageWsl' || { echo 'No Deneb update package found: $packageWsl' >&2; exit 1; }; " +
                  "tar tf '$packageWsl' > /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)update.sh$' /tmp/deneb-release-package-files.txt; " +
+                 "! grep -Eq '(^|/)deneb-df-bridge$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc.init$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-smoke$' /tmp/deneb-release-package-files.txt; " +

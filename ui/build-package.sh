@@ -203,8 +203,8 @@ native_printsvc_release_gate: ${PRINTSVC_RELEASE_GATE}
 contents:
   deneb-ui          - LVGL touchscreen UI binary (MIPS)
   deneb-ui.init     - OpenWrt procd init script
-  deneb-df-bridge   - Symlink installed to deneb-ui C Digital Factory bridge entry point
   deneb-api         - Local REST API and web session service (MIPS)
+  deneb-api digital-factory - Internal touchscreen Digital Factory command mode
   deneb-mdns        - Lightweight mDNS advertiser for Cura local discovery (MIPS)
   deneb-printsvc    - Native print service replacement (MIPS)
   deneb-printsvc-smoke - Native print service smoke/resource harness
@@ -242,10 +242,10 @@ contents:
   manifest.txt      - This file
 EOF
 
-if find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
+if find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' -o -name 'deneb-df-bridge.py' \) \
     -print | grep . >/dev/null 2>&1; then
     echo "ERROR: Python driver artifact found in Deneb package staging" >&2
-    find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \) \
+    find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' -o -name 'deneb-df-bridge.py' \) \
         -print >&2
     exit 1
 fi
@@ -271,6 +271,7 @@ tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PAR
 
 tar tf "$OUTPUT_IMG" > "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)update.sh$' "${STAGING_DIR}/package-files.txt"
+! grep -Eq '(^|/)deneb-df-bridge$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc.init$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-smoke$' "${STAGING_DIR}/package-files.txt"

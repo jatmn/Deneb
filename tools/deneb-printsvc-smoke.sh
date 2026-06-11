@@ -1032,14 +1032,14 @@ digital_factory_status_step() {
     label="$1"
     out="/tmp/deneb-printsvc-smoke-df.$$"
 
-    if ! command -v deneb-df-bridge >/dev/null 2>&1; then
-        say "$label: deneb-df-bridge not installed"
-        summary "phase=$label kind=digital-factory command=deneb-df-bridge_status installed=0 rc=1 body=missing"
+    if ! command -v deneb-api >/dev/null 2>&1; then
+        say "$label: deneb-api not installed"
+        summary "phase=$label kind=digital-factory command=deneb-api_digital-factory_status installed=0 rc=1 body=missing"
         return 1
     fi
 
-    say "$label: deneb-df-bridge status"
-    deneb-df-bridge status --timeout 3 >"$out" 2>>"$LOG"
+    say "$label: deneb-api digital-factory status"
+    deneb-api digital-factory status --timeout 3 >"$out" 2>>"$LOG"
     rc=$?
     if [ -s "$out" ]; then
         cat "$out" >>"$LOG"
@@ -1048,7 +1048,7 @@ digital_factory_status_step() {
     body_value="$(sanitize_summary_value "$(cat "$out" 2>/dev/null || true)")"
     rm -f "$out"
     say "$label rc=$rc body=${body_value:-unknown}"
-    summary "phase=$label kind=digital-factory command=deneb-df-bridge_status installed=1 rc=$rc body=${body_value:-unknown}"
+    summary "phase=$label kind=digital-factory command=deneb-api_digital-factory_status installed=1 rc=$rc body=${body_value:-unknown}"
     return "$rc"
 }
 
