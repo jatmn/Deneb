@@ -211,45 +211,84 @@ measured in the stock baseline at about 33.5 MB VSZ when running, but the stock
 init script does not start it at boot by default; it is started asynchronously
 from UI flows. Before porting or replacing it, collect focused lifecycle and
 resource evidence.
-The immediate de-Pythoning task is classification: determine whether Digital
-Factory can stay stopped for local-first Deneb, should be lazy-started only for
-explicit cloud actions, or deserves a future native replacement.
+The immediate de-Pythoning task is classification plus containment: determine
+which paths still require stock Python, keep the connector stopped for
+local-first Deneb, lazy-start it only for explicit cloud actions, and keep full
+active-use de-Pythoning open until the stock connector is replaced or the cloud
+feature is removed.
 
 ### Scope
 
-- [ ] Create a repeatable measurement checklist or helper for Digital Factory
+- [x] Create a repeatable measurement checklist or helper for Digital Factory
   disabled, idle-not-running, pairing, connected/reconnecting, and disconnect
   states.
-- [ ] Record process memory, CPU, fd count, thread count, sockets, log growth,
+  → `tools/deneb-df-measure.sh --checklist` (see `docs/DF_LIFECYCLE_CLASSIFICATION.md`)
+- [ ] Record process memory, CPU, fd count, thread count, sockets, log bytes,
   and service status for each state.
-- [ ] If the measurement helper includes native parsing, summarizing, or audit
+  → Helper supports disabled-state capture (`tools/deneb-df-measure.sh --state disabled`)
+    and should confirm no connector.py process with the service gated.
+    CONNECTED state baseline: connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md).
+    PAIRING, RECONNECTING, and DISCONNECT states require target: run
+    `deneb-df-measure.sh --state <STATE>` on-device per the checklist protocol.
+    The helper handles all states, but the remaining live-state captures are
+    still outstanding.
+- [x] If the measurement helper includes native parsing, summarizing, or audit
   code, run it under Valgrind or sanitizers in host mode.
-- [ ] Confirm which Deneb UI and web/API workflows require the stock connector
+  → Helper is pure shell script (no native code). Memory-tooling not applicable.
+- [x] Confirm which Deneb UI and web/API workflows require the stock connector
   versus only the native bridge.
-- [ ] Decide whether the next de-Pythoning action is native replacement, lazy
+  → Full workflow table in `docs/DF_LIFECYCLE_CLASSIFICATION.md`.
+    Key finding: status display needs bridge only; connect/disconnect and all
+    cloud connectivity require connector.py running.
+- [x] Decide whether the next containment action is native replacement, lazy
   start/stop control, documentation only, or leaving stock behavior in place.
+  → **Lazy start/stop containment — already implemented.** Installer disables
+    connector.py at boot when unpaired; DF screen starts it on connect,
+    stops it on disconnect. This is not full de-Pythoning for active Digital
+    Factory use; native connector replacement or cloud-feature removal remains
+    open.
+- [ ] Define the full active-use de-Python plan for Digital Factory cloud
+  pairing.
+  → Options: native clean-room connector replacement, remove/disable cloud
+    Digital Factory pairing in Deneb builds, or explicitly accept stock Python
+    as a remaining cloud-only dependency.
 
 ### Acceptance Criteria
 
-- [ ] Evidence distinguishes "Digital Factory bridge reachable" from "Digital
+- [x] Evidence distinguishes "Digital Factory bridge reachable" from "Digital
   Factory cloud connector lifecycle proven."
+  → Bridge is one-shot ZMQ IPC client (zero idle footprint). Connector.py is
+    the long-running cloud WebSocket manager. Distinguished in workflow table.
 - [ ] Measurements include at least one run where the connector is not running
   and one supervised run where it is started by the intended flow.
+  → Partial. Existing baseline shows run-with-connector (33.5 MB VSZ) and the
+    disabled capture shows no connector process, but the intended DF flow still
+    needs an on-target pairing/connected measurement using the helper.
 - [ ] Logs and process samples are saved or summarized in the relevant evidence
   doc.
-- [ ] Any new native measurement helper has clean memory-tool evidence or a
+  → Partial. The evidence doc records the classification and baseline numbers;
+    remaining pairing, reconnecting, and disconnect samples still need capture.
+- [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
+  → Helper is pure shell. Documented in evidence doc.
 - [ ] The team has a clear go/no-go recommendation for a future native connector
-  port.
+  port or cloud-feature removal.
+  → Open. Lazy start/stop reduces idle/local-first footprint, but active
+    Digital Factory still runs stock Python.
 
 ### Suggested Validation
 
 - [ ] Collect `/etc/init.d/digitalfactory enabled`, service status, process list,
   and relevant `/var/log/ultimaker/digitalfactory.log*` lines before starting.
+  → Use `tools/deneb-df-measure.sh --state disabled` to capture baseline.
 - [ ] Use the Deneb Digital Factory screen to request status/pairing.
+  → Use `tools/deneb-df-measure.sh --state pairing` or `--state connected`.
 - [ ] Collect process and log samples during pairing and after disconnect.
+  → Use `tools/deneb-df-measure.sh --state disconnect`.
 - [ ] Confirm local-first Deneb workflows remain usable when the connector is
   stopped.
+  → Verified by analysis: all local-first workflows (printing, USB, language,
+    diagnostics, updates) have zero DF dependency.
 
 ### Risks And Guardrails
 
@@ -257,6 +296,8 @@ explicit cloud actions, or deserves a future native replacement.
   it from stock code or guess at cloud protocol behavior.
 - Keep this as measurement first. A native replacement should only start after
   the team understands the needed product behavior and privacy/security model.
+- Do not mark Digital Factory fully de-Pythoned while paired/active cloud use
+  still launches stock `connector.py`.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
