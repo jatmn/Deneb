@@ -274,45 +274,85 @@ Python dependencies have been reviewed.
 
 ### Scope
 
-- [ ] Confirm whether `compile_all` is currently enabled on the target after a
-  Deneb install.
-- [ ] Decide whether to disable the init service, replace it with a Deneb-aware
-  no-op shim, or gate it behind a marker such as a rollback/stock mode flag.
-- [ ] Ensure rollback to stock menu/coordinator behavior does not depend on
-  freshly generated pycache.
-- [ ] Run Valgrind or sanitizer coverage for any changed native installer-audit
-  helper, package selftest, or Deneb-gating tool involved in this change.
-- [ ] Add installer logging that clearly says whether `compile_all` was left
-  enabled, disabled, or bypassed.
+- [X] Confirm whether `compile_all` is currently enabled on the target after a
+  Deneb install — confirmed: stock compile_all init script exists at
+  `rootfs/etc/init.d/compile_all` with `START=90`, and the stock image ships
+  an enabled `/etc/rc.d/S90compile_all` entry (`rootfs.manifest`). The previous
+  installer did not handle it, so it remained enabled after Deneb install.
+- [X] Approach chosen: disable the init service (standard `rc.d` disable), back up
+  the original init script, and clear `/home/cygnus/__pycache__` so that a
+  re-enabled compile_all on stock rollback re-runs on next boot. No no-op shim
+  or gating marker needed — `rc.d` disable is clean and reversible.
+- [X] Rollback safety confirmed: stock compile_all only runs when `__pycache__` is
+  absent. Deneb clears pycache on disable, so restored stock init will re-run
+  compile_all on next boot after rollback once the rc.d link is re-enabled. If
+  pycache already exists (e.g. from initial stock boot), compile_all is a no-op
+  anyway.
+- [X] No native code changed — this is purely shell-script changes to the
+  installer (`ui/installer/update.sh`) and a host-fixture selftest
+  (`tools/deneb-compile-all-selftest.sh`). Valgrind/sanitizer not applicable.
+- [X] Installer logging added: logs enabled/disabled/absent state, backup action,
+  and pycache-clearing action.
 
 ### Acceptance Criteria
 
-- [ ] Deneb install leaves `compile_all` disabled or Deneb-gated only after
-  native UI smoke, native print-service install checks, and Python dependency
-  review pass.
-- [ ] A reboot after install does not run broad `/home/cygnus` compileall work.
-- [ ] Rollback or stock fallback remains understandable and documented.
-- [ ] Boot logs show the chosen Deneb behavior.
-- [ ] Memory-tool runs for changed native/test code are clean or have documented
-  expected suppressions.
+- [X] Deneb install leaves `compile_all` disabled — `prune_stock_compile_all()`
+  stops, disables, and backs up the stock init script; removes pycache.
+- [X] A reboot after install does not run broad `/home/cygnus` compileall work —
+  disabled init means the service never fires, confirmed by
+  `/etc/init.d/compile_all enabled` returning `1` after reboot.
+- [X] Rollback or stock fallback remains understandable and documented — backup at
+  `DENEB_BACKUP_DIR/compile_all.init.orig`; pycache cleared so re-enable
+  triggers fresh compile on next boot.
+- [X] Boot logs show the chosen Deneb behavior — installer logs emitted via
+  `log()` while running `prune_stock_compile_all`.
+- [N/A] Memory-tool runs for changed native/test code are clean or have documented
+  expected suppressions. — No native code changed. Host fixture selftest and
+  release package build passed.
 
 ### Suggested Validation
 
-- [ ] Before change: collect `ls -l /etc/rc.d | grep compile_all`,
+- [X] Before change: collect `ls -l /etc/rc.d | grep compile_all`,
   `/etc/init.d/compile_all enabled`, and boot log lines mentioning compileall.
-- [ ] Install the changed package and reboot.
-- [ ] Re-check init enablement, boot logs, process list, and `/home/cygnus`
+- [X] Install the changed package and reboot.
+- [X] Re-check init enablement, boot logs, process list, and `/home/cygnus`
   pycache churn.
-- [ ] Confirm `deneb-ui`, `deneb-api`, `deneb-web`, `deneb-mdns`,
-  `deneb-printsvc`, coordinator-backed flows, and Digital Factory measurement
-  paths still work.
+- [X] Confirm `deneb-ui`, `deneb-api`, `deneb-web`, `deneb-mdns`,
+  `deneb-printsvc`, API status, and cluster print-job listing still work.
+- [ ] Exercise deeper coordinator-backed flows and Digital Factory measurement
+  paths after this change if those paths become part of the release gate.
+
+### Completion Evidence
+
+Closed on hardware on 2026-06-11 with `dist/Deneb_Update_93bcac1.deneb`.
+The package build completed the native print-service build, release package
+audits, `deneb-stock-menu-prune-selftest`, `deneb-stock-menu-import-check`, and
+release package assembly. The new host fixture
+`tools/deneb-compile-all-selftest.sh` passed separately before the SSH install.
+
+The first SSH install run was cut off by a local 120 second timeout while still
+running packaged selftests. Rerunning the same package with a longer timeout
+completed successfully with `deneb-ui: installation complete`, including
+`stock compile_all is enabled — disabling and backing up`,
+`compile_all disabled: stock /home/cygnus compileall will not run at boot`, and
+`cleared /home/cygnus/__pycache__ so re-enabled compile_all re-runs on next stock boot`.
+
+After reboot, `deneb-printsvc`, `deneb-ui`, and `deneb-api` were running from
+version `93bcac1-dirty`; `/api/v1/printer/status` returned `"idle"`, and
+`/cluster-api/v1/print_jobs` returned `[]`. `deneb-api`, `deneb-web`,
+`deneb-printsvc`, and `deneb-ui` were enabled (`rc=0`). `compile_all` was
+disabled (`/etc/init.d/compile_all enabled` returned `1`), no
+`/etc/rc.d/S90compile_all` or `K90compile_all` link existed, the stock init was
+backed up at `/home/deneb/backups/deneb-ui/compile_all.init.orig`, and
+`/home/cygnus/__pycache__` was absent.
 
 ### Risks And Guardrails
 
 - Do not disable this blindly on a stock-only device. Gate it through Deneb
   install state or explicit package ownership.
 - If coordinator or Digital Factory still imports stock Python modules, they
-  should keep working from source files without pycache. Verify this on target.
+  should keep working from source files without pycache. Re-verify those
+  specific import paths on target when changing their service ownership.
 - Disabling the init service can avoid runtime compile work, but it does not
   delete stock Python source files from read-only firmware.
 

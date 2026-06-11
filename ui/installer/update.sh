@@ -367,6 +367,41 @@ prune_stock_menu_ui() {
     log "pruned stock Python touchscreen UI; retained shared menu_settings"
 }
 
+prune_stock_compile_all() {
+    local compile_all_src="/rom/etc/init.d/compile_all"
+    local compile_all_dst="/etc/init.d/compile_all"
+    local backup="${DENEB_BACKUP_DIR}/compile_all.init.orig"
+
+    if [ ! -f "${compile_all_dst}" ] && [ ! -f "${compile_all_src}" ]; then
+        log "stock compile_all init script not found; nothing to disable"
+        return
+    fi
+
+    if /etc/init.d/compile_all enabled >/dev/null 2>&1; then
+        log "stock compile_all is enabled — disabling and backing up"
+        mkdir -p "$(dirname "${backup}")"
+        if [ -f "${compile_all_dst}" ]; then
+            cp -f "${compile_all_dst}" "${backup}"
+        elif [ -f "${compile_all_src}" ]; then
+            cp -f "${compile_all_src}" "${backup}"
+        fi
+        /etc/init.d/compile_all stop >/dev/null 2>&1 || true
+        /etc/init.d/compile_all disable
+        log "compile_all disabled: stock /home/cygnus compileall will not run at boot"
+
+        # Remove any stale pycache that would prevent re-enable detection
+        # on rollback. The stock compile_all only runs when __pycache__ is
+        # absent, so clearing it here means a re-enabled compile_all will
+        # re-run on next boot after rollback.
+        if [ -d "/home/cygnus/__pycache__" ]; then
+            rm -rf "/home/cygnus/__pycache__"
+            log "cleared /home/cygnus/__pycache__ so re-enabled compile_all re-runs on next stock boot"
+        fi
+    else
+        log "stock compile_all is already disabled or not present"
+    fi
+}
+
 install_motion_firmware_verify_cache() {
     local programmer_dir="/home/atmel_programmer"
     local prog="${programmer_dir}/prog.sh"
@@ -695,6 +730,7 @@ smoke_test_binary
 install_config
 prune_stock_wifi_portal
 prune_stock_menu_ui
+prune_stock_compile_all
 
 log "installation complete"
 schedule_reboot

@@ -210,8 +210,10 @@ long-soak proof.
 - [x] Diagnostics export and Deneb-specific print-service diagnostics exist.
 - [ ] Add remote-control authorization/audit story for web/API/Cura actions.
 - [ ] Provide touchscreen-visible indication when remote control is active.
-- [ ] Keep `onion-helper`, stock Python services, pycache growth, and backend
-  service dependency under review before disabling or replacing more services.
+- [x] Disable stock `compile_all` for Deneb installs and clear
+  `/home/cygnus/__pycache__` after backing up the stock init script.
+- [ ] Keep `onion-helper`, remaining stock Python services, and backend service
+  dependencies under review before disabling or replacing more services.
 - [ ] Measure print-quality regressions and correlate them with CPU, memory,
   streaming cadence, serial flow control, and service load.
 - [ ] Modernize OS/service pieces only when measurement shows a practical win
