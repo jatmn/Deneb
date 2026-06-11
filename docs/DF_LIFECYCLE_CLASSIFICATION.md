@@ -5,14 +5,16 @@ connector and define the path to remove it from active Digital Factory use.
 
 ## Status Summary
 
-**Decision: containment is implemented; full active-use de-Python remains open.**
+**Decision: containment is implemented; the required active-use fix is a native
+C Digital Factory connector.**
 The Deneb-owned Digital Factory bridge is native, and the stock `connector.py`
 is gated so it is disabled at boot when unpaired, lazy-started from the DF
 screen on connect, and stopped on disconnect. This removes Python from
 local-first and idle/unpaired Digital Factory paths, but **Digital Factory still
-uses stock Python whenever the cloud connector is active**. Full de-Pythoning
-requires either a native replacement for the cloud connector or a product
-decision to remove/disable Digital Factory cloud pairing entirely.
+uses stock Python whenever the cloud connector is active**. The remaining
+de-Pythoning task is to port the Digital Factory cloud connector and related
+active-use runtime paths to C while preserving Digital Factory pairing,
+authentication, reconnect, disconnect, and steady-state cloud behavior.
 
 ## Workflow Analysis: Native Bridge vs Stock Connector
 
@@ -21,6 +23,7 @@ decision to remove/disable Digital Factory cloud pairing entirely.
 | Layer | Component | What it does | Zero-footprint? |
 |-------|-----------|--------------|-----------------|
 | **Native bridge** | `deneb-api digital-factory` | One-shot CLI; talks ZMQ to the stock Gershwin coordinator IPC to read DF state and send connect/disconnect RPCs. No lingering process. | Yes — runs and exits |
+| **Deneb API runtime** | `deneb-api` HTTP service | Owns local UM/Cura compatibility APIs plus the DF command-mode binary entry point. It is not currently a DF cloud endpoint, but it already contains the native DF bridge code and linked coordinator IPC stack. | Yes for bridge commands — one-shot mode exits |
 | **Stock connector** | `connector.py` via `/etc/init.d/digitalfactory` | Long-running Python process (~33.5 MB VSZ); maintains the WebSocket to Digital Factory cloud, handles pairing, authentication, reconnection. Uses the proprietary `stardustWebsocketProtocol` (56 files). | No — runs continuously |
 | **Coordinator** | `coordinator.py` | Stock Gershwin IPC node graph. Multiplexes IPC between the bridge (ZMQ) and the connector (Gershwin internal protocol). | No — runs continuously |
 
@@ -48,10 +51,10 @@ thin IPC control interface. The bridge enables the Deneb UI to:
 
 But the actual cloud connectivity, pairing protocol, and WebSocket management
 are handled entirely by `connector.py` (stock Python). A full active-use
-de-Python path must replace or remove that connector. A native replacement is
-high-risk because it would need a clean-room implementation of the Digital
-Factory protocol behavior currently provided by the stock
-`stardustWebsocketProtocol` library.
+de-Python path must replace that connector with Deneb-owned native C code.
+Removal/disablement of Digital Factory cloud pairing is not a valid completion
+path for this task unless a separate product decision explicitly drops the
+feature.
 
 ## Current Lazy Start/Stop Control
 
@@ -108,10 +111,11 @@ task checklist requires host-side Valgrind evidence.
 
 | Option | Verdict | Rationale |
 |--------|---------|-----------|
-| Native replacement | **Open for full active-use de-Python** | Required if Digital Factory cloud pairing must remain available without Python. High-risk because the current behavior lives in stock cloud/protocol Python. |
+| Native replacement | **Required for full active-use de-Python** | Digital Factory cloud pairing must remain available without Python. High-risk because the current behavior lives in stock cloud/protocol Python and must be replaced by a native C implementation. |
 | Lazy start/stop | **Containment done** | Installer disables at boot when unpaired; DF screen controls enable/start/stop. The native bridge (`deneb-api digital-factory`) is already C code, but active cloud use still starts Python. |
 | Documentation only | Insufficient | Documentation records the boundary but does not remove Python from active Digital Factory use. |
 | Leave stock behavior | Insufficient | Gating reduces idle/local-first footprint, but a paired/active connector still depends on stock Python. |
+| Remove/disable cloud pairing | **Out of scope for de-Python completion** | Disabling the feature avoids Python but does not port the connector. It should not be used to close the Digital Factory de-Python task. |
 
 ### Recommendation
 
@@ -123,12 +127,38 @@ properly lifecycle-managed:
 - Stopped/disabled when user disconnects
 - Control path goes through the native C bridge (`deneb-api digital-factory`)
 
-Track a follow-up active-use de-Python task for one of:
-- Native clean-room Digital Factory connector replacement
-- Removal/disablement of Digital Factory cloud pairing from Deneb builds
-- A documented decision to keep stock Python for this cloud feature
+Track the active-use de-Python task as a native C connector port. That port must
+own the active Digital Factory connection path currently implemented by
+`connector.py` and the `stardustWebsocketProtocol` Python package, without
+copying vendor Python into Deneb C code.
 
 The remaining on-target measurements (pairing, connected steady-state,
 reconnecting, disconnect) should be collected via
 `tools/deneb-df-measure.sh --state <STATE>` before scoping the replacement,
 because those samples define the current active connector behavior and cost.
+
+## Native Connector Port Scope
+
+The C port should preserve the Digital Factory feature instead of removing the
+UI or cloud controls. The expected implementation work is:
+
+- Reuse the existing Deneb DF/API surfaces where they fit: `web/src/df_bridge.c`,
+  `web/src/main.c` command-mode dispatch, and `/usr/bin/deneb-api
+  digital-factory <status|connect|disconnect>` are the current native bridge
+  contract for UI-side DF operations.
+- Avoid drift between touchscreen, web/API, and service behavior. If native
+  connector status or lifecycle state becomes shareable, expose it through the
+  existing Deneb API/runtime boundary instead of adding a parallel DF control
+  stack.
+- Add a Deneb-owned native connector service, separate from the one-shot
+  `deneb-api digital-factory` command bridge, to maintain the cloud session.
+- Replace `/etc/init.d/digitalfactory` ownership so active pairing/connected
+  states launch the native connector, not `/usr/bin/python3 connector.py`.
+- Preserve existing touchscreen and web-facing behavior: status, pairing PIN,
+  reconnecting, connected, disconnect, and restart controls.
+- Keep the current native bridge or fold its coordinator IPC operations into
+  the native service only after equivalent behavior is proven.
+- Add source/package/install audits that fail when Deneb starts or ships a
+  Python Digital Factory connector fallback.
+- Validate on target in disabled, pairing, connected, reconnecting, and
+  disconnect states before marking Digital Factory de-Python complete.

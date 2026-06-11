@@ -202,20 +202,18 @@ diagnostics export using a temporary writable `/mnt/usb` bind mount.
 - Avoid deleting files solely because they look like UI. Some non-UI stock code
   imports menu settings.
 
-## 3. Classify The Stock Digital Factory Python Dependency
+## 3. Port The Stock Digital Factory Connector To C
 
-### Why This Is Low-Hanging
+### Why This Belongs In The De-Python Track
 
 The full stock Digital Factory connector is large and cloud-facing. It was
 measured in the stock baseline at about 33.5 MB VSZ when running, but the stock
 init script does not start it at boot by default; it is started asynchronously
-from UI flows. Before porting or replacing it, collect focused lifecycle and
-resource evidence.
-The immediate de-Pythoning task is classification plus containment: determine
-which paths still require stock Python, keep the connector stopped for
-local-first Deneb, lazy-start it only for explicit cloud actions, and keep full
-active-use de-Pythoning open until the stock connector is replaced or the cloud
-feature is removed.
+from UI flows. The already-completed containment work keeps the connector
+stopped for local-first Deneb, but containment is not completion: active Digital
+Factory pairing and connected states still launch stock Python. The Digital
+Factory de-Python task is to preserve the feature and port that active connector
+runtime to Deneb-owned C.
 
 ### Scope
 
@@ -245,13 +243,32 @@ feature is removed.
   → **Lazy start/stop containment — already implemented.** Installer disables
     connector.py at boot when unpaired; DF screen starts it on connect,
     stops it on disconnect. This is not full de-Pythoning for active Digital
-    Factory use; native connector replacement or cloud-feature removal remains
-    open.
-- [ ] Define the full active-use de-Python plan for Digital Factory cloud
+    Factory use; native connector replacement remains open.
+- [x] Define the full active-use de-Python direction for Digital Factory cloud
   pairing.
-  → Options: native clean-room connector replacement, remove/disable cloud
-    Digital Factory pairing in Deneb builds, or explicitly accept stock Python
-    as a remaining cloud-only dependency.
+  → Required direction: native C connector replacement. Removal/disablement of
+    Digital Factory cloud pairing is not completion for this task, and accepting
+    stock Python would leave the de-Python work open.
+- [ ] Inventory the stock connector's external contract without copying vendor
+  Python into Deneb C code:
+  pairing request/response behavior, credentials/config files, cloud endpoints,
+  TLS behavior, reconnect/backoff, coordinator IPC, logs, and failure states.
+- [ ] Inventory the existing Deneb Digital Factory C/API surface and reuse it
+  where relevant:
+  `web/src/df_bridge.c`, `web/src/main.c` command-mode dispatch,
+  `/usr/bin/deneb-api digital-factory <status|connect|disconnect>`, and the
+  touchscreen `screen_digital_factory.c` call sites.
+- [ ] Add a Deneb-owned native connector service/binary that can maintain the
+  active Digital Factory cloud session.
+- [ ] Replace the active `/etc/init.d/digitalfactory` Python launch path with
+  the native connector while preserving rollback evidence.
+- [ ] Update the touchscreen Digital Factory screen to start/restart the native
+  connector service for pairing and connected states.
+- [ ] Add source/package/install/runtime audits that fail if Deneb launches or
+  packages a Python Digital Factory connector fallback.
+- [ ] Add drift checks so touchscreen DF controls, the `deneb-api
+  digital-factory` command bridge, and the native connector service report
+  compatible status/lifecycle states instead of growing separate truth sources.
 
 ### Acceptance Criteria
 
@@ -271,10 +288,17 @@ feature is removed.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
-- [ ] The team has a clear go/no-go recommendation for a future native connector
-  port or cloud-feature removal.
-  → Open. Lazy start/stop reduces idle/local-first footprint, but active
-    Digital Factory still runs stock Python.
+- [x] The team has a clear go/no-go recommendation for the connector path.
+  → Go: port the active Digital Factory connector to native C. Lazy start/stop
+    reduces idle/local-first footprint, but active Digital Factory still runs
+    stock Python until the port replaces `/etc/init.d/digitalfactory`.
+- [ ] Active pairing and connected states run without `connector.py`,
+  `/usr/bin/python3 connector.py`, or `stardustWebsocketProtocol` imports.
+- [ ] Digital Factory pairing, status, reconnect, disconnect, and restart
+  behavior are validated on target against the native connector.
+- [ ] The existing native bridge/API command path remains the shared control
+  boundary for UI-side status/connect/disconnect unless a tested replacement
+  deliberately consolidates it with the native connector.
 
 ### Suggested Validation
 
@@ -292,8 +316,10 @@ feature is removed.
 
 ### Risks And Guardrails
 
-- Digital Factory touches cloud connectivity and printer identity. Do not port
-  it from stock code or guess at cloud protocol behavior.
+- Digital Factory touches cloud connectivity and printer identity. Port the
+  feature to C from observed contracts and measurements; do not copy stock
+  Python implementation into Deneb native code or guess at cloud protocol
+  behavior.
 - Keep this as measurement first. A native replacement should only start after
   the team understands the needed product behavior and privacy/security model.
 - Do not mark Digital Factory fully de-Pythoned while paired/active cloud use
@@ -453,8 +479,9 @@ native port.
    package paths, then add package/audit protection.
 2. Make stock Python UI pruning explicit and auditable, including a retained
    dependency list.
-3. Classify the stock Digital Factory Python dependency with lifecycle/resource
-   evidence before choosing a porting project.
+3. Port the stock Digital Factory connector to C, using lifecycle/resource
+   evidence to preserve behavior and prove the Python connector no longer
+   launches during active cloud use.
 4. Disable or bypass `compile_all` only after the remaining Python dependency
    picture is clearer.
 5. Keep `onion-helper` separate as a non-Python supervised service experiment.

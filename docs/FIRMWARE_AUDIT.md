@@ -141,14 +141,14 @@ with static C binaries:
 | Component | Lines | Complexity | RAM Savings |
 |-----------|-------|------------|-------------|
 | print_service.py | ~500+ | MEDIUM-HIGH | ~19 MB VSZ |
+| connector.py | Large | VERY HIGH | ~33.5 MB VSZ; must preserve Digital Factory cloud pairing and active connection behavior |
 | coordinator.py | ~183 main + 15 handlers | HIGH | ~27 MB VSZ |
 | wificonnect/server.py | ~138 | LOW-MEDIUM | Replaced by Deneb USB `wifi.txt` import |
 
 ### Phase 3: Longer term
 
-| Component | Lines | Complexity | Notes |
-|-----------|-------|------------|-------|
-| connector.py | Large | VERY HIGH | Cloud-only feature, lowest priority |
+No longer tracked here. The Digital Factory connector is part of the active
+de-Python service-replacement work, not a feature-removal task.
 
 ## Deneb Progress So Far
 
@@ -164,6 +164,9 @@ with static C binaries:
 - [x] Stock `digitalfactory` service is disabled at install when no
   `ultimaker.option.cluster_id` is configured, then enabled/started by the
   Digital Factory screen when the user begins pairing
+- [ ] Stock `connector.py` Digital Factory cloud connector ported to C. The
+  existing lifecycle gating is containment only; active pairing/connected states
+  still require a native connector replacement before this is de-Pythoned.
 - [x] WiFi setup replacement: USB `wifi.txt` import, stock AP/captive portal disabled by installer
 - [x] Lightweight web runtime bundled into Deneb update releases: `lighttpd`,
   `deneb-api`, static web UI, and `deneb-mdns`
@@ -177,6 +180,7 @@ with static C binaries:
 - [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop
   availability, mismatch continue flow, and abort cleanup/status handling
 - [ ] Print service C rewrite
+- [ ] Digital Factory connector C rewrite
 - [ ] Coordinator C rewrite
 - [ ] OS/service modernization
 
