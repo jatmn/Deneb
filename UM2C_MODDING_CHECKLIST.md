@@ -1822,11 +1822,14 @@ Completed implementation slices:
   throttling, ZMQ context tuning, and IPC cleanup, with flat `VmSize`,
   `VmData`, thread count, and file-descriptor counts at settled samples. The
   remaining small RSS staircase is still tracked as resident-page growth rather
-  than proven heap growth. The current follow-up active run has reached at
-  least ten verified heat/cool, guarded-home, motion, and completion cycles,
-  but the next accepted promotion proof still needs a longer active soak that
-  proves plateau behavior over the target duration; idle observe-only sampling
-  is only baseline context. Keep exact summary paths and current run values in
+  than proven heap growth. The latest follow-up active run completed 20
+  verified heat/cool, guarded-home, motion, and completion cycles before a
+  manual stop during cycle 21, with RSS/private still stepping upward through
+  the run and post-abort idle RSS at 1064 KiB. This memory leak/resident-page
+  growth needs further investigation; the next accepted promotion proof still
+  needs a longer active soak that proves plateau behavior over the target
+  duration or identifies and fixes the private-memory source. Idle observe-only
+  sampling is only baseline context. Keep exact summary paths and current run values in
   [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md).
 - [x] Fix native diagnostics log growth so it does not masquerade as memory
   growth or burn flash during multi-day prints. A June 11, 2026 live idle check

@@ -26,7 +26,7 @@ promotion status here so the checklist does not become a changelog.
 | Digital Factory job lifecycle | Open | Observe-only bridge status only | Needs lifecycle behavior, not just bridge status endpoint reachability. |
 | Representative real slicer output | Open | Generated representative fixture only | Needs broader slicer geometry beyond generated bounded fixtures. |
 | Repeated-job stability/leak behavior | Proven for short bounded native completion loop | `/tmp/deneb-84376b4-stability-complete5.summary` plus iteration summaries `/tmp/deneb-printsvc-stability-16769-{1..5}.summary` | Five supervised Z-only completion jobs ran through the same native process with guarded Z-home before each job, `rss_delta_kb=0`, final idle, heater targets cleared, no jobs, and no flow resend/reject debt. Multi-hour soak remains a separate open promotion gate. |
-| Active physical soak memory behavior | Investigated, not promotion-complete | `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary`; `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary`; `/tmp/deneb-56c2bb5-cadence-cleanup-active-soak.summary`; `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary`; `/tmp/deneb-a6fe410-long-active-soak.summary` | The post-fix active runner completed repeated low heat/cool, guarded-home, home-macro, and representative XYZ completion cycles through the same native process. The earlier state-fix run reached cycle 9 and showed completed-cycle RSS settling around 1688 KiB after a 1592 KiB initial sample. Fixed-buffer G-code streaming plus bounded/conflated ZeroMQ status queues reduced the ten-cycle settled run to 1028-1044 KiB after a 1020 KiB initial sample. Reducing native status publish cadence and clearing terminal job stream/flow scratch still showed a 1148-1164 KiB settled staircase after a 1144 KiB reboot baseline. After ZMQ context tuning and IPC cleanup, the first active run started at 1004/328 KiB RSS/private and settled at 1012/336 KiB for cycles 1-2, 1016/340 KiB for cycle 3, 1020/344 KiB for cycles 4-6, and 1028/352 KiB at cycle 7. The follow-up long active run reached at least seventeen verified cycles and settled at 1012/336 KiB for cycles 1-3, 1020/344 KiB for cycles 4-6, 1028/352 KiB for cycles 7-10, 1036/360 KiB for cycles 11-14, 1048/372 KiB for cycle 15, 1052/376 KiB for cycle 16, and 1056/380 KiB for cycle 17. `VmSize`, `VmData`, thread count, and settled fd count stayed flat, so remaining RSS steps are still being tracked as resident-page growth rather than proven heap growth. This is active leak-triage evidence, not accepted multi-hour promotion proof. |
+| Active physical soak memory behavior | Investigated, not promotion-complete | `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary`; `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary`; `/tmp/deneb-56c2bb5-cadence-cleanup-active-soak.summary`; `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary`; `/tmp/deneb-a6fe410-long-active-soak.summary` | The post-fix active runner completed repeated low heat/cool, guarded-home, home-macro, and representative XYZ completion cycles through the same native process. The earlier state-fix run reached cycle 9 and showed completed-cycle RSS settling around 1688 KiB after a 1592 KiB initial sample. Fixed-buffer G-code streaming plus bounded/conflated ZeroMQ status queues reduced the ten-cycle settled run to 1028-1044 KiB after a 1020 KiB initial sample. Reducing native status publish cadence and clearing terminal job stream/flow scratch still showed a 1148-1164 KiB settled staircase after a 1144 KiB reboot baseline. After ZMQ context tuning and IPC cleanup, the first active run started at 1004/328 KiB RSS/private and settled at 1012/336 KiB for cycles 1-2, 1016/340 KiB for cycle 3, 1020/344 KiB for cycles 4-6, and 1028/352 KiB at cycle 7. The follow-up long active run completed 20 verified cycles before a manual stop during cycle 21; settled samples climbed from 1004/328 KiB initially to 1060/384 KiB by cycles 19-20, with post-abort idle RSS at 1064 KiB. `VmSize`, `VmData`, thread count, and settled fd count stayed flat, so remaining RSS steps are still being tracked as resident-page growth rather than proven heap growth. This is active leak-triage evidence, not accepted multi-hour promotion proof, and the memory leak/resident-page growth needs further investigation. |
 | Multi-hour stability/leak behavior | Open | None accepted yet | Needs a longer native heat/motion/job active soak. Idle observe-only sampling can support baseline context but does not satisfy this gate. |
 
 ## Latest Deployed Native Build
@@ -74,14 +74,20 @@ promotion status here so the checklist does not become a changelog.
   started from a lower 1004/328 KiB RSS/private baseline and completed seven
   comparable settled cycles at 1012/336, 1012/336, 1016/340, 1020/344,
   1020/344, 1020/344, and 1028/352 KiB. A follow-up long active run,
-  `/tmp/deneb-a6fe410-long-active-soak.summary`, reached at least seventeen verified
+  `/tmp/deneb-a6fe410-long-active-soak.summary`, completed 20 verified
   cycles on the same deployed native package: settled RSS/private samples were
   1012/336 KiB for cycles 1-3, 1020/344 KiB for cycles 4-6, 1028/352 KiB for
   cycles 7-10, 1036/360 KiB for cycles 11-14, 1048/372 KiB for cycle 15,
-  1052/376 KiB for cycle 16, and 1056/380 KiB for cycle 17.
+  1052/376 KiB for cycle 16, 1056/380 KiB for cycles 17-18, and 1060/384 KiB
+  for cycles 19-20. The run was manually stopped during cycle 21 at user
+  request. The API abort returned the printer to idle with heater targets zero,
+  native active/Stop false, no soak/smoke wrapper processes, and post-abort
+  `deneb-printsvc` RSS at 1064 KiB.
   `VmSize` stayed 2108 KiB, `VmData` stayed 732 KiB, threads stayed at 3, and
   fd count returned to 20 at settled samples. This is useful active leak-triage
-  evidence, but it is not accepted multi-hour promotion proof.
+  evidence, but it is not accepted multi-hour promotion proof. The remaining
+  memory leak/resident-page growth needs further investigation before this
+  gate can close.
 - Current host memory-tooling proof:
   WSL Valgrind 3.24.0 is installed for host-side native C leak triage, and
   `tools/deneb-printsvc-valgrind.sh` builds the host-stub debug test binary

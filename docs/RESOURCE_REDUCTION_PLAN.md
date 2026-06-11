@@ -109,10 +109,12 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   proof still shows small settled resident-page steps: the first seven-cycle
   run reached 1028/352 KiB, and the follow-up active run held 1028/352 KiB
   through cycle 10 before cycles 11-14 settled at 1036/360 KiB, cycle 15 at
-  1048/372 KiB, cycle 16 at 1052/376 KiB, and cycle 17 at 1056/380 KiB.
+  1048/372 KiB, cycle 16 at 1052/376 KiB, cycles 17-18 at 1056/380 KiB, and
+  cycles 19-20 at 1060/384 KiB before a manual stop during cycle 21.
   `VmData`, thread count, and settled fd count stayed flat, so this is a
   resource reduction and triage improvement, not a closed multi-hour stability
-  gate.
+  gate. Treat the continuing RSS/private staircase as an unresolved memory
+  leak/resident-page growth issue that needs further investigation.
 - Web/API status plumbing now carries those native fields beyond the parser when
   the native service supplies them:
   `backend_zmq` keeps firmware/version and topcap telemetry in backend state,
@@ -995,8 +997,9 @@ active-soak series is indexed in
 [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md): fixed-buffer
 streaming, bounded/conflated ZeroMQ queues, status-cadence cleanup,
 diagnostics throttling, ZMQ context tuning, and IPC cleanup substantially
-reduced the native resident baseline, but the remaining RSS staircase is still
-tracked as resident-page growth rather than proven heap growth. The
+reduced the native resident baseline, but the remaining RSS staircase continued
+through the user-stopped 20-cycle run and is still tracked as resident-page
+growth rather than proven heap growth. The
 diagnostics logger also now treats normal flow ACK, line-number, and
 `flow_last_response` churn as heartbeat data instead of immediate status
 changes, and truncates oversized logs at service startup.
@@ -1009,5 +1012,6 @@ switching, and Digital Factory pairing/disconnect samples remain useful
 secondary resource context, but they do not replace the active print-service
 soak.
 
-Treat the remaining RSS steps as unresolved resident-page growth until a longer
-active run proves plateau behavior or a private-memory source is identified.
+Treat the remaining RSS steps as an unresolved memory leak/resident-page growth
+issue until a longer active run proves plateau behavior or a private-memory
+source is identified.
