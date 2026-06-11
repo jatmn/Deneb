@@ -10,7 +10,7 @@ different for safety/resource reasons.
 | Stock source | Stock behavior | Native owner | Review decision |
 | --- | --- | --- | --- |
 | `rootfs/home/cygnus/marlindriver/print_service.py` | Command REP uses stock command verbs `GCODE`, `MACRO`, `JOB`, `ABORT`, `PAUSE`, and `RESUME`; status PUB emits topic `10001` with stock-shaped JSON. Busy commands are rejected except abort/pause/resume. | `printsvc/src/command*.c`, `printsvc/src/status.c`, `printsvc/src/ipc_*`, shared route helpers. | Stock-compatible IPC shape is implemented and host/audit tested. Client behavior still needs hardware proof per surface, so this is contract parity only. |
-| `rootfs/home/cygnus/marlindriver/print_service.py` | Status publishes only after executor sync; firmware defaults to `marlin-version` or `none`. | `printsvc/src/service.c`, `printsvc/src/status_parser.c`, `printsvc/src/status.c`, smoke `--firmware-proof`. | Native preserves the field/default and parses stock version lines. Native startup sends bounded `M115` as a diagnostic extension; stock normal-loop only schedules `M105`/`M114`, while stock `init.gcode` contains `M115`. A June 10, 2026 observe-only stock/native pair captured matching firmware-default behavior plus nonzero bed/nozzle/topcap ambient telemetry; broad parity still needs the full resource and client-flow evidence. |
+| `rootfs/home/cygnus/marlindriver/print_service.py` | Status publishes only after executor sync; firmware defaults to `marlin-version` or `none`. | `printsvc/src/service.c`, `printsvc/src/status_parser.c`, `printsvc/src/status.c`, smoke `--firmware-proof`. | Native preserves the field/default and parses stock version lines. Native startup sends bounded `M115` as a diagnostic extension; stock normal-loop only schedules `M105`/`M114`, while stock `init.gcode` contains `M115`. Paired observe-only stock/native evidence captured matching firmware-default behavior plus nonzero bed/nozzle/topcap ambient telemetry; broad parity still needs the open client-flow and long-soak evidence. |
 | `rootfs/home/cygnus/marlindriver/marlin_protocol.py` | When out of sync, repeatedly sends `M105` and `M114`; normal periodic status sends priority `M105` then `M114`. | `printsvc/src/service.c`, `printsvc/src/motion_runtime.c`, flow-control tests. | Native recurring status polling keeps the stock-shaped `M105`/`M114` cadence after startup probing. |
 | `rootfs/home/cygnus/marlindriver/marlin_companion/protocol.py` | Parses `MACHINE_TYPE`, `PCB_ID`, quoted `BUILD`, M105 temperatures including bed/topcap, M114 position/R0, and G28 home-distance telemetry. | `printsvc/src/status_parser.c`, `printsvc/tests/test_printsvc.c`. | Host parser coverage exists for stock telemetry forms including compact old-Marlin temperature reports. The `d82245c` observe-only stock/native pair proves current ambient telemetry collection on this printer, not physical heat/motion parity. |
 | `rootfs/home/cygnus/marlindriver/marlin_executor.py` | Rewrites `M190` to `M140`, `M109` to `M104`, strips comments, ignores `M117`, and expands/skips `G280` via the stock prime path. | `printsvc/src/gcode_rewrite.c`, `printsvc/src/gcode_stream.c`, heater-wait code. | Host-tested parity exists for rewrite/wait sequencing. Physical heat/motion proof remains required before claiming live parity for these commands. |
@@ -35,32 +35,15 @@ different for safety/resource reasons.
   live hardware showed that a window of 6 caused resend debt and partial
   completion on this old Marlin path. This is a deliberate safety/stability
   divergence. A later active-loop scheduler fix improved native streaming
-  without widening the window, and the latest accepted paired comparison keeps
-  window 4 as the accepted native policy while the strict stock/native
-  throughput gate remains open.
+  without widening the window, and the current bounded stock/native comparison
+  keeps window 4 as the accepted native policy.
 
 ## Remaining proof after source review
 
-- Full stock/native resource, boot-time, and throughput comparison using the
-  guarded stock-baseline helper plus a full native smoke summary remains open.
-  A regenerated fixture with an early `G280 S1` marker now avoids the stock
-  cold-prime insertion, but it did not close the stock baseline. Native
-  `/tmp/deneb-native-g280-resource-v2.summary` passed resource verification and
-  moved `running_z=207.0` to `final_z=111.0` with an explicit
-  `phase=printer-job-completed-flow-wait` row. Fresh stock
-  `/tmp/deneb-stock-g280-resource-v2.summary` reported 318 B/s, but stock
-  `print_service.py` logged `Command 'b'JOB'' not supported when busy` after
-  prehome; the summary was idle by the delayed running snapshot and stayed at
-  `running_z=207.0`, `final_z=207.0`, `delta_z=0.000`. The smoke harness now
-  waits for stock Z-home position plus a fixed stock settle window before job
-  upload. Throughput/resource samples are still not accepted until the guarded
-  stock route proves the bounded descent body executes.
-- A later dirty native build from `cd5eeba` fixed the native scheduler side of
-  that comparison, and later accepted native evidence keeps the route safe with
-  drained flow and low RSS. However, the latest accepted paired strict
-  comparison still rejects native CPU interval and bounded fixture throughput,
-  so the full release proof remains open until current stock and native
-  summaries both pass the complete smoke/resource gates.
 - Representative Cura/slicer geometry for completion, pause/resume, and abort.
-- LCD UI, Web UI, Cura client, coordinator, and Digital Factory lifecycle proof
-  against native service without Python fallback.
+- LCD UI and Web UI hands-on proof against native service without Python
+  fallback or stale print state.
+- Desktop Cura client proof beyond generated cluster API fixtures.
+- Digital Factory lifecycle proof beyond observe-only bridge status.
+- Multi-hour active heat/motion/job soak evidence that explains or eliminates
+  the remaining RSS/private-memory staircase.

@@ -32,7 +32,7 @@ This repository is private while the project is being organized.
 - [ ] RAM/CPU benchmark comparisons while printing, uploading, updating, and exporting diagnostics
 - [ ] `.deneb` package manifest, rollback, signing, and release-channel hardening
 - [ ] Cura discovery/upload/start compatibility validation against current Cura builds and real printer behavior
-- [ ] Full native `deneb-printsvc` hardware smoke matrix and before/after resource proof before the Python `marlindriver` replacement can move beyond experimental builds
+- [ ] Native `deneb-printsvc` promotion gates: LCD/Web hands-on flows, desktop Cura, Digital Factory lifecycle, representative slicer output, and long active-soak memory behavior
 
 ### Planned
 - [ ] Generic slicer G-code support
@@ -58,7 +58,7 @@ The API includes UltiMaker REST API v1-shaped print/status/material endpoints an
 
 ## Optimization Notes
 
-Deneb's current optimization work is focused on removing dormant stock UI and setup paths while moving print control onto original native services. The `printsvc/` tree now provides the experimental native `deneb-printsvc` path for the stock Python `marlindriver` service. Bounded native hardware smoke now covers observe-only restart/boot sync, generated active/preheat abort slices, completion, and pause/resume/abort, but remaining release blockers are the full representative hardware smoke matrix and before/after RAM, CPU, boot-time, and print-throughput measurements.
+Deneb's current optimization work is focused on removing dormant stock UI and setup paths while moving print control onto original native services. The `printsvc/` tree now provides the experimental native `deneb-printsvc` path for the stock Python `marlindriver` service. Bounded hardware evidence now covers native route ownership, generated heat/preheat and abort slices, pause/resume, completion, short repeated-job stability, and a strict bounded stock/native resource comparison. Remaining release blockers are the user-facing LCD/Web/Cura/Digital Factory workflows, representative slicer-output proof, and long active-soak memory behavior.
 
 - The stock touchscreen UI no longer runs; Deneb starts the native LVGL UI instead.
 - The installer prunes the dormant stock Python touchscreen files after a successful Deneb UI smoke test.
@@ -75,6 +75,7 @@ Deneb's current optimization work is focused on removing dormant stock UI and se
 - [Backend IPC protocol](docs/BACKEND_IPC_PROTOCOL.md): coordinator command/status protocol used by the native UI.
 - [Stock UI coverage](docs/STOCK_UI_COVERAGE.md): current stock-vs-Deneb touchscreen feature parity.
 - [Resource reduction plan](docs/RESOURCE_REDUCTION_PLAN.md): RAM, CPU, and release guardrails.
+- [Native print service](printsvc/README.md): build, Valgrind, package, and hardware smoke validation.
 
 ## Build And Verification
 
