@@ -330,10 +330,24 @@ prune_stock_menu_ui() {
         return
     fi
 
-    # Keep menu_settings.py and machine_config.json. Coordinator, file handling,
-    # firmware update handling, and utility modules still import those constants.
-    # The removed files are the dormant touchscreen implementation that Deneb
-    # replaces with /usr/bin/deneb-ui.
+    # Retain menu_settings.py — coordinator, file handling, firmware update
+    # handling, print handling, host ID, network, and UFP format utilities
+    # import shared constants from cygnus.menu.menu_settings. Required constants:
+    #   coordinator/coordinator.py:              GCODE_DIR
+    #   coordinator/handlers/filehandling.py:    GCODE_FILE
+    #   coordinator/handlers/firmwareupdatehandling.py: FW_IMG_COPY_TARGET, FW_IMG_EXTRACT_DIR
+    #   coordinator/handlers/printhandling.py:   GCODE_FILE
+    #   util/host_id.py:                          LAN_INTERFACE
+    #   util/network.py:                          LAN_INTERFACE, WLAN_INTERFACE
+    #   util/ufp_format.py:                       GCODE_DIR
+    #
+    # Retain machine_config.json — referenced as a path string by
+    # menu_settings.MACHINE_CONFIG; retained defensively in case other
+    # stock services read it at runtime for machine geometry constants.
+    #
+    # Everything else under /home/cygnus/menu is dormant UI implementation
+    # replaced by /usr/bin/deneb-ui and is removed to reclaim overlay space
+    # and prevent stale imports from masking missing file regressions.
     rm -rf \
         "${menu_dir}/executor.py" \
         "${menu_dir}/controldialog.py" \

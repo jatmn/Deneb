@@ -109,10 +109,28 @@ samples before release gates should rely on the numbers.
 `/etc/init.d/menu` starts `/home/cygnus/menu/executor.py`, which is the stock
 Python touchscreen UI. The extracted stock menu tree is about 884 KiB on disk.
 Deneb installer packages prune the dormant UI implementation after the native
-UI smoke test succeeds, while retaining `menu_settings.py` and
-`machine_config.json` because coordinator, file handling, firmware update
-handling, host ID, network, and UFP utilities still import shared constants
-from `cygnus.menu.menu_settings`.
+UI smoke test succeeds, while retaining only the files still required by
+unreplaced stock services.
+
+**Retained files:**
+
+| File | Dependency | Stock Services |
+|------|------------|----------------|
+| `menu_settings.py` | Shared path/endpoint constants | `coordinator/coordinator.py` (GCODE_DIR), `coordinator/handlers/filehandling.py` (GCODE_FILE), `coordinator/handlers/firmwareupdatehandling.py` (FW_IMG_COPY_TARGET, FW_IMG_EXTRACT_DIR), `coordinator/handlers/printhandling.py` (GCODE_FILE), `util/host_id.py` (LAN_INTERFACE), `util/network.py` (LAN_INTERFACE, WLAN_INTERFACE), `util/ufp_format.py` (GCODE_DIR) |
+| `machine_config.json` | Machine geometry constants | Referenced by `menu_settings.MACHINE_CONFIG` path constant; retained defensively |
+
+**Pruned directories (dormant UI):** `gui_companion/`, `helpers/`, `img/`,
+`navigator/`, `screens/`, `templates/`, `ui_elements/`
+
+**Pruned top-level files:** `executor.py`, `controldialog.py`, `machine.py`,
+`pylvgl.py`, `screen.py`, `style.py`
+
+The prune boundary is verified at build time by
+`deneb-stock-menu-prune-selftest` and the retained constant dependency map is
+checked by `deneb-stock-menu-import-check`. See
+[`tools/deneb-stock-menu-prune-selftest.sh`](../tools/deneb-stock-menu-prune-selftest.sh)
+and
+[`tools/deneb-stock-menu-import-check.sh`](../tools/deneb-stock-menu-import-check.sh).
 
 ## IPC (from live device)
 

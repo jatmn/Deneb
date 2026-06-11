@@ -128,40 +128,69 @@ Python files that are still required by unreplaced stock services.
 
 ### Scope
 
-- [ ] Enumerate the exact stock menu files Deneb must retain.
-- [ ] Enumerate the stock menu files that should be hidden or overlay-pruned
+- [X] Enumerate the exact stock menu files Deneb must retain.
+- [X] Enumerate the stock menu files that should be hidden or overlay-pruned
   from the live filesystem view after Deneb UI smoke passes.
-- [ ] Label retained files as "remaining stock Python dependency" and attach the
+- [X] Label retained files as "remaining stock Python dependency" and attach the
   stock service or workflow that still needs each one.
-- [ ] Add an installer selftest or host fixture that proves the retained files
+- [X] Add an installer selftest or host fixture that proves the retained files
   are present and the pruned directories are absent.
-- [ ] Run Valgrind or sanitizer coverage for any changed native installer-audit
+- [N/A] Run Valgrind or sanitizer coverage for any changed native installer-audit
   helper, host fixture, or package selftest that is executable on the host.
-- [ ] Add a simple import-dependency check or documented manual check for the
+  — All changes in this task are shell scripts; no new native code to instrument.
+- [X] Add a simple import-dependency check or documented manual check for the
   retained stock Python constants.
-- [ ] Update docs to describe the retained shared constants versus removed UI
+- [X] Update docs to describe the retained shared constants versus removed UI
   implementation.
 
 ### Acceptance Criteria
 
-- [ ] The prune list is explicit and documented.
-- [ ] The installer keeps only required shared menu configuration files.
-- [ ] A Deneb package install does not leave dormant stock screen/navigator/UI
+- [X] The prune list is explicit and documented.
+- [X] The installer keeps only required shared menu configuration files.
+- [X] A Deneb package install does not leave dormant stock screen/navigator/UI
   directories visible in the live overlay filesystem view.
-- [ ] Coordinator/update/material-related stock imports still work where Deneb
+- [X] Coordinator/update/material-related stock imports still work where Deneb
   has not replaced them.
-- [ ] Memory-tool runs for changed native/test code are clean or have documented
-  expected suppressions.
+- [N/A] Memory-tool runs for changed native/test code are clean or have documented
+  expected suppressions. — Only shell scripts changed.
 
 ### Suggested Validation
 
-- [ ] Run the installer selftest or host fixture.
-- [ ] On hardware after install, list `/home/cygnus/menu` and verify retained
+- [X] Run the installer selftest or host fixture (`deneb-stock-menu-prune-selftest`).
+- [X] Run the source import-dependency check (`deneb-stock-menu-import-check`).
+- [X] On hardware after install, list `/home/cygnus/menu` and verify retained
   files and removed UI directories.
-- [ ] Run the native UI smoke path.
-- [ ] Exercise update entry, material import/set material, diagnostics export,
+- [X] Run the native UI smoke path.
+- [X] Exercise update entry, material import/set material, diagnostics export,
   and any remaining coordinator-backed path that might import stock menu
   settings.
+
+### Completion Evidence
+
+Closed on hardware on 2026-06-11 with `dist/Deneb_Update_7bf0a2d.deneb`.
+The package build ran `deneb-stock-menu-prune-selftest` and
+`deneb-stock-menu-import-check`. The SSH install completed with
+`deneb-ui: installation complete`, `deneb-ui smoke test passed`, and
+`pruned stock Python touchscreen UI; retained shared menu_settings`.
+
+After reboot, `/home/cygnus/menu` contained only `menu_settings.py` and
+`machine_config.json`; `executor.py`, `controldialog.py`, `machine.py`,
+`pylvgl.py`, `screen.py`, `style.py`, `gui_companion/`, `helpers/`, `img/`,
+`navigator/`, `screens/`, `templates/`, and `ui_elements/` were absent from
+the live overlay view. `deneb-ui`, `deneb-api`, and `deneb-printsvc` were
+running from version `7bf0a2d-dirty`.
+
+Remaining stock import validation used the firmware Python paths
+`PYTHONPATH=/home:/home/lib` and successfully imported `menu_settings`,
+`cygnus.util.host_id`, `cygnus.util.network`, `cygnus.util.ufp_format`,
+`coordinator.coordinator`, and the file/firmware/print handling modules that
+still consume `GCODE_DIR`, `GCODE_FILE`, `FW_IMG_COPY_TARGET`,
+`FW_IMG_EXTRACT_DIR`, `LAN_INTERFACE`, and `WLAN_INTERFACE`.
+
+Workflow checks over SSH exercised the installed update package path,
+`/usr/bin/deneb-ui --smoke-test`, material endpoints, set-material UCI
+persistence with restore, `api/v1/system/log`, native backend status, and a
+diagnostics export using a temporary writable `/mnt/usb` bind mount.
 
 ### Risks And Guardrails
 

@@ -268,10 +268,42 @@ This means opkg updates require the Onion repo to be reachable.
 ### Stock Menu Tree
 
 `/home/cygnus/menu` is about 884 KiB in the recovery image. `executor.py` is
-the stock touchscreen UI entry point. Deneb can remove the dormant UI files,
-but must retain `menu_settings.py` and `machine_config.json` because non-UI
-stock services import shared paths and endpoint constants from
-`cygnus.menu.menu_settings`.
+the stock touchscreen UI entry point. Deneb removes the dormant UI files after
+the native UI smoke test passes, while retaining only the files required by
+unreplaced stock services.
+
+**Retained (remaining stock Python dependency):**
+
+| File | Reason | Used By |
+|------|--------|---------|
+| `menu_settings.py` | Shared path, network, and endpoint constants | `coordinator/coordinator.py` (`GCODE_DIR`), `coordinator/handlers/filehandling.py` (`GCODE_FILE`), `coordinator/handlers/firmwareupdatehandling.py` (`FW_IMG_COPY_TARGET`, `FW_IMG_EXTRACT_DIR`), `coordinator/handlers/printhandling.py` (`GCODE_FILE`), `util/host_id.py` (`LAN_INTERFACE`), `util/network.py` (`LAN_INTERFACE`, `WLAN_INTERFACE`), `util/ufp_format.py` (`GCODE_DIR`) |
+| `machine_config.json` | Machine geometry data (min/max X/Y/Z, type, material) | Referenced as path string by `menu_settings.MACHINE_CONFIG`; retained defensively for any stock service that reads it at runtime |
+
+**Pruned (dormant UI implementation — removed after Deneb UI smoke passes):**
+
+| File/Dir | Description |
+|----------|-------------|
+| `executor.py` | Stock touchscreen UI entry point |
+| `controldialog.py` | Control dialog |
+| `machine.py` | Machine configuration module |
+| `pylvgl.py` | LVGL Python bindings (~46 KiB) |
+| `screen.py` | Screen base class |
+| `style.py` | UI style constants |
+| `gui_companion/` | Path and progress bar companions |
+| `helpers/` | Backlight and communication helpers |
+| `img/` | ~40 splash icons and PNG assets |
+| `navigator/` | ~30+ stock navigator files (print, materials, settings, maintenance) |
+| `screens/` | ~40+ stock UI screen definitions |
+| `templates/` | Screen template classes |
+| `ui_elements/` | Button, label, bar, image, container widgets |
+
+All `__pycache__` directories are also removed.
+
+The prune boundary is verified at build time by
+`deneb-stock-menu-prune-selftest` (host fixture) and the retained constant
+dependency map is checked by `deneb-stock-menu-import-check`. See
+[`tools/deneb-stock-menu-prune-selftest.sh`](../tools/deneb-stock-menu-prune-selftest.sh) and
+[`tools/deneb-stock-menu-import-check.sh`](../tools/deneb-stock-menu-import-check.sh).
 
 ### SSH Access Helper
 
