@@ -15,24 +15,28 @@ promotion status here so the checklist does not become a changelog.
 | Active abort cleanup state | Proven for bounded native/generated representative paths | `/tmp/deneb-printsvc-smoke-status-fix-active.summary`; `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current live proof captured native active-print and Cura-cluster abort transitions through `printing` -> `aborting` -> `idle`, with Stop disabled after abort and no resend/reject debt. Native intentionally avoids stock Python's unsafe XY/Z abort homing cleanup. |
 | Pause/resume | Proven for bounded native representative fixture | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current representative REST job proof captured `printing` -> `paused` -> `printing` with native active/Stop flags true before abort. Cura-started pause/resume remains open. |
 | Cura cluster upload/start/abort | Proven for generated representative XYZ fixture through cluster API | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current cluster proof captured representative XYZ motion via cluster upload/start/abort. Desktop Cura client behavior and arbitrary slicer output remain open. |
-| Completion flow drain | Proven for bounded native completion | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current completion proof captured active `printing`, Stop allowed true, Z movement from 207.0 to 191.0, final `idle`, `flow_inflight=0`, and `flow_resend=0`. |
-| Print throughput versus stock Python | Proven within strict physical-fixture floor | Stock `/tmp/deneb-precisewait-stock-resource.summary`: 1401 bytes / 29 s / 48 B/s. Native `/tmp/deneb-precisewait-native-resource.summary`: 1401 bytes / 34 s / 41 B/s. | The comparator now enforces an 85% floor for bounded physical completion throughput while still rejecting zero throughput and larger regressions. Native remains active through its finish barrier and drains with `flow_inflight=0` / `flow_resend=0`. |
+| Completion flow drain | Proven for bounded native completion | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Current completion proof captured active `printing`, Stop allowed true, real Z movement, final `idle`, native inactive/Stop disabled, and no flow resend debt. Transient idle telemetry `flow_inflight` from `M105`/`M114` polling is diagnostic, not completion debt. |
+| Print throughput versus stock Python | Proven within strict physical-fixture floor | Stock `/tmp/deneb-precisewait-stock-resource.summary`: 1401 bytes / 29 s / 48 B/s. Native `/tmp/deneb-precisewait-native-resource.summary`: 1401 bytes / 34 s / 41 B/s. | The comparator now enforces an 85% floor for bounded physical completion throughput while still rejecting zero throughput and larger regressions. Native remains active through its finish barrier and completes without resend debt. |
 | Native driver RSS reduction | Proven in current paired completion evidence | Stock final `print_service.py` RSS 14616 KiB; native final `deneb-printsvc` RSS 1648 KiB | The paired resource run also improved system memory and CPU interval. |
+| Native diagnostics log growth | Mitigated for current native package | Live `/var/log/ultimaker/deneb-printsvc.log` check after dirty `56c2bb5` rebuild | A live investigation found the native diagnostics log at 198.6 MiB after roughly 90 minutes because normal flow ACK, line-number, and `flow_last_response` churn triggered immediate status lines. The logger now keeps resend/reject/error/state changes immediate, heartbeats high-churn counters every 60 seconds, and truncates oversized logs on service startup. After deployment/restart, the log capped to 26.3 KiB; after the corrected rebuild, a 70-second idle window grew only one line (`366677 -> 367363` bytes, `535 -> 536` lines). |
+| Host native memory tooling | Proven for current unit/selftest surface | `tools/deneb-printsvc-valgrind.sh`; WSL Valgrind 3.24.0 and GCC ASan/LSan runs | Host-stub `deneb-printsvc-tests` passed under AddressSanitizer/LeakSanitizer and Valgrind Memcheck, including a 64-cycle repeated-job terminal-cleanup stress test. Valgrind reported `283 allocs, 283 frees`, zero bytes in use at exit, and zero errors for the main test process; the child process also freed all heap blocks. This proves current host test coverage is clean, not that live MIPS resident-page behavior is fully explained. |
 | Full strict stock/native resource release gate | Proven for current bounded physical evidence set | `/usr/bin/deneb-printsvc-smoke-compare --require-reduction /tmp/deneb-precisewait-stock-resource.summary /tmp/deneb-precisewait-native-resource.summary /tmp/deneb-final-native-full.summary /tmp/deneb-b745cfd-physical-lifecycle-long.summary /tmp/deneb-84376b4-stability-complete5.summary` | Passed with native memory, driver RSS, and CPU interval lower than stock, boot-sync not slower, throughput above the 85% floor, and attached heat/motion/macro/local-job/lifecycle/stability evidence. |
 | LCD hands-on workflow | Open | None accepted yet | Needs real touchscreen queued job, start, pause/resume, abort, completion, stale-state recovery. |
 | Web UI hands-on workflow | Open | None accepted yet | API proofs exist; browser/user workflow proof remains separate. |
 | Digital Factory job lifecycle | Open | Observe-only bridge status only | Needs lifecycle behavior, not just bridge status endpoint reachability. |
 | Representative real slicer output | Open | Generated representative fixture only | Needs broader slicer geometry beyond generated bounded fixtures. |
 | Repeated-job stability/leak behavior | Proven for short bounded native completion loop | `/tmp/deneb-84376b4-stability-complete5.summary` plus iteration summaries `/tmp/deneb-printsvc-stability-16769-{1..5}.summary` | Five supervised Z-only completion jobs ran through the same native process with guarded Z-home before each job, `rss_delta_kb=0`, final idle, heater targets cleared, no jobs, and no flow resend/reject debt. Multi-hour soak remains a separate open promotion gate. |
-| Multi-hour stability/leak behavior | Open | None accepted yet | Needs a longer native uptime/resource soak after the repeated-job loop. |
+| Active physical soak memory behavior | Investigated, not promotion-complete | `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary`; `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary`; `/tmp/deneb-56c2bb5-cadence-cleanup-active-soak.summary`; `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary` | The post-fix active runner completed repeated low heat/cool, guarded-home, home-macro, and representative XYZ completion cycles through the same native process. The earlier state-fix run reached cycle 9 and showed completed-cycle RSS settling around 1688 KiB after a 1592 KiB initial sample. Fixed-buffer G-code streaming plus bounded/conflated ZeroMQ status queues reduced the ten-cycle settled run to 1028-1044 KiB after a 1020 KiB initial sample. Reducing native status publish cadence and clearing terminal job stream/flow scratch still showed a 1148-1164 KiB settled staircase after a 1144 KiB reboot baseline. After ZMQ context tuning and IPC cleanup, the latest active run started at 1004/328 KiB RSS/private and settled at 1012/336 KiB for cycles 1-2, 1016/340 KiB for cycle 3, 1020/344 KiB for cycles 4-6, and 1028/352 KiB at cycle 7. `VmSize`, `VmData`, thread count, and fd count stayed flat, so remaining RSS steps are being tracked as resident-page growth rather than proven heap growth. This is active leak-triage evidence, not accepted multi-hour promotion proof. |
+| Multi-hour stability/leak behavior | Open | None accepted yet | Needs a longer native heat/motion/job active soak. Idle observe-only sampling can support baseline context but does not satisfy this gate. |
 
 ## Latest Deployed Native Build
 
-- Build: dirty `4166d26` experimental package.
-- Package: `dist/Deneb_Update_4166d26.deneb`.
-- Device install: completed over SSH; target logs show `deneb-api: starting
-  (version=4166d26-dirty)` and native package selftests passed, including
-  `deneb-printsvc stability selftest passed`.
+- Build: dirty `56c2bb5` experimental package.
+- Package: `dist/Deneb_Update_56c2bb5.deneb`.
+- Device install: completed over SSH; final target check showed idle status,
+  heater targets zero, `native_active:false`, `native_stop_allowed:false`,
+  `flow_resend:0`, and installed `/usr/bin/deneb-printsvc-smoke` carrying
+  `DENEB_PRINTSVC_SMOKE_HEAT_COOLDOWN_TIMEOUT:-300`.
 - Current stability proof:
   `/tmp/deneb-8e72da5-observe-stability.summary` ran the installed
   `deneb-printsvc-stability` harness in observe-only mode for two short
@@ -48,6 +52,54 @@ promotion status here so the checklist does not become a changelog.
   The post-run printer state was idle with no queued jobs, heater targets zero,
   native active/Stop false, and no flow resend/reject debt. This closes the
   short repeated-job stability slice, not the multi-hour soak gate.
+- Current active-soak memory investigation:
+  the packaged `deneb-active-physical-soak-runner` is the accepted shape for
+  leak triage because it keeps the machine active with low heat/cool cycles,
+  guarded homing, the home macro, and representative XYZ completion jobs. The
+  manual heater-status fix run
+  `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary` reached cycle 9
+  and showed completed-cycle RSS settling around 1688 KiB after a 1592 KiB
+  initial sample. After fixed-buffer G-code streaming, bounded/conflated
+  ZeroMQ status queues, deployment, and reboot, the current
+  `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary` run completed ten
+  comparable active cycles with completed-cycle RSS 1028, 1028, 1032, 1036,
+  1036, 1036, 1044, 1044, 1044, and 1044 KiB after a 1020 KiB initial sample. Completed
+  cycles returned to idle with native active/Stop false; active phases reported
+  `printing`, heater/preheat or representative-job activity, and Stop allowed
+  true. Live `/proc` checks during the run showed flat `VmSize` 2124 KiB,
+  `VmData` 748 KiB, three threads, and stable fd count, so the remaining small
+  RSS steps are being tracked as resident-page growth rather than proven heap
+  growth. After adding ZMQ context tuning and IPC init cleanup, rebuilding,
+  reinstalling, and rebooting, `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary`
+  started from a lower 1004/328 KiB RSS/private baseline and completed seven
+  comparable settled cycles at 1012/336, 1012/336, 1016/340, 1020/344,
+  1020/344, 1020/344, and 1028/352 KiB. `VmSize` stayed 2108 KiB, `VmData`
+  stayed 732 KiB, threads stayed at 3, and fd count returned to 20 at settled
+  samples. This is useful active leak-triage evidence, but it is not accepted
+  multi-hour promotion proof.
+- Current host memory-tooling proof:
+  WSL Valgrind 3.24.0 is installed for host-side native C leak triage, and
+  `tools/deneb-printsvc-valgrind.sh` builds the host-stub debug test binary
+  before running `deneb-printsvc-tests` under Memcheck. The current run passed
+  with `283 allocs`, `283 frees`, zero bytes in use at exit, and zero Valgrind
+  errors for the main test process after adding the 64-cycle repeated-job
+  terminal-cleanup stress test; the child process also freed all heap blocks.
+  A separate GCC AddressSanitizer/LeakSanitizer build passed all ten host CTest
+  entries. These checks make the host-native C surface repeatable for leak
+  regressions, but they do not replace live active-cycle `/proc` evidence on
+  the MIPS printer.
+- Current diagnostics log-growth investigation:
+  a live idle check found `/var/log/ultimaker/deneb-printsvc.log` at 198.6 MiB
+  after roughly 90 minutes while native `deneb-printsvc` RSS was still small.
+  The root cause was native diagnostics treating normal serial ACK,
+  line-number, and `flow_last_response` churn as immediate status changes. The
+  fixed logger ignores those hot-path counters for change-triggered logging,
+  keeps resend/reject/error/state changes immediate, emits a 60-second
+  heartbeat for high-churn counters, and truncates oversized diagnostics logs
+  at startup. After deploying and restarting idle `deneb-printsvc`, the log was
+  capped to 26.3 KiB. After the corrected rebuild, a 70-second idle window grew
+  by one heartbeat line only, from 366677 bytes / 535 lines to 367363 bytes /
+  536 lines, with idle status, heater targets zero, and native Stop disabled.
 - Current physical lifecycle proof:
   `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` was collected on the
   previously installed `8e72da5-dirty` runtime with longer bounded fixtures and
@@ -98,4 +150,6 @@ Section 8 remains experimental until all of these are captured and pass:
 - Digital Factory lifecycle proof.
 - Representative slicer-output completion, pause/resume, and abort proof.
 - Multi-hour stability/resource evidence beyond the short repeated native
-  completion loop.
+  completion loop, using the cleaned active physical soak harness with repeated
+  heat, motion, and job starts. Idle observe-only runs are baseline context,
+  not proof for this gate.

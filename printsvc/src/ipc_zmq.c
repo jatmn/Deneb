@@ -26,7 +26,11 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 #define DENEB_PRINTSVC_IDLE_POLL_MS 250
 #define DENEB_PRINTSVC_ACTIVE_POLL_MS 10
 #define DENEB_PRINTSVC_JOB_POLL_BURST 8
-#define DENEB_PRINTSVC_STATUS_PUBLISH_MS 100
+#define DENEB_PRINTSVC_IDLE_STATUS_PUBLISH_MS 1000
+#define DENEB_PRINTSVC_ACTIVE_STATUS_PUBLISH_MS 250
+#define DENEB_PRINTSVC_STATUS_HWM 4
+#define DENEB_PRINTSVC_ZMQ_MAX_SOCKETS 16
+#define DENEB_PRINTSVC_ZMQ_THREAD_STACK_BYTES 65536
 
 static int publish_status(void *pub, const deneb_status_t *status)
 {
@@ -55,6 +59,36 @@ static int service_has_active_work(const deneb_print_service_t *svc)
             svc->resume_policy_pending || svc->heater_wait.active);
 }
 
+static void configure_status_pub(void *pub)
+{
+    int hwm = DENEB_PRINTSVC_STATUS_HWM;
+    int conflate = 1;
+
+    if (!pub)
+        return;
+
+    zmq_setsockopt(pub, ZMQ_SNDHWM, &hwm, sizeof(hwm));
+    zmq_setsockopt(pub, ZMQ_CONFLATE, &conflate, sizeof(conflate));
+}
+
+static void configure_zmq_context(void *ctx)
+{
+    if (!ctx)
+        return;
+
+#ifdef ZMQ_IO_THREADS
+    (void)zmq_ctx_set(ctx, ZMQ_IO_THREADS, 1);
+#endif
+#ifdef ZMQ_MAX_SOCKETS
+    (void)zmq_ctx_set(ctx, ZMQ_MAX_SOCKETS,
+                      DENEB_PRINTSVC_ZMQ_MAX_SOCKETS);
+#endif
+#ifdef ZMQ_THREAD_STACK_SIZE
+    (void)zmq_ctx_set(ctx, ZMQ_THREAD_STACK_SIZE,
+                      DENEB_PRINTSVC_ZMQ_THREAD_STACK_BYTES);
+#endif
+}
+
 static void poll_job_burst(deneb_print_service_t *svc)
 {
     for (int i = 0; i < DENEB_PRINTSVC_JOB_POLL_BURST; i++) {
@@ -66,33 +100,36 @@ static void poll_job_burst(deneb_print_service_t *svc)
 
 int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 {
-    void *ctx;
-    void *pub;
-    void *rep;
+    void *ctx = NULL;
+    void *pub = NULL;
+    void *rep = NULL;
     int linger = 0;
     long long last_status_publish_ms = 0;
+    int rc = -1;
 
     ctx = zmq_ctx_new();
     if (!ctx)
         return -1;
+    configure_zmq_context(ctx);
 
     pub = zmq_socket(ctx, ZMQ_PUB);
     rep = zmq_socket(ctx, ZMQ_REP);
     if (!pub || !rep)
-        return -1;
+        goto fail;
 
     zmq_setsockopt(pub, ZMQ_LINGER, &linger, sizeof(linger));
     zmq_setsockopt(rep, ZMQ_LINGER, &linger, sizeof(linger));
+    configure_status_pub(pub);
 
     if (zmq_bind(pub, DENEB_PRINTSVC_STATUS_ENDPOINT) != 0) {
         fprintf(stderr, "deneb-printsvc: bind %s failed: %s\n",
                 DENEB_PRINTSVC_STATUS_ENDPOINT, zmq_strerror(errno));
-        return -1;
+        goto fail;
     }
     if (zmq_bind(rep, DENEB_PRINTSVC_COMMAND_ENDPOINT) != 0) {
         fprintf(stderr, "deneb-printsvc: bind %s failed: %s\n",
                 DENEB_PRINTSVC_COMMAND_ENDPOINT, zmq_strerror(errno));
-        return -1;
+        goto fail;
     }
 
     for (;;) {
@@ -118,9 +155,12 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
         poll_job_burst(svc);
         {
             long long now_ms = monotonic_ms();
+            int status_publish_ms = service_has_active_work(svc) ?
+                                        DENEB_PRINTSVC_ACTIVE_STATUS_PUBLISH_MS :
+                                        DENEB_PRINTSVC_IDLE_STATUS_PUBLISH_MS;
             if (last_status_publish_ms == 0 ||
                 now_ms - last_status_publish_ms >=
-                    DENEB_PRINTSVC_STATUS_PUBLISH_MS) {
+                    status_publish_ms) {
                 deneb_print_service_refresh_diagnostics(svc);
                 deneb_diagnostics_log_status(&svc->status, 0);
                 publish_status(pub, &svc->status);
@@ -128,6 +168,15 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
             }
         }
     }
+
+fail:
+    if (rep)
+        zmq_close(rep);
+    if (pub)
+        zmq_close(pub);
+    if (ctx)
+        zmq_ctx_term(ctx);
+    return rc;
 }
 
 #endif

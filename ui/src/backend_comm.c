@@ -112,6 +112,7 @@ void backend_deinit(void) { /* no-op */ }
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS_PER_POLL 4
 #define STOP_INFLIGHT_MS 3000
+#define STATUS_QUEUE_HWM 4
 
 static deneb_print_backend_route_t backend_route;
 
@@ -130,6 +131,18 @@ static int configure_socket_linger(void *socket)
 {
     int linger = 0;
     return zmq_setsockopt(socket, ZMQ_LINGER, &linger, sizeof(linger));
+}
+
+static void configure_status_socket(void *socket)
+{
+    int hwm = STATUS_QUEUE_HWM;
+    int conflate = 1;
+
+    if (!socket)
+        return;
+
+    zmq_setsockopt(socket, ZMQ_RCVHWM, &hwm, sizeof(hwm));
+    zmq_setsockopt(socket, ZMQ_CONFLATE, &conflate, sizeof(conflate));
 }
 
 static void close_rpc_socket(void)
@@ -277,6 +290,7 @@ int backend_init(void)
         fprintf(stderr, "backend: status socket failed\n");
         return -1;
     }
+    configure_status_socket(status_socket);
     if (zmq_connect(status_socket, backend_route.status_url) != 0) {
         fprintf(stderr, "backend: connect %s failed: %s\n",
                 backend_route.status_url, zmq_strerror(errno));

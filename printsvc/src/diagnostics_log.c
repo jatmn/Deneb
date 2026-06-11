@@ -6,7 +6,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+
+#define DENEB_DIAG_HEARTBEAT_IDLE_MS 60000LL
+#define DENEB_DIAG_HEARTBEAT_ACTIVE_MS 60000LL
+#define DENEB_DIAG_MAX_LOG_BYTES (1024L * 1024L)
 
 typedef struct {
     deneb_print_state_t state;
@@ -73,18 +78,48 @@ static void write_quoted(FILE *f, const char *key, const char *value)
 
 static int snapshot_changed(const deneb_diag_snapshot_t *next)
 {
-    return !have_snapshot ||
-           memcmp(&last_snapshot, next, sizeof(*next)) != 0;
+    if (!have_snapshot)
+        return 1;
+
+    return last_snapshot.state != next->state ||
+           strcmp(last_snapshot.req, next->req) != 0 ||
+           strcmp(last_snapshot.file, next->file) != 0 ||
+           strcmp(last_snapshot.firmware, next->firmware) != 0 ||
+           strcmp(last_snapshot.machine_type, next->machine_type) != 0 ||
+           last_snapshot.pcb_id != next->pcb_id ||
+           last_snapshot.pcb_id_valid != next->pcb_id_valid ||
+           last_snapshot.flow_resend != next->flow_resend ||
+           last_snapshot.flow_reject != next->flow_reject ||
+           strcmp(last_snapshot.error_detail, next->error_detail) != 0;
+}
+
+static void truncate_oversized_log(const char *path)
+{
+    struct stat st;
+    FILE *f;
+
+    if (!path || stat(path, &st) != 0 || st.st_size <= DENEB_DIAG_MAX_LOG_BYTES)
+        return;
+
+    f = fopen(path, "w");
+    if (f)
+        fclose(f);
 }
 
 int deneb_diagnostics_log_open(const char *path)
 {
+    const char *primary_path = path ? path : DENEB_PRINTSVC_DIAGNOSTIC_LOG;
+
     if (diag_file)
         return 0;
 
-    diag_file = fopen(path ? path : DENEB_PRINTSVC_DIAGNOSTIC_LOG, "a");
+    truncate_oversized_log(primary_path);
+    diag_file = fopen(primary_path, "a");
     if (!diag_file && (!path || strcmp(path, DENEB_PRINTSVC_DIAGNOSTIC_LOG) == 0))
+    {
+        truncate_oversized_log(DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK);
         diag_file = fopen(DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK, "a");
+    }
     if (!diag_file)
         return -1;
 
@@ -112,6 +147,8 @@ void deneb_diagnostics_log_status(const deneb_status_t *status, int force)
     deneb_diag_snapshot_t next;
     deneb_print_phase_t phase;
     long long now_ms;
+    long long heartbeat_ms;
+    int changed;
 
     if (!diag_file || !status)
         return;
@@ -139,10 +176,14 @@ void deneb_diagnostics_log_status(const deneb_status_t *status, int force)
              status->error.detail);
 
     now_ms = monotonic_ms();
-    if (!force && !snapshot_changed(&next) && now_ms - last_status_ms < 1000)
+    phase = deneb_print_control_phase_from_state(status->state);
+    heartbeat_ms = phase == DENEB_PRINT_PHASE_IDLE ?
+        DENEB_DIAG_HEARTBEAT_IDLE_MS : DENEB_DIAG_HEARTBEAT_ACTIVE_MS;
+    changed = snapshot_changed(&next);
+    if (!force && !changed &&
+        last_status_ms > 0 && now_ms - last_status_ms < heartbeat_ms)
         return;
 
-    phase = deneb_print_control_phase_from_state(status->state);
     write_timestamp(diag_file);
     fputs("event=status component=deneb-printsvc ", diag_file);
     write_quoted(diag_file, "stock.req", status->req[0] ? status->req :

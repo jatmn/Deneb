@@ -91,6 +91,24 @@ Deneb assumes the stock firmware is already too constrained by RAM, CPU, boot ti
   old-Marlin `t1/33.2` reports now update `topcapIsPresent` and
   `topcapTemperature` in the native status JSON instead of leaving clients on
   default values.
+- Host-side native memory tooling is now available for leak triage:
+  `tools/deneb-printsvc-valgrind.sh` builds the host-stub
+  `deneb-printsvc-tests` binary and runs it under Valgrind Memcheck from
+  WSL/Linux. The current Valgrind run covers the 64-cycle repeated-job
+  terminal-cleanup stress test and reported `283 allocs`, `283 frees`, zero
+  bytes in use at exit, and zero errors for the main test process; its child
+  process also freed all heap blocks. A separate GCC
+  AddressSanitizer/LeakSanitizer CTest pass also completed all ten host tests
+  cleanly. Treat these as repeatable native C regression gates, not as a
+  substitute for live MIPS active-cycle `/proc` evidence.
+- Native printsvc now tunes the ZMQ context for the printer's resource budget:
+  one IO thread, a small socket cap, and a smaller background-thread stack when
+  the bundled ZMQ header supports it. After deploy/reboot, printsvc baseline
+  dropped from the prior 1144/344 KiB RSS/private sample to 1004/328 KiB, with
+  `VmSize` 2108 KiB, `VmData` 732 KiB, three threads, and fd count 20. Active
+  seven-cycle proof still shows small settled resident-page steps, so this is a
+  resource reduction and triage improvement, not a closed multi-hour stability
+  gate.
 - Web/API status plumbing now carries those native fields beyond the parser when
   the native service supplies them:
   `backend_zmq` keeps firmware/version and topcap telemetry in backend state,
@@ -883,7 +901,9 @@ Material-profile USB import root/depth/suffix policy and the
   raw finish-state speed. Native now keeps a job active when EOF arrives with
   Marlin flow packets still in flight and only enters finish cleanup after the
   in-flight queue drains. The verifier/comparator reject completed native
-  summaries with `flow_inflight` or `flow_resend` debt. Earlier hardware trials
+  summaries that do not reach safe idle state or that retain `flow_resend`
+  debt; `flow_inflight` remains diagnostic because normal idle `M105`/`M114`
+  telemetry can briefly repopulate it after completion. Earlier hardware trials
   that raised the stream window to 6 or removed finish waiting were rejected by
   this stricter evidence. The accepted `4166d26-dirty` path keeps stream
   window 4, narrows normal finish cleanup to `M400` plus a final `M114`, and
@@ -959,7 +979,44 @@ Material-profile USB import root/depth/suffix policy and the
 
 Before treating a build as release-ready, extend the June 10 short repeated-job
 stability proof (`/tmp/deneb-84376b4-stability-complete5.summary`, five
-bounded Z-only completion jobs, `rss_delta_kb=0`) into a longer native soak,
-then repeat memory and CPU sampling while idle, printing, installing a Deneb
-package, exporting diagnostics, switching languages, and using Digital Factory
-pairing/disconnect.
+bounded Z-only completion jobs, `rss_delta_kb=0`) with the cleaned active
+physical soak harness. The June 11 active-run investigations showed why this
+distinction matters: retained smoke logs in `/tmp` tmpfs can look like firmware
+memory growth, and idle observe-only sampling does not exercise the heater,
+motion, job-start, or stream-cleanup paths used by real prints. The earlier
+`/tmp/deneb-56c2bb5-active-physical-soak-memory2.summary` run moved from
+1172 KiB to 1180 KiB across four completed heat/motion/representative-job
+cycles before exposing a too-short cooldown wait. The post-fix
+`/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary` run reached cycle 9
+with RSS settling around 1688 KiB after a 1592 KiB initial sample. After
+switching active G-code streaming to a fixed-buffer reader, bounding and
+conflating native status ZeroMQ queues, deploying, and rebooting, the current
+`/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary` run completed ten comparable
+active cycles with RSS samples 1028, 1028, 1032, 1036, 1036, 1036, 1044, 1044,
+1044, and 1044 KiB after a 1020 KiB initial sample. Active phases reported
+`printing` with Stop allowed true, and completed cycles returned idle with
+native active/Stop false. During the same window, `/proc` reported stable
+`VmSize` 2124 KiB, `VmData` 748 KiB, three threads, and stable fd count, so the
+remaining RSS steps are being tracked as unresolved resident-page growth rather
+than proven heap growth.
+A follow-up live check also found
+`/var/log/ultimaker/deneb-printsvc.log` at 198.6 MiB after roughly 90 minutes
+because diagnostics status logging treated normal flow ACK, line-number, and
+`flow_last_response` churn as immediate status changes. Native diagnostics now
+keeps resend/reject/error/state changes immediate, logs high-churn status
+counters on a 60-second heartbeat, and truncates an oversized diagnostics log at
+service startup. After deploying the fix and restarting idle `deneb-printsvc`,
+the log dropped to 26.3 KiB, then a corrected rebuild showed one steady-state
+heartbeat line over a 70-second idle window (`366677 -> 367363` bytes,
+`535 -> 536` lines) while printer status stayed idle with heater targets zero.
+Future multi-hour evidence should track both `deneb_printsvc_rss_kb` and
+`tmp_used_kb`, keep successful per-iteration logs disabled unless debugging a
+failure, track Deneb diagnostics log size/line count beside RSS, and make the
+primary acceptance run an active heat/cool, homing-safe motion, and repeated
+job-start/completion loop. Idle, package-install, diagnostics-export, language
+switching, and Digital Factory pairing/disconnect samples remain useful
+secondary resource context, but they do not replace the active print-service
+soak.
+
+Treat the remaining RSS steps as unresolved resident-page growth until a longer
+active run proves plateau behavior or a private-memory source is identified.

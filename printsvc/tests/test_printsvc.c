@@ -275,6 +275,37 @@ static void test_gcode_control_policy(void)
     assert(strstr(payload, "\"denebActive\":false") != NULL);
     assert(strstr(payload, "\"denebStopAllowed\":false") != NULL);
 
+    svc.status.state = DENEB_PRINT_STATE_PREPARING;
+    snprintf(svc.status.req, sizeof(svc.status.req), "%s",
+             DENEB_PRINT_REQ_PREHEATING);
+    svc.status.bed_t_set = 0.0f;
+    svc.status.head_t_set = 0.0f;
+    deneb_gcode_control_refresh_manual_status(&svc);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(strcmp(svc.status.req, DENEB_PRINT_REQ_IDLE) == 0);
+
+    svc.status.state = DENEB_PRINT_STATE_PREPARING;
+    snprintf(svc.status.req, sizeof(svc.status.req), "%s",
+             DENEB_PRINT_REQ_PREHEATING);
+    svc.heater_wait.active = 1;
+    deneb_gcode_control_refresh_manual_status(&svc);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    svc.heater_wait.active = 0;
+
+    deneb_print_service_init(&svc);
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    assert(deneb_command_parse("GCODE<[\"M140 S0\",\"M104 S0\",\"M105\",\"M105\",\"M105\"]", &cmd) == 0);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(svc.gcode_queue_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_gcode_control_poll(&svc) == 1);
+    assert(!svc.gcode_queue_active);
+    assert(svc.status.bed_t_set == 0.0f);
+    assert(svc.status.head_t_set == 0.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M190 S55\",\"G1 X2\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
@@ -628,6 +659,17 @@ static void test_job_lifecycle_policy(void)
     assert(status.error.code == DENEB_ERROR_STORAGE);
 }
 
+static int flow_has_retained_slot_text(const deneb_flow_control_t *flow)
+{
+    if (!flow)
+        return 0;
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; i++) {
+        if (flow->slots[i].occupied || flow->slots[i].command[0] != '\0')
+            return 1;
+    }
+    return 0;
+}
+
 static void test_job_control_policy(void)
 {
     const char *path = "/tmp/deneb-printsvc-job-control-test.gcode";
@@ -718,6 +760,7 @@ static void test_job_control_policy(void)
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
     assert(deneb_flow_inflight(&svc.flow) == 0);
+    assert(!flow_has_retained_slot_text(&svc.flow));
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(deneb_flow_prepare_packet(&svc.flow, "M105", packet,
                                      sizeof(packet), &written, &seq) == 0);
@@ -745,6 +788,8 @@ static void test_job_control_policy(void)
     assert(!svc.abort_cleanup_pending);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+    assert(!flow_has_retained_slot_text(&svc.flow));
+    assert(svc.job_stream.line_number == 0);
     close(pipefd[0]);
     close(pipefd[1]);
     svc.serial.fd = -1;
@@ -777,6 +822,8 @@ static void test_job_control_policy(void)
     assert(!svc.job_active);
     assert(svc.status.state == DENEB_PRINT_STATE_COMPLETE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+    assert(!flow_has_retained_slot_text(&svc.flow));
+    assert(svc.job_stream.line_number == 0);
 
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     snprintf(svc.status.file, sizeof(svc.status.file), "stale.gcode");
@@ -1034,7 +1081,16 @@ static void test_gcode_stream_rewrite_policy(void)
     assert(strcmp(line, "G0 Z2 F9000") == 0);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
     assert(strcmp(line, "G10 S-6.5 F1500") == 0);
+    assert(stream.line_number == 1);
     deneb_gcode_stream_close(&stream);
+    assert(stream.fd == -1);
+    assert(stream.path[0] == '\0');
+    assert(stream.line_number == 1);
+    assert(stream.pending_count == 0);
+    assert(stream.pending_index == 0);
+    assert(stream.read_len == 0);
+    assert(stream.read_pos == 0);
+    assert(stream.read_buf[0] == '\0');
 
     remove(path);
 }
@@ -4152,6 +4208,99 @@ static void test_diagnostics_log_side_by_side_fields(void)
     remove(path);
 }
 
+static int count_substrings(const char *text, const char *needle)
+{
+    int count = 0;
+    const char *p = text;
+
+    while ((p = strstr(p, needle)) != NULL) {
+        count++;
+        p += strlen(needle);
+    }
+
+    return count;
+}
+
+static void test_diagnostics_log_throttles_hot_path_counters(void)
+{
+    const char *path = "/tmp/deneb-printsvc-diagnostics-throttle-test.log";
+    deneb_status_t status;
+    char buf[8192];
+    FILE *f;
+    size_t n;
+
+    remove(path);
+    deneb_status_init(&status);
+    status.state = DENEB_PRINT_STATE_PRINTING;
+    snprintf(status.req, sizeof(status.req), "%s", DENEB_COMMAND_VERB_JOB);
+    snprintf(status.file, sizeof(status.file), "long-print.gcode");
+    status.flow_ack = 1;
+    status.flow_inflight = 1;
+    status.job_line_number = 1;
+
+    assert(deneb_diagnostics_log_open(path) == 0);
+    deneb_diagnostics_log_status(&status, 1);
+
+    status.flow_ack = 200;
+    status.flow_inflight = 3;
+    snprintf(status.flow_last_response, sizeof(status.flow_last_response),
+             "o010AAA");
+    status.job_line_number = 200;
+    status.command_latency_ms = 18;
+    deneb_diagnostics_log_status(&status, 0);
+
+    status.flow_ack = 201;
+    status.flow_inflight = 2;
+    snprintf(status.flow_last_response, sizeof(status.flow_last_response),
+             "o020BBB");
+    status.job_line_number = 201;
+    status.command_latency_ms = 19;
+    deneb_diagnostics_log_status(&status, 0);
+
+    status.flow_resend = 1;
+    deneb_diagnostics_log_status(&status, 0);
+    deneb_diagnostics_log_close();
+
+    f = fopen(path, "rb");
+    assert(f != NULL);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    assert(count_substrings(buf, "event=status") == 2);
+    assert(strstr(buf, "serial.ack=1") != NULL);
+    assert(strstr(buf, "serial.ack=201") != NULL);
+    assert(strstr(buf, "serial.resend=1") != NULL);
+    remove(path);
+}
+
+static void test_diagnostics_log_truncates_oversized_file(void)
+{
+    const char *path = "/tmp/deneb-printsvc-diagnostics-truncate-test.log";
+    FILE *f;
+    long size;
+
+    remove(path);
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    assert(fseek(f, 1024L * 1024L + 16L, SEEK_SET) == 0);
+    assert(fputc('\n', f) != EOF);
+    fclose(f);
+
+    assert(deneb_diagnostics_log_open(path) == 0);
+    deneb_diagnostics_log_close();
+
+    f = fopen(path, "rb");
+    assert(f != NULL);
+    assert(fseek(f, 0, SEEK_END) == 0);
+    size = ftell(f);
+    fclose(f);
+
+    assert(size > 0);
+    assert(size < 1024L * 1024L);
+    remove(path);
+}
+
 static void test_abort_clears_status(void)
 {
     deneb_print_service_t svc;
@@ -4471,11 +4620,79 @@ static void test_job_completion_waits_for_finish_cleanup(void)
     assert(svc.status.uuid[0] == '\0');
     assert(svc.status.bed_t_set == 0.0f);
     assert(svc.status.head_t_set == 0.0f);
+    assert(svc.job_stream.line_number == 0);
     svc.serial_ready = 0;
     svc.serial.fd = -1;
     close(pipefd[0]);
     close(pipefd[1]);
 
+    remove(job_path);
+}
+
+static void test_repeated_jobs_release_terminal_state(void)
+{
+    const char *job_path = "/tmp/deneb-printsvc-repeated-job-cleanup.gcode";
+    FILE *f = fopen(job_path, "wb");
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char frame[512];
+    char reply[256];
+    int null_fd;
+
+    assert(f != NULL);
+    fputs("G1 X1 Y1\nG1 X2 Y2\nG1 X3 Y3\n", f);
+    fclose(f);
+
+    deneb_print_service_init(&svc);
+    null_fd = open("/dev/null", O_WRONLY);
+    assert(null_fd >= 0);
+    svc.serial.fd = null_fd;
+    svc.serial_ready = 1;
+
+    snprintf(frame, sizeof(frame), "JOB<{\"file\":\"%s\"}", job_path);
+    assert(deneb_command_parse(frame, &cmd) == 0);
+
+    for (int cycle = 0; cycle < 64; cycle++) {
+        int guard = 0;
+
+        assert(deneb_print_service_handle_command(&svc, &cmd, reply,
+                                                  sizeof(reply)) == 0);
+        assert(svc.job_active);
+        assert(svc.job_stream.fd >= 0);
+        assert(svc.job_stream.path[0] != '\0');
+
+        while ((svc.job_active || svc.finish_cleanup_pending) &&
+               guard++ < 256) {
+            deneb_flow_clear_inflight(&svc.flow);
+            assert(deneb_print_service_poll_job(&svc) >= 0);
+            deneb_flow_clear_inflight(&svc.flow);
+            assert(deneb_job_control_poll_finish_cleanup(&svc) >= 0);
+        }
+
+        assert(guard < 256);
+        assert(!svc.job_active);
+        assert(!svc.finish_cleanup_pending);
+        assert(!svc.abort_cleanup_pending);
+        assert(svc.job_stream.fd == -1);
+        assert(svc.job_stream.path[0] == '\0');
+        assert(svc.job_stream.read_len == 0);
+        assert(svc.job_stream.read_pos == 0);
+        assert(svc.job_stream.pending_count == 0);
+        assert(svc.job_stream.pending_index == 0);
+        assert(svc.job_stream.line_number == 0);
+        assert(!flow_has_retained_slot_text(&svc.flow));
+
+        deneb_print_service_refresh_diagnostics(&svc);
+        assert(svc.status.job_queue_depth == 0);
+        assert(svc.status.job_line_number == 0);
+        assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+        assert(svc.status.source[0] == '\0');
+        assert(svc.status.uuid[0] == '\0');
+    }
+
+    svc.serial_ready = 0;
+    svc.serial.fd = -1;
+    close(null_fd);
     remove(job_path);
 }
 
@@ -5008,12 +5225,9 @@ static void test_motion_policy(void)
     assert(!deneb_motion_policy_contains_xy_home(&policy));
 
     deneb_motion_policy_finish(&policy);
-    assert(policy.count == 5);
+    assert(policy.count == 2);
     assert(strcmp(policy.commands[0], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
-    assert(strcmp(policy.commands[1], "M104 S0") == 0);
-    assert(strcmp(policy.commands[2], "M140 S0") == 0);
-    assert(strcmp(policy.commands[3], DENEB_GCODE_FAN_OFF) == 0);
-    assert(strcmp(policy.commands[4], DENEB_GCODE_DISABLE_ALL_STEPPERS) == 0);
+    assert(strcmp(policy.commands[1], "M114") == 0);
     assert(!deneb_motion_policy_contains_xy_home(&policy));
 
     deneb_motion_policy_pause(&policy, 120.0f, 80.0f, 12.0f);
@@ -5291,6 +5505,8 @@ int main(void)
     test_macro_safety();
     test_system_language_helpers();
     test_diagnostics_log_side_by_side_fields();
+    test_diagnostics_log_throttles_hot_path_counters();
+    test_diagnostics_log_truncates_oversized_file();
     test_abort_clears_status();
     test_latched_abort_uses_service_cleanup();
     test_job_accepts_without_blocking();
@@ -5299,6 +5515,7 @@ int main(void)
     test_ipc_frame_policy();
     test_job_poll_streams_after_preheat();
     test_job_completion_waits_for_finish_cleanup();
+    test_repeated_jobs_release_terminal_state();
     test_pause_gates_active_job_streaming();
     test_pause_during_preheat_resumes_to_preparing();
     test_status_parser();

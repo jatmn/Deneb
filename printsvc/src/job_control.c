@@ -122,6 +122,7 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         deneb_flow_clear_inflight(&svc->flow);
         svc->abort_cleanup_pending = 0;
         svc->abort_cleanup_index = 0;
+        svc->job_stream.line_number = 0;
         deneb_job_lifecycle_abort(&svc->status);
     }
     deneb_command_reply_ok(reply, reply_sz, "abort accepted");
@@ -165,6 +166,8 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     svc->abort_cleanup_index = 0;
     svc->abort_requested = 0;
     svc->heater_wait.active = 0;
+    deneb_flow_clear_inflight(&svc->flow);
+    svc->job_stream.line_number = 0;
     deneb_job_lifecycle_abort(&svc->status);
     return 1;
 }
@@ -211,6 +214,8 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
         svc->status.finish_stable_reports = 0;
         svc->abort_requested = 0;
         svc->heater_wait.active = 0;
+        deneb_flow_clear_inflight(&svc->flow);
+        svc->job_stream.line_number = 0;
         deneb_job_lifecycle_complete(&svc->status);
         svc->job_active = 0;
         return 1;
@@ -224,6 +229,8 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
     svc->status.finish_stable_reports = 0;
     svc->abort_requested = 0;
     svc->heater_wait.active = 0;
+    deneb_flow_clear_inflight(&svc->flow);
+    svc->job_stream.line_number = 0;
     deneb_job_lifecycle_complete(&svc->status);
     svc->job_active = 0;
     return 1;

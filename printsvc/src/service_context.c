@@ -15,6 +15,7 @@ void deneb_service_context_init(deneb_print_service_t *svc)
     deneb_flow_init(&svc->flow);
     deneb_heater_wait_init(&svc->heater_wait);
     svc->serial.fd = -1;
+    svc->job_stream.fd = -1;
 }
 
 int deneb_service_context_motion_runtime(deneb_print_service_t *svc,
@@ -76,6 +77,7 @@ void deneb_service_context_close(deneb_print_service_t *svc)
         return;
 
     deneb_gcode_stream_close(&svc->job_stream);
+    svc->job_stream.line_number = 0;
     svc->job_active = 0;
     svc->abort_requested = 0;
     svc->abort_cleanup_pending = 0;

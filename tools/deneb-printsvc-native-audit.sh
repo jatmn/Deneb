@@ -134,6 +134,9 @@ audit_source() {
         "deneb-printsvc-stability" \
         "package builder includes stability harness"
     require_pattern "${repo}/ui/build-package.sh" \
+        "deneb-active-physical-soak-runner" \
+        "package builder includes active physical soak runner"
+    require_pattern "${repo}/ui/build-package.sh" \
         'deneb-printsvc-stability" --selftest' \
         "package builder runs stability selftest"
     require_pattern "${repo}/ui/build-package.sh" \
@@ -276,6 +279,17 @@ audit_source() {
     require_pattern "${repo}/tools/deneb-printsvc-stability.sh" \
         'complete-job requires --physical-ok' \
         "stability harness gates repeated jobs behind physical acknowledgement"
+    require_file "${repo}/tools/deneb-active-physical-soak-runner.sh" \
+        "active physical soak runner exists"
+    require_pattern "${repo}/tools/deneb-active-physical-soak-runner.sh" \
+        '.*--native-no-restart' \
+        "active physical soak runner preserves native process lifetime"
+    require_pattern "${repo}/tools/deneb-active-physical-soak-runner.sh" \
+        '.*--heat --motion --macro home' \
+        "active physical soak runner exercises heat, motion, and home macro"
+    require_pattern "${repo}/tools/deneb-active-physical-soak-runner.sh" \
+        '.*--complete-job "\$FIXTURE"' \
+        "active physical soak runner repeats completed print jobs"
     require_file "${repo}/tools/deneb-printsvc-stock-baseline.sh" \
         "stock baseline helper exists"
     require_pattern "${repo}/UM2C_MODDING_CHECKLIST.md" \
@@ -323,6 +337,9 @@ audit_source() {
     require_pattern "${repo}/ui/installer/update.sh" \
         'cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability' \
         "installer preserves stability harness"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        'cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner' \
+        "installer preserves active physical soak runner"
     require_pattern "${repo}/ui/installer/update.sh" \
         '/usr/bin/deneb-printsvc-stability --selftest' \
         "installer runs stability selftest"
@@ -386,6 +403,7 @@ audit_package_dir() {
     require_file "${root}/deneb-printsvc-smoke-compare" "package includes smoke comparator"
     require_file "${root}/deneb-printsvc-smoke-selftest" "package includes smoke verifier selftest"
     require_file "${root}/deneb-printsvc-stability" "package includes stability harness"
+    require_file "${root}/deneb-active-physical-soak-runner" "package includes active physical soak runner"
     require_file "${root}/deneb-printsvc-stock-baseline" "package includes stock baseline helper"
     require_file "${root}/deneb-printsvc-cli-selftest" "package includes native CLI selftest"
     require_file "${root}/deneb-printsvc-init-selftest" "package includes native init selftest"
@@ -445,6 +463,15 @@ audit_package_dir() {
     require_pattern "${root}/deneb-printsvc-stability" \
         'complete-job requires --physical-ok' \
         "packaged stability harness gates repeated jobs behind physical acknowledgement"
+    require_pattern "${root}/deneb-active-physical-soak-runner" \
+        '.*--native-no-restart' \
+        "packaged active soak runner preserves native process lifetime"
+    require_pattern "${root}/deneb-active-physical-soak-runner" \
+        '.*--heat --motion --macro home' \
+        "packaged active soak runner exercises heat, motion, and home macro"
+    require_pattern "${root}/deneb-active-physical-soak-runner" \
+        '.*--complete-job "\$FIXTURE"' \
+        "packaged active soak runner repeats completed print jobs"
     require_pattern "${root}/deneb-printsvc-stock-baseline" \
         'DENEB_PRINTSVC_STOCK_BASELINE_OK' \
         "packaged stock baseline helper requires explicit stock-switch acknowledgement"

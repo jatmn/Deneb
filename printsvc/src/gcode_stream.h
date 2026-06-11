@@ -4,12 +4,15 @@
 
 #include "config.h"
 
-#include <stdio.h>
 #include <stddef.h>
 
 typedef struct {
-    FILE *file;
+    int fd;
     char path[256];
+    char read_buf[512];
+    size_t read_pos;
+    size_t read_len;
+    int eof;
     unsigned long line_number;
     char pending[DENEB_PRINTSVC_MAX_COMMANDS][DENEB_PRINTSVC_MAX_GCODE_LINE];
     size_t pending_count;

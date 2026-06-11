@@ -4,8 +4,66 @@
 #include "gcode_stream.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+
+static int stream_read_char(deneb_gcode_stream_t *stream, char *ch)
+{
+    if (!stream || stream->fd < 0 || !ch)
+        return -1;
+
+    while (stream->read_pos >= stream->read_len) {
+        ssize_t n;
+        if (stream->eof)
+            return 0;
+        do {
+            n = read(stream->fd, stream->read_buf,
+                     sizeof(stream->read_buf));
+        } while (n < 0 && errno == EINTR);
+        if (n < 0)
+            return -1;
+        if (n == 0) {
+            stream->eof = 1;
+            return 0;
+        }
+        stream->read_pos = 0;
+        stream->read_len = (size_t)n;
+    }
+
+    *ch = stream->read_buf[stream->read_pos++];
+    return 1;
+}
+
+static int stream_read_line(deneb_gcode_stream_t *stream, char *line,
+                            size_t line_sz)
+{
+    size_t len = 0;
+
+    if (!stream || stream->fd < 0 || !line || line_sz == 0)
+        return -1;
+
+    line[0] = '\0';
+
+    for (;;) {
+        char ch;
+        int rc = stream_read_char(stream, &ch);
+        if (rc < 0)
+            return -1;
+        if (rc == 0)
+            return len > 0 ? 1 : 0;
+        if (ch == '\r')
+            continue;
+        if (ch == '\n') {
+            line[len] = '\0';
+            return 1;
+        }
+        if (len + 1 < line_sz)
+            line[len++] = ch;
+    }
+}
 
 int deneb_gcode_stream_open(deneb_gcode_stream_t *stream, const char *path)
 {
@@ -13,8 +71,9 @@ int deneb_gcode_stream_open(deneb_gcode_stream_t *stream, const char *path)
         return -1;
 
     memset(stream, 0, sizeof(*stream));
-    stream->file = fopen(path, "rb");
-    if (!stream->file)
+    stream->fd = -1;
+    stream->fd = open(path, O_RDONLY);
+    if (stream->fd < 0)
         return -1;
 
     strncpy(stream->path, path, sizeof(stream->path) - 1);
@@ -27,7 +86,7 @@ int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t lin
     size_t len;
     deneb_gcode_rewrite_t rewrite;
 
-    if (!stream || !stream->file || !line || line_sz == 0)
+    if (!stream || stream->fd < 0 || !line || line_sz == 0)
         return -1;
 
     stream->last_wait_for_bed = 0;
@@ -43,9 +102,8 @@ int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t lin
         return 1;
     }
 
-    while (fgets(line, (int)line_sz, stream->file)) {
+    while (stream_read_line(stream, line, line_sz) > 0) {
         stream->line_number++;
-        line[line_sz - 1] = '\0';
 
         p = line;
         while (*p && isspace((unsigned char)*p))
@@ -102,10 +160,16 @@ int deneb_gcode_stream_last_wait(const deneb_gcode_stream_t *stream,
 
 void deneb_gcode_stream_close(deneb_gcode_stream_t *stream)
 {
+    int fd;
+    unsigned long line_number;
+
     if (!stream)
         return;
-    if (stream->file) {
-        fclose(stream->file);
-        stream->file = NULL;
-    }
+    fd = stream->fd;
+    if (fd >= 0)
+        close(fd);
+    line_number = stream->line_number;
+    memset(stream, 0, sizeof(*stream));
+    stream->fd = -1;
+    stream->line_number = line_number;
 }

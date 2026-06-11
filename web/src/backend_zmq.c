@@ -150,6 +150,7 @@ void backend_zmq_deinit(void) {}
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 64
 #define STOP_INFLIGHT_MS 3000
+#define STATUS_QUEUE_HWM 4
 
 static deneb_print_backend_route_t backend_route;
 
@@ -288,6 +289,18 @@ static void reset_rpc_socket(void)
     if (zmq_ctx) create_rpc_socket();
 }
 
+static void configure_status_socket(void *socket)
+{
+    int hwm = STATUS_QUEUE_HWM;
+    int conflate = 1;
+
+    if (!socket)
+        return;
+
+    zmq_setsockopt(socket, ZMQ_RCVHWM, &hwm, sizeof(hwm));
+    zmq_setsockopt(socket, ZMQ_CONFLATE, &conflate, sizeof(conflate));
+}
+
 static void update_status_cache(void)
 {
     /* Pre-serialize the current state to JSON for fast serving */
@@ -363,6 +376,7 @@ int backend_zmq_init(void)
     /* Status SUB socket */
     status_sock = zmq_socket(zmq_ctx, ZMQ_SUB);
     if (!status_sock) goto fail;
+    configure_status_socket(status_sock);
     if (zmq_connect(status_sock, backend_route.status_url) < 0) goto fail;
     if (zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) < 0) goto fail;
 

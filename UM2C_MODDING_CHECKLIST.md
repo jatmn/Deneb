@@ -1794,6 +1794,76 @@ Completed implementation slices:
   verifier success, final idle/no-job cleanup, no resend/reject debt, and
   `rss_delta_kb=0`. This closes the short repeated-job stability slice; a
   multi-hour soak remains open.
+- [x] Add a packaged active physical soak runner,
+  `deneb-active-physical-soak-runner`, for repeated heat/cool, guarded homing,
+  home macro, and representative XYZ completion cycles without restarting
+  native `deneb-printsvc`. The runner records native RSS and `/tmp` tmpfs
+  usage, and removes successful per-iteration logs by default so harness logs
+  do not masquerade as firmware memory growth. It is packaged, installed, and
+  covered by the native route/package audit. On June 11, 2026,
+  `/tmp/deneb-56c2bb5-active-physical-soak-memory2.summary` completed four
+  active cycles and showed native RSS moving only 1172 -> 1180 KiB at
+  completed-cycle samples while `/tmp` usage fell after successful artifact
+  cleanup. The fifth cycle exposed an overly short cooldown wait. After the
+  manual heater-status fix, the current
+  `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary` active run
+  reached cycle 9 with completed-cycle RSS settling around 1688 KiB after a
+  1592 KiB initial sample. After switching active G-code streaming to a
+  fixed-buffer reader, bounding/conflating native status ZeroMQ queues,
+  deploying, and rebooting, the current
+  `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary` run completed ten
+  comparable active cycles with RSS 1028, 1028, 1032, 1036, 1036, 1036, 1044,
+  1044, 1044, and 1044 KiB after a 1020 KiB initial sample. Active phases reported
+  `printing` with Stop allowed true, and completed cycles returned idle with
+  native active/Stop false. Live `/proc` checks showed stable `VmSize`,
+  `VmData`, thread count, and fd count during the RSS steps. These are active
+  leak-triage evidence only; idle observe-only samples do not close the
+  multi-hour soak gate.
+- [x] Add repeatable host-side native memory tooling. `tools/deneb-printsvc-valgrind.sh`
+  builds the host-stub debug `deneb-printsvc-tests` binary and runs it under
+  Valgrind Memcheck from WSL/Linux. On June 11, 2026, Valgrind 3.24.0 reported
+  `283 allocs`, `283 frees`, zero bytes in use at exit, and zero errors for the
+  main native test process after adding a 64-cycle repeated-job
+  terminal-cleanup stress test; its child process also freed all heap blocks.
+  A separate GCC AddressSanitizer/LeakSanitizer build passed all ten host CTest
+  entries. These checks prove the current host-native C test surface is clean,
+  but they do not explain or close the live MIPS resident-page staircase by
+  themselves.
+- [ ] Continue active resident-page triage after terminal job cleanup and
+  native status publish-cadence reduction. The latest
+  `/tmp/deneb-56c2bb5-cadence-cleanup-active-soak.summary` run completed eight
+  low heat/cool, guarded-home, home-macro, representative XYZ completion cycles
+  through one native process. Settled post-cycle RSS/private samples were
+  1148/348 KiB for cycles 1-3, 1156/356 KiB for cycles 4-6, and 1164/364 KiB
+  for cycles 7-8 after a reboot baseline of 1144/344 KiB. `VmSize` 2124 KiB,
+  `VmData` 748 KiB, three threads, and fd count 20 stayed flat, so the remaining
+  steps are still tracked as resident-page growth rather than proven heap
+  growth. This remains leak-triage evidence only, not multi-hour promotion
+  proof.
+- [ ] Continue active resident-page triage after ZMQ context tuning and IPC init
+  cleanup. Target `/proc` inspection showed the native service is mostly static
+  (`VmLib` 4 KiB), has a tiny 4 KiB heap mapping, and keeps two ZMQ background
+  threads (`ZMQbg/Reaper`, `ZMQbg/IO/0`). After requesting a smaller ZMQ thread
+  stack, keeping one IO thread, capping ZMQ max sockets, rebuilding, deploying,
+  and rebooting, the baseline fell to 1004/328 KiB RSS/private with `VmSize`
+  2108 KiB and `VmData` 732 KiB. The new
+  `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary` run completed seven settled
+  low heat/cool, guarded-home, home-macro, representative XYZ completion cycles
+  at 1012/336, 1012/336, 1016/340, 1020/344, 1020/344, 1020/344, and 1028/352
+  KiB. `VmSize`, `VmData`, thread count, and settled fd count stayed flat, so
+  the remaining staircase is still resident-page growth, not proven heap growth.
+- [x] Fix native diagnostics log growth so it does not masquerade as memory
+  growth or burn flash during multi-day prints. A June 11, 2026 live idle check
+  found `/var/log/ultimaker/deneb-printsvc.log` at 198.6 MiB after roughly 90
+  minutes even though native `deneb-printsvc` RSS was still small. The root
+  cause was immediate status logging on normal flow ACK, line-number, and
+  `flow_last_response` churn. Native diagnostics now keeps resend/reject/error
+  and state changes immediate, logs high-churn counters on a 60-second
+  heartbeat, and truncates an oversized diagnostics log at service startup.
+  After deployment/restart the log capped to 26.3 KiB; after the corrected
+  rebuild, a 70-second idle window added one heartbeat line only
+  (`366677 -> 367363` bytes, `535 -> 536` lines) while printer status stayed
+  idle with heater targets zero and Stop disabled.
 - [x] Capture observe-only client API/bridge evidence after package install: on
   June 9, 2026, `dist/Deneb_Update_fa29a67.deneb` installed over SSH and the
   installed `/usr/bin/deneb-printsvc-smoke --native --boot-sync --client-proof`
@@ -1964,8 +2034,10 @@ Completed implementation slices:
   stream reaches EOF but flow-control packets are still in flight, then starts
   finish cleanup only after the in-flight queue drains. Host tests now cover
   that EOF-with-inflight case, and the smoke verifier/comparator require
-  completed native resource summaries to show `flow_inflight:0` and
-  `flow_resend:0`. Two attempted optimizations were rejected on hardware:
+  completed native resource summaries to show idle native inactive/Stop
+  disabled state with `flow_resend:0`. Transient idle `flow_inflight` from
+  status polling is retained as diagnostics, not treated as completion debt.
+  Two attempted optimizations were rejected on hardware:
   increasing the stream window from 4 to 6 produced
   `/tmp/deneb-native-resources-window6.summary` with resend debt and partial Z
   completion, and reducing the old finish-drain delay produced
@@ -1994,10 +2066,10 @@ Completed implementation slices:
   native rerun `/tmp/deneb-native-g280-resource-v2.summary` passed
   `--native --complete-job --resources`: `running_z=207.0`,
   `final_z=111.0`, `delta_z=96.000`, `phase=printer-job-completed-flow-wait`
-  showed idle `flow_inflight=0`/`flow_resend=0`, and native driver RSS stayed
-  around 1.1 MB. This confirmed the previous native `flow_inflight:2` failure
-  was a smoke snapshot timing issue caused by normal idle `M105`/`M114`
-  telemetry, not unfinished job flow. Later paired stock/native evidence with
+  showed idle state with no resend debt, and native driver RSS stayed around
+  1.1 MB. This confirmed the previous native `flow_inflight:2` failure was a
+  smoke snapshot timing issue caused by normal idle `M105`/`M114` telemetry,
+  not unfinished job flow. Later paired stock/native evidence with
   the corrected stock prehome settle path and precise completion polling passed
   the strict split comparison:
   `/tmp/deneb-precisewait-stock-resource.summary`,

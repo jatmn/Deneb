@@ -69,9 +69,11 @@ static int heater_targets_active(const deneb_print_service_t *svc)
                    svc->status.head_t_set > 0.0f);
 }
 
-static void update_manual_heater_status(deneb_print_service_t *svc)
+void deneb_gcode_control_refresh_manual_status(deneb_print_service_t *svc)
 {
     if (!svc || service_has_lifecycle_work(svc) ||
+        svc->gcode_queue_active ||
+        svc->heater_wait.active ||
         svc->status.state == DENEB_PRINT_STATE_ERROR)
         return;
 
@@ -94,7 +96,7 @@ static void apply_queued_heater_targets(deneb_print_service_t *svc)
 
     for (size_t i = 0; i < svc->gcode_queue_count; i++)
         apply_accepted_heater_target(svc, svc->gcode_queue[i]);
-    update_manual_heater_status(svc);
+    deneb_gcode_control_refresh_manual_status(svc);
 }
 
 static void clear_queue(deneb_print_service_t *svc)
@@ -182,6 +184,7 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
     }
 
     clear_queue(svc);
+    deneb_gcode_control_refresh_manual_status(svc);
     return 1;
 }
 
@@ -221,7 +224,7 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
             return -1;
         }
     }
-    update_manual_heater_status(svc);
+    deneb_gcode_control_refresh_manual_status(svc);
 
     deneb_command_reply_ok(reply, reply_sz, "gcode accepted");
     return 0;

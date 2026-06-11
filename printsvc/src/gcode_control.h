@@ -9,5 +9,6 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
                             const deneb_command_t *cmd,
                             char *reply, size_t reply_sz);
 int deneb_gcode_control_poll(deneb_print_service_t *svc);
+void deneb_gcode_control_refresh_manual_status(deneb_print_service_t *svc);
 
 #endif

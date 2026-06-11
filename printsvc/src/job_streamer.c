@@ -8,6 +8,8 @@
 #include "motion_send_error.h"
 #include "motion_sender.h"
 
+#include <stdio.h>
+
 static int streamer_valid(const deneb_job_streamer_t *streamer)
 {
     return streamer && streamer->status && streamer->flow && streamer->stream &&
@@ -33,6 +35,8 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
 
     if (streamer->status->state == DENEB_PRINT_STATE_ERROR) {
         deneb_gcode_stream_close(streamer->stream);
+        deneb_flow_clear_inflight(streamer->flow);
+        streamer->stream->line_number = 0;
         *streamer->job_active = 0;
         *streamer->finish_cleanup_pending = 0;
         *streamer->abort_requested = 0;
@@ -50,6 +54,8 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
 
     if (*streamer->abort_requested) {
         deneb_gcode_stream_close(streamer->stream);
+        deneb_flow_clear_inflight(streamer->flow);
+        streamer->stream->line_number = 0;
         *streamer->job_active = 0;
         *streamer->finish_cleanup_pending = 0;
         deneb_job_lifecycle_abort(streamer->status);
@@ -73,6 +79,8 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     rc = deneb_gcode_stream_next(streamer->stream, line, sizeof(line));
     if (rc < 0) {
         deneb_gcode_stream_close(streamer->stream);
+        deneb_flow_clear_inflight(streamer->flow);
+        streamer->stream->line_number = 0;
         *streamer->job_active = 0;
         *streamer->finish_cleanup_pending = 0;
         streamer->heater_wait->active = 0;
@@ -106,6 +114,8 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         if (rc == DENEB_MOTION_SEND_FLOW_FULL)
             return 0;
         deneb_gcode_stream_close(streamer->stream);
+        deneb_flow_clear_inflight(streamer->flow);
+        streamer->stream->line_number = 0;
         *streamer->job_active = 0;
         *streamer->finish_cleanup_pending = 0;
         streamer->heater_wait->active = 0;

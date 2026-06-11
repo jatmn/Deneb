@@ -287,6 +287,16 @@ evidence.
 `--boot-sync` waits for native-only print-backend route and printer-status
 readiness before the initial snapshot and records the bounded ready elapsed
 time, scalar status value, and native-only status body evidence.
+
+For host-side native memory triage, run
+`tools/deneb-printsvc-valgrind.sh` from WSL/Linux. It builds the host-stub
+`deneb-printsvc-tests` binary with debug symbols and runs it under Valgrind
+Memcheck. Keep this off the physical printer: the printer target is low-resource
+MIPS hardware, Valgrind is not installed there by default, and Memcheck timing
+would distort live serial/motion behavior. Use Valgrind and sanitizer checks for
+repeatable C leak/error regressions, then use the active physical soak summaries
+for hardware-only settled RSS/private-page behavior.
+
 Use `--make-complete-fixture PATH [CYCLES]` to generate a bounded old-Marlin
 completion fixture. It homes Z once, switches to relative mode, performs small
 relative `G1 Z-0.20 F30` moves away from the homed Z-max position, restores
@@ -360,6 +370,18 @@ heat, no extrusion, no dwell, and an embedded
 `DENEB_REPRESENTATIVE_XYZ_FIXTURE=1` marker. Any smoke phase that consumes that
 fixture fails closed unless `--prehome-action home` is set, so representative
 geometry evidence cannot run after only Z homing.
+`deneb-active-physical-soak-runner` is the time-bounded long-run wrapper for
+that same safety path. It repeatedly delegates to `deneb-printsvc-smoke` with
+low bed/nozzle heat followed by cooldown, guarded homing, the stock home macro,
+and a bounded representative XYZ complete-job, then verifies each iteration and
+records RSS/memory/CPU samples. Use it for Section 8 multi-hour stability
+evidence when the goal is to exercise heat, X/Y/Z motion, and repeated print
+starts under the same native process; do not use observe-only sampling as a
+substitute for that promotion gate. By default the runner removes successful
+per-iteration logs and summaries after folding compact evidence into the
+aggregate summary so `/tmp` tmpfs usage does not masquerade as firmware memory
+growth. Pass `--keep-iteration-artifacts` only when preserving every smoke log
+is more important than long-run memory accounting.
 Abort-style job phases keep their immediate abort-requested and draining
 snapshots, then poll `/printer/status` and `/printer` until native status is
 `idle` with `native_active:false` and `native_stop_allowed:false` before taking
@@ -391,6 +413,7 @@ deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc
 deneb-printsvc-init-selftest
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-native-audit-selftest
+deneb-active-physical-soak-runner --duration 7200 --fixture /tmp/deneb-active-physical-soak-xyz.gcode
 ```
 
 For job runs the verifier requires `printing` while active, `paused` after a
@@ -437,10 +460,10 @@ USB/local `pre_print` acceptance is stoppable and aborts back to idle.
 The final June 10 `d82245c` completion/resource refresh fixed the remaining
 EOF completion race by keeping active state when the G-code stream is exhausted
 but Marlin flow packets remain in flight. Completed native resource summaries
-are now rejected unless the final completion row has drained flow
-(`flow_inflight:0`, `flow_resend:0`). The accepted
-`/tmp/deneb-native-resources-final.summary` matched the paired stock final Z
-height and drained without resend debt.
+are now rejected unless the final completion row has no resend debt
+(`flow_resend:0`) while reporting idle, native inactive, and Stop disabled. The
+accepted `/tmp/deneb-native-resources-final.summary` matched the paired stock
+final Z height and drained without resend debt.
 Do not raise `DENEB_PRINTSVC_STREAM_WINDOW` as a throughput shortcut without
 new hardware proof. A window-6 trial produced resend debt and partial Z
 completion before the finish-path fixes, and a later window-6 retest remained

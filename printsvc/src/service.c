@@ -87,6 +87,7 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
     deneb_pause_resume_control_poll(svc);
     deneb_job_control_poll_abort_cleanup(svc);
     deneb_job_control_poll_finish_cleanup(svc);
+    deneb_gcode_control_refresh_manual_status(svc);
     if (status_has_firmware(svc))
         svc->firmware_probe_pending = 0;
     if (svc->serial_ready &&

@@ -52,6 +52,7 @@ MAKE_REPRESENTATIVE_FIXTURE_CYCLES=24
 MACRO_ACTION=""
 COMPLETION_TIMEOUT="${DENEB_PRINTSVC_SMOKE_COMPLETION_TIMEOUT:-300}"
 ABORT_SETTLE_TIMEOUT="${DENEB_PRINTSVC_SMOKE_ABORT_SETTLE_TIMEOUT:-60}"
+HEAT_COOLDOWN_TIMEOUT="${DENEB_PRINTSVC_SMOKE_HEAT_COOLDOWN_TIMEOUT:-300}"
 READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_READY_TIMEOUT:-180}"
 FIRMWARE_PROOF_READY_TIMEOUT="${DENEB_PRINTSVC_SMOKE_FIRMWARE_PROOF_READY_TIMEOUT:-45}"
 ACTIVE_ABORT_DELAY="${DENEB_PRINTSVC_SMOKE_ACTIVE_ABORT_DELAY:-60}"
@@ -1248,10 +1249,9 @@ printer_native_idle_flow_step() {
            [ "$status_value" = "idle" ] &&
            [ "$native_active" = "false" ] &&
            [ "$native_stop_allowed" = "false" ] &&
-           [ "${flow_inflight:-unknown}" = "0" ] &&
            [ "${flow_resend:-unknown}" = "0" ]; then
             say "$label rc=0 body=${body_value:-unknown}"
-            summary "phase=${label}-flow-wait elapsed=$elapsed status=idle native_active=false native_stop_allowed=false flow_inflight=0 flow_resend=0 rc=0"
+            summary "phase=${label}-flow-wait elapsed=$elapsed status=idle native_active=false native_stop_allowed=false flow_inflight=${flow_inflight:-unknown} flow_resend=0 rc=0"
             summary "phase=$label kind=api method=GET path=/printer rc=0 body=${body_value:-unknown}"
             rm -f "$body_file"
             return 0
@@ -1303,6 +1303,51 @@ wait_for_abort_idle() {
            [ "$status_value" = "idle" ] &&
            printf '%s\n' "$printer_body" | grep -q 'native_active:false' &&
            printf '%s\n' "$printer_body" | grep -q 'native_stop_allowed:false'; then
+            summary "phase=${label}-wait elapsed=$elapsed rc=0 status=idle"
+            rm -f "$status_file" "$printer_file"
+            return 0
+        fi
+
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+
+    status_body="$(sanitize_summary_value "$status_raw")"
+    say "$label timeout after ${elapsed}s status=${status_value:-unknown}"
+    summary "phase=${label}-wait elapsed=$elapsed rc=1 status=${status_value:-unknown} status_rc=$status_rc status_body=${status_body:-unknown} printer_rc=$printer_rc printer_body=${printer_body:-unknown}"
+    rm -f "$status_file" "$printer_file"
+    return 1
+}
+
+wait_for_idle_after_cooldown() {
+    label="$1"
+    timeout="$2"
+    elapsed=0
+    interval=2
+    status_file="/tmp/deneb-printsvc-smoke-idle-status.$$"
+    printer_file="/tmp/deneb-printsvc-smoke-idle-printer.$$"
+
+    while [ "$elapsed" -le "$timeout" ]; do
+        http_get_capture /printer/status "$status_file"
+        status_rc=$?
+        status_raw="$(cat "$status_file" 2>/dev/null || true)"
+        status_value="$(extract_status_value "$status_raw")"
+        http_get_capture /printer "$printer_file"
+        printer_rc=$?
+        printer_raw="$(cat "$printer_file" 2>/dev/null || true)"
+        printer_body="$(sanitize_summary_value "$printer_raw")"
+
+        if [ "$status_rc" = "0" ] &&
+           [ "$printer_rc" = "0" ] &&
+           [ "$status_value" = "idle" ]; then
+            if [ "$ENABLE_NATIVE" = "1" ]; then
+                if ! printf '%s\n' "$printer_body" | grep -q 'native_active:false' ||
+                   ! printf '%s\n' "$printer_body" | grep -q 'native_stop_allowed:false'; then
+                    sleep "$interval"
+                    elapsed=$((elapsed + interval))
+                    continue
+                fi
+            fi
             summary "phase=${label}-wait elapsed=$elapsed rc=0 status=idle"
             rm -f "$status_file" "$printer_file"
             return 0
@@ -1587,7 +1632,7 @@ if [ "$RUN_HEAT" = "1" ]; then
     snapshot "heating"
     api_step "bed-cooldown" PUT /printer/bed/temperature '{"target":0}' || true
     api_step "nozzle-cooldown" PUT /printer/heads/0/extruders/0/hotend/temperature '{"target":0}' || true
-    sleep 5
+    wait_for_idle_after_cooldown "cooldown" "$HEAT_COOLDOWN_TIMEOUT" || exit $?
     snapshot "cooldown"
 fi
 

@@ -263,11 +263,13 @@ static void handle_client(int fd)
             resp.status_code = 500;
             api_http_set_body_str(&resp, "{\"message\":\"Upload failed\"}");
         } else {
+            backend_zmq_poll();
             api_http_route(&req, &resp);
         }
         /* Cleanup temp upload file */
         if (req.upload_path[0]) unlink(req.upload_path);
     } else {
+        backend_zmq_poll();
         api_http_route(&req, &resp);
     }
 

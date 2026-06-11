@@ -39,6 +39,7 @@ write_valid_package() {
         "$root/deneb-printsvc-smoke-compare" \
         "$root/deneb-printsvc-smoke-selftest" \
         "$root/deneb-printsvc-stability" \
+        "$root/deneb-active-physical-soak-runner" \
         "$root/deneb-printsvc-stock-baseline" \
         "$root/deneb-printsvc-cli-selftest" \
         "$root/deneb-printsvc-init-selftest" \
@@ -79,6 +80,11 @@ EOF
 #!/bin/sh
 deneb-printsvc-smoke --native-no-restart
 echo "--complete-job requires --physical-ok"
+EOF
+    cat > "$root/deneb-active-physical-soak-runner" <<'EOF'
+#!/bin/sh
+deneb-printsvc-smoke --native-no-restart --heat --motion --macro home \
+    --complete-job "$FIXTURE"
 EOF
     cat > "$root/deneb-printsvc-stock-baseline" <<'EOF'
 #!/bin/sh
@@ -163,6 +169,7 @@ deneb-printsvc-integration-audit --source .
 deneb-printsvc-integration-audit-selftest
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-stability
+deneb-active-physical-soak-runner
 deneb-printsvc-stability" --selftest
 find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' \)
 EOF
@@ -232,6 +239,11 @@ EOF
 deneb-printsvc-smoke --native-no-restart
 echo "--complete-job requires --physical-ok"
 EOF
+    cat > "$root/tools/deneb-active-physical-soak-runner.sh" <<'EOF'
+#!/bin/sh
+deneb-printsvc-smoke --native-no-restart --heat --motion --macro home \
+    --complete-job "$FIXTURE"
+EOF
     cat > "$root/tools/deneb-printsvc-stock-baseline.sh" <<'EOF'
 #!/bin/sh
 ALLOW_STOCK_SWITCH="${DENEB_PRINTSVC_STOCK_BASELINE_OK:-0}"
@@ -258,6 +270,7 @@ deneb-printsvc-release-gate-selftest
 /etc/init.d/deneb-api restart
 /etc/init.d/deneb-web restart
 cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
+cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner
 cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
 cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
 native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction
@@ -491,6 +504,11 @@ MISSING_STABILITY="$TMP_DIR/missing-stability"
 write_valid_package "$MISSING_STABILITY"
 rm -f "$MISSING_STABILITY/deneb-printsvc-stability"
 expect_failure rejects_missing_stability "$AUDIT" --package-dir "$MISSING_STABILITY"
+
+MISSING_ACTIVE_SOAK_RUNNER="$TMP_DIR/missing-active-soak-runner"
+write_valid_package "$MISSING_ACTIVE_SOAK_RUNNER"
+rm -f "$MISSING_ACTIVE_SOAK_RUNNER/deneb-active-physical-soak-runner"
+expect_failure rejects_missing_active_soak_runner "$AUDIT" --package-dir "$MISSING_ACTIVE_SOAK_RUNNER"
 
 MISSING_BASELINE_HELPER="$TMP_DIR/missing-baseline-helper"
 write_valid_package "$MISSING_BASELINE_HELPER"
