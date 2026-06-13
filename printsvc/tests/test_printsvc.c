@@ -1000,7 +1000,7 @@ static void test_job_streamer_policy(void)
     status.head_t_cur = 200.0f;
     assert(deneb_job_streamer_poll(&streamer) == 0);
     assert(deneb_job_streamer_poll(&streamer) == 1);
-    assert(deneb_flow_inflight(&flow) == 1);
+    assert(deneb_flow_inflight(&flow) == 3);
     for (int guard = 0; job_prepare_stage != 0 && guard < 32; guard++) {
         deneb_flow_clear_inflight(&flow);
         assert(deneb_job_streamer_poll(&streamer) >= 0);
@@ -4705,10 +4705,9 @@ static void test_job_poll_streams_after_preheat(void)
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 1);
-    assert(deneb_flow_inflight(&svc.flow) == 2);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(strcmp(flow_command_by_send_order(&svc.flow, 1),
                   "G0 X105 Y0 F9000") == 0);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 2), "M18 Z") == 0);
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 0);
@@ -4716,29 +4715,23 @@ static void test_job_poll_streams_after_preheat(void)
     svc.status.head_t_cur = 200.0f;
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(deneb_print_service_poll_job(&svc) == 1);
-    assert(deneb_flow_inflight(&svc.flow) == 1);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 3), "G28 Z") == 0);
-
-    deneb_flow_clear_inflight(&svc.flow);
-    assert(deneb_print_service_poll_job(&svc) == 0);
-    assert(deneb_print_service_poll_job(&svc) == 1);
     assert(deneb_flow_inflight(&svc.flow) == 3);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 4),
+    assert(strcmp(flow_command_by_send_order(&svc.flow, 2),
                   "G10 S-6.5 F1500") == 0);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 5), "G10 S0 F300") == 0);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 6), "G90") == 0);
+    assert(strcmp(flow_command_by_send_order(&svc.flow, 3), "G10 S0 F300") == 0);
+    assert(strcmp(flow_command_by_send_order(&svc.flow, 4), "G90") == 0);
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 1);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 7), "M82") == 0);
+    assert(strcmp(flow_command_by_send_order(&svc.flow, 5), "M82") == 0);
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 1);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 8), "G92 E0") == 0);
+    assert(strcmp(flow_command_by_send_order(&svc.flow, 6), "G92 E0") == 0);
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 1);
-    assert(strcmp(flow_command_by_send_order(&svc.flow, 9), "G0 F9000") == 0);
+    assert(strcmp(flow_command_by_send_order(&svc.flow, 7), "G0 F9000") == 0);
 
     deneb_flow_clear_inflight(&svc.flow);
     assert(deneb_print_service_poll_job(&svc) == 0);
@@ -4748,7 +4741,7 @@ static void test_job_poll_streams_after_preheat(void)
     assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
     assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(svc.status.flow_inflight == 1);
-    assert(svc.status.flow_sent == 11);
+    assert(svc.status.flow_sent == 9);
     assert(svc.status.job_queue_depth == 1);
     assert(svc.status.job_line_number == 2);
     assert(svc.status.planner_starvation_count == 1);

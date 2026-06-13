@@ -15,20 +15,13 @@ enum {
     DENEB_JOB_PREPARE_HOME = 1,
     DENEB_JOB_PREPARE_HOME_DRAIN = 2,
     DENEB_JOB_PREPARE_HEAT = 3,
-    DENEB_JOB_PREPARE_Z_HOME = 4,
-    DENEB_JOB_PREPARE_Z_DRAIN = 5,
-    DENEB_JOB_PREPARE_STARTUP = 6,
-    DENEB_JOB_PREPARE_STARTUP_DRAIN = 7
+    DENEB_JOB_PREPARE_STARTUP = 4,
+    DENEB_JOB_PREPARE_STARTUP_DRAIN = 5
 };
 
 static const char *const DENEB_JOB_PREPARE_HOME_COMMANDS[] = {
     "G28",
     "G0 X105 Y0 F9000",
-    "M18 Z",
-};
-
-static const char *const DENEB_JOB_PREPARE_Z_HOME_COMMANDS[] = {
-    "G28 Z",
 };
 
 static const char *const DENEB_JOB_PRIME_FILAMENT_COMMANDS[] = {
@@ -148,7 +141,7 @@ static int poll_job_prepare(deneb_job_streamer_t *streamer)
             if (deneb_heater_wait_ready(streamer->heater_wait,
                                         streamer->status)) {
                 streamer->heater_wait->active = 0;
-                *streamer->job_prepare_stage = DENEB_JOB_PREPARE_Z_HOME;
+                *streamer->job_prepare_stage = DENEB_JOB_PREPARE_STARTUP;
                 return 0;
             }
             if (streamer->heater_wait->active) {
@@ -156,26 +149,6 @@ static int poll_job_prepare(deneb_job_streamer_t *streamer)
                                                streamer->status);
                 return 0;
             }
-            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_Z_HOME;
-            return 0;
-
-        case DENEB_JOB_PREPARE_Z_HOME:
-            rc = send_command_list(
-                streamer, DENEB_JOB_PREPARE_Z_HOME_COMMANDS,
-                sizeof(DENEB_JOB_PREPARE_Z_HOME_COMMANDS) /
-                    sizeof(DENEB_JOB_PREPARE_Z_HOME_COMMANDS[0]),
-                streamer->job_prepare_index);
-            if (rc <= 0)
-                return rc;
-            if (rc == 1)
-                return 1;
-            *streamer->job_prepare_index = 0;
-            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_Z_DRAIN;
-            return 1;
-
-        case DENEB_JOB_PREPARE_Z_DRAIN:
-            if (deneb_flow_inflight(streamer->flow) != 0)
-                return 0;
             *streamer->job_prepare_stage = DENEB_JOB_PREPARE_STARTUP;
             return 0;
 

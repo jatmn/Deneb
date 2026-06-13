@@ -317,10 +317,9 @@ proof.
     `G280`/prime handling. Native `deneb-printsvc` now implements that
     prepare/startup path with host coverage. A 2026-06-13 supervised target run
     started safely, but exposed a follow-up prepare inefficiency: startup homes
-    XYZ, moves to the prepare position, then runs a second Z home. Track that as
-    an explicit fix task; do not remove the stock-derived second Z home until
-    the current `M18 Z` release/re-home reason is reviewed and target safety is
-    preserved. Print-job action samples still need capture.
+    XYZ, moves to the prepare position, then runs a second Z home. Native code
+    now removes the normal-print `M18 Z` release and second `G28 Z`; supervised
+    target proof is still required. Print-job action samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -384,9 +383,10 @@ proof.
   restored motion cold after Pause cooled the nozzle. Package `072edbc`
   reasserts the saved nozzle target before waiting and restoring motion, and a
   2026-06-13 supervised target run proved Resume reheated, waited, returned to
-  position, and continued printing successfully. Startup still has an observed
-  double-Z-home delay that should be fixed as a follow-up. Remote print-job
-  actions also remain open closure gates.
+  position, and continued printing successfully. Startup double-Z-home cleanup
+  is implemented in host-tested code by removing normal-print Z release/re-home,
+  but still needs supervised target proof. Remote print-job actions also remain
+  open closure gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
