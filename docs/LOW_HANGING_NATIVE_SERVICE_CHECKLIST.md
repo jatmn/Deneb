@@ -229,8 +229,8 @@ proof.
     expected native connector process while separately recording any
     `connector.py` fallback as a regression. CONNECTED stock baseline:
     connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md). Native DISABLED,
-    PAIRING-PIN, CONNECTED, and DISCONNECT captures were recorded on hardware
-    on 2026-06-13 with `dist/Deneb_Update_e213599.deneb`. Native RECONNECTING,
+    PAIRING-PIN, CONNECTED, DISCONNECT, and RECONNECTING captures were recorded
+    on hardware on 2026-06-13 with `dist/Deneb_Update_e213599.deneb`. Native
     cloud-print, print-job-action, and rename captures remain outstanding.
 - [x] If the measurement helper includes native parsing, summarizing, or audit
   code, run it under Valgrind or sanitizers in host mode.
@@ -303,9 +303,10 @@ proof.
   → `docs/DF_LIFECYCLE_CLASSIFICATION.md` summarizes the disabled and pairing
     samples, including the native syslog evidence for connection request,
     connection response, pairing PIN receipt, cloud account confirmation, and
-    connected status responses, disconnect request handling, service stop, and
-    cleared pairing state. Remaining reconnecting, remote print,
-    print-job action, and rename samples still need capture.
+    connected status responses, controlled cloud interruption, reconnect
+    recovery, disconnect request handling, service stop, and cleared pairing
+    state. Remaining remote print, print-job action, and rename samples still
+    need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -317,13 +318,15 @@ proof.
   → 2026-06-13 hardware evidence: pairing-PIN and connected steady-state both
     ran through native `deneb-dfsvc` PID `13157`, and helper summaries recorded
     `connector.py pid=0`.
-- [ ] Digital Factory pairing, status, reconnect, and authenticated disconnect
+- [x] Digital Factory pairing, status, reconnect, and authenticated disconnect
   behavior are validated on target against the native connector.
-  → Partial. Touchscreen status/connect reached `state=enter_pin pin=869281`,
-    then `state=connected`, through native `deneb-dfsvc`. Touchscreen
-    disconnect requested and reached `state=disconnected`, cleared
-    `cluster_id`, disabled the service, stopped `deneb-dfsvc`, and left
-    `connector.py pid=0`. Reconnect remains open.
+  → Touchscreen status/connect reached `state=enter_pin pin=869281`, then
+    `state=connected`, through native `deneb-dfsvc`. Touchscreen disconnect
+    requested and reached `state=disconnected`, cleared `cluster_id`, disabled
+    the service, stopped `deneb-dfsvc`, and left `connector.py pid=0`.
+    Controlled cloud interruption changed status to `state=reconnecting`;
+    removing the temporary block returned status to `state=connected` with the
+    same native `deneb-dfsvc` PID and `connector.py pid=0`.
 - [ ] The existing native bridge/API command path remains the shared control
   boundary for UI-side status/connect/disconnect unless a tested replacement
   deliberately consolidates it with the native connector.
@@ -348,12 +351,12 @@ proof.
   connector grounded in observed contracts and measurements; do not copy stock
   Python implementation into Deneb native code or guess at cloud protocol
   behavior.
-- Do not mark Digital Factory fully de-Pythoned until on-target reconnecting,
-  remote print, print-job action, and rename states are validated with
-  `deneb-dfsvc` and no stock `connector.py` fallback.
+- Do not mark Digital Factory fully de-Pythoned until on-target remote print,
+  print-job action, and rename states are validated with `deneb-dfsvc` and no
+  stock `connector.py` fallback.
   Disabled/unpaired, pairing-PIN, and connected steady-state are now covered by
-  2026-06-13 hardware evidence. Touchscreen disconnect is covered by the same
-  run.
+  2026-06-13 hardware evidence. Reconnect after controlled cloud interruption
+  and touchscreen disconnect are covered by the same run.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
