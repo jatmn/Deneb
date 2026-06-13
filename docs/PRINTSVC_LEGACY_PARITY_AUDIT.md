@@ -18,7 +18,7 @@ promotion evidence lives in
 | `marlin_protocol.py` | Normal loop schedules `M105` and `M114`; handles ACK/reject packets, assumed receive-buffer free space, and resend requests. It does not show normal-loop `M115` scheduling. | Native recurring `M105`/`M114` polling and flow-control behavior can be claimed where tested. Native `M115` startup/retry probing is a Deneb diagnostic extension, not stock parity. |
 | `marlin_companion/protocol.py` | Parses `MACHINE_TYPE`, `PCB_ID`, and quoted `BUILD` version output when observed. | Native parser support can be claimed where host-tested. Live metadata parity requires paired stock/native capture on the same firmware. |
 | `printhandling.py`, `marlin_executor.py`, `marlin_companion/stream.py` | Print prepare homes/centers, releases Z, waits, heats/extracts, re-homes Z, then `JOB` startup handles first-50-line `G280` detection, optional no-`G280` filament-to-tip priming, startup modal commands, `M190`/`M109` waits, and `G280` prime replacement. | Native `job_streamer.*`, `gcode_stream.*`, and `gcode_rewrite.*` now implement the stock-derived prepare/startup path with host coverage. The 2026-06-13 unsafe Continue run remains a target evidence blocker until this path is deployed and physically validated on hardware. |
-| `marlin_executor.py` | Abort cleanup sends stock XY/Z cleanup and homing moves. | Native intentionally diverges for safety by avoiding stock duplicate/unsafe homing cleanup. This is a Deneb behavior choice, not stock parity. |
+| `marlin_executor.py` | Abort cleanup sends stock XY/Z cleanup and homing moves. | Native `motion_policy.c` now sends a stock-derived abort cleanup sequence with relative wipe/retract, `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and `M84`. Host tests cover the command order. Target Stop proof remains open until the fixed package is deployed and the touchscreen Stop path is observed to park/home safely. |
 | `print_service.py` | Completion clears active file/type after final queue-completed callback. | Native keeps active state until finish cleanup/drain completes, then clears active identity. Bounded completion proof exists; representative slicer completion remains open. |
 | `marlin_executor.py` | Pause saves position with `M114`, retracts/parks/cools, then resumes by reheating and restoring position/extrusion state. | Native pause/resume follows the stock ordering shape and has bounded hardware proof. Cura-started and broader slicer geometry proof remain open. |
 | `marlin_datalink.py` | Tracks pending packets, handles ACK/reject/resend, and skips sequence 255 by wrapping 254 to 0. | Native flow-control tests cover the current ring/resend behavior. Live desync/fault behavior remains safety-sensitive and must stay evidence-backed. |
@@ -58,7 +58,8 @@ representative slicer, Digital Factory lifecycle, or multi-hour soak gates.
 ## Open Parity Work
 
 - Prove LCD hands-on queued/start/pause/resume/abort/completion/stale-state
-  workflow.
+  workflow, including that the active Status screen exposes Pause/Resume and
+  that Stop runs the stock-derived park/home cleanup.
 - Prove Web UI hands-on status/control workflow.
 - Prove desktop Cura client discovery, upload/start, monitor,
   pause/resume/abort/delete, and pending-job behavior.

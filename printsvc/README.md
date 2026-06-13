@@ -62,9 +62,9 @@ identity.
   recurring polling on the stock-shaped `M105`/`M114` cadence.
 - Pause captures a fresh `M114` position before retract/park/cool so resume does
   not rely on a stale periodic position sample.
-- Abort intentionally diverges from stock Python by avoiding unsafe duplicate
-  homing/XY cleanup. It keeps status in `aborting` until cleanup drains, then
-  clears active identity to idle.
+- Abort uses a stock-derived cleanup sequence with relative wipe/retract,
+  `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and `M84`. It keeps status in
+  `aborting` until cleanup drains, then clears active identity to idle.
 - Completion keeps the job active until finish cleanup and flow drain complete,
   then clears active file/source/UUID/heater state.
 - G-code streaming is bounded and line-oriented; jobs and macros are not loaded

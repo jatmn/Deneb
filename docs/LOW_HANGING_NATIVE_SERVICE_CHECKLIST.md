@@ -372,8 +372,13 @@ proof.
   2026-06-13 hardware run. Continue/start after the prompt is reopened as a
   target-validation blocker: native `deneb-printsvc` now has host-tested
   stock-derived prepare/startup/`G280` handling, but it still needs supervised
-  deployment proof before this gate closes. Remote print-job actions also remain
-  open closure gates.
+  deployment proof before this gate closes. A later package started safely, but
+  exposed a separate active-print UI/Stop parity blocker: the Status screen had
+  no Pause button, and Stop returned idle without the expected stock park/home
+  routine. Native source now adds Status-screen Pause/Resume controls and a
+  stock-derived abort cleanup policy, but deployment plus supervised target
+  proof is still required. Remote print-job actions also remain open closure
+  gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 

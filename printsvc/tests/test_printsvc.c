@@ -832,11 +832,13 @@ static void test_job_control_policy(void)
     assert(strcmp(svc.status.file, "serial.gcode") == 0);
     assert(deneb_job_control_poll_abort_cleanup(&svc) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_ABORTING);
-    deneb_flow_clear_inflight(&svc.flow);
-    assert(deneb_job_control_poll_abort_cleanup(&svc) == 0);
-    assert(svc.abort_cleanup_pending);
-    deneb_flow_clear_inflight(&svc.flow);
-    assert(deneb_job_control_poll_abort_cleanup(&svc) == 1);
+    for (size_t i = 0;
+         i < svc.abort_cleanup_policy.count + 2 && svc.abort_cleanup_pending;
+         i++) {
+        deneb_flow_clear_inflight(&svc.flow);
+        if (deneb_job_control_poll_abort_cleanup(&svc) == 1)
+            break;
+    }
     assert(!svc.abort_cleanup_pending);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
@@ -5395,13 +5397,20 @@ static void test_motion_policy(void)
     deneb_motion_policy_t policy;
 
     deneb_motion_policy_abort(&policy);
-    assert(policy.count == 5);
-    assert(strcmp(policy.commands[0], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
-    assert(strcmp(policy.commands[1], "M104 S0") == 0);
-    assert(strcmp(policy.commands[2], "M140 S0") == 0);
-    assert(strcmp(policy.commands[3], DENEB_GCODE_FAN_OFF) == 0);
-    assert(strcmp(policy.commands[4], DENEB_GCODE_DISABLE_EXTRUDER_STEPPER) == 0);
-    assert(!deneb_motion_policy_contains_xy_home(&policy));
+    assert(policy.count == 12);
+    assert(strcmp(policy.commands[0], DENEB_GCODE_RELATIVE_MODE) == 0);
+    assert(strcmp(policy.commands[1], "G1 X20 Y20 E-6.5 F9000") == 0);
+    assert(strcmp(policy.commands[2], "G1 Z3") == 0);
+    assert(strcmp(policy.commands[3], DENEB_GCODE_ABSOLUTE_MODE) == 0);
+    assert(strcmp(policy.commands[4], "G10 S-16.5") == 0);
+    assert(strcmp(policy.commands[5], "G28 X Y") == 0);
+    assert(strcmp(policy.commands[6], DENEB_GCODE_HOME_Z) == 0);
+    assert(strcmp(policy.commands[7], "M104 S0") == 0);
+    assert(strcmp(policy.commands[8], "M140 S0") == 0);
+    assert(strcmp(policy.commands[9], DENEB_GCODE_FAN_OFF) == 0);
+    assert(strcmp(policy.commands[10], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
+    assert(strcmp(policy.commands[11], DENEB_GCODE_DISABLE_ALL_STEPPERS) == 0);
+    assert(deneb_motion_policy_contains_xy_home(&policy));
 
     deneb_motion_policy_finish(&policy);
     assert(policy.count == 2);

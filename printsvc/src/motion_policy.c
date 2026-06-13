@@ -60,15 +60,19 @@ static void policy_addff(deneb_motion_policy_t *policy, const char *fmt,
 
 void deneb_motion_policy_abort(deneb_motion_policy_t *policy)
 {
-    deneb_gcode_cooldown_sequence_t cooldown;
-
     policy_clear(policy);
+    policy_add(policy, DENEB_GCODE_RELATIVE_MODE);
+    policy_add(policy, "G1 X20 Y20 E-6.5 F9000");
+    policy_add(policy, "G1 Z3");
+    policy_add(policy, DENEB_GCODE_ABSOLUTE_MODE);
+    policy_add(policy, "G10 S-16.5");
+    policy_add(policy, "G28 X Y");
+    policy_add(policy, DENEB_GCODE_HOME_Z);
+    policy_add(policy, "M104 S0");
+    policy_add(policy, "M140 S0");
+    policy_add(policy, DENEB_GCODE_FAN_OFF);
     policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
-    if (deneb_gcode_build_cooldown_sequence(&cooldown) == 0) {
-        for (size_t i = 0; i < 3; i++)
-            policy_add(policy, cooldown.lines[i]);
-    }
-    policy_add(policy, DENEB_GCODE_DISABLE_EXTRUDER_STEPPER);
+    policy_add(policy, DENEB_GCODE_DISABLE_ALL_STEPPERS);
 }
 
 void deneb_motion_policy_finish(deneb_motion_policy_t *policy)
