@@ -17,6 +17,7 @@ void deneb_job_lifecycle_start(deneb_status_t *status,
                                const char *file,
                                const char *source,
                                const char *uuid,
+                               const char *cloud_job_id,
                                float bed_target,
                                float head_target)
 {
@@ -31,6 +32,8 @@ void deneb_job_lifecycle_start(deneb_status_t *status,
     snprintf(status->source, sizeof(status->source), "%s",
              source && source[0] ? source : DENEB_PRINT_USB_JOB_SOURCE);
     snprintf(status->uuid, sizeof(status->uuid), "%s", uuid ? uuid : "");
+    snprintf(status->cloud_job_id, sizeof(status->cloud_job_id), "%s",
+             cloud_job_id ? cloud_job_id : "");
     if (bed_target > 0.0f)
         status->bed_t_set = bed_target;
     if (head_target > 0.0f)
@@ -52,6 +55,7 @@ void deneb_job_lifecycle_complete(deneb_status_t *status)
     snprintf(status->file, sizeof(status->file), "%s", DENEB_PRINT_NONE_VALUE);
     status->source[0] = '\0';
     status->uuid[0] = '\0';
+    status->cloud_job_id[0] = '\0';
     status->bed_t_set = 0.0f;
     status->head_t_set = 0.0f;
 }
@@ -74,6 +78,7 @@ void deneb_job_lifecycle_abort(deneb_status_t *status)
     snprintf(status->file, sizeof(status->file), "%s", DENEB_PRINT_NONE_VALUE);
     status->source[0] = '\0';
     status->uuid[0] = '\0';
+    status->cloud_job_id[0] = '\0';
     status->bed_t_set = 0.0f;
     status->head_t_set = 0.0f;
     status->time_total = 0;

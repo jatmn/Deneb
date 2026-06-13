@@ -11,6 +11,20 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+static int disposition_has_name(const char *disp, const char *name)
+{
+    char quoted[160];
+    char bare[160];
+
+    if (!disp || !name || !*name)
+        return 0;
+
+    snprintf(quoted, sizeof(quoted), "name=\"%s\"", name);
+    snprintf(bare, sizeof(bare), "name=%s", name);
+    return strcasestr(disp, quoted) != NULL ||
+           strcasestr(disp, bare) != NULL;
+}
+
 int extract_multipart_file(const char *boundary, const char *upload_path,
                            char *out_path, int out_sz,
                            char *filename, int fn_sz)
@@ -186,4 +200,109 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
     close(out_fd);
     munmap(data, (size_t)st.st_size);
     return 0;
+}
+
+int extract_multipart_field(const char *boundary, const char *upload_path,
+                            const char *field_name, char *out, int out_sz)
+{
+    int fd;
+    struct stat st;
+    char *data;
+    char boundary_line[256];
+    size_t blen;
+    char *part;
+    char *data_end;
+
+    if (!boundary || !upload_path || !field_name || !out || out_sz <= 0)
+        return -1;
+    out[0] = '\0';
+
+    fd = open(upload_path, O_RDONLY);
+    if (fd < 0)
+        return -1;
+    if (fstat(fd, &st) < 0 || st.st_size == 0) {
+        close(fd);
+        return -1;
+    }
+
+    data = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (data == MAP_FAILED)
+        return -1;
+
+    snprintf(boundary_line, sizeof(boundary_line), "--%s", boundary);
+    blen = strlen(boundary_line);
+    part = data;
+    data_end = data + st.st_size;
+
+    while ((part = memmem(part, (size_t)(data_end - part),
+                          boundary_line, blen)) != NULL) {
+        char *headers_end;
+        int header_sep_len = 4;
+        size_t headers_len;
+        char *headers;
+        char *disp;
+        char *part_content;
+        char *next_boundary;
+        int matched = 0;
+
+        part += blen;
+        if (part + 2 <= data_end && part[0] == '-' && part[1] == '-')
+            break;
+
+        if (part + 2 <= data_end && part[0] == '\r' && part[1] == '\n')
+            part += 2;
+        else if (part < data_end && part[0] == '\n')
+            part += 1;
+
+        headers_end = memmem(part, (size_t)(data_end - part), "\r\n\r\n", 4);
+        if (!headers_end) {
+            headers_end = memmem(part, (size_t)(data_end - part), "\n\n", 2);
+            header_sep_len = 2;
+        }
+        if (!headers_end)
+            break;
+
+        headers_len = (size_t)(headers_end - part);
+        headers = malloc(headers_len + 1);
+        if (!headers)
+            break;
+        memcpy(headers, part, headers_len);
+        headers[headers_len] = '\0';
+
+        disp = strcasestr(headers, "content-disposition:");
+        if (disp && !strcasestr(disp, "filename=") &&
+            disposition_has_name(disp, field_name))
+            matched = 1;
+        free(headers);
+
+        part_content = headers_end + header_sep_len;
+        next_boundary = memmem(part_content,
+                               (size_t)(data_end - part_content),
+                               boundary_line, blen);
+        if (!next_boundary)
+            break;
+
+        if (matched) {
+            char *content_end = next_boundary;
+            size_t copy_len;
+
+            if (content_end > part_content && content_end[-1] == '\n')
+                content_end--;
+            if (content_end > part_content && content_end[-1] == '\r')
+                content_end--;
+            copy_len = (size_t)(content_end - part_content);
+            if (copy_len >= (size_t)out_sz)
+                copy_len = (size_t)out_sz - 1;
+            memcpy(out, part_content, copy_len);
+            out[copy_len] = '\0';
+            munmap(data, (size_t)st.st_size);
+            return 0;
+        }
+
+        part = next_boundary;
+    }
+
+    munmap(data, (size_t)st.st_size);
+    return -1;
 }

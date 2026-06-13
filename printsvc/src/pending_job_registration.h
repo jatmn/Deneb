@@ -21,6 +21,9 @@ void deneb_pending_job_registration_init(
     deneb_pending_job_registration_t *registration);
 int deneb_pending_job_registration_prepare(
     const char *path,
+    const char *source,
+    const char *uuid,
+    const char *cloud_job_id,
     long long tracker_seed,
     deneb_pending_job_registration_t *registration);
 int deneb_pending_job_registration_write_default(

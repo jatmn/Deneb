@@ -24,6 +24,7 @@ void deneb_print_job_summary_init(deneb_print_job_summary_t *summary,
     summary->name = deneb_print_job_name_or_default(name);
     summary->uuid = deneb_print_job_uuid_or_default(uuid);
     summary->source = deneb_print_job_source_or_default(source);
+    summary->cloud_job_id = "";
     summary->state = deneb_print_job_state_or_none(has_error, is_paused,
                                                    is_printing);
     summary->active = deneb_print_job_is_active(has_error, is_paused,
@@ -32,6 +33,7 @@ void deneb_print_job_summary_init(deneb_print_job_summary_t *summary,
     summary->time_total = time_total;
     summary->time_left = time_left;
     summary->time_elapsed = deneb_print_elapsed_seconds(time_total, time_left);
+    summary->created_at = 0;
     summary->progress_percent = progress_percent;
     summary->progress_fraction =
         deneb_print_progress_fraction(progress_percent);
@@ -252,15 +254,20 @@ int deneb_print_job_summary_format_cluster_active_response(
     char created[64];
     char machine_variant[96];
     char name[256];
+    char state_raw[64];
     char state[64];
     char uuid[128];
-    char owner[80];
+    char cloud_job_id[192];
+    char cloud_job_id_binding[224];
     char printer[96];
-    char machine_family[96];
     char nozzle_raw[32];
     char material_raw[80];
     char nozzle_id[64];
     char material_guid[128];
+    char material_type_raw[64];
+    char material_color_raw[64];
+    char material_type[128];
+    char material_color[128];
     int n;
 
     if (!summary || !summary->active || !out || out_sz == 0)
@@ -271,41 +278,79 @@ int deneb_print_job_summary_format_cluster_active_response(
     deneb_json_escape_string(DENEB_PRINT_PROFILE_MACHINE_VARIANT,
                              machine_variant, sizeof(machine_variant));
     deneb_json_escape_string(summary->name, name, sizeof(name));
-    deneb_json_escape_string(summary->state, state, sizeof(state));
-    deneb_json_escape_string(summary->uuid, uuid, sizeof(uuid));
-    deneb_json_escape_string(summary->source, owner, sizeof(owner));
+    snprintf(state_raw, sizeof(state_raw), "%s",
+             deneb_print_cluster_job_status_label(summary->state));
+    deneb_json_escape_string(state_raw, state, sizeof(state));
+    deneb_json_escape_string(deneb_print_cluster_job_uuid_or_default(summary->uuid),
+                             uuid, sizeof(uuid));
+    deneb_json_escape_string(summary->cloud_job_id ? summary->cloud_job_id : "",
+                             cloud_job_id, sizeof(cloud_job_id));
+    if (cloud_job_id[0])
+        snprintf(cloud_job_id_binding, sizeof(cloud_job_id_binding),
+                 "\"cloud_job_id\":\"%s\",", cloud_job_id);
+    else
+        cloud_job_id_binding[0] = '\0';
     deneb_json_escape_string(printer_uuid ? printer_uuid : "", printer,
                              sizeof(printer));
-    deneb_json_escape_string(DENEB_PRINT_PROFILE_MACHINE_FAMILY,
-                             machine_family, sizeof(machine_family));
     deneb_print_profile_read_loaded_nozzle_id(nozzle_raw, sizeof(nozzle_raw));
-    deneb_print_profile_read_loaded_material_guid(material_raw,
-                                                  sizeof(material_raw));
+    deneb_print_profile_read_loaded_cluster_material_guid(material_raw,
+                                                          sizeof(material_raw));
+    deneb_print_profile_material_type_from_guid(material_raw,
+                                                material_type_raw,
+                                                sizeof(material_type_raw));
+    deneb_print_profile_material_color_from_guid(material_raw,
+                                                 material_color_raw,
+                                                 sizeof(material_color_raw));
     deneb_json_escape_string(nozzle_raw, nozzle_id, sizeof(nozzle_id));
     deneb_json_escape_string(material_raw, material_guid,
                              sizeof(material_guid));
+    deneb_json_escape_string(material_type_raw, material_type,
+                             sizeof(material_type));
+    deneb_json_escape_string(material_color_raw, material_color,
+                             sizeof(material_color));
 
+    if (material_guid[0]) {
+        char with_guid[4096];
+        n = snprintf(
+            with_guid, sizeof(with_guid),
+            "[{\"created_at\":\"%s\",\"force\":false,"
+            "\"machine_variant\":\"%s\",\"name\":\"%s\","
+            "\"started\":%s,\"status\":\"%s\",\"time_total\":%d,"
+            "\"time_elapsed\":%d,\"uuid\":\"%s\",%s"
+            "\"configuration\":[{\"extruder_index\":0,"
+            "\"print_core_id\":\"%s\","
+            "\"material\":{\"guid\":\"%s\",\"brand\":\"%s\",\"material\":\"%s\","
+            "\"color\":\"%s\"}}],"
+            "\"printer_uuid\":\"%s\",\"assigned_to\":\"%s\","
+            "\"constraints\":{}}]",
+            created, machine_variant, name,
+            summary->started ? "true" : "false", state, summary->time_total,
+            summary->time_elapsed, uuid, cloud_job_id_binding, nozzle_id, material_guid,
+            DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_BRAND, material_type,
+            material_color, printer, printer);
+        if (n < 0 || (size_t)n >= sizeof(with_guid) ||
+            (size_t)n >= out_sz)
+            return -1;
+        snprintf(out, out_sz, "%s", with_guid);
+        return n;
+    }
     n = snprintf(
         out, out_sz,
         "[{\"created_at\":\"%s\",\"force\":false,"
         "\"machine_variant\":\"%s\",\"name\":\"%s\","
         "\"started\":%s,\"status\":\"%s\",\"time_total\":%d,"
-        "\"time_elapsed\":%d,\"uuid\":\"%s\","
+        "\"time_elapsed\":%d,\"uuid\":\"%s\",%s"
         "\"configuration\":[{\"extruder_index\":0,"
         "\"print_core_id\":\"%s\","
-        "\"material\":{\"guid\":\"%s\",\"brand\":\"%s\",\"material\":\"%s\","
-        "\"color\":\"%s\"}}],\"owner\":\"%s\","
+        "\"material\":{\"brand\":\"%s\",\"material\":\"%s\","
+        "\"color\":\"%s\"}}],"
         "\"printer_uuid\":\"%s\",\"assigned_to\":\"%s\","
-        "\"build_plate\":{\"type\":\"glass\"},"
-        "\"compatible_machine_families\":[\"%s\",\"%s\"],"
-        "\"impediments_to_printing\":[]}]",
+        "\"constraints\":{}}]",
         created, machine_variant, name,
         summary->started ? "true" : "false", state, summary->time_total,
-        summary->time_elapsed, uuid, nozzle_id, material_guid,
-        DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_BRAND,
-        DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE,
-        DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_COLOR, owner, printer, printer,
-        machine_family, machine_variant);
+        summary->time_elapsed, uuid, cloud_job_id_binding, nozzle_id,
+        DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_BRAND, material_type,
+        material_color, printer, printer);
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
     return n;

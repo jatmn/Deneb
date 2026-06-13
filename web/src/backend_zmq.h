@@ -46,7 +46,8 @@ int backend_zmq_send_gcode(const char *gcode);
 int backend_zmq_send_gcodes(const char *const *gcodes, size_t count);
 int backend_zmq_send_macro(const char *macro);
 int backend_zmq_send_job(const char *path, const char *source,
-                         const char *uuid, float bed_target,
+                         const char *uuid, const char *cloud_job_id,
+                         float bed_target,
                          float head_target);
 int backend_zmq_send_pending_instruction(const char *instruction);
 

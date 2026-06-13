@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf manifest.txt en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf manifest.txt en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -126,6 +126,7 @@ configure_digitalfactory_boot() {
 }
 
 install_web_runtime() {
+    /etc/init.d/digitalfactory stop 2>/dev/null || true
     /etc/init.d/deneb-mdns stop 2>/dev/null || true
     /etc/init.d/deneb-web stop 2>/dev/null || true
     /etc/init.d/deneb-api stop 2>/dev/null || true
@@ -133,6 +134,18 @@ install_web_runtime() {
     cp /tmp/update/deneb-api /usr/bin/deneb-api
     chmod 0755 /usr/bin/deneb-api
     log "installed deneb-api to /usr/bin/deneb-api"
+
+    cp /tmp/update/deneb-dfsvc /usr/bin/deneb-dfsvc
+    chmod 0755 /usr/bin/deneb-dfsvc
+    log "installed deneb-dfsvc to /usr/bin/deneb-dfsvc"
+
+    if [ -f /etc/init.d/digitalfactory ] && [ ! -f "${DENEB_BACKUP_DIR}/digitalfactory.init.orig" ]; then
+        cp /etc/init.d/digitalfactory "${DENEB_BACKUP_DIR}/digitalfactory.init.orig"
+        log "backed up /etc/init.d/digitalfactory"
+    fi
+    cp /tmp/update/digitalfactory.init /etc/init.d/digitalfactory
+    chmod 0755 /etc/init.d/digitalfactory
+    log "installed native digitalfactory init script"
 
     cp /tmp/update/deneb-mdns /usr/bin/deneb-mdns
     chmod 0755 /usr/bin/deneb-mdns
@@ -720,8 +733,8 @@ trap schedule_reboot EXIT
 validate_package
 backup_stock
 install_binary
-configure_digitalfactory_boot
 install_web_runtime
+configure_digitalfactory_boot
 smoke_test_printsvc_tools
 install_motion_firmware_verify_cache
 patch_motion_stack_boot_order

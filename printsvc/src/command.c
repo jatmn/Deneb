@@ -107,6 +107,9 @@ int deneb_command_parse(const char *frame, deneb_command_t *out)
                                          sizeof(out->source));
         deneb_command_extract_json_string(out->payload, "uuid", out->uuid,
                                          sizeof(out->uuid));
+        deneb_command_extract_json_string(out->payload, "cloud_job_id",
+                                         out->cloud_job_id,
+                                         sizeof(out->cloud_job_id));
         deneb_json_get_float_value(out->payload, "bedTset", &out->bed_target);
         if (out->bed_target <= 0.0f)
             deneb_json_get_float_value(out->payload, "bed_temperature", &out->bed_target);

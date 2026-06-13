@@ -67,7 +67,8 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     svc->finish_stable_reports = 0;
     svc->job_active = 1;
     deneb_job_lifecycle_start(&svc->status, cmd->file, cmd->source,
-                              cmd->uuid, cmd->bed_target, cmd->head_target);
+                              cmd->uuid, cmd->cloud_job_id,
+                              cmd->bed_target, cmd->head_target);
     deneb_heater_wait_start(&svc->heater_wait, svc->status.bed_t_set,
                             svc->status.head_t_set, 1.0f);
 

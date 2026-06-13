@@ -35,6 +35,8 @@ write_valid_package() {
     root="$1"
     mkdir -p "$root/deneb-printsvc-macros"
     touch "$root/deneb-printsvc" \
+        "$root/deneb-dfsvc" \
+        "$root/digitalfactory.init" \
         "$root/deneb-printsvc-smoke-verify" \
         "$root/deneb-printsvc-smoke-compare" \
         "$root/deneb-printsvc-smoke-selftest" \
@@ -119,6 +121,7 @@ write_valid_source() {
         "$root/ui/src/screens" "$root/ui/installer" "$root/ui/init" \
         "$root/web/src" "$root/web/init" \
         "$root/printsvc/src" "$root/printsvc/init" \
+        "$root/dfsvc/src" "$root/dfsvc/init" \
         "$root/tools"
 
     cat > "$root/common/print/print_backend_route.c" <<'EOF'
@@ -159,6 +162,28 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds, char *out, unsi
 EOF
     cat > "$root/web/src/df_bridge.h" <<'EOF'
 int deneb_df_bridge_run(const char *action, int timeout_seconds, char *out, unsigned long out_size);
+EOF
+    cat > "$root/dfsvc/src/main.c" <<'EOF'
+int main(void) {
+    return 0;
+}
+EOF
+cat > "$root/dfsvc/init/digitalfactory.init" <<'EOF'
+#!/bin/sh /etc/rc.common
+PROG=/usr/bin/deneb-dfsvc
+boot() {
+    if uci -q get ultimaker.option.cluster_id >/dev/null 2>&1; then
+        start
+    else
+        stop >/dev/null 2>&1 || true
+        disable >/dev/null 2>&1 || true
+    fi
+}
+start_service() {
+    procd_open_instance
+    procd_set_param command "$PROG"
+    procd_close_instance
+}
 EOF
     cat > "$root/ui/CMakeLists.txt" <<'EOF'
 add_executable(deneb-ui src/main.c)
@@ -294,12 +319,15 @@ deneb-printsvc-release-gate-selftest
 configure_digitalfactory_boot() {
     /etc/init.d/digitalfactory disable
 }
-configure_digitalfactory_boot
 rm -f /usr/bin/deneb-df-bridge
 cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
 cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner
 cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
 cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
+cp /tmp/update/deneb-dfsvc /usr/bin/deneb-dfsvc
+cp /tmp/update/digitalfactory.init /etc/init.d/digitalfactory
+install_web_runtime
+configure_digitalfactory_boot
 native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction
 EOF
     cat > "$root/ui/src/screens/screen_digital_factory.c" <<'EOF'

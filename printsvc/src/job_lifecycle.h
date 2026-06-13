@@ -9,6 +9,7 @@ void deneb_job_lifecycle_start(deneb_status_t *status,
                                const char *file,
                                const char *source,
                                const char *uuid,
+                               const char *cloud_job_id,
                                float bed_target,
                                float head_target);
 void deneb_job_lifecycle_streaming(deneb_status_t *status);

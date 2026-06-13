@@ -5,5 +5,7 @@
 int extract_multipart_file(const char *boundary, const char *upload_path,
                            char *out_path, int out_sz,
                            char *filename, int fn_sz);
+int extract_multipart_field(const char *boundary, const char *upload_path,
+                            const char *field_name, char *out, int out_sz);
 
 #endif

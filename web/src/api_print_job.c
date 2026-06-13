@@ -91,10 +91,14 @@ static int registration_send_job(void *ctx,
     if (!plan)
         return -1;
     return backend_zmq_send_job(plan->path, plan->source, plan->uuid,
-                                plan->bed_target, plan->nozzle_target);
+                                plan->cloud_job_id, plan->bed_target,
+                                plan->nozzle_target);
 }
 
-static int register_native_print(const char *path)
+static int register_native_print(const char *path,
+                                 const char *source,
+                                 const char *uuid,
+                                 const char *cloud_job_id)
 {
     deneb_pending_job_registration_t registration;
     deneb_pending_job_registration_dispatch_ops_t ops = {
@@ -106,7 +110,8 @@ static int register_native_print(const char *path)
     fprintf(stderr, "deneb-api: registering print path natively: %s\n", path);
 
     if (deneb_pending_job_registration_prepare(
-            path, (long long)time(NULL), &registration) < 0 ||
+            path, source, uuid, cloud_job_id, (long long)time(NULL),
+            &registration) < 0 ||
         deneb_pending_job_registration_write_default(&registration) < 0) {
         fprintf(stderr, "deneb-api: failed to write pending print metadata for %s\n", path);
         return -1;
@@ -335,6 +340,9 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     /* Extract file from multipart body */
     char gcode_path[256] = "";
     char filename[128] = "upload.gcode";
+    char job_instance_uuid[96] = "";
+    char cloud_job_id[96] = "";
+    char owner[32] = "";
     deneb_print_job_upload_storage_plan_t storage;
 
     if (req->multipart_boundary[0] &&
@@ -345,6 +353,16 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"Failed to extract file from upload\"}");
         return;
+    }
+    if (req->multipart_boundary[0]) {
+        (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+                                      "job_instance_uuid", job_instance_uuid,
+                                      sizeof(job_instance_uuid));
+        (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+                                      "cloud_job_id", cloud_job_id,
+                                      sizeof(cloud_job_id));
+        (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+                                      "owner", owner, sizeof(owner));
     }
 
     if (gcode_path[0] == '\0') {
@@ -399,9 +417,14 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n",
             storage.filename, storage.dest_path);
 
-    if (register_native_print(storage.dest_path) < 0) {
+    if (register_native_print(storage.dest_path,
+                              owner[0] ? owner : NULL,
+                              job_instance_uuid[0] ? job_instance_uuid : NULL,
+                              cloud_job_id[0] ? cloud_job_id : NULL) < 0) {
         fprintf(stderr, "deneb-api: failed to register print natively for %s\n",
                 storage.dest_path);
+        deneb_pending_job_file_clear_default();
+        unlink(storage.dest_path);
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to start print\"}");
         return;

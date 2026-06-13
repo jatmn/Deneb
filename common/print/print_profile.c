@@ -1,28 +1,30 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "print_profile.h"
 
+#include "print_state_rules.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
 static const deneb_print_profile_material_choice_t material_choices[] = {
-    {"Generic PLA", "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"},
-    {"Generic Tough PLA", "9d5d2d7c-4e77-441c-85a0-e9eefd4aa68c"},
-    {"Generic PETG", "1cbfaeb3-1906-4b26-b2e7-6f777a8c197a"},
-    {"Generic ABS", "60636bb4-518f-42e7-8237-fe77b194ebe0"},
-    {"Generic CPE", "12f41353-1a33-415e-8b4f-a775a6c70cc6"},
-    {"Generic CPE+", "e2409626-b5a0-4025-b73e-b58070219259"},
-    {"Generic Nylon", "28fb4162-db74-49e1-9008-d05f1e8bef5c"},
-    {"Generic PC", "98c05714-bf4e-4455-ba27-57d74fe331e4"},
-    {"Generic PP", "aa22e9c7-421f-4745-afc2-81851694394a"},
-    {"Generic TPU 95A", "1d52b2be-a3a2-41de-a8b1-3bcdb5618695"},
+    {"Generic PLA", "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9", "PLA", "Generic"},
+    {"Generic Tough PLA", "9d5d2d7c-4e77-441c-85a0-e9eefd4aa68c", "Tough PLA", "Generic"},
+    {"Generic PETG", "1cbfaeb3-1906-4b26-b2e7-6f777a8c197a", "PETG", "Generic"},
+    {"Generic ABS", "60636bb4-518f-42e7-8237-fe77b194ebe0", "ABS", "Generic"},
+    {"Generic CPE", "12f41353-1a33-415e-8b4f-a775a6c70cc6", "CPE", "Generic"},
+    {"Generic CPE+", "e2409626-b5a0-4025-b73e-b58070219259", "CPE+", "Generic"},
+    {"Generic Nylon", "28fb4162-db74-49e1-9008-d05f1e8bef5c", "Nylon", "Generic"},
+    {"Generic PC", "98c05714-bf4e-4455-ba27-57d74fe331e4", "PC", "Generic"},
+    {"Generic PP", "aa22e9c7-421f-4745-afc2-81851694394a", "PP", "Generic"},
+    {"Generic TPU 95A", "1d52b2be-a3a2-41de-a8b1-3bcdb5618695", "TPU 95A", "Generic"},
 };
 
 static const deneb_print_profile_nozzle_choice_t nozzle_choices[] = {
     {"0.25", "0.25 mm"},
-    {"0.4", "0.40 mm"},
-    {"0.6", "0.60 mm"},
-    {"0.8", "0.80 mm"},
+    {"0.4", "0.4 mm"},
+    {"0.6", "0.6 mm"},
+    {"0.8", "0.8 mm"},
 };
 
 static void read_line_command(const char *cmd,
@@ -42,8 +44,10 @@ static void read_line_command(const char *cmd,
             char *nl = strchr(out, '\n');
             if (nl)
                 *nl = '\0';
-            pclose(f);
-            return;
+            if (out[0]) {
+                pclose(f);
+                return;
+            }
         }
         pclose(f);
     }
@@ -153,6 +157,14 @@ void deneb_print_profile_read_loaded_material_guid(char *out, size_t out_sz)
                       DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID);
 }
 
+void deneb_print_profile_read_loaded_cluster_material_guid(char *out,
+                                                           size_t out_sz)
+{
+    deneb_print_profile_read_loaded_material_guid(out, out_sz);
+    if (out && out_sz > 0 && !deneb_print_is_cluster_guid(out))
+        out[0] = '\0';
+}
+
 void deneb_print_profile_read_loaded_nozzle_size(char *out, size_t out_sz)
 {
     read_line_command("uci -q get ultimaker.option.nozzle_size 2>/dev/null",
@@ -232,14 +244,58 @@ void deneb_print_profile_material_name_from_guid(const char *guid,
                                                  char *out,
                                                  size_t out_sz)
 {
+    size_t i;
+
     if (!out || out_sz == 0)
         return;
 
-    if (!guid || !*guid) {
-        snprintf(out, out_sz, "Unknown");
-    } else if (strcmp(guid, DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID) == 0) {
-        snprintf(out, out_sz, DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE);
-    } else {
-        snprintf(out, out_sz, "%s", guid);
+    for (i = 0; guid && *guid && i < deneb_print_profile_material_choice_count(); i++) {
+        if (strcmp(material_choices[i].guid, guid) == 0) {
+            snprintf(out, out_sz, "%s", material_choices[i].type);
+            return;
+        }
     }
+
+    if (!guid || !*guid)
+        snprintf(out, out_sz, "Unknown");
+    else
+        snprintf(out, out_sz, "%s", guid);
+}
+
+void deneb_print_profile_material_type_from_guid(const char *guid,
+                                                 char *out,
+                                                 size_t out_sz)
+{
+    size_t i;
+
+    if (!out || out_sz == 0)
+        return;
+
+    for (i = 0; guid && *guid && i < deneb_print_profile_material_choice_count(); i++) {
+        if (strcmp(material_choices[i].guid, guid) == 0) {
+            snprintf(out, out_sz, "%s", material_choices[i].type);
+            return;
+        }
+    }
+
+    snprintf(out, out_sz, "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE);
+}
+
+void deneb_print_profile_material_color_from_guid(const char *guid,
+                                                  char *out,
+                                                  size_t out_sz)
+{
+    size_t i;
+
+    if (!out || out_sz == 0)
+        return;
+
+    for (i = 0; guid && *guid && i < deneb_print_profile_material_choice_count(); i++) {
+        if (strcmp(material_choices[i].guid, guid) == 0) {
+            snprintf(out, out_sz, "%s", material_choices[i].color);
+            return;
+        }
+    }
+
+    snprintf(out, out_sz, "%s", DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_COLOR);
 }

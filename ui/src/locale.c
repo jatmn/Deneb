@@ -233,14 +233,18 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"digital_factory.title", "Digital Factory"},
     {"digital_factory.cluster", "Cluster"},
     {"digital_factory.service", "Service"},
-    {"digital_factory.restart", "Restart Digital Factory"},
-    {"digital_factory.restarting", "Digital Factory restarting"},
     {"digital_factory.request_running", "Digital Factory request already running"},
     {"digital_factory.requesting_pin", "Requesting pairing PIN..."},
     {"digital_factory.tap_disconnect", "Tap again to disconnect"},
     {"digital_factory.disconnect_requested", "Disconnect requested"},
-    {"digital_factory.pair_show_pin", "Pair / Show PIN"},
+    {"digital_factory.pair_show_pin", "Connect"},
     {"digital_factory.disconnect", "Disconnect"},
+    {"digital_factory.status_connected", "Connected"},
+    {"digital_factory.status_disconnected", "Disconnected"},
+    {"digital_factory.status_reconnecting", "Reconnecting"},
+    {"digital_factory.status_pin_fmt", "PIN: %s"},
+    {"digital_factory.status_cloud_signin_required", "Cloud sign-in required"},
+    {"digital_factory.status_disconnect_failed", "Disconnect failed"},
     {NULL, NULL}
 };
 

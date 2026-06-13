@@ -96,7 +96,7 @@
   "digital_factory.requesting_pin": "R3qu3571ng p41r1ng P1N...",
   "digital_factory.tap_disconnect": "74p 4g41n 70 d15c0nn3c7",
   "digital_factory.disconnect_requested": "D15c0nn3c7 r3qu3573d",
-  "digital_factory.pair_show_pin": "P41r / 5h0w P1N",
+  "digital_factory.pair_show_pin": "Connect",
   "digital_factory.disconnect": "D15c0nn3c7",
   "menu.maintenance": "M41n73n4nc3",
   "material.change": "Ch4ng3 M473r14l",
@@ -151,6 +151,4 @@
   "digital_factory.title": "D1g174l F4c70ry",
   "digital_factory.cluster": "Clu573r",
   "digital_factory.service": "53rv1c3",
-  "digital_factory.restart": "R3574r7 D1g174l F4c70ry",
-  "digital_factory.restarting": "D1g174l F4c70ry r3574r71ng"
 }

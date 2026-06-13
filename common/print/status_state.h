@@ -25,6 +25,7 @@ typedef struct {
     char filename[128];
     char source[32];
     char uuid[64];
+    char cloud_job_id[96];
     char firmware[64];
     char machine_type[16];
     char error_key[32];

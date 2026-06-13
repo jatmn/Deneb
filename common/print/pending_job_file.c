@@ -127,6 +127,10 @@ int deneb_pending_job_file_load(const char *path,
 
     deneb_json_get_value(buf, "path", job->path, sizeof(job->path));
     deneb_json_get_value(buf, "name", job->name, sizeof(job->name));
+    deneb_json_get_value(buf, "uuid", job->uuid, sizeof(job->uuid));
+    deneb_json_get_value(buf, "source", job->source, sizeof(job->source));
+    deneb_json_get_value(buf, "cloud_job_id", job->cloud_job_id,
+                         sizeof(job->cloud_job_id));
     deneb_json_get_value(buf, "origin_name", job->origin_name,
                          sizeof(job->origin_name));
     deneb_json_get_value(buf, "target_name", job->target_name,
@@ -186,9 +190,11 @@ int deneb_pending_job_file_plan_action(const deneb_pending_job_file_t *job,
                  DENEB_COMMAND_VERB_JOB);
         snprintf(plan->path, sizeof(plan->path), "%s", job->path);
         snprintf(plan->source, sizeof(plan->source), "%s",
-                 DENEB_PRINT_DEFAULT_JOB_SOURCE);
+                 deneb_print_job_source_or_default(job->source));
         snprintf(plan->uuid, sizeof(plan->uuid), "%s",
-                 DENEB_PRINT_DEFAULT_JOB_UUID);
+                 deneb_print_job_uuid_or_default(job->uuid));
+        snprintf(plan->cloud_job_id, sizeof(plan->cloud_job_id), "%s",
+                 job->cloud_job_id);
         plan->mark_handled_after_success = 1;
         return 0;
     }

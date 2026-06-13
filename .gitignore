@@ -49,3 +49,4 @@ __pycache__/
 node_modules/
 /web/build-host/
 /web/build-musl/
+/dfsvc/build-*/

@@ -60,6 +60,19 @@ reject_pattern() {
     pass "$label"
 }
 
+require_order() {
+    file=$1
+    before_pattern=$2
+    after_pattern=$3
+    label=$4
+    before_line=$(grep -nE "$before_pattern" "$file" | head -n 1 | cut -d: -f1 || true)
+    after_line=$(grep -nE "$after_pattern" "$file" | head -n 1 | cut -d: -f1 || true)
+    if [ -z "$before_line" ] || [ -z "$after_line" ] || [ "$before_line" -ge "$after_line" ]; then
+        fail "$label"
+    fi
+    pass "$label"
+}
+
 reject_name_artifacts() {
     root=$1
     label=$2
@@ -114,6 +127,8 @@ audit_source() {
     require_file "${repo}/web/init/deneb-web.init" "web init exists"
     require_file "${repo}/web/src/df_bridge.c" "deneb-api Digital Factory command source exists"
     require_file "${repo}/web/src/df_bridge.h" "deneb-api Digital Factory command header exists"
+    require_file "${repo}/dfsvc/src/main.c" "native Digital Factory connector source exists"
+    require_file "${repo}/dfsvc/init/digitalfactory.init" "native Digital Factory init exists"
     reject_df_python_bridge_source "$repo"
     reject_pattern "${repo}/ui/CMakeLists.txt" \
         'deneb-df-bridge[.]c|df-bridge/deneb-df-bridge' \
@@ -130,9 +145,13 @@ audit_source() {
     require_pattern "${repo}/web/src/main.c" \
         'deneb_df_bridge_run' \
         "deneb-api command mode invokes Digital Factory bridge"
-    reject_pattern "${repo}/web/src/api_http.c" \
-        '/api/v1/deneb/digital_factory|digital_factory' \
-        "Digital Factory bridge is not exposed as a new HTTP/cloud endpoint"
+    df_http_matches=$(grep -nE '/api/v1/deneb/digital_factory|digital_factory' \
+        "${repo}/web/src/api_http.c" | \
+        grep -Ev '/api/v1/deneb/digital_factory/(auth|unlink)|api_deneb_digital_factory_(auth_get|auth_post|unlink_post)' || true)
+    if [ -n "$df_http_matches" ]; then
+        fail "Digital Factory HTTP surface is limited to authenticated cloud auth/unlink endpoints"
+    fi
+    pass "Digital Factory HTTP surface is limited to authenticated cloud auth/unlink endpoints"
 
     require_pattern "${repo}/common/print/print_backend_route.c" \
         'deneb_print_backend_route\(DENEB_PRINT_BACKEND_NATIVE\)' \
@@ -439,6 +458,22 @@ audit_source() {
     require_pattern "${repo}/ui/installer/update.sh" \
         'configure_digitalfactory_boot' \
         "installer gates Digital Factory service at boot"
+    require_order "${repo}/ui/installer/update.sh" \
+        '^[[:space:]]*install_web_runtime$' \
+        '^[[:space:]]*configure_digitalfactory_boot$' \
+        "installer configures Digital Factory boot after native init replacement"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        'cp /tmp/update/deneb-dfsvc /usr/bin/deneb-dfsvc' \
+        "installer installs native Digital Factory connector"
+    require_pattern "${repo}/ui/installer/update.sh" \
+        'cp /tmp/update/digitalfactory.init /etc/init.d/digitalfactory' \
+        "installer replaces Digital Factory init with native service"
+    require_pattern "${repo}/dfsvc/init/digitalfactory.init" \
+        'uci -q get ultimaker[.]option[.]cluster_id' \
+        "Digital Factory init preserves paired printers across boot"
+    reject_pattern "${repo}/ui/installer/update.sh" \
+        '/usr/bin/python3[[:space:]]+/home/cygnus/digitalfactory/connector[.]py' \
+        "installer does not launch stock Python Digital Factory connector"
     require_pattern "${repo}/ui/installer/update.sh" \
         '/etc/init.d/digitalfactory disable' \
         "installer disables Digital Factory service when unconfigured"
@@ -482,6 +517,8 @@ audit_package_dir() {
 
     require_file "${root}/manifest.txt" "package manifest exists"
     require_file "${root}/deneb-printsvc" "package includes native printsvc"
+    require_file "${root}/deneb-dfsvc" "package includes native Digital Factory connector"
+    require_file "${root}/digitalfactory.init" "package includes native Digital Factory init"
     require_file "${root}/deneb-printsvc-smoke" "package includes live smoke harness"
     require_file "${root}/deneb-printsvc-smoke-verify" "package includes smoke verifier"
     require_file "${root}/deneb-printsvc-smoke-compare" "package includes smoke comparator"
@@ -603,6 +640,10 @@ audit_archive() {
 
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc$' \
         "archive includes native printsvc"
+    require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-dfsvc$' \
+        "archive includes native Digital Factory connector"
+    require_pattern "${tmp_dir}/files.txt" '(^|/)digitalfactory[.]init$' \
+        "archive includes native Digital Factory init"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-native-audit$' \
         "archive includes de-Python audit"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-native-audit-selftest$' \

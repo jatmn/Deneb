@@ -14,7 +14,7 @@ static int dispatch_start(const deneb_pending_job_action_plan_t *pending_plan,
 
     if (deneb_print_job_start_plan_prepare(
             pending_plan->path, pending_plan->source, pending_plan->uuid,
-            0.0f, 0.0f, &start_plan) < 0)
+            pending_plan->cloud_job_id, 0.0f, 0.0f, &start_plan) < 0)
         return -1;
 
     return ops->send_job(ops->ctx, &start_plan);

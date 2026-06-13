@@ -165,6 +165,8 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
     state->progress = payload.progress;
     copy_text(state->source, sizeof(state->source), payload.source);
     copy_text(state->uuid, sizeof(state->uuid), payload.uuid);
+    copy_text(state->cloud_job_id, sizeof(state->cloud_job_id),
+              payload.cloud_job_id);
     copy_text(state->current_req, sizeof(state->current_req), payload.req);
     copy_text(state->firmware, sizeof(state->firmware), payload.firmware);
     copy_text(state->machine_type, sizeof(state->machine_type),

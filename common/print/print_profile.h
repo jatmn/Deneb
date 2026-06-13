@@ -9,13 +9,15 @@
 #define DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_GUID "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"
 #define DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_BRAND "Generic"
 #define DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_TYPE "PLA"
-#define DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_COLOR "#ffc924"
+#define DENEB_PRINT_PROFILE_DEFAULT_MATERIAL_COLOR "Generic"
 #define DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_SIZE "0.4"
 #define DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_ID "0.4 mm"
 
 typedef struct {
     const char *label;
     const char *guid;
+    const char *type;
+    const char *color;
 } deneb_print_profile_material_choice_t;
 
 typedef struct {
@@ -38,6 +40,8 @@ int deneb_print_profile_format_set_nozzle_command(const char *size,
                                                   char *out,
                                                   size_t out_sz);
 void deneb_print_profile_read_loaded_material_guid(char *out, size_t out_sz);
+void deneb_print_profile_read_loaded_cluster_material_guid(char *out,
+                                                           size_t out_sz);
 void deneb_print_profile_read_loaded_nozzle_size(char *out, size_t out_sz);
 int deneb_print_profile_normalize_nozzle_size(const char *value,
                                               char *out,
@@ -49,5 +53,11 @@ void deneb_print_profile_normalize_nozzle_id(const char *value,
 void deneb_print_profile_material_name_from_guid(const char *guid,
                                                  char *out,
                                                  size_t out_sz);
+void deneb_print_profile_material_type_from_guid(const char *guid,
+                                                 char *out,
+                                                 size_t out_sz);
+void deneb_print_profile_material_color_from_guid(const char *guid,
+                                                  char *out,
+                                                  size_t out_sz);
 
 #endif

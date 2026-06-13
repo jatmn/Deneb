@@ -151,8 +151,6 @@
   "digital_factory.title": "Digital Factory",
   "digital_factory.cluster": "集群",
   "digital_factory.service": "服务",
-  "digital_factory.restart": "重启 Digital Factory",
-  "digital_factory.restarting": "Digital Factory 正在重启",
   "web.nav.status": "Status",
   "web.nav.control": "Control",
   "web.nav.settings": "Settings",

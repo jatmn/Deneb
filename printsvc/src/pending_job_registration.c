@@ -18,6 +18,9 @@ void deneb_pending_job_registration_init(
 
 int deneb_pending_job_registration_prepare(
     const char *path,
+    const char *source,
+    const char *uuid,
+    const char *cloud_job_id,
     long long tracker_seed,
     deneb_pending_job_registration_t *registration)
 {
@@ -65,7 +68,12 @@ int deneb_pending_job_registration_prepare(
     deneb_pending_job_init(&registration->job, path);
     registration->job.tracker = (int)(tracker_seed & 0x7fffffff);
     snprintf(registration->job.source, sizeof(registration->job.source), "%s",
-             DENEB_PRINT_DEFAULT_JOB_SOURCE);
+             deneb_print_job_source_or_default(source));
+    snprintf(registration->job.uuid, sizeof(registration->job.uuid), "%s",
+             deneb_print_job_uuid_or_default(uuid));
+    snprintf(registration->job.cloud_job_id,
+             sizeof(registration->job.cloud_job_id), "%s",
+             cloud_job_id ? cloud_job_id : "");
     snprintf(registration->job.material_guid,
              sizeof(registration->job.material_guid), "%s", target_guid);
     snprintf(registration->job.origin_material_guid,
@@ -129,6 +137,7 @@ int deneb_pending_job_registration_dispatch_start(
             registration->job.path,
             registration->job.source,
             registration->job.uuid,
+            registration->job.cloud_job_id,
             0.0f,
             0.0f,
             &plan) < 0)

@@ -90,7 +90,8 @@ touch "$TMP_DIR/bin/deneb-ui" \
     "$TMP_DIR/bin/deneb-api" \
     "$TMP_DIR/bin/lighttpd" \
     "$TMP_DIR/bin/deneb-mdns" \
-    "$TMP_DIR/bin/deneb-printsvc"
+    "$TMP_DIR/bin/deneb-printsvc" \
+    "$TMP_DIR/bin/deneb-dfsvc"
 chmod 0755 "$TMP_DIR/bin/"*
 
 expect_failure() {
@@ -143,7 +144,8 @@ expect_failure invalid_channel \
         "$TMP_DIR/bin/deneb-api" \
         "$TMP_DIR/bin/lighttpd" \
         "$TMP_DIR/bin/deneb-mdns" \
-        "$TMP_DIR/bin/deneb-printsvc"
+        "$TMP_DIR/bin/deneb-printsvc" \
+        "$TMP_DIR/bin/deneb-dfsvc"
 
 expect_failure stable_missing_summaries \
     'non-experimental native printsvc builds require DENEB_PRINTSVC_STOCK_SUMMARY and DENEB_PRINTSVC_NATIVE_SUMMARY' \
@@ -154,7 +156,8 @@ expect_failure stable_missing_summaries \
         "$TMP_DIR/bin/deneb-api" \
         "$TMP_DIR/bin/lighttpd" \
         "$TMP_DIR/bin/deneb-mdns" \
-        "$TMP_DIR/bin/deneb-printsvc"
+        "$TMP_DIR/bin/deneb-printsvc" \
+        "$TMP_DIR/bin/deneb-dfsvc"
 
 expect_failure nightly_missing_stock_summary \
     'stock printsvc smoke summary not found' \
@@ -167,7 +170,8 @@ expect_failure nightly_missing_stock_summary \
         "$TMP_DIR/bin/deneb-api" \
         "$TMP_DIR/bin/lighttpd" \
         "$TMP_DIR/bin/deneb-mdns" \
-        "$TMP_DIR/bin/deneb-printsvc"
+        "$TMP_DIR/bin/deneb-printsvc" \
+        "$TMP_DIR/bin/deneb-dfsvc"
 
 touch "$TMP_DIR/stock.summary"
 expect_failure nightly_missing_native_summary \
@@ -181,7 +185,8 @@ expect_failure nightly_missing_native_summary \
         "$TMP_DIR/bin/deneb-api" \
         "$TMP_DIR/bin/lighttpd" \
         "$TMP_DIR/bin/deneb-mdns" \
-        "$TMP_DIR/bin/deneb-printsvc"
+        "$TMP_DIR/bin/deneb-printsvc" \
+        "$TMP_DIR/bin/deneb-dfsvc"
 
 touch "$TMP_DIR/native.summary"
 expect_failure nightly_invalid_stock_summary \
@@ -195,7 +200,8 @@ expect_failure nightly_invalid_stock_summary \
         "$TMP_DIR/bin/deneb-api" \
         "$TMP_DIR/bin/lighttpd" \
         "$TMP_DIR/bin/deneb-mdns" \
-        "$TMP_DIR/bin/deneb-printsvc"
+        "$TMP_DIR/bin/deneb-printsvc" \
+        "$TMP_DIR/bin/deneb-dfsvc"
 
 write_valid_stock_summary "$TMP_DIR/stock.summary"
 expect_failure nightly_invalid_native_summary \
@@ -209,6 +215,7 @@ expect_failure nightly_invalid_native_summary \
         "$TMP_DIR/bin/deneb-api" \
         "$TMP_DIR/bin/lighttpd" \
         "$TMP_DIR/bin/deneb-mdns" \
-        "$TMP_DIR/bin/deneb-printsvc"
+        "$TMP_DIR/bin/deneb-printsvc" \
+        "$TMP_DIR/bin/deneb-dfsvc"
 
 echo "deneb-printsvc release gate selftest passed"

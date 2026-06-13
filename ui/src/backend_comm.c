@@ -571,8 +571,8 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
                 state.filename[0] ? state.filename : "(none)");
     }
 
-    len = deneb_command_format_job(path, source, uuid, bed_target, head_target,
-                                   msg, sizeof(msg));
+    len = deneb_command_format_job(path, source, uuid, NULL, bed_target,
+                                   head_target, msg, sizeof(msg));
     return send_formatted_rpc(msg, len, sizeof(msg));
 }
 

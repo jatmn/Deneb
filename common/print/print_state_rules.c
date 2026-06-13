@@ -306,7 +306,24 @@ const char *deneb_print_status_label_with_req(int connected, int has_error,
         return "aborting";
     if (is_active)
         return "printing";
+    if (native_active && deneb_print_req_is_lifecycle(req))
+        return DENEB_PRINT_PHASE_NAME_PRE_PRINT;
     return "idle";
+}
+
+const char *deneb_print_cluster_printer_status_label(const char *status)
+{
+    if (!status || !status[0])
+        return "unknown";
+    if (deneb_str_eq_ci(status, "offline"))
+        return "unreachable";
+    if (deneb_str_eq_ci(status, "paused"))
+        return "printing";
+    if (deneb_str_eq_ci(status, "aborting"))
+        return "printing";
+    if (deneb_str_eq_ci(status, "finished"))
+        return "idle";
+    return status;
 }
 
 const char *deneb_print_job_status_label(int has_error, int is_paused,
@@ -319,6 +336,17 @@ const char *deneb_print_job_status_label(int has_error, int is_paused,
     if (is_active)
         return "printing";
     return "finished";
+}
+
+const char *deneb_print_cluster_job_status_label(const char *status)
+{
+    if (!status || !status[0])
+        return DENEB_PRINT_NONE_VALUE;
+    if (deneb_str_eq_ci(status, "error"))
+        return "failed";
+    if (deneb_str_eq_ci(status, "aborting"))
+        return "printing";
+    return status;
 }
 
 const char *deneb_print_job_state_or_none(int has_error, int is_paused,
@@ -340,6 +368,38 @@ const char *deneb_print_job_uuid_or_default(const char *uuid)
 {
     if (!uuid || !uuid[0] || strcmp(uuid, DENEB_PRINT_NONE_VALUE) == 0)
         return DENEB_PRINT_DEFAULT_JOB_UUID;
+    return uuid;
+}
+
+static int deneb_print_hex_char(int c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+int deneb_print_is_cluster_guid(const char *uuid)
+{
+    size_t i;
+
+    if (!uuid || strlen(uuid) != 36)
+        return 0;
+    for (i = 0; i < 36; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (uuid[i] != '-')
+                return 0;
+            continue;
+        }
+        if (!deneb_print_hex_char((unsigned char)uuid[i]))
+            return 0;
+    }
+    return 1;
+}
+
+const char *deneb_print_cluster_job_uuid_or_default(const char *uuid)
+{
+    if (!deneb_print_is_cluster_guid(uuid))
+        return DENEB_PRINT_DEFAULT_CLUSTER_JOB_UUID;
     return uuid;
 }
 

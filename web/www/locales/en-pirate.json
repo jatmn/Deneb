@@ -140,8 +140,6 @@
   "digital_factory.title": "Royal Dockyard",
   "digital_factory.cluster": "Fleet",
   "digital_factory.service": "Service",
-  "digital_factory.restart": "Restart Royal Dockyard",
-  "digital_factory.restarting": "Royal Dockyard restarting",
   "digital_factory.request_running": "Digital Factory request already running",
   "digital_factory.requesting_pin": "Requesting pairing PIN...",
   "digital_factory.tap_disconnect": "Tap again to disconnect",

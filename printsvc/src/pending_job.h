@@ -9,6 +9,7 @@ typedef struct {
     char name[128];
     char uuid[64];
     char source[32];
+    char cloud_job_id[96];
     char owner[32];
     char machine_variant[64];
     char machine_family[64];

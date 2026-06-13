@@ -17,6 +17,7 @@ typedef struct {
     const char *path;
     const char *source;
     const char *uuid;
+    const char *cloud_job_id;
     float bed_target;
     float nozzle_target;
 } deneb_print_job_start_plan_t;
@@ -31,7 +32,9 @@ void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan);
 void deneb_print_job_upload_storage_plan_init(
     deneb_print_job_upload_storage_plan_t *plan);
 int deneb_print_job_start_plan_prepare(const char *path, const char *source,
-                                       const char *uuid, float bed_target,
+                                       const char *uuid,
+                                       const char *cloud_job_id,
+                                       float bed_target,
                                        float nozzle_target,
                                        deneb_print_job_start_plan_t *plan);
 int deneb_print_job_start_plan_file(const char *path, const char *source,

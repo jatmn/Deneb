@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #define DENEB_PRINT_DEFAULT_JOB_UUID "deneb-current-job"
+#define DENEB_PRINT_DEFAULT_CLUSTER_JOB_UUID "00000000-0000-0000-0000-000000000000"
 #define DENEB_PRINT_DEFAULT_JOB_NAME "Current print"
 #define DENEB_PRINT_DEFAULT_JOB_SOURCE "Cura"
 #define DENEB_PRINT_NONE_VALUE "none"
@@ -158,12 +159,16 @@ const char *deneb_print_status_label_with_req(int connected, int has_error,
                                               int is_paused, int is_active,
                                               const char *req,
                                               int native_active);
+const char *deneb_print_cluster_printer_status_label(const char *status);
 const char *deneb_print_job_status_label(int has_error, int is_paused,
                                          int is_active);
 const char *deneb_print_job_state_or_none(int has_error, int is_paused,
                                           int is_active);
+const char *deneb_print_cluster_job_status_label(const char *status);
 const char *deneb_print_job_name_or_default(const char *name);
 const char *deneb_print_job_uuid_or_default(const char *uuid);
+int deneb_print_is_cluster_guid(const char *uuid);
+const char *deneb_print_cluster_job_uuid_or_default(const char *uuid);
 const char *deneb_print_job_source_or_default(const char *source);
 const char *deneb_print_completion_state_label(int has_error, int time_total,
                                                int time_left);

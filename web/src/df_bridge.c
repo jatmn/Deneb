@@ -9,7 +9,6 @@
 
 #include "df_bridge.h"
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -26,9 +25,13 @@
 #define GERSHWIN_PUB_BASE 5546
 #define DENEB_GUI_PUB_PORT 5547
 #define SOURCE "deneb/df-bridge"
+#define DF_STATUS_FILE "/tmp/deneb-df-status"
+#define DF_PAIR_REQUEST_FILE "/tmp/deneb-df-pair-request"
 
 #define DF_INSTR_CONNECT 1
 #define DF_INSTR_DISCONNECT 2
+#define DF_CONNECT_SERVICE "digitalfactory::connector::connect@execute|D1"
+#define DF_DISCONNECT_SERVICE "digitalfactory::connector::disconnect@execute|D1"
 
 #define DF_STATE_DISCONNECTED 0
 #define DF_STATE_ENTER_PIN 1
@@ -368,6 +371,29 @@ static const char *state_name(int state)
     }
 }
 
+static bool digital_factory_is_unpaired_disabled(void)
+{
+    int has_cluster = system("uci -q get ultimaker.option.cluster_id >/dev/null 2>&1") == 0;
+    int enabled = system("/etc/init.d/digitalfactory enabled >/dev/null 2>&1") == 0;
+    return !has_cluster && !enabled;
+}
+
+static bool read_status_file(char *out, size_t out_size)
+{
+    FILE *fp = fopen(DF_STATUS_FILE, "r");
+    if (!fp)
+        return false;
+    if (!fgets(out, (int)out_size, fp)) {
+        fclose(fp);
+        return false;
+    }
+    fclose(fp);
+    size_t len = strlen(out);
+    while (len > 0 && (out[len - 1] == '\n' || out[len - 1] == '\r'))
+        out[--len] = '\0';
+    return out[0] != '\0';
+}
+
 static void write_result(char *out, size_t out_size, bool has_accepted,
                          bool accepted, bool has_state, int state,
                          const char *pin)
@@ -388,6 +414,8 @@ static void write_result(char *out, size_t out_size, bool has_accepted,
         used += (size_t)snprintf(out + used, out_size - used, "%spin=%s",
                                  used ? " " : "", pin);
     }
+    if (out[0] == '\0' && read_status_file(out, out_size))
+        return;
     if (out[0] == '\0')
         snprintf(out, out_size, "status=timeout");
 }
@@ -446,12 +474,19 @@ static int send_request(void *pub, const char *action)
 {
     int instr = strcmp(action, "connect") == 0 ? DF_INSTR_CONNECT
                                                : DF_INSTR_DISCONNECT;
+    const char *target = strcmp(action, "connect") == 0 ? DF_CONNECT_SERVICE
+                                                        : DF_DISCONNECT_SERVICE;
     mp_buf_t key = {0};
     mp_buf_t data = {0};
     int rc = -1;
 
-    if (mp_encode_key(&key, monotonic_ms(), "rpc-request", SOURCE,
-                      "coordinator/coordinator::digitalfactory::handling@execute|D1") < 0)
+    if (strcmp(action, "connect") == 0) {
+        FILE *fp = fopen(DF_PAIR_REQUEST_FILE, "w");
+        if (fp)
+            fclose(fp);
+    }
+
+    if (mp_encode_key(&key, monotonic_ms(), "rpc-request", SOURCE, target) < 0)
         goto out;
     if (mp_encode_df_request(&data, instr) < 0)
         goto out;
@@ -599,6 +634,12 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
 
         zmq_msg_close(&key_msg);
         zmq_msg_close(&data_msg);
+    }
+
+    if (strcmp(action, "status") == 0 && !has_state &&
+        digital_factory_is_unpaired_disabled()) {
+        has_state = true;
+        state = DF_STATE_DISCONNECTED;
     }
 
     write_result(out, out_size, has_accepted, accepted, has_state, state, pin);

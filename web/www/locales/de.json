@@ -151,8 +151,6 @@
   "digital_factory.title": "Digital Factory",
   "digital_factory.cluster": "Cluster",
   "digital_factory.service": "Dienst",
-  "digital_factory.restart": "Digital Factory neu starten",
-  "digital_factory.restarting": "Digital Factory startet neu",
   "web.nav.status": "Status",
   "web.nav.control": "Control",
   "web.nav.settings": "Settings",

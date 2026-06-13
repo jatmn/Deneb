@@ -9,6 +9,9 @@
 typedef struct {
     char path[1024];
     char name[128];
+    char uuid[64];
+    char source[32];
+    char cloud_job_id[96];
     char origin_name[96];
     char target_name[96];
     int tracker;
@@ -29,6 +32,7 @@ typedef struct {
     char path[1024];
     char source[32];
     char uuid[64];
+    char cloud_job_id[96];
     int tracker;
     int mark_handled_after_success;
     int clear_after_success;

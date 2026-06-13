@@ -54,6 +54,7 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
     char file[256];
     char uuid[128];
     char source[80];
+    char cloud_job_id[192];
     char req[80];
     char firmware[128];
     char machine_type[48];
@@ -67,6 +68,8 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
     deneb_json_escape_string(safe_file(status->file), file, sizeof(file));
     deneb_json_escape_string(status->uuid, uuid, sizeof(uuid));
     deneb_json_escape_string(status->source, source, sizeof(source));
+    deneb_json_escape_string(status->cloud_job_id, cloud_job_id,
+                             sizeof(cloud_job_id));
     deneb_json_escape_string(status->req[0] ? status->req : deneb_status_state_name(status->state),
                              req, sizeof(req));
     deneb_json_escape_string(safe_value(status->firmware), firmware,
@@ -97,7 +100,8 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
                  "\"denebErrorDetail\":\"%s\","
                  "\"firmware\":\"%s\",\"machineType\":\"%s\",\"pcbId\":%d,"
                  "\"pcbIdValid\":%s,"
-                 "\"uuid\":\"%s\",\"source\":\"%s\",\"Ttot\":%d,"
+                 "\"uuid\":\"%s\",\"source\":\"%s\",\"cloud_job_id\":\"%s\","
+                 "\"Ttot\":%d,"
                  "\"Tleft\":%d,\"req\":\"%s\",\"received_faults\":%s}",
                  file, file,
                  status->head_t_set, status->head_t_cur,
@@ -124,7 +128,7 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
                  error_detail,
                  firmware, machine_type, status->pcb_id,
                  status->pcb_id_valid ? "true" : "false",
-                 uuid, source,
+                 uuid, source, cloud_job_id,
                  status->time_total, status->time_left,
                  req, status->fault ? "[1]" : "[]");
 

@@ -109,7 +109,7 @@
   "digital_factory.requesting_pin": "正在请求配对 PIN...",
   "digital_factory.tap_disconnect": "再次点击以断开连接",
   "digital_factory.disconnect_requested": "已请求断开连接",
-  "digital_factory.pair_show_pin": "配对 / 显示 PIN",
+  "digital_factory.pair_show_pin": "Connect",
   "digital_factory.disconnect": "断开连接",
   "menu.maintenance": "维护",
   "settings.nozzle_size": "设置喷嘴尺寸",
@@ -151,6 +151,4 @@
   "digital_factory.title": "Digital Factory",
   "digital_factory.cluster": "集群",
   "digital_factory.service": "服务",
-  "digital_factory.restart": "重启 Digital Factory",
-  "digital_factory.restarting": "Digital Factory 正在重启"
 }

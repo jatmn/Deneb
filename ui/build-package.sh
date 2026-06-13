@@ -5,7 +5,7 @@
 # Run from the Deneb repo root after cross-compiling runtime binaries for MIPS.
 #
 # Usage:
-#   ./ui/build-package.sh <path-to-compiled-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc]
+#   ./ui/build-package.sh <path-to-compiled-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]
 #
 # Produces:
 #   dist/Deneb_Update_<version>.deneb
@@ -14,11 +14,12 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BINARY="${1:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc]}"
-WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc]}"
-LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc]}"
+BINARY="${1:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]}"
+WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]}"
+LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]}"
 MDNS_BINARY="${4:-$(dirname "$WEB_API_BINARY")/deneb-mdns}"
 PRINTSVC_BINARY="${5:-$(dirname "$WEB_API_BINARY")/../../printsvc/build-musl/deneb-printsvc}"
+DFSVC_BINARY="${6:-$(dirname "$WEB_API_BINARY")/../../dfsvc/build-musl/deneb-dfsvc}"
 DENEB_RELEASE_CHANNEL="${DENEB_RELEASE_CHANNEL:-experimental}"
 PRINTSVC_STOCK_SUMMARY="${DENEB_PRINTSVC_STOCK_SUMMARY:-}"
 PRINTSVC_NATIVE_SUMMARY="${DENEB_PRINTSVC_NATIVE_SUMMARY:-}"
@@ -44,6 +45,10 @@ if [ ! -f "$MDNS_BINARY" ]; then
 fi
 if [ ! -f "$PRINTSVC_BINARY" ]; then
     echo "ERROR: deneb-printsvc binary not found: $PRINTSVC_BINARY"
+    exit 1
+fi
+if [ ! -f "$DFSVC_BINARY" ]; then
+    echo "ERROR: deneb-dfsvc binary not found: $DFSVC_BINARY"
     exit 1
 fi
 
@@ -108,11 +113,18 @@ if [ -n "$STRIP_TOOL" ]; then
 fi
 chmod 0755 "${STAGING_DIR}/deneb-printsvc"
 
+cp "$DFSVC_BINARY" "${STAGING_DIR}/deneb-dfsvc"
+if [ -n "$STRIP_TOOL" ]; then
+    "$STRIP_TOOL" "${STAGING_DIR}/deneb-dfsvc" 2>/dev/null || true
+fi
+chmod 0755 "${STAGING_DIR}/deneb-dfsvc"
+
 tr -d '\r' < "${REPO_ROOT}/web/lighttpd.conf" > "${STAGING_DIR}/lighttpd.conf"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-api.init" > "${STAGING_DIR}/deneb-api.init"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-web.init" > "${STAGING_DIR}/deneb-web.init"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-mdns.init" > "${STAGING_DIR}/deneb-mdns.init"
 tr -d '\r' < "${REPO_ROOT}/printsvc/init/deneb-printsvc.init" > "${STAGING_DIR}/deneb-printsvc.init"
+tr -d '\r' < "${REPO_ROOT}/dfsvc/init/digitalfactory.init" > "${STAGING_DIR}/digitalfactory.init"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke.sh" > "${STAGING_DIR}/deneb-printsvc-smoke"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-verify.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-verify"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-smoke-compare.sh" > "${STAGING_DIR}/deneb-printsvc-smoke-compare"
@@ -129,7 +141,7 @@ tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-integration-audit.sh" > "${STAGI
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-integration-audit-selftest.sh" > "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-stock-menu-prune-selftest.sh" > "${STAGING_DIR}/deneb-stock-menu-prune-selftest"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-stock-menu-import-check.sh" > "${STAGING_DIR}/deneb-stock-menu-import-check"
-chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init"
+chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init" "${STAGING_DIR}/digitalfactory.init"
 chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest" "${STAGING_DIR}/deneb-printsvc-stability" "${STAGING_DIR}/deneb-active-physical-soak-runner" "${STAGING_DIR}/deneb-printsvc-stock-baseline" "${STAGING_DIR}/deneb-printsvc-cli-selftest" "${STAGING_DIR}/deneb-printsvc-init-selftest" "${STAGING_DIR}/deneb-printsvc-release-gate-selftest" "${STAGING_DIR}/deneb-printsvc-native-audit" "${STAGING_DIR}/deneb-printsvc-native-audit-selftest" "${STAGING_DIR}/deneb-printsvc-integration-audit" "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest" "${STAGING_DIR}/deneb-stock-menu-prune-selftest" "${STAGING_DIR}/deneb-stock-menu-import-check"
 
 if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
@@ -207,6 +219,7 @@ contents:
   deneb-ui.init     - OpenWrt procd init script
   deneb-api         - Local REST API and web session service (MIPS)
   deneb-api digital-factory - Internal touchscreen Digital Factory command mode
+  deneb-dfsvc       - Native Digital Factory cloud connector service (MIPS)
   deneb-mdns        - Lightweight mDNS advertiser for Cura local discovery (MIPS)
   deneb-printsvc    - Native print service replacement (MIPS)
   deneb-printsvc-smoke - Native print service smoke/resource harness
@@ -231,6 +244,7 @@ contents:
   deneb-web.init    - OpenWrt procd init script for lighttpd
   deneb-mdns.init   - OpenWrt procd init script for deneb-mdns
   deneb-printsvc.init - OpenWrt procd init script for deneb-printsvc
+  digitalfactory.init - OpenWrt procd init script for native deneb-dfsvc
   lighttpd.conf     - Deneb web server configuration
   www/              - Static Deneb web UI assets
   update.sh         - Installer script
@@ -277,15 +291,17 @@ DENEB_REPO_ROOT="$REPO_ROOT" "${STAGING_DIR}/deneb-stock-menu-import-check"
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt manifest.txt \
-    deneb-api deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest \
+    deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest \
     deneb-stock-menu-prune-selftest deneb-stock-menu-import-check \
-    deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init lighttpd.conf www
+    deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf www
 
 tar tf "$OUTPUT_IMG" > "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)update.sh$' "${STAGING_DIR}/package-files.txt"
 ! grep -Eq '(^|/)deneb-df-bridge$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc$' "${STAGING_DIR}/package-files.txt"
+grep -Eq '(^|/)deneb-dfsvc$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc.init$' "${STAGING_DIR}/package-files.txt"
+grep -Eq '(^|/)digitalfactory.init$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-smoke$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-smoke-verify$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-smoke-compare$' "${STAGING_DIR}/package-files.txt"

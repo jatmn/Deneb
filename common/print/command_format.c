@@ -85,7 +85,8 @@ int deneb_command_format_macro(const char *macro, char *out, size_t out_sz)
 }
 
 int deneb_command_format_job(const char *path, const char *source,
-                             const char *uuid, float bed_target,
+                             const char *uuid, const char *cloud_job_id,
+                             float bed_target,
                              float head_target, char *out, size_t out_sz)
 {
     size_t pos = 0;
@@ -110,6 +111,13 @@ int deneb_command_format_job(const char *path, const char *source,
     if (uuid && *uuid) {
         if (append(out, out_sz, &pos, ",\"uuid\":\"") != 0 ||
             append_escaped(out, out_sz, &pos, uuid) != 0 ||
+            append(out, out_sz, &pos, "\"") != 0)
+            return -1;
+    }
+
+    if (cloud_job_id && *cloud_job_id) {
+        if (append(out, out_sz, &pos, ",\"cloud_job_id\":\"") != 0 ||
+            append_escaped(out, out_sz, &pos, cloud_job_id) != 0 ||
             append(out, out_sz, &pos, "\"") != 0)
             return -1;
     }

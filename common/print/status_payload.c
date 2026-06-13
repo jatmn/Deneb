@@ -173,6 +173,8 @@ int deneb_status_payload_parse(const char *json,
 
     copy_json_value(json, "source", payload->source, sizeof(payload->source));
     copy_json_value(json, "uuid", payload->uuid, sizeof(payload->uuid));
+    copy_json_value(json, "cloud_job_id", payload->cloud_job_id,
+                    sizeof(payload->cloud_job_id));
     copy_json_value(json, "req", payload->req, sizeof(payload->req));
     copy_json_value(json, "firmware", payload->firmware,
                     sizeof(payload->firmware));

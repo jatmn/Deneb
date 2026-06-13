@@ -262,8 +262,9 @@ runtime to Deneb-owned C.
   active Digital Factory cloud session.
 - [ ] Replace the active `/etc/init.d/digitalfactory` Python launch path with
   the native connector while preserving rollback evidence.
-- [ ] Update the touchscreen Digital Factory screen to start/restart the native
-  connector service for pairing and connected states.
+- [ ] Update the touchscreen Digital Factory screen to activate the native
+  connector service for pairing and connected states without exposing a manual
+  restart control.
 - [ ] Add source/package/install/runtime audits that fail if Deneb launches or
   packages a Python Digital Factory connector fallback.
 - [ ] Add drift checks so touchscreen DF controls, the `deneb-api
@@ -294,7 +295,7 @@ runtime to Deneb-owned C.
     stock Python until the port replaces `/etc/init.d/digitalfactory`.
 - [ ] Active pairing and connected states run without `connector.py`,
   `/usr/bin/python3 connector.py`, or `stardustWebsocketProtocol` imports.
-- [ ] Digital Factory pairing, status, reconnect, disconnect, and restart
+- [ ] Digital Factory pairing, status, reconnect, and authenticated disconnect
   behavior are validated on target against the native connector.
 - [ ] The existing native bridge/API command path remains the shared control
   boundary for UI-side status/connect/disconnect unless a tested replacement

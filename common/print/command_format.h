@@ -21,7 +21,8 @@ int deneb_command_format_gcode(const char *const *lines, size_t count,
                                char *out, size_t out_sz);
 int deneb_command_format_macro(const char *macro, char *out, size_t out_sz);
 int deneb_command_format_job(const char *path, const char *source,
-                             const char *uuid, float bed_target,
+                             const char *uuid, const char *cloud_job_id,
+                             float bed_target,
                              float head_target, char *out, size_t out_sz);
 int deneb_command_format_action(const char *verb, char *out, size_t out_sz);
 int deneb_command_format_raw(const char *verb, const char *payload,

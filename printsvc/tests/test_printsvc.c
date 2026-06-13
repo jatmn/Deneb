@@ -136,12 +136,14 @@ static void test_command_format_round_trip(void)
     assert(strcmp(cmd.macro, DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD) == 0);
 
     assert(deneb_command_format_job("/home/3D/cube.gcode", "Cura", "uuid-1",
-                                    60.0f, 210.0f, frame, sizeof(frame)) > 0);
+                                    "cloud-job-1", 60.0f, 210.0f,
+                                    frame, sizeof(frame)) > 0);
     assert(deneb_command_parse(frame, &cmd) == 0);
     assert(cmd.type == DENEB_COMMAND_JOB);
     assert(strcmp(cmd.file, "/home/3D/cube.gcode") == 0);
     assert(strcmp(cmd.source, "Cura") == 0);
     assert(strcmp(cmd.uuid, "uuid-1") == 0);
+    assert(strcmp(cmd.cloud_job_id, "cloud-job-1") == 0);
     assert(cmd.bed_target == 60.0f);
     assert(cmd.head_target == 210.0f);
     assert(deneb_command_extract_job_path("{\"path\":\"/home/3D/path.gcode\"}",
@@ -618,12 +620,13 @@ static void test_job_lifecycle_policy(void)
 
     deneb_status_init(&status);
     deneb_job_lifecycle_start(&status, "/tmp/cube.gcode", "", "uuid-1",
-                              60.0f, 205.0f);
+                              "cloud-job-1", 60.0f, 205.0f);
     assert(status.state == DENEB_PRINT_STATE_PREPARING);
     assert(strcmp(status.req, DENEB_PRINT_REQ_PREPARE) == 0);
     assert(strcmp(status.file, "/tmp/cube.gcode") == 0);
     assert(strcmp(status.source, DENEB_PRINT_USB_JOB_SOURCE) == 0);
     assert(strcmp(status.uuid, "uuid-1") == 0);
+    assert(strcmp(status.cloud_job_id, "cloud-job-1") == 0);
     assert(status.bed_t_set == 60.0f);
     assert(status.head_t_set == 205.0f);
 
@@ -637,11 +640,12 @@ static void test_job_lifecycle_policy(void)
     assert(strcmp(status.file, DENEB_PRINT_NONE_VALUE) == 0);
     assert(status.source[0] == '\0');
     assert(status.uuid[0] == '\0');
+    assert(status.cloud_job_id[0] == '\0');
     assert(status.bed_t_set == 0.0f);
     assert(status.head_t_set == 0.0f);
 
     deneb_job_lifecycle_start(&status, "/tmp/cube.gcode", "WEB_API", "",
-                              0.0f, 0.0f);
+                              "", 0.0f, 0.0f);
     status.time_total = 120;
     status.time_left = 90;
     deneb_job_lifecycle_abort(&status);
@@ -869,7 +873,7 @@ static void test_job_streamer_policy(void)
     serial.fd = -1;
 
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
-                              "streamer-uuid", 60.0f, 200.0f);
+                              "streamer-uuid", "", 60.0f, 200.0f);
     deneb_heater_wait_start(&wait, status.bed_t_set, status.head_t_set, 1.0f);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
 
@@ -930,7 +934,7 @@ static void test_job_streamer_policy(void)
     deneb_heater_wait_init(&wait);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
-                              "stream-backpressure", 0.0f, 0.0f);
+                              "stream-backpressure", "", 0.0f, 0.0f);
     job_active = 1;
     abort_requested = 0;
     finish_cleanup_pending = 0;
@@ -947,7 +951,7 @@ static void test_job_streamer_policy(void)
     deneb_heater_wait_init(&wait);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
-                              "stream-send-fault", 0.0f, 0.0f);
+                              "stream-send-fault", "", 0.0f, 0.0f);
     job_active = 1;
     abort_requested = 0;
     finish_cleanup_pending = 0;
@@ -965,7 +969,7 @@ static void test_job_streamer_policy(void)
     deneb_flow_init(&flow);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
-                              "stream-abort", 0.0f, 0.0f);
+                              "stream-abort", "", 0.0f, 0.0f);
     status.time_total = 120;
     status.time_left = 90;
     job_active = 1;
@@ -990,7 +994,7 @@ static void test_job_streamer_policy(void)
     deneb_heater_wait_init(&wait);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
-                              "finish-fault", 0.0f, 0.0f);
+                              "finish-fault", "", 0.0f, 0.0f);
     job_active = 1;
     abort_requested = 0;
     finish_cleanup_pending = 0;
@@ -1014,7 +1018,7 @@ static void test_job_streamer_policy(void)
     deneb_heater_wait_init(&wait);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
-                              "stream-wait", 0.0f, 0.0f);
+                              "stream-wait", "", 0.0f, 0.0f);
     status.bed_t_cur = 25.0f;
     job_active = 1;
     abort_requested = 0;
@@ -1793,6 +1797,14 @@ static void test_print_state_rules(void)
     assert(!deneb_print_material_move_ready(210.0f, 160.0f));
     assert(!deneb_print_material_move_ready(207.0f, 210.0f));
     assert(deneb_print_material_move_ready(208.0f, 210.0f));
+    assert(deneb_print_is_cluster_guid("506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9"));
+    assert(deneb_print_is_cluster_guid("506C9F0D-E3AA-4BD4-B2D2-23E2425B1AA9"));
+    assert(strcmp(deneb_print_cluster_job_uuid_or_default(
+                      "506C9F0D-E3AA-4BD4-B2D2-23E2425B1AA9"),
+                  "506C9F0D-E3AA-4BD4-B2D2-23E2425B1AA9") == 0);
+    assert(!deneb_print_is_cluster_guid("target-guid"));
+    assert(strcmp(deneb_print_cluster_job_uuid_or_default("target-guid"),
+                  DENEB_PRINT_DEFAULT_CLUSTER_JOB_UUID) == 0);
 
     deneb_print_observation_init(&obs, DENEB_PRINT_REQ_PREHEATING, NULL,
                                  0, 0, 60.0f, 210.0f);
@@ -1897,6 +1909,9 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_status_label_with_req(
                       1, 0, 0, 0, DENEB_COMMAND_VERB_ABORT, 0),
                   "idle") == 0);
+    assert(strcmp(deneb_print_status_label_with_req(
+                      1, 0, 0, 0, DENEB_PRINT_REQ_PREPARE, 1),
+                  DENEB_PRINT_PHASE_NAME_PRE_PRINT) == 0);
     assert(strcmp(deneb_print_job_status_label(0, 0, 0), "finished") == 0);
     assert(strcmp(deneb_print_job_status_label(0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_job_status_label(1, 1, 1), "error") == 0);
@@ -1975,10 +1990,12 @@ static void test_print_state_rules(void)
         assert(strcmp(plan.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
         assert(deneb_print_job_start_plan_prepare(
                    "/home/3D/pending.gcode", DENEB_PRINT_WEB_API_JOB_SOURCE,
-                   "pending-uuid", 55.0f, 205.0f, &plan) == 0);
+                   "pending-uuid", "cloud-job-2", 55.0f, 205.0f,
+                   &plan) == 0);
         assert(strcmp(plan.path, "/home/3D/pending.gcode") == 0);
         assert(strcmp(plan.source, DENEB_PRINT_WEB_API_JOB_SOURCE) == 0);
         assert(strcmp(plan.uuid, "pending-uuid") == 0);
+        assert(strcmp(plan.cloud_job_id, "cloud-job-2") == 0);
         assert(plan.bed_target == 55.0f);
         assert(plan.nozzle_target == 205.0f);
         assert(deneb_print_job_start_plan_file("", DENEB_PRINT_USB_JOB_SOURCE,
@@ -2361,14 +2378,21 @@ static void test_print_job_summary(void)
         assert(strstr(json, "\"status\":\"printing\"") != NULL);
         assert(strstr(json, "\"time_total\":120") != NULL);
         assert(strstr(json, "\"time_elapsed\":30") != NULL);
+        assert(strstr(json, "\"cloud_job_id\"") == NULL);
         assert(strstr(json, "\"configuration\":[{\"extruder_index\":0") != NULL);
         assert(strstr(json, "\"print_core_id\":\"0.4 mm\"") != NULL);
         assert(strstr(json, "\"material\":{\"guid\":\"506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9\"") != NULL);
-        assert(strstr(json, "\"owner\":\"Cura\"") != NULL);
         assert(strstr(json, "\"printer_uuid\":\"printer-1\"") != NULL);
         assert(strstr(json, "\"assigned_to\":\"printer-1\"") != NULL);
-        assert(strstr(json, "\"type\":\"glass\"") != NULL);
-        assert(strstr(json, "\"impediments_to_printing\":[]") != NULL);
+        assert(strstr(json, "\"owner\"") == NULL);
+        assert(strstr(json, "\"build_plate\"") == NULL);
+        assert(strstr(json, "\"compatible_machine_families\"") == NULL);
+        assert(strstr(json, "\"impediments_to_printing\"") == NULL);
+        summary.cloud_job_id = "cloud-job-123";
+        assert(deneb_print_job_summary_format_cluster_active_response(
+                   &summary, "printer-1", "12345", json,
+                   sizeof(json)) > 0);
+        assert(strstr(json, "\"cloud_job_id\":\"cloud-job-123\"") != NULL);
 
         summary.active = 0;
         assert(deneb_print_job_summary_format_um_response(
@@ -3434,10 +3458,10 @@ static void test_print_profile_helpers(void)
     nozzle = deneb_print_profile_nozzle_choice(1);
     assert(nozzle != NULL);
     assert(strcmp(nozzle->size, DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_SIZE) == 0);
-    assert(strcmp(nozzle->label, "0.40 mm") == 0);
+    assert(strcmp(nozzle->label, "0.4 mm") == 0);
     assert(deneb_print_profile_nozzle_choice(4) == NULL);
     assert(strcmp(deneb_print_profile_nozzle_label_from_size("0.6"),
-                  "0.60 mm") == 0);
+                  "0.6 mm") == 0);
     assert(strcmp(deneb_print_profile_nozzle_label_from_size("bad"),
                   DENEB_PRINT_PROFILE_DEFAULT_NOZZLE_ID) == 0);
     assert(deneb_print_profile_format_set_nozzle_command("0.60", command,
@@ -3523,6 +3547,7 @@ static void test_pending_job_metadata(void)
     assert(strstr(json, "\"name\":\"cube.gcode\"") != NULL);
     assert(strstr(json, "\"path\":\"/home/3D/deneb-uploads/cube.gcode\"") != NULL);
     assert(strstr(json, "\"status\":\"pre_print\"") != NULL);
+    assert(strstr(json, "\"cloud_job_id\"") == NULL);
     assert(strstr(json, "\"owner\":\"Cura\"") != NULL);
     assert(strstr(json, "\"deneb_tracker\":42") != NULL);
     assert(strstr(json, "\"configuration_changes_required\"") == NULL);
@@ -3535,9 +3560,15 @@ static void test_pending_job_metadata(void)
     snprintf(job.material_guid, sizeof(job.material_guid), "target-guid");
     snprintf(job.origin_nozzle_id, sizeof(job.origin_nozzle_id), "0.4 mm");
     snprintf(job.nozzle_id, sizeof(job.nozzle_id), "0.6 mm");
+    snprintf(job.cloud_job_id, sizeof(job.cloud_job_id), "cloud-job-456");
     assert(deneb_pending_job_change_count(&job) == 2);
     assert(deneb_pending_job_serialize(&job, json, sizeof(json)) > 0);
+    assert(strstr(json, "\"cloud_job_id\":\"cloud-job-456\"") != NULL);
     assert(strstr(json, "\"status\":\"wait_user_action\"") != NULL);
+    assert(strstr(json, "\"started\":false") != NULL);
+    assert(strstr(json, "\"printer_uuid\"") == NULL);
+    assert(strstr(json, "\"assigned_to\"") != NULL);
+    assert(strstr(json, "\"guid\":\"target-guid\"") == NULL);
     assert(strstr(json, "\"material_change\"") != NULL);
     assert(strstr(json, "\"print_core_change\"") != NULL);
     assert(strstr(json, "\"origin_id\":\"loaded-guid\"") != NULL);
@@ -3615,6 +3646,7 @@ typedef struct {
     char job_path[256];
     char job_source[32];
     char job_uuid[64];
+    char job_cloud_job_id[96];
     float bed_target;
     float nozzle_target;
 } pending_dispatch_fake_t;
@@ -3648,6 +3680,8 @@ static int pending_dispatch_fake_job(void *ctx,
     snprintf(fake->job_path, sizeof(fake->job_path), "%s", plan->path);
     snprintf(fake->job_source, sizeof(fake->job_source), "%s", plan->source);
     snprintf(fake->job_uuid, sizeof(fake->job_uuid), "%s", plan->uuid);
+    snprintf(fake->job_cloud_job_id, sizeof(fake->job_cloud_job_id), "%s",
+             plan->cloud_job_id);
     fake->bed_target = plan->bed_target;
     fake->nozzle_target = plan->nozzle_target;
     return 0;
@@ -3689,6 +3723,7 @@ static void test_pending_job_dispatch_helpers(void)
     assert(strcmp(fake.job_path, "/home/3D/cube.gcode") == 0);
     assert(strcmp(fake.job_source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
     assert(strcmp(fake.job_uuid, DENEB_PRINT_DEFAULT_JOB_UUID) == 0);
+    assert(fake.job_cloud_job_id[0] == '\0');
     assert(deneb_pending_job_file_load(path, &loaded) == 0);
     assert(!deneb_pending_job_file_has_conflict(&loaded));
 
@@ -3779,12 +3814,13 @@ static void test_pending_job_registration_policy(void)
     fclose(f);
 
     assert(deneb_pending_job_registration_prepare(
-               plain_path, 123, &registration) == 0);
+               plain_path, NULL, NULL, NULL, 123, &registration) == 0);
     assert(registration.job.tracker == 123);
     assert(registration.change_count == 0);
     assert(registration.should_start_immediately);
     assert(strcmp(registration.job.path, plain_path) == 0);
     assert(strcmp(registration.job.source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
+    assert(registration.job.cloud_job_id[0] == '\0');
 
     memset(&fake, 0, sizeof(fake));
     fake.start_allowed = 1;
@@ -3799,6 +3835,7 @@ static void test_pending_job_registration_policy(void)
     assert(strcmp(fake.job_path, plain_path) == 0);
     assert(strcmp(fake.job_source, DENEB_PRINT_DEFAULT_JOB_SOURCE) == 0);
     assert(fake.job_uuid[0] != '\0');
+    assert(fake.job_cloud_job_id[0] == '\0');
     assert(fake.bed_target == 0.0f);
     assert(fake.nozzle_target == 0.0f);
 
@@ -3829,10 +3866,16 @@ static void test_pending_job_registration_policy(void)
     fclose(f);
 
     assert(deneb_pending_job_registration_prepare(
-               conflict_path, 456, &registration) == 0);
+               conflict_path, "Digital Factory",
+               "01234567-89ab-cdef-0123-456789abcdef",
+               "cloud-job-456", 456, &registration) == 0);
     assert(registration.job.tracker == 456);
     assert(strcmp(registration.job.material_guid, "material-123") == 0);
     assert(strcmp(registration.job.nozzle_id, "0.8 mm") == 0);
+    assert(strcmp(registration.job.source, "Digital Factory") == 0);
+    assert(strcmp(registration.job.uuid,
+                  "01234567-89ab-cdef-0123-456789abcdef") == 0);
+    assert(strcmp(registration.job.cloud_job_id, "cloud-job-456") == 0);
     assert(registration.change_count >= 1);
     assert(!registration.should_start_immediately);
 

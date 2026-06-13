@@ -4,10 +4,12 @@
 #include "json_string.h"
 #include "print_control.h"
 #include "print_profile.h"
+#include "printer_identity.h"
 #include "print_state_rules.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
 {
@@ -51,17 +53,39 @@ int deneb_pending_job_change_count(const deneb_pending_job_t *job)
     return count;
 }
 
+static void format_pending_created_at(const deneb_pending_job_t *job,
+                                      char *out,
+                                      size_t out_sz)
+{
+    time_t t;
+    struct tm tm_utc;
+
+    if (!out || out_sz == 0)
+        return;
+    out[0] = '\0';
+    t = job && job->tracker >= 0 ? (time_t)job->tracker : time(NULL);
+    if (!gmtime_r(&t, &tm_utc))
+        return;
+    strftime(out, out_sz, "%Y-%m-%dT%H:%M:%S.000Z", &tm_utc);
+}
+
 int deneb_pending_job_serialize(const deneb_pending_job_t *job,
                                 char *out, size_t out_sz)
 {
+    char created_at[40];
     char path[512];
     char name[256];
     char uuid[128];
-    char source[80];
+    char printer_uuid_raw[64];
+    char printer_uuid[128];
+    char cloud_job_id[192];
+    char cloud_job_id_binding[224];
     char owner[80];
     char variant[128];
     char family[128];
     char guid[128];
+    char target_guid[128];
+    char material_guid_binding[160];
     char origin_guid[128];
     char origin_material_name[128];
     char target_material_name[128];
@@ -71,20 +95,39 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
     char nozzle[48];
     char origin_nozzle[48];
     char changes[1024] = "";
+    char printer_binding[192];
     const char *status;
+    const char *started;
+    int has_changes;
     int n;
 
     if (!job || !out || out_sz == 0 || !job->path[0])
         return -1;
 
+    format_pending_created_at(job, created_at, sizeof(created_at));
+    deneb_printer_identity_guid(printer_uuid_raw, sizeof(printer_uuid_raw));
+    deneb_json_escape_string(printer_uuid_raw, printer_uuid,
+                             sizeof(printer_uuid));
     deneb_json_escape_string(job->path, path, sizeof(path));
     deneb_json_escape_string(job->name, name, sizeof(name));
-    deneb_json_escape_string(job->uuid, uuid, sizeof(uuid));
-    deneb_json_escape_string(job->source, source, sizeof(source));
+    deneb_json_escape_string(deneb_print_cluster_job_uuid_or_default(job->uuid),
+                             uuid, sizeof(uuid));
+    deneb_json_escape_string(job->cloud_job_id, cloud_job_id,
+                             sizeof(cloud_job_id));
+    if (cloud_job_id[0])
+        snprintf(cloud_job_id_binding, sizeof(cloud_job_id_binding),
+                 "\"cloud_job_id\":\"%s\",", cloud_job_id);
+    else
+        cloud_job_id_binding[0] = '\0';
     deneb_json_escape_string(job->owner, owner, sizeof(owner));
     deneb_json_escape_string(job->machine_variant, variant, sizeof(variant));
     deneb_json_escape_string(job->machine_family, family, sizeof(family));
-    deneb_json_escape_string(job->material_guid, guid, sizeof(guid));
+    if (deneb_print_is_cluster_guid(job->material_guid))
+        deneb_json_escape_string(job->material_guid, guid, sizeof(guid));
+    else
+        guid[0] = '\0';
+    deneb_json_escape_string(job->material_guid, target_guid,
+                             sizeof(target_guid));
     deneb_json_escape_string(job->origin_material_guid, origin_guid, sizeof(origin_guid));
     deneb_json_escape_string(job->origin_material_name, origin_material_name, sizeof(origin_material_name));
     deneb_json_escape_string(job->target_material_name, target_material_name, sizeof(target_material_name));
@@ -101,7 +144,7 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
                  "\"target_name\":\"%s\"}",
                  origin_guid,
                  origin_material_name[0] ? origin_material_name : origin_guid,
-                 guid,
+                 target_guid,
                  target_material_name[0] ? target_material_name : material);
     }
     if (job->print_core_change_required) {
@@ -116,24 +159,39 @@ int deneb_pending_job_serialize(const deneb_pending_job_t *job,
                  nozzle);
     }
 
-    status = deneb_pending_job_change_count(job) > 0 ?
-        "wait_user_action" :
+    has_changes = deneb_pending_job_change_count(job) > 0;
+    status = has_changes ? "wait_user_action" :
         deneb_print_control_phase_name(DENEB_PRINT_PHASE_PREPARING);
+    started = has_changes ? "false" : "true";
+    if (has_changes)
+        printer_binding[0] = '\0';
+    else
+        snprintf(printer_binding, sizeof(printer_binding),
+                 "\"printer_uuid\":\"%s\",", printer_uuid);
+    if (guid[0])
+        snprintf(material_guid_binding, sizeof(material_guid_binding),
+                 "\"guid\":\"%s\",", guid);
+    else
+        material_guid_binding[0] = '\0';
 
     n = snprintf(out, out_sz,
-                 "[{\"uuid\":\"%s\",\"created_at\":\"\",\"name\":\"%s\","
-                 "\"path\":\"%s\",\"status\":\"%s\",\"time_total\":0,"
-                 "\"time_elapsed\":0,\"started\":true,\"force\":false,"
+                 "[{\"uuid\":\"%s\",\"created_at\":\"%s\",\"name\":\"%s\","
+                 "\"path\":\"%s\",%s"
+                 "\"status\":\"%s\",\"time_total\":0,"
+                 "\"time_elapsed\":0,\"started\":%s,\"force\":false,"
                  "\"machine_variant\":\"%s\",\"owner\":\"%s\","
-                 "\"assigned_to\":\"00000000-0000-0000-0000-000000000000\","
+                 "%s\"assigned_to\":\"%s\","
                  "\"build_plate\":{\"type\":\"glass\"},"
                  "\"configuration\":[{\"extruder_index\":0,"
-                 "\"print_core_id\":\"%s\",\"material\":{\"guid\":\"%s\","
+                 "\"print_core_id\":\"%s\",\"material\":{%s"
                  "\"brand\":\"%s\",\"material\":\"%s\",\"color\":\"%s\"}}],"
+                 "\"constraints\":{},"
                  "\"compatible_machine_families\":[\"%s\",\"%s\"],"
                  "\"impediments_to_printing\":[]",
-                 uuid, name, path, status, variant, owner, nozzle, guid,
-                 brand, material, color, family, variant);
+                 uuid, created_at, name, path, cloud_job_id_binding, status, started,
+                 variant, owner, printer_binding,
+                 printer_uuid, nozzle, material_guid_binding, brand, material,
+                 color, family, variant);
     if (n < 0 || (size_t)n >= out_sz)
         return -1;
 

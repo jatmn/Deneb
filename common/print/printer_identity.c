@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "printer_identity.h"
 
+#include "print_state_rules.h"
+
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,15 +46,35 @@ void deneb_printer_identity_hostname(char *out, size_t out_sz)
                                                 out, out_sz);
 }
 
-void deneb_printer_identity_guid(char *out, size_t out_sz)
+void deneb_printer_identity_friendly_name(char *out, size_t out_sz)
 {
     FILE *f;
-    char line[96] = "";
+    char line[128] = "";
+    char hostname[128];
 
     if (!out || out_sz == 0)
         return;
 
-    f = popen("uci -q get deneb.system.guid 2>/dev/null", "r");
+    deneb_printer_identity_hostname(hostname, sizeof(hostname));
+    f = popen("uci -q get ultimaker.option.printer_name 2>/dev/null", "r");
+    if (f) {
+        (void)fgets(line, sizeof(line), f);
+        pclose(f);
+    }
+    deneb_printer_identity_copy_line_or_default(line, hostname, out, out_sz);
+}
+
+void deneb_printer_identity_guid(char *out, size_t out_sz)
+{
+    FILE *f;
+    char line[96] = "";
+    size_t i;
+
+    if (!out || out_sz == 0)
+        return;
+
+    f = popen("uci -q get ultimaker.option.host_guid 2>/dev/null || "
+              "uci -q get deneb.system.guid 2>/dev/null", "r");
     if (f) {
         (void)fgets(line, sizeof(line), f);
         pclose(f);
@@ -59,6 +82,10 @@ void deneb_printer_identity_guid(char *out, size_t out_sz)
     deneb_printer_identity_copy_line_or_default(line,
                                                 DENEB_PRINTER_DEFAULT_GUID,
                                                 out, out_sz);
+    for (i = 0; out[i]; i++)
+        out[i] = (char)tolower((unsigned char)out[i]);
+    if (!deneb_print_is_cluster_guid(out))
+        snprintf(out, out_sz, "%s", DENEB_PRINTER_DEFAULT_GUID);
 }
 
 void deneb_printer_identity_display_id(char *out, size_t out_sz)

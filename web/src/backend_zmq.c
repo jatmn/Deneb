@@ -125,10 +125,12 @@ int backend_zmq_send_gcode(const char *gcode) { (void)gcode; return 0; }
 int backend_zmq_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
 int backend_zmq_send_macro(const char *macro) { (void)macro; return 0; }
 int backend_zmq_send_job(const char *path, const char *source,
-                         const char *uuid, float bed_target,
+                         const char *uuid, const char *cloud_job_id,
+                         float bed_target,
                          float head_target)
 {
-    (void)path; (void)source; (void)uuid; (void)bed_target; (void)head_target;
+    (void)path; (void)source; (void)uuid; (void)cloud_job_id;
+    (void)bed_target; (void)head_target;
     return 0;
 }
 int backend_zmq_send_pending_instruction(const char *instruction)
@@ -466,11 +468,23 @@ const char *backend_zmq_get_status_label(void)
 
 void backend_zmq_get_job_summary(deneb_print_job_summary_t *summary)
 {
+    int native_active = state.has_native_active && state.native_active;
+
     deneb_print_job_summary_init(summary, state.filename, state.uuid,
                                  state.source, state.has_error,
-                                 state.is_paused, state.is_printing,
+                                 state.is_paused,
+                                 state.is_printing || native_active,
                                  state.time_total, state.time_left,
                                  state.progress);
+    if (summary) {
+        summary->created_at = (long long)current_print_start_time;
+        summary->cloud_job_id = state.cloud_job_id;
+        if (native_active && !state.is_printing && !state.is_paused &&
+            !state.has_error && deneb_print_req_is_lifecycle(state.current_req)) {
+            summary->state = DENEB_PRINT_PHASE_NAME_PRE_PRINT;
+            summary->started = 1;
+        }
+    }
 }
 
 void backend_zmq_get_printer_status_response(
@@ -629,12 +643,14 @@ int backend_zmq_send_macro(const char *macro)
 }
 
 int backend_zmq_send_job(const char *path, const char *source,
-                         const char *uuid, float bed_target,
+                         const char *uuid, const char *cloud_job_id,
+                         float bed_target,
                          float head_target)
 {
     char buf[4096];
-    int len = deneb_command_format_job(path, source, uuid, bed_target,
-                                       head_target, buf, sizeof(buf));
+    int len = deneb_command_format_job(path, source, uuid, cloud_job_id,
+                                       bed_target, head_target, buf,
+                                       sizeof(buf));
     if (len < 0) {
         fprintf(stderr, "backend_zmq: job payload too large\n");
         return -1;
@@ -662,7 +678,8 @@ static int pending_dispatch_job(void *ctx,
     if (!plan)
         return -1;
     return backend_zmq_send_job(plan->path, plan->source, plan->uuid,
-                                plan->bed_target, plan->nozzle_target);
+                                plan->cloud_job_id, plan->bed_target,
+                                plan->nozzle_target);
 }
 
 int backend_zmq_send_pending_instruction(const char *instruction)

@@ -13,6 +13,7 @@ void deneb_printer_identity_copy_line_or_default(const char *value,
                                                  char *out,
                                                  size_t out_sz);
 void deneb_printer_identity_hostname(char *out, size_t out_sz);
+void deneb_printer_identity_friendly_name(char *out, size_t out_sz);
 void deneb_printer_identity_guid(char *out, size_t out_sz);
 void deneb_printer_identity_display_id(char *out, size_t out_sz);
 

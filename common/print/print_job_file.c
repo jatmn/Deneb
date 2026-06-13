@@ -25,6 +25,7 @@ void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan)
     memset(plan, 0, sizeof(*plan));
     plan->source = DENEB_PRINT_DEFAULT_JOB_SOURCE;
     plan->uuid = DENEB_PRINT_DEFAULT_JOB_UUID;
+    plan->cloud_job_id = "";
 }
 
 void deneb_print_job_upload_storage_plan_init(
@@ -36,7 +37,9 @@ void deneb_print_job_upload_storage_plan_init(
 }
 
 int deneb_print_job_start_plan_prepare(const char *path, const char *source,
-                                       const char *uuid, float bed_target,
+                                       const char *uuid,
+                                       const char *cloud_job_id,
+                                       float bed_target,
                                        float nozzle_target,
                                        deneb_print_job_start_plan_t *plan)
 {
@@ -49,6 +52,7 @@ int deneb_print_job_start_plan_prepare(const char *path, const char *source,
     plan->path = path;
     plan->source = deneb_print_job_source_or_default(source);
     plan->uuid = deneb_print_job_uuid_or_default(uuid);
+    plan->cloud_job_id = cloud_job_id ? cloud_job_id : "";
     plan->bed_target = bed_target;
     plan->nozzle_target = nozzle_target;
     return 0;
@@ -57,8 +61,8 @@ int deneb_print_job_start_plan_prepare(const char *path, const char *source,
 int deneb_print_job_start_plan_file(const char *path, const char *source,
                                     deneb_print_job_start_plan_t *plan)
 {
-    return deneb_print_job_start_plan_prepare(path, source, NULL, 0.0f, 0.0f,
-                                             plan);
+    return deneb_print_job_start_plan_prepare(path, source, NULL, NULL, 0.0f,
+                                             0.0f, plan);
 }
 
 int deneb_print_job_file_metadata_extract_value(const char *buf,

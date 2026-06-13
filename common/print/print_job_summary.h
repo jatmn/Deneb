@@ -8,12 +8,14 @@ typedef struct {
     const char *name;
     const char *uuid;
     const char *source;
+    const char *cloud_job_id;
     const char *state;
     int active;
     int started;
     int time_total;
     int time_left;
     int time_elapsed;
+    long long created_at;
     float progress_percent;
     float progress_fraction;
 } deneb_print_job_summary_t;

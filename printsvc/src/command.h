@@ -23,6 +23,7 @@ typedef struct {
     char file[256];
     char source[32];
     char uuid[64];
+    char cloud_job_id[96];
     char macro[128];
     float bed_target;
     float head_target;
