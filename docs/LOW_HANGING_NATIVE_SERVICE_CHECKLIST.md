@@ -309,7 +309,8 @@ proof.
     Digital Factory material mismatch warning now downloads through
     `deneb-dfsvc`, extracts the UFP to G-code, enters the Cura-style
     `wait_user_action` material-mismatch prompt, and Cancel clears the pending
-    job while the printer remains idle. Continue Anyway is **not** accepted as
+    job while the printer remains idle. The original Continue Anyway trial is
+    **not** accepted as
     successful proof: the attempted run entered software `printing` state but
     skipped expected stock prepare behavior and moved dangerously. Stock review
     found the missing boundary in `printhandling.py` plus `marlin_executor.py`:
@@ -319,8 +320,9 @@ proof.
     started safely, but exposed a follow-up prepare inefficiency: startup homes
     XYZ, moves to the prepare position, then runs a second Z home. Package
     `6cd72899` removes the normal-print `M18 Z` release and second `G28 Z`;
-    supervised target testing confirmed no double Z home and normal startup.
-    Print-job action samples still need capture.
+    supervised target testing through the same Digital Factory material-mismatch
+    route confirmed no double Z home and normal startup. Completion/full
+    lifecycle still needs capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -380,14 +382,16 @@ proof.
   Status screen had no Pause button, and Stop returned idle without the
   expected stock park/home routine. Package `68af57c` added active-print
   Pause/Resume controls and stock-derived Stop cleanup; supervised target
-  testing proved Pause exposed Resume and Stop behaved as expected, but Resume
-  restored motion cold after Pause cooled the nozzle. Package `072edbc`
+  testing through the Digital Factory material-mismatch route proved Pause
+  exposed Resume and Stop behaved as expected, but Resume restored motion cold
+  after Pause cooled the nozzle. Package `072edbc`
   reasserts the saved nozzle target before waiting and restoring motion, and a
   2026-06-13 supervised target run proved Resume reheated, waited, returned to
   position, and continued printing successfully. Package `6cd72899` removed the
   startup double-Z-home by omitting the normal-print Z release/re-home, and
-  supervised target testing confirmed startup no longer double homes Z. Remote
-  print-job actions also remain open closure gates.
+  supervised target testing through the same route confirmed startup no longer
+  double homes Z. Digital Factory completion/full-lifecycle remains an open
+  closure gate.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
