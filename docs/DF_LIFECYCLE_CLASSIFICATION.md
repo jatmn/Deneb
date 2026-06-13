@@ -15,10 +15,10 @@ handled by stock `connector.py`. The package replaces
 Digital Factory connector fallback.
 
 This closes the source/package/install side of the Digital Factory C port.
-On-target evidence now proves the disabled/unpaired baseline and the live
-pairing-PIN flow through `deneb-dfsvc` without stock `connector.py`. The
-remaining blockers before marking the lifecycle fully proven are connected
-steady-state, reconnecting, disconnect, remote print, print-job action, and
+On-target evidence now proves the disabled/unpaired baseline, the live
+pairing-PIN flow, and connected steady-state through `deneb-dfsvc` without
+stock `connector.py`. The remaining blockers before marking the lifecycle fully
+proven are reconnecting, disconnect, remote print, print-job action, and
 printer rename validation.
 
 ## Workflow Analysis: Native Bridge vs Stock Connector
@@ -132,18 +132,19 @@ Captured on hardware on 2026-06-13 after installing
 |-------|----------|--------|
 | Disabled/unpaired | `/tmp/df-disabled-e213599-v3.summary` | `df_enabled=0`, process-backed `df_running=0`, bridge `state=disconnected`, `deneb-dfsvc pid=0`, `connector.py pid=0`, DF log bytes `26733`. Raw `df_init_running=1` is retained as an init-script diagnostic, not lifecycle truth. |
 | Pairing / enter PIN | User reported touchscreen sequence: "requesting pairing pin", "reconnecting", `pin: 869281`; `/tmp/df-pairing-e213599.summary` | `deneb-api digital-factory status --timeout 20` returned `state=enter_pin pin=869281`. `deneb-dfsvc` was running as PID `13157` with VSZ `3744 KB`, RSS `3032 KB`, 14 FDs, 3 threads, 4 TCP sockets. Stock `connector.py pid=0`. Syslog showed native `deneb-dfsvc` sending `connection_request`, receiving `connection_response`, and logging "Digital Factory pairing PIN received." |
+| Connected steady-state | User reported touchscreen changed to connected; `/tmp/df-connected-e213599.summary` and `/tmp/df-connected-e213599-60s.summary` | `deneb-api digital-factory status --timeout 20` returned `state=connected`. `deneb-dfsvc` stayed on PID `13157`; immediate connected sample was VSZ `3744 KB`, RSS `3044 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Settled sample about 60 seconds later was VSZ `3744 KB`, RSS `3052 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Syslog showed native cloud account confirmation, then repeated status requests with `state=2 pin=0` and native status responses. |
 
 These samples prove the native service starts from the intended touchscreen
-pairing flow and reaches the PIN state without a stock Python connector
-fallback. They do **not** prove cloud account completion, connected
-steady-state, reconnecting, disconnect, remote print, print-job action, or
-rename behavior.
+pairing flow, reaches the PIN state, completes cloud account confirmation, and
+remains connected without a stock Python connector fallback. They do **not**
+prove reconnecting, disconnect, remote print, print-job action, or rename
+behavior.
 
 ## Classification Decision
 
 | Option | Verdict | Rationale |
 |--------|---------|-----------|
-| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing reaches the live PIN state through `deneb-dfsvc` without shipping or starting the stock Python connector. Connected/remote workflows still need target proof. |
+| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing and connected steady-state run through `deneb-dfsvc` without shipping or starting the stock Python connector. Reconnect/disconnect/remote workflows still need target proof. |
 | Lazy start/stop | **Implemented** | Installer disables at boot when unpaired; DF screen controls enable/start/stop. The native bridge (`deneb-api digital-factory`) is C code, and active cloud use starts the native service. |
 | Documentation only | Insufficient | Documentation records the boundary but does not remove Python from active Digital Factory use. |
 | Leave stock behavior | Insufficient | Gating reduces idle/local-first footprint, but a paired/active connector still depends on stock Python. |
@@ -151,25 +152,26 @@ rename behavior.
 
 ### Recommendation
 
-Close the implementation/package subtask and the pairing-PIN proof as **native
-connector built, packaged, and started by the intended touchscreen flow**, but
-do not mark Digital Factory fully proven until connected and remote cloud
+Close the implementation/package subtask, pairing-PIN proof, and connected
+steady-state proof as **native connector built, packaged, started by the
+intended touchscreen flow, and connected to the cloud account**, but do not mark
+Digital Factory fully proven until reconnect/disconnect and remote cloud action
 validation is captured. The current connector is properly lifecycle-managed for
 the states proven so far:
 - Zero footprint when unpaired (service disabled at boot)
 - Lazy-started only when user initiates DF pairing from the C-native UI
 - Stopped/disabled when user disconnects
 - Control path goes through the native C bridge (`deneb-api digital-factory`)
-- Pairing-PIN cloud connector path goes through native C service
+- Pairing-PIN and connected cloud connector paths go through native C service
   (`deneb-dfsvc`)
 
 Track the remaining active-use de-Python work as target/cloud proof, not as a
 missing package implementation. The native connector must be validated without
 copying vendor Python into Deneb C code.
 
-The remaining on-target measurements (connected steady-state, reconnecting,
-disconnect, cloud print, print-job action, printer rename) should be collected
-via `tools/deneb-df-measure.sh --state <STATE>` before closing or promoting the
+The remaining on-target measurements (reconnecting, disconnect, cloud print,
+print-job action, printer rename) should be collected via
+`tools/deneb-df-measure.sh --state <STATE>` before closing or promoting the
 native connector, because those samples define whether the current active
 connector behavior and cost are acceptable.
 
@@ -210,7 +212,7 @@ cloud controls. The implemented package work is:
   the native service only after equivalent behavior is proven.
 - Add source/package/install audits that fail when Deneb starts or ships a
   Python Digital Factory connector fallback.
-- Validate on target in connected, reconnecting, disconnect, cloud print,
-  print-job action, and printer rename states before marking Digital Factory
-  de-Python complete. Disabled/unpaired and pairing-PIN are now covered by
-  2026-06-13 hardware evidence.
+- Validate on target in reconnecting, disconnect, cloud print, print-job
+  action, and printer rename states before marking Digital Factory de-Python
+  complete. Disabled/unpaired, pairing-PIN, and connected steady-state are now
+  covered by 2026-06-13 hardware evidence.

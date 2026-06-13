@@ -229,10 +229,9 @@ proof.
     expected native connector process while separately recording any
     `connector.py` fallback as a regression. CONNECTED stock baseline:
     connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md). Native DISABLED and
-    PAIRING-PIN captures were recorded on hardware on 2026-06-13 with
-    `dist/Deneb_Update_e213599.deneb`; native CONNECTED, RECONNECTING,
-    DISCONNECT, cloud-print, print-job-action, and rename captures remain
-    outstanding.
+    PAIRING-PIN, and CONNECTED captures were recorded on hardware on 2026-06-13
+    with `dist/Deneb_Update_e213599.deneb`; native RECONNECTING, DISCONNECT,
+    cloud-print, print-job-action, and rename captures remain outstanding.
 - [x] If the measurement helper includes native parsing, summarizing, or audit
   code, run it under Valgrind or sanitizers in host mode.
   → Helper is pure shell script (no native code). Memory-tooling not applicable.
@@ -303,24 +302,25 @@ proof.
   doc.
   → `docs/DF_LIFECYCLE_CLASSIFICATION.md` summarizes the disabled and pairing
     samples, including the native syslog evidence for connection request,
-    connection response, and pairing PIN receipt. Remaining connected,
-    reconnecting, disconnect, remote print, print-job action, and rename
-    samples still need capture.
+    connection response, pairing PIN receipt, cloud account confirmation, and
+    connected status responses. Remaining reconnecting, disconnect, remote
+    print, print-job action, and rename samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
 - [x] The team has a clear go/no-go recommendation for the connector path.
   → Go path implemented: port the active Digital Factory connector to native C.
     Remaining work is live cloud proof, not deciding whether to port.
-- [ ] Active pairing and connected states run without `connector.py`,
+- [x] Active pairing and connected states run without `connector.py`,
   `/usr/bin/python3 connector.py`, or `stardustWebsocketProtocol` imports.
-  → Partial. Pairing-PIN state is proven without `connector.py`; connected
-  steady-state is still open.
+  → 2026-06-13 hardware evidence: pairing-PIN and connected steady-state both
+    ran through native `deneb-dfsvc` PID `13157`, and helper summaries recorded
+    `connector.py pid=0`.
 - [ ] Digital Factory pairing, status, reconnect, and authenticated disconnect
   behavior are validated on target against the native connector.
-  → Partial. Touchscreen status/connect reached `state=enter_pin pin=869281`
-  through native `deneb-dfsvc`. Cloud account completion, reconnect, and
-  authenticated disconnect remain open.
+  → Partial. Touchscreen status/connect reached `state=enter_pin pin=869281`,
+    then `state=connected`, through native `deneb-dfsvc`. Reconnect and
+    authenticated disconnect remain open.
 - [ ] The existing native bridge/API command path remains the shared control
   boundary for UI-side status/connect/disconnect unless a tested replacement
   deliberately consolidates it with the native connector.
@@ -333,8 +333,8 @@ proof.
 - [x] Use the Deneb Digital Factory screen to request status/pairing.
   → Use `tools/deneb-df-measure.sh --state pairing` or `--state connected`.
 - [ ] Collect process and log samples during pairing and after disconnect.
-  → Pairing-PIN sample captured on 2026-06-13; disconnect sample still open.
-    Use `tools/deneb-df-measure.sh --state disconnect`.
+  → Pairing-PIN and connected samples captured on 2026-06-13; disconnect sample
+    still open. Use `tools/deneb-df-measure.sh --state disconnect`.
 - [ ] Confirm local-first Deneb workflows remain usable when the connector is
   stopped.
   → Verified by analysis: all local-first workflows (printing, USB, language,
@@ -346,10 +346,11 @@ proof.
   connector grounded in observed contracts and measurements; do not copy stock
   Python implementation into Deneb native code or guess at cloud protocol
   behavior.
-- Do not mark Digital Factory fully de-Pythoned until on-target pairing,
-  connected, reconnecting, disconnect, remote print, print-job action, and
-  rename states are validated with `deneb-dfsvc` and no stock `connector.py`
-  fallback.
+- Do not mark Digital Factory fully de-Pythoned until on-target reconnecting,
+  disconnect, remote print, print-job action, and rename states are validated
+  with `deneb-dfsvc` and no stock `connector.py` fallback.
+  Disabled/unpaired, pairing-PIN, and connected steady-state are now covered by
+  2026-06-13 hardware evidence.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
