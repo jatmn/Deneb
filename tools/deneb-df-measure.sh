@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Device-side Digital Factory lifecycle measurement helper.
-# Captures per-process resource samples for connector.py across all DF states:
+# Captures per-process resource samples for the native deneb-dfsvc Digital
+# Factory connector across all DF states, and separately records any stock
+# connector.py fallback process as a de-Python regression signal:
 #   disabled, idle-not-running, pairing, connected/reconnecting, disconnect
 #
 # Usage:
@@ -65,7 +67,7 @@ Required States:
     - Prerequisite: /etc/init.d/digitalfactory is disabled at boot
       (uci get ultimaker.option.cluster_id is empty)
     - Verify: /etc/init.d/digitalfactory enabled -> rc != 0
-    - Verify: no connector.py process running
+    - Verify: no deneb-dfsvc or connector.py process is running
     - Record: system-wide process list, service status
 
 [ ] IDLE-NOT-RUNNING
@@ -73,13 +75,13 @@ Required States:
       started (stopped by installer or never started)
     - Verify: /etc/init.d/digitalfactory enabled -> rc 0
     - Verify: /etc/init.d/digitalfactory running -> rc != 0
-    - Record: service status, no connector.py expected
+    - Record: service status, no deneb-dfsvc or connector.py expected
 
 [ ] PAIRING
     - Prerequisite: User has initiated pairing from DF screen
     - Trigger: Start digitalfactory, then run
       deneb-api digital-factory connect --timeout 120
-    - Verify: connector.py process is running
+    - Verify: deneb-dfsvc process is running and connector.py is absent
     - Record: process sample during pairing handshake, then again
       after 30s settle
     - Note: Requires cloud access and a valid pairing code
@@ -87,14 +89,14 @@ Required States:
 [ ] CONNECTED
     - Prerequisite: Pairing completed, cluster_id is set
     - Verify: deneb-api digital-factory status shows connected
-    - Verify: connector.py process is running long-term
+    - Verify: deneb-dfsvc process is running long-term and connector.py is absent
     - Record: process sample after 60s settle in connected state
     - Record: log growth over 5 minutes in steady state
 
 [ ] RECONNECTING
     - Prerequisite: Previously connected, network interrupted
     - Trigger: Disable WiFi or block cloud endpoint
-    - Verify: connector.py process remains running but socket
+    - Verify: deneb-dfsvc process remains running but socket
       shows CLOSE-WAIT or SYN-SENT
     - Record: process sample during reconnection backoff
 
@@ -111,9 +113,11 @@ Per-Sample Measurements (for each state):
 For each capture, run the helper and record:
 
   timestamp, state_label,
-  connector.py: pid, vmsize_kb, vmrss_kb, fd_count, thread_count,
-                cpu_jiffies, pid-owned sockets (tcp/udp),
-                Digital Factory log bytes,
+  deneb-dfsvc: pid, vmsize_kb, vmrss_kb, fd_count, thread_count,
+               cpu_jiffies, pid-owned sockets (tcp/udp),
+               Digital Factory log bytes,
+  connector.py fallback: same process fields if present; should be absent
+                         in Deneb-native packages,
   digitalfactory service: enabled (y/n), running (y/n),
   deneb-api digital-factory status output
 
@@ -127,10 +131,13 @@ Each sample produces one line in the summary file:
 
 Minimum Runs:
 -------------
-  - At least one run with connector.py NOT running (disabled or
+  - At least one run with deneb-dfsvc NOT running (disabled or
     idle-not-running state)
-  - At least one supervised run where connector.py IS started by
+  - At least one supervised run where deneb-dfsvc IS started by
     the intended flow (pairing or connected state)
+  - connector.py must remain absent in Deneb-native package runs; if it appears,
+    treat that sample as a regression to investigate rather than proof of
+    native Digital Factory lifecycle.
 
 Memory Tool Requirements:
 -------------------------
@@ -150,9 +157,13 @@ capture_datetime() {
         printf '%s' "1970-01-01T00:00:00Z"
 }
 
-# Locate connector.py process(es). Returns space-separated PIDs.
-find_connector_pids() {
-    # Match connector.py (the stock Digital Factory cloud connector)
+find_native_connector_pids() {
+    pgrep -f '(^|/| )deneb-dfsvc([[:space:]]|$)' 2>/dev/null || true
+}
+
+# Locate stock connector.py process(es). Returns space-separated PIDs.
+find_stock_connector_pids() {
+    # Match connector.py (the stock Digital Factory cloud connector fallback)
     local pids
     pids="$(pgrep -f 'connector\.py' 2>/dev/null || true)"
     if [ -z "$pids" ]; then
@@ -223,6 +234,7 @@ count_pid_sockets() {
 capture_proc_sample() {
     local pid="$1"
     local state_label="$2"
+    local role="${3:-process}"
     local ts
     ts="$(capture_datetime)"
 
@@ -264,8 +276,8 @@ capture_proc_sample() {
     udp_sockets="$(count_pid_sockets "$pid" udp)"
 
     # Output sample line
-    printf '%s state=%s pid=%d vmsize_kb=%d vmrss_kb=%d statm_shared_pages=%d fd_count=%d thread_count=%d cpu_jiffies=%d tcp_sockets=%d udp_sockets=%d command="%s"\n' \
-        "$ts" "$state_label" "$pid" "$vmsize_kb" "$vmrss_kb" \
+    printf '%s state=%s role=%s pid=%d vmsize_kb=%d vmrss_kb=%d statm_shared_pages=%d fd_count=%d thread_count=%d cpu_jiffies=%d tcp_sockets=%d udp_sockets=%d command="%s"\n' \
+        "$ts" "$state_label" "$role" "$pid" "$vmsize_kb" "$vmrss_kb" \
         "$statm_shared_pages" "$fd_count" "$thread_count" \
         "$cpu_jiffies" "$tcp_sockets" "$udp_sockets" "$cmdline"
 }
@@ -301,23 +313,39 @@ do_measure() {
     log "--- Service State ---"
     capture_service_state "$STATE" | tee -a "$SUMMARY" >> "$LOG"
 
-    # 2. Find connector.py process(es)
-    local pids
-    pids="$(find_connector_pids)"
-    if [ -z "$pids" ]; then
-        log "No connector.py process found (expected for disabled/idle states)"
-        printf '%s state=%s pid=0 vmsize_kb=0 vmrss_kb=0 fd_count=0 thread_count=0 cpu_jiffies=0 cmdline="(not running)"\n' \
+    # 2. Find native deneb-dfsvc process(es)
+    local native_pids stock_pids
+    native_pids="$(find_native_connector_pids)"
+    if [ -z "$native_pids" ]; then
+        log "No deneb-dfsvc process found"
+        printf '%s state=%s role=deneb-dfsvc pid=0 vmsize_kb=0 vmrss_kb=0 fd_count=0 thread_count=0 cpu_jiffies=0 cmdline="(not running)"\n' \
             "$(capture_datetime)" "$STATE" >> "$SUMMARY"
     else
         local n=0
-        for pid in $pids; do
+        for pid in $native_pids; do
             n=$((n + 1))
-            log "--- Process Sample [$n]: pid=$pid ---"
-            capture_proc_sample "$pid" "$STATE" | tee -a "$SUMMARY" >> "$LOG"
+            log "--- Native Connector Process Sample [$n]: pid=$pid ---"
+            capture_proc_sample "$pid" "$STATE" "deneb-dfsvc" | tee -a "$SUMMARY" >> "$LOG"
         done
     fi
 
-    # 3. System-wide socket summary (for context)
+    # 3. Record stock connector.py fallback process(es), which should be absent
+    # in Deneb-native package runs.
+    stock_pids="$(find_stock_connector_pids)"
+    if [ -z "$stock_pids" ]; then
+        log "No stock connector.py fallback process found"
+        printf '%s state=%s role=connector.py pid=0 vmsize_kb=0 vmrss_kb=0 fd_count=0 thread_count=0 cpu_jiffies=0 cmdline="(not running)"\n' \
+            "$(capture_datetime)" "$STATE" >> "$SUMMARY"
+    else
+        local n=0
+        for pid in $stock_pids; do
+            n=$((n + 1))
+            log "--- Stock Connector Fallback Process Sample [$n]: pid=$pid ---"
+            capture_proc_sample "$pid" "$STATE" "connector.py" | tee -a "$SUMMARY" >> "$LOG"
+        done
+    fi
+
+    # 4. System-wide socket summary (for context)
     log "--- Socket Summary ---"
     {
         printf 'Active TCP connections:\n'
@@ -326,7 +354,7 @@ do_measure() {
         ss -una 2>/dev/null || cat /proc/net/udp 2>/dev/null || printf '(unavailable)\n'
     } >> "$LOG"
 
-    # 4. DF log size across the stock UltiMaker log and any rotations.
+    # 5. DF log size across the stock UltiMaker log and any rotations.
     log "--- Digital Factory Logs ---"
     local total_log_bytes=0 found_log=0
     local logfile size

@@ -89,8 +89,13 @@ Deneb now exposes:
 
 6. Digital Factory pairing
 
-   Deneb installs a small Gershwin IPC bridge and exposes Pair / Show PIN,
-   and authenticated disconnect controls from the native Digital Factory screen.
+   Deneb uses the native `deneb-api digital-factory` command bridge for
+   status/connect/disconnect and packages `deneb-dfsvc` as the long-running
+   native connector service. The current native Digital Factory screen exposes a
+   `Connect` action that starts the service and requests pairing, plus a guarded
+   two-tap `Disconnect` action when the status says a disconnectable cloud state
+   is active. Live cloud pairing PIN, connected/reconnecting, remote print,
+   print-job action, rename, and disconnect proof remains open.
 
 7. Print-state controls
 

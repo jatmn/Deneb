@@ -1,6 +1,7 @@
 # Deneb Firmware Audit
 
-Date: 2026-05-31, updated 2026-06-01 after WiFi web asset cleanup and live resource sampling
+Date: 2026-05-31, updated 2026-06-01 after WiFi web asset cleanup and live resource sampling.
+Status reconciliation: 2026-06-13 against commits through `caa1490`.
 Source: Live device SSH (10.10.10.244) + unpacked firmware recovery in `rootfs/`
 Hardware: UltiMaker 2+ Connect (Onion Omega2+, MediaTek MT7688)
 Printer hostname: Ultimaker-2C-9CF8
@@ -128,22 +129,22 @@ with static C binaries:
 - OpenWrt 18.06 base -- kernel, procd, ubus, etc.
 - Kernel -- tied to MT7688 SoC support
 
-## Python -> C Replacement Candidates
+## Python -> C Replacement Status
 
 ### Phase 1: Deneb-authored code (can freely rewrite)
 
-| Component | Lines | Complexity | Impact |
-|-----------|-------|------------|--------|
-| deneb-df-bridge.py | ~155 | DONE | Removed from Deneb source/runtime; replaced by local `deneb-api digital-factory` command mode |
+| Component | Current status | Evidence boundary |
+|-----------|----------------|-------------------|
+| `deneb-df-bridge.py` | Done | Removed from Deneb source/runtime; replaced by local `deneb-api digital-factory` command mode and package/audit gates that reject the Python bridge. |
 
 ### Phase 2: Stock service replacements (clean-room only)
 
-| Component | Lines | Complexity | RAM Savings |
-|-----------|-------|------------|-------------|
-| print_service.py | ~500+ | MEDIUM-HIGH | ~19 MB VSZ |
-| connector.py | Large | VERY HIGH | ~33.5 MB VSZ; must preserve Digital Factory cloud pairing and active connection behavior |
-| coordinator.py | ~183 main + 15 handlers | HIGH | ~27 MB VSZ |
-| wificonnect/server.py | ~138 | LOW-MEDIUM | Replaced by Deneb USB `wifi.txt` import |
+| Component | Current status | Evidence boundary |
+|-----------|----------------|-------------------|
+| `print_service.py` | Native implementation/package path exists as experimental `deneb-printsvc` | Strong bounded hardware, host test, package, and no-Python route evidence exists in `docs/PRINTSVC_EVIDENCE_LEDGER.md`. Promotion is still blocked by LCD/Web/Cura/Digital Factory client workflows, representative slicer output, and long active-soak memory behavior. |
+| `connector.py` | Native implementation/package path exists as `deneb-dfsvc` | Commit `1415245` adds the native connector, init replacement, package staging, and native audit gates. `docs/DF_LIFECYCLE_CLASSIFICATION.md` keeps live cloud validation open for pairing, connected, reconnecting, disconnect, remote print, print-job action, and rename states. |
+| `coordinator.py` | Not replaced | Still the main remaining stock Python backend service. Any replacement is a larger clean-room service project and should not be grouped with low-hanging cleanup. |
+| `wificonnect/server.py` | Avoided for Deneb setup | Deneb uses USB `wifi.txt` import and disables/hides stock AP/captive-portal paths where applicable. This is containment/avoidance, not deletion from read-only firmware. |
 
 ### Phase 3: Longer term
 
@@ -164,9 +165,10 @@ de-Python service-replacement work, not a feature-removal task.
 - [x] Stock `digitalfactory` service is disabled at install when no
   `ultimaker.option.cluster_id` is configured, then enabled/started by the
   Digital Factory screen when the user begins pairing
-- [ ] Stock `connector.py` Digital Factory cloud connector ported to C. The
-  existing lifecycle gating is containment only; active pairing/connected states
-  still require a native connector replacement before this is de-Pythoned.
+- [x] Stock `connector.py` Digital Factory cloud connector has a Deneb-owned C
+  replacement path (`deneb-dfsvc`) in source, package staging, and native init
+  replacement. Live cloud lifecycle validation remains open before calling this
+  fully proven.
 - [x] WiFi setup replacement: USB `wifi.txt` import, stock AP/captive portal disabled by installer
 - [x] Lightweight web runtime bundled into Deneb update releases: `lighttpd`,
   `deneb-api`, static web UI, and `deneb-mdns`
@@ -179,12 +181,22 @@ de-Python service-replacement work, not a feature-removal task.
   Cura's stock UM2+ Connect machine profile
 - [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop
   availability, mismatch continue flow, and abort cleanup/status handling
-- [ ] Print service C rewrite
-- [ ] Digital Factory connector C rewrite
+- [x] Print service C rewrite implementation/package track exists as
+  experimental `deneb-printsvc`; promotion remains blocked by the proof gates in
+  `docs/PRINTSVC_EVIDENCE_LEDGER.md`.
+- [x] Digital Factory connector C rewrite implementation/package track exists
+  as `deneb-dfsvc`; live cloud validation remains open in
+  `docs/DF_LIFECYCLE_CLASSIFICATION.md`.
 - [ ] Coordinator C rewrite
 - [ ] OS/service modernization
 
 ## Live Device Snapshot (2026-05-31, uptime ~1 hour)
+
+The live snapshots below are historical baseline evidence. They predate the
+native print-service and native Digital Factory connector package paths, so they
+must not be read as current Deneb process ownership. Use
+`docs/PRINTSVC_EVIDENCE_LEDGER.md`, `docs/DF_LIFECYCLE_CLASSIFICATION.md`, and
+fresh target samples for current runtime claims.
 
 Access via: `tools/deneb-ssh.py '<command>'` (uses paramiko, handles ssh-rsa)
 Or: `plink -batch -pw deneb root@10.10.10.244 '<command>'`

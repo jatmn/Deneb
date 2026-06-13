@@ -180,17 +180,20 @@ This is not a new web or cloud API endpoint. The command talks to the existing
 stock Gershwin coordinator/Digital Factory IPC path used by the previous Python
 helper.
 
-The future native Digital Factory connector port should reuse this existing
-`deneb-api` command/bridge surface where it remains relevant. Avoid adding a
-second DF control stack in the touchscreen or web code; shared status,
-connect/disconnect, and lifecycle semantics should stay aligned through the
-existing native API boundary unless a tested connector consolidation replaces
-it deliberately.
+Active Digital Factory cloud connectivity is handled by the native
+`deneb-dfsvc` service installed as `/etc/init.d/digitalfactory`. The touchscreen
+screen uses one primary `Connect` action to enable/start that service and invoke
+the bridge connect request; when the status is connected, reconnecting,
+connecting, enter-pin, or disconnecting, it enables the guarded `Disconnect`
+path. Disconnect is a two-tap action and stops/disables the service after the
+cluster state is cleared.
 
-The installer disables the stock `digitalfactory` init service when no
-`ultimaker.option.cluster_id` is configured. The Digital Factory screen enables
-and starts that service before an explicit user pairing request, and disables it
-again after disconnect.
+The installer replaces the stock Python `digitalfactory` init path with the
+native service and disables it when no `ultimaker.option.cluster_id` is
+configured. Package/native audits reject Python Digital Factory bridge artifacts
+and stock connector fallback launches, but live cloud validation still has to
+prove pairing PIN, connected, reconnecting, disconnect, remote print, print-job
+action, and rename behavior on target hardware.
 
 ## Screen Navigation
 

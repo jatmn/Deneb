@@ -209,11 +209,13 @@ diagnostics export using a temporary writable `/mnt/usb` bind mount.
 The full stock Digital Factory connector is large and cloud-facing. It was
 measured in the stock baseline at about 33.5 MB VSZ when running, but the stock
 init script does not start it at boot by default; it is started asynchronously
-from UI flows. The already-completed containment work keeps the connector
-stopped for local-first Deneb, but containment is not completion: active Digital
-Factory pairing and connected states still launch stock Python. The Digital
-Factory de-Python task is to preserve the feature and port that active connector
-runtime to Deneb-owned C.
+from UI flows. The earlier containment work kept the stock connector stopped for
+local-first Deneb, but containment was not completion: active Digital Factory
+pairing and connected states still needed a Deneb-owned connector. The current
+tree now includes `deneb-dfsvc`, a native C connector service, and the package
+path installs a native `/etc/init.d/digitalfactory`. That closes the
+source/package/install side of this subtask, but not the live cloud lifecycle
+proof.
 
 ### Scope
 
@@ -223,13 +225,12 @@ runtime to Deneb-owned C.
   → `tools/deneb-df-measure.sh --checklist` (see `docs/DF_LIFECYCLE_CLASSIFICATION.md`)
 - [ ] Record process memory, CPU, fd count, thread count, sockets, log bytes,
   and service status for each state.
-  → Helper supports disabled-state capture (`tools/deneb-df-measure.sh --state disabled`)
-    and should confirm no connector.py process with the service gated.
-    CONNECTED state baseline: connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md).
-    PAIRING, RECONNECTING, and DISCONNECT states require target: run
-    `deneb-df-measure.sh --state <STATE>` on-device per the checklist protocol.
-    The helper handles all states, but the remaining live-state captures are
-    still outstanding.
+  → Helper supports all state labels and now samples `deneb-dfsvc` as the
+    expected native connector process while separately recording any
+    `connector.py` fallback as a regression. CONNECTED stock baseline:
+    connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md). Native PAIRING,
+    CONNECTED, RECONNECTING, DISCONNECT, cloud-print, print-job-action, and
+    rename captures remain outstanding.
 - [x] If the measurement helper includes native parsing, summarizing, or audit
   code, run it under Valgrind or sanitizers in host mode.
   → Helper is pure shell script (no native code). Memory-tooling not applicable.
@@ -237,39 +238,50 @@ runtime to Deneb-owned C.
   versus only the native bridge.
   → Full workflow table in `docs/DF_LIFECYCLE_CLASSIFICATION.md`.
     Key finding: status display needs bridge only; connect/disconnect and all
-    cloud connectivity require connector.py running.
+    cloud connectivity require a long-running connector service. In current
+    packages that service is `deneb-dfsvc`, not stock `connector.py`.
 - [x] Decide whether the next containment action is native replacement, lazy
   start/stop control, documentation only, or leaving stock behavior in place.
-  → **Lazy start/stop containment — already implemented.** Installer disables
-    connector.py at boot when unpaired; DF screen starts it on connect,
-    stops it on disconnect. This is not full de-Pythoning for active Digital
-    Factory use; native connector replacement remains open.
+  → **Native replacement plus lazy start/stop is implemented at package level.**
+    Installer replaces the Digital Factory init path with `deneb-dfsvc`; the DF
+    screen starts it for explicit setup and stops/disables it after disconnect
+    when unpaired.
 - [x] Define the full active-use de-Python direction for Digital Factory cloud
   pairing.
   → Required direction: native C connector replacement. Removal/disablement of
     Digital Factory cloud pairing is not completion for this task, and accepting
     stock Python would leave the de-Python work open.
-- [ ] Inventory the stock connector's external contract without copying vendor
+- [x] Inventory the stock connector's external contract without copying vendor
   Python into Deneb C code:
   pairing request/response behavior, credentials/config files, cloud endpoints,
   TLS behavior, reconnect/backoff, coordinator IPC, logs, and failure states.
-- [ ] Inventory the existing Deneb Digital Factory C/API surface and reuse it
+  → Implemented in the `deneb-dfsvc` C port and documented in
+    `docs/DF_LIFECYCLE_CLASSIFICATION.md`. Live behavior still needs capture
+    before claiming cloud lifecycle parity.
+- [x] Inventory the existing Deneb Digital Factory C/API surface and reuse it
   where relevant:
   `web/src/df_bridge.c`, `web/src/main.c` command-mode dispatch,
   `/usr/bin/deneb-api digital-factory <status|connect|disconnect>`, and the
   touchscreen `screen_digital_factory.c` call sites.
-- [ ] Add a Deneb-owned native connector service/binary that can maintain the
+- [x] Add a Deneb-owned native connector service/binary that can maintain the
   active Digital Factory cloud session.
-- [ ] Replace the active `/etc/init.d/digitalfactory` Python launch path with
+- [x] Replace the active `/etc/init.d/digitalfactory` Python launch path with
   the native connector while preserving rollback evidence.
-- [ ] Update the touchscreen Digital Factory screen to activate the native
+- [x] Update the touchscreen Digital Factory screen to activate the native
   connector service for pairing and connected states without exposing a manual
   restart control.
-- [ ] Add source/package/install/runtime audits that fail if Deneb launches or
+- [x] Add source/package/install/runtime audits that fail if Deneb launches or
   packages a Python Digital Factory connector fallback.
-- [ ] Add drift checks so touchscreen DF controls, the `deneb-api
+- [x] Add drift checks so touchscreen DF controls, the `deneb-api
   digital-factory` command bridge, and the native connector service report
   compatible status/lifecycle states instead of growing separate truth sources.
+  → Evidence: commit `1415245` adds `dfsvc/src/main.c`,
+    `dfsvc/init/digitalfactory.init`, package staging in `ui/build-package.sh`,
+    release wrapper/audit checks, native audit selftests, and DF screen lifecycle
+    changes. Host test logs from `printsvc/build-host/Testing/Temporary/LastTest.log`
+    include passes for native connector source/init presence, installer native
+    init replacement, package rejection of Python DF bridge artifacts, and the
+    DF screen calling the native bridge connect/disconnect commands.
 
 ### Acceptance Criteria
 
@@ -279,9 +291,9 @@ runtime to Deneb-owned C.
     the long-running cloud WebSocket manager. Distinguished in workflow table.
 - [ ] Measurements include at least one run where the connector is not running
   and one supervised run where it is started by the intended flow.
-  → Partial. Existing baseline shows run-with-connector (33.5 MB VSZ) and the
-    disabled capture shows no connector process, but the intended DF flow still
-    needs an on-target pairing/connected measurement using the helper.
+  → Partial. Existing baseline shows stock run-with-connector (33.5 MB VSZ) and
+    disabled/unpaired behavior, but current `deneb-dfsvc` pairing/connected
+    measurements still need on-target capture using the helper.
 - [ ] Logs and process samples are saved or summarized in the relevant evidence
   doc.
   → Partial. The evidence doc records the classification and baseline numbers;
@@ -290,9 +302,8 @@ runtime to Deneb-owned C.
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
 - [x] The team has a clear go/no-go recommendation for the connector path.
-  → Go: port the active Digital Factory connector to native C. Lazy start/stop
-    reduces idle/local-first footprint, but active Digital Factory still runs
-    stock Python until the port replaces `/etc/init.d/digitalfactory`.
+  → Go path implemented: port the active Digital Factory connector to native C.
+    Remaining work is live cloud proof, not deciding whether to port.
 - [ ] Active pairing and connected states run without `connector.py`,
   `/usr/bin/python3 connector.py`, or `stardustWebsocketProtocol` imports.
 - [ ] Digital Factory pairing, status, reconnect, and authenticated disconnect
@@ -317,14 +328,14 @@ runtime to Deneb-owned C.
 
 ### Risks And Guardrails
 
-- Digital Factory touches cloud connectivity and printer identity. Port the
-  feature to C from observed contracts and measurements; do not copy stock
+- Digital Factory touches cloud connectivity and printer identity. Keep the C
+  connector grounded in observed contracts and measurements; do not copy stock
   Python implementation into Deneb native code or guess at cloud protocol
   behavior.
-- Keep this as measurement first. A native replacement should only start after
-  the team understands the needed product behavior and privacy/security model.
-- Do not mark Digital Factory fully de-Pythoned while paired/active cloud use
-  still launches stock `connector.py`.
+- Do not mark Digital Factory fully de-Pythoned until on-target pairing,
+  connected, reconnecting, disconnect, remote print, print-job action, and
+  rename states are validated with `deneb-dfsvc` and no stock `connector.py`
+  fallback.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
@@ -480,9 +491,9 @@ native port.
    package paths, then add package/audit protection.
 2. Make stock Python UI pruning explicit and auditable, including a retained
    dependency list.
-3. Port the stock Digital Factory connector to C, using lifecycle/resource
-   evidence to preserve behavior and prove the Python connector no longer
-   launches during active cloud use.
+3. Validate the native Digital Factory connector on target, using
+   lifecycle/resource evidence to prove `deneb-dfsvc` preserves behavior and
+   that the Python connector no longer launches during active cloud use.
 4. Disable or bypass `compile_all` only after the remaining Python dependency
    picture is clearer.
 5. Keep `onion-helper` separate as a non-Python supervised service experiment.
@@ -491,8 +502,8 @@ native port.
 
 - The first two tasks are cleanup/audit tasks that should be suitable for short
   branches.
-- The third task is evidence collection and should feed the next service-port
-  decision.
+- The third task's source/package/install work is done; its remaining work is
+  live cloud evidence collection and parity validation.
 - The fourth task is deliberately later because stock coordinator and Digital
   Factory can still rely on source Python imports.
 - The fifth task should not be promoted unless fresh measurements show the small

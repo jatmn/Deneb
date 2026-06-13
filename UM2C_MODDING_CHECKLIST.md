@@ -26,7 +26,9 @@ Authoritative status companions:
 4. Finish `.deneb` manifest, rollback, signing, release-channel, and restore
    UX before calling any package stable.
 5. Keep reducing stock Python backend dependency without copying vendor code or
-   overclaiming parity.
+   overclaiming parity. Current biggest remaining stock Python runtime is
+   `coordinator.py`; native print-service and Digital Factory connector
+   implementation/package tracks exist but still need promotion proof.
 
 ## 1. Project Boundary And Legal Guardrails
 
@@ -183,7 +185,8 @@ long-soak proof.
 - [ ] Prove LCD hands-on workflow against native service.
 - [ ] Prove Web UI hands-on workflow against native service.
 - [ ] Prove desktop Cura client workflow, not just generated cluster API routes.
-- [ ] Prove Digital Factory lifecycle behavior beyond observe-only bridge status.
+- [ ] Prove Digital Factory lifecycle behavior with the native `deneb-dfsvc`
+  connector, not just bridge status or package audits.
 - [ ] Prove broader real slicer output for completion, pause/resume, and abort.
 - [ ] Complete multi-hour active heat/motion/job soak with acceptable memory and
   log behavior.
@@ -212,6 +215,9 @@ long-soak proof.
 - [ ] Provide touchscreen-visible indication when remote control is active.
 - [x] Disable stock `compile_all` for Deneb installs and clear
   `/home/cygnus/__pycache__` after backing up the stock init script.
+- [x] Replace active Digital Factory connector package/init path with native
+  `deneb-dfsvc`; live cloud pairing, connected, reconnecting, disconnect, cloud
+  print, action, and rename proof remains open.
 - [ ] Keep `onion-helper`, remaining stock Python services, and backend service
   dependencies under review before disabling or replacing more services.
 - [ ] Measure print-quality regressions and correlate them with CPU, memory,

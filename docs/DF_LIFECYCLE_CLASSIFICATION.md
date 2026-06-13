@@ -33,7 +33,7 @@ print, print-job action, and printer rename states.
 
 ### Which Workflows Need What
 
-| Workflow | Native Bridge | Stock Connector | Notes |
+| Workflow | Native Bridge | Long-Running Connector | Notes |
 |----------|---------------|-----------------|-------|
 | DF status display | Required | Not required | Bridge reads coordinator IPC directly; connector.py can be stopped |
 | DF connect initiation | Required | **Required** | Bridge sends connect RPC; Deneb package starts `deneb-dfsvc` for active WebSocket pairing |
@@ -140,9 +140,9 @@ copying vendor Python into Deneb C code.
 
 The remaining on-target measurements (pairing, connected steady-state,
 reconnecting, disconnect, cloud print, print-job action, printer rename) should
-be collected via
-`tools/deneb-df-measure.sh --state <STATE>` before scoping the replacement,
-because those samples define the current active connector behavior and cost.
+be collected via `tools/deneb-df-measure.sh --state <STATE>` before closing or
+promoting the native connector, because those samples define whether the current
+active connector behavior and cost are acceptable.
 
 ## Native Connector Port Scope
 
