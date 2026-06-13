@@ -726,6 +726,19 @@ install_config() {
     install_init
 }
 
+restart_live_deneb_ui() {
+    if ! pidof deneb-ui >/dev/null 2>&1; then
+        return
+    fi
+
+    log "restarting live deneb-ui service"
+    if /etc/init.d/deneb-ui restart >/dev/null 2>&1; then
+        log "restarted live deneb-ui service"
+    else
+        log "WARNING: failed to restart live deneb-ui service"
+    fi
+}
+
 # Main
 log "starting Deneb Touchscreen UI installation"
 trap schedule_reboot EXIT
@@ -741,6 +754,7 @@ patch_motion_stack_boot_order
 smoke_test_printsvc_init_handoff
 smoke_test_binary
 install_config
+restart_live_deneb_ui
 prune_stock_wifi_portal
 prune_stock_menu_ui
 prune_stock_compile_all

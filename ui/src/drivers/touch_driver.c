@@ -20,9 +20,18 @@
 #define TOUCH_MAX_X           319
 #define TOUCH_MIN_Y           -5
 #define TOUCH_MAX_Y           234
+#define TOUCH_DOT_TIMEOUT_MS  60000
 
 static lv_indev_t *indev = NULL;
 static lv_obj_t *touch_dot = NULL;
+static lv_timer_t *touch_dot_timer = NULL;
+
+static void touch_dot_timeout_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (touch_dot)
+        lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
+}
 
 static void touch_marker_cb(lv_event_t *e)
 {
@@ -38,6 +47,8 @@ static void touch_marker_cb(lv_event_t *e)
         lv_indev_get_point(event_indev, &p);
         lv_obj_set_pos(touch_dot, p.x - 4, p.y - 4);
         lv_obj_remove_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
+        if (touch_dot_timer)
+            lv_timer_reset(touch_dot_timer);
     }
 }
 
@@ -54,6 +65,8 @@ static void create_touch_marker(void)
     lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_FLOATING);
     lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
+    touch_dot_timer = lv_timer_create(touch_dot_timeout_cb,
+                                      TOUCH_DOT_TIMEOUT_MS, NULL);
 }
 
 int touch_driver_init(void)
@@ -89,6 +102,10 @@ void touch_driver_deinit(void)
     if (indev) {
         lv_evdev_delete(indev);
         indev = NULL;
+    }
+    if (touch_dot_timer) {
+        lv_timer_delete(touch_dot_timer);
+        touch_dot_timer = NULL;
     }
     touch_dot = NULL;
 }
