@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <ctype.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -494,6 +495,18 @@ static bool df_printer_is_idle(void)
     return strcmp(status, "idle") == 0;
 }
 
+static bool filename_has_print_extension(const char *name)
+{
+    size_t len;
+
+    if (!name)
+        return false;
+    len = strlen(name);
+    return (len >= 6 && strcasecmp(name + len - 6, ".gcode") == 0) ||
+           (len >= 4 && strcasecmp(name + len - 4, ".gco") == 0) ||
+           (len >= 4 && strcasecmp(name + len - 4, ".ufp") == 0);
+}
+
 static void sanitize_filename(const char *in, char *out, size_t out_size)
 {
     size_t n = 0;
@@ -512,7 +525,7 @@ static void sanitize_filename(const char *in, char *out, size_t out_size)
     out[n] = '\0';
     if (n == 0)
         snprintf(out, out_size, "digital_factory.gcode");
-    if (!strstr(out, ".gcode") && !strstr(out, ".gco")) {
+    if (!filename_has_print_extension(out)) {
         size_t len = strlen(out);
         if (len + 6 < out_size)
             snprintf(out + len, out_size - len, ".gcode");
@@ -545,16 +558,148 @@ static int download_file_with_wget(const char *url, const char *path)
     if (pid < 0)
         return -1;
     if (pid == 0) {
-        execlp("wget", "wget", "-qO", path, url, (char *)NULL);
+        execlp("wget", "wget", "-q", "-T", "60", "-t", "1", "-O", path,
+               url, (char *)NULL);
         _exit(127);
     }
     int status = 0;
     if (waitpid(pid, &status, 0) < 0)
         return -1;
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-        return -1;
+    if (!WIFEXITED(status))
+        return -2;
+    if (WEXITSTATUS(status) != 0)
+        return WEXITSTATUS(status);
     struct stat st;
-    return stat(path, &st) == 0 && st.st_size > 0 ? 0 : -1;
+    return stat(path, &st) == 0 && st.st_size > 0 ? 0 : -3;
+}
+
+static bool filename_ends_with_ci(const char *name, const char *suffix)
+{
+    size_t name_len;
+    size_t suffix_len;
+
+    if (!name || !suffix)
+        return false;
+    name_len = strlen(name);
+    suffix_len = strlen(suffix);
+    return name_len >= suffix_len &&
+           strcasecmp(name + name_len - suffix_len, suffix) == 0;
+}
+
+static void replace_file_extension(const char *in, const char *extension,
+                                   char *out, size_t out_size)
+{
+    const char *dot;
+
+    if (!out || out_size == 0)
+        return;
+    out[0] = '\0';
+    if (!in || !in[0]) {
+        snprintf(out, out_size, "digital_factory%s", extension);
+        return;
+    }
+    snprintf(out, out_size, "%s", in);
+    dot = strrchr(out, '.');
+    if (dot)
+        out[dot - out] = '\0';
+    if (strlen(out) + strlen(extension) + 1 <= out_size)
+        strncat(out, extension, out_size - strlen(out) - 1);
+}
+
+static int extract_ufp_member(const char *ufp_path, const char *member,
+                              const char *gcode_path)
+{
+    pid_t pid;
+    int out_fd;
+    int status = 0;
+    struct stat st;
+
+    out_fd = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out_fd < 0)
+        return -1;
+
+    pid = fork();
+    if (pid < 0) {
+        close(out_fd);
+        return -1;
+    }
+    if (pid == 0) {
+        if (dup2(out_fd, STDOUT_FILENO) < 0)
+            _exit(126);
+        close(out_fd);
+        execlp("unzip", "unzip", "-p", ufp_path, member, (char *)NULL);
+        _exit(127);
+    }
+    close(out_fd);
+
+    if (waitpid(pid, &status, 0) < 0)
+        return -1;
+    if (stat(gcode_path, &st) == 0 && st.st_size > 0)
+        return 0;
+    if (!WIFEXITED(status))
+        return -2;
+    return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
+}
+
+static int extract_ufp_model_gcode(const char *ufp_path, const char *gcode_path)
+{
+    int rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path);
+    if (rc == 0)
+        return 0;
+    return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path);
+}
+
+static int prepend_file_metadata(const char *path, const char *material_guid,
+                                 const char *print_core_id)
+{
+    char tmp_path[300];
+    int src = -1;
+    int dst = -1;
+    char buf[4096];
+    ssize_t nr;
+    int ok = 0;
+
+    if (!path || !path[0])
+        return -1;
+    if ((!material_guid || !material_guid[0]) &&
+        (!print_core_id || !print_core_id[0]))
+        return 0;
+
+    if (snprintf(tmp_path, sizeof(tmp_path), "%s.meta", path) >=
+        (int)sizeof(tmp_path))
+        return -1;
+
+    src = open(path, O_RDONLY);
+    dst = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (src < 0 || dst < 0)
+        goto out;
+
+    if (material_guid && material_guid[0]) {
+        dprintf(dst, "; material_guid=%s\n", material_guid);
+    }
+    if (print_core_id && print_core_id[0]) {
+        dprintf(dst, "; print_core_id=%s\n", print_core_id);
+    }
+
+    while ((nr = read(src, buf, sizeof(buf))) > 0) {
+        if (fd_write_all(dst, buf, (size_t)nr) < 0)
+            goto out;
+    }
+    if (nr < 0)
+        goto out;
+    ok = 1;
+
+out:
+    if (src >= 0)
+        close(src);
+    if (dst >= 0)
+        close(dst);
+    if (ok) {
+        if (rename(tmp_path, path) == 0)
+            return 0;
+    }
+    unlink(tmp_path);
+    return -1;
 }
 
 static int set_printer_name(const char *name)
@@ -1318,10 +1463,26 @@ static int ws_read_text(ws_client_t *ws, char *buf, size_t buf_size)
     }
 }
 
+static int json_hex_digit(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
 static const char *json_str_value(const char *json, const char *key,
                                   char *out, size_t out_size)
 {
     char needle[64];
+    int truncated = 0;
+
+    if (!json || !key || !out || out_size == 0)
+        return NULL;
+    out[0] = '\0';
     snprintf(needle, sizeof(needle), "\"%s\"", key);
     const char *p = strstr(json, needle);
     if (!p)
@@ -1336,13 +1497,57 @@ static const char *json_str_value(const char *json, const char *key,
         return NULL;
     p++;
     size_t i = 0;
-    while (*p && *p != '"' && i + 1 < out_size) {
-        if (*p == '\\' && p[1])
-            p++;
-        out[i++] = *p++;
+    while (*p && *p != '"') {
+        char c = *p++;
+
+        if (c == '\\' && *p) {
+            c = *p++;
+            switch (c) {
+            case '"':
+            case '\\':
+            case '/':
+                break;
+            case 'b':
+                c = '\b';
+                break;
+            case 'f':
+                c = '\f';
+                break;
+            case 'n':
+                c = '\n';
+                break;
+            case 'r':
+                c = '\r';
+                break;
+            case 't':
+                c = '\t';
+                break;
+            case 'u': {
+                int h0 = json_hex_digit(p[0]);
+                int h1 = json_hex_digit(p[1]);
+                int h2 = json_hex_digit(p[2]);
+                int h3 = json_hex_digit(p[3]);
+                if (h0 >= 0 && h1 >= 0 && h2 >= 0 && h3 >= 0) {
+                    unsigned code = (unsigned)((h0 << 12) | (h1 << 8) |
+                                               (h2 << 4) | h3);
+                    p += 4;
+                    c = code <= 0x7f ? (char)code : '?';
+                }
+                break;
+            }
+            default:
+                break;
+            }
+        }
+
+        if (i + 1 < out_size) {
+            out[i++] = c;
+        } else {
+            truncated = 1;
+        }
     }
     out[i] = '\0';
-    return out;
+    return truncated ? NULL : out;
 }
 
 static const char *json_top_level_str_value(const char *json, const char *key,
@@ -1807,9 +2012,13 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     char job_id[96] = "";
     char job_instance_uuid[96] = "";
     char job_name[160] = "";
-    char download_url[512] = "";
+    char download_url[4096] = "";
+    char material_guid[96] = "";
+    char print_core_id[32] = "";
     char file_name[192];
+    char upload_name[192];
     char path[256];
+    char upload_path[256];
     char api_body[1024] = "";
     char response[512];
     char safe_job_id[192];
@@ -1817,16 +2026,25 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     const char *reason = "unknown";
     int code = -1;
     int download_rc = -1;
+    int extract_rc = 0;
+    bool has_download_url = false;
 
     json_str_value(msg, "job_id", job_id, sizeof(job_id));
     json_str_value(msg, "job_instance_uuid", job_instance_uuid,
                    sizeof(job_instance_uuid));
     json_str_value(msg, "job_name", job_name, sizeof(job_name));
-    json_str_value(msg, "download_url", download_url, sizeof(download_url));
+    has_download_url = json_str_value(msg, "download_url", download_url,
+                                      sizeof(download_url)) != NULL;
+    json_str_value(msg, "guid", material_guid, sizeof(material_guid));
+    if (!df_is_guid(material_guid))
+        material_guid[0] = '\0';
+    json_str_value(msg, "print_core_id", print_core_id, sizeof(print_core_id));
 
     sanitize_filename(job_name, file_name, sizeof(file_name));
+    snprintf(upload_name, sizeof(upload_name), "%s", file_name);
     snprintf(path, sizeof(path), "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
              (long long)time(NULL), file_name);
+    snprintf(upload_path, sizeof(upload_path), "%s", path);
 
     if (!df_printer_is_idle()) {
         reason = "printer_not_idle";
@@ -1838,32 +2056,56 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
         reason = "missing_job_instance_uuid";
     } else if (!df_is_guid(job_instance_uuid)) {
         reason = "invalid_job_instance_uuid";
-    } else if (!download_url[0]) {
-        reason = "missing_download_url";
+    } else if (!has_download_url || !download_url[0]) {
+        reason = download_url[0] ? "download_url_too_long" :
+                                   "missing_download_url";
     } else {
         download_rc = download_file_with_wget(download_url, path);
         if (download_rc != 0) {
             reason = "download_failed";
         } else {
-            code = local_api_upload_file(path, file_name, job_instance_uuid,
-                                         job_id, api_body, sizeof(api_body));
-            if (code >= 200 && code < 300) {
-                reason = "queued";
-                status = "queued";
+            if (filename_ends_with_ci(file_name, ".ufp")) {
+                replace_file_extension(file_name, ".gcode", upload_name,
+                                       sizeof(upload_name));
+                snprintf(upload_path, sizeof(upload_path),
+                         "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
+                         (long long)time(NULL), upload_name);
+                extract_rc = extract_ufp_model_gcode(path, upload_path);
+            }
+            if (extract_rc != 0) {
+                reason = "ufp_extract_failed";
+            } else if (prepend_file_metadata(upload_path, material_guid,
+                                             print_core_id) != 0) {
+                reason = "metadata_prepend_failed";
             } else {
-                reason = "local_upload_failed";
+                code = local_api_upload_file(upload_path, upload_name,
+                                             job_instance_uuid, job_id,
+                                             api_body, sizeof(api_body));
+                if (code >= 200 && code < 300) {
+                    reason = "queued";
+                    status = "queued";
+                } else {
+                    reason = "local_upload_failed";
+                }
             }
         }
     }
     logf_line("info",
               "Digital Factory print request result status=%s reason=%s "
-              "api_code=%d download_rc=%d job_id=%d job_name=%d "
-              "job_instance_uuid=%d download_url=%d file=%s api_body=%.180s",
-              status, reason, code, download_rc, job_id[0] ? 1 : 0,
+              "api_code=%d download_rc=%d extract_rc=%d job_id=%d job_name=%d "
+              "job_instance_uuid=%d download_url=%d download_url_len=%zu "
+              "material_guid=%d print_core_id=%d file=%s upload_file=%s "
+              "api_body=%.180s",
+              status, reason, code, download_rc, extract_rc,
+              job_id[0] ? 1 : 0,
               job_name[0] ? 1 : 0, job_instance_uuid[0] ? 1 : 0,
-              download_url[0] ? 1 : 0, file_name,
+              has_download_url && download_url[0] ? 1 : 0,
+              strlen(download_url), material_guid[0] ? 1 : 0,
+              print_core_id[0] ? 1 : 0, file_name, upload_name,
               api_body[0] ? api_body : "-");
     unlink(path);
+    if (strcmp(upload_path, path) != 0)
+        unlink(upload_path);
     json_escape_string(job_id, safe_job_id, sizeof(safe_job_id));
     snprintf(response, sizeof(response),
              "{\"payload\":{\"job_id\":\"%s\",\"status\":\"%s\"},"

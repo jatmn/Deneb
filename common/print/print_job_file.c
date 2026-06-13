@@ -116,12 +116,22 @@ int deneb_print_job_file_metadata_load(const char *path,
             buf, "material_guid", meta->material_guid,
             sizeof(meta->material_guid)) == 0)
         found = 1;
+    if (!meta->material_guid[0] &&
+        deneb_print_job_file_metadata_extract_value(
+            buf, "EXTRUDER_TRAIN.0.MATERIAL.GUID", meta->material_guid,
+            sizeof(meta->material_guid)) == 0)
+        found = 1;
     if (deneb_print_job_file_metadata_extract_value(
             buf, "nozzle_size", meta->nozzle_size,
             sizeof(meta->nozzle_size)) == 0)
         found = 1;
     if (deneb_print_job_file_metadata_extract_value(
             buf, "print_core_id", meta->nozzle_size,
+            sizeof(meta->nozzle_size)) == 0)
+        found = 1;
+    if (!meta->nozzle_size[0] &&
+        deneb_print_job_file_metadata_extract_value(
+            buf, "EXTRUDER_TRAIN.0.NOZZLE.DIAMETER", meta->nozzle_size,
             sizeof(meta->nozzle_size)) == 0)
         found = 1;
 

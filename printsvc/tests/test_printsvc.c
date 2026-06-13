@@ -3958,6 +3958,20 @@ static void test_print_job_file_metadata(void)
     deneb_print_job_file_metadata_init(&meta);
     assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
     assert(strcmp(meta.nozzle_size, "0.6") == 0);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs(";START_OF_HEADER\n"
+          ";EXTRUDER_TRAIN.0.MATERIAL.GUID:"
+          "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9\n"
+          ";EXTRUDER_TRAIN.0.NOZZLE.DIAMETER:0.4\n"
+          ";END_OF_HEADER\n", f);
+    fclose(f);
+    deneb_print_job_file_metadata_init(&meta);
+    assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+    assert(strcmp(meta.material_guid,
+                  "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9") == 0);
+    assert(strcmp(meta.nozzle_size, "0.4") == 0);
     remove(path);
 }
 

@@ -96,9 +96,9 @@ Deneb now exposes:
    two-tap `Disconnect` action when the status says a disconnectable cloud state
    is active. Live cloud pairing PIN, connected/reconnecting, rename, and
    disconnect are now covered by 2026-06-13 hardware evidence. Remote print
-   request receipt is covered, including a cloud-side material mismatch warning,
-   but the printer-side job did not queue because the native connector reported
-   `download_failed`. Successful remote print and print-job action proof remains
+   material mismatch now reaches the touchscreen user-action prompt through the
+   native connector and Cancel clears the pending job while the printer remains
+   idle. Continue/start after the prompt and print-job action proof remains
    open.
 
 7. Print-state controls

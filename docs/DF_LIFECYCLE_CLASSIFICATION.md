@@ -135,7 +135,7 @@ Captured on hardware on 2026-06-13 after installing
 | Disconnect | User reported touchscreen sequence: confirm prompt, "disconnect requested", then "disconnected"; `/tmp/df-disconnect-e213599.summary` | `deneb-api digital-factory status --timeout 20` returned `state=disconnected`. The helper recorded `df_enabled=0`, process-backed `df_running=0`, `deneb-dfsvc pid=0`, and `connector.py pid=0`. The Digital Factory `cluster_id` was absent from UCI after disconnect, and syslog showed `digital_factory action=disconnect result=state=disconnected` followed by `deneb-dfsvc: info: stopped`. Raw `df_init_running=1` remains only the known init-script diagnostic. |
 | Reconnect after cloud interruption | `/tmp/df-reconnect-baseline-e213599.summary` and `/tmp/df-reconnect-recovery-e213599.summary` | Started from `state=connected` with native `deneb-dfsvc` PID `17025`, VSZ `3720 KB`, RSS `3024 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. A temporary iptables block of the active Digital Factory cloud peer `34.49.252.186` changed bridge status to `state=reconnecting`; `deneb-dfsvc` remained running and stock Python stayed absent. After removing the temporary rules, bridge status returned to `state=connected` with the same PID `17025`, VSZ `3728 KB`, RSS `3036 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Follow-up verification showed no cloud-block rules left behind. |
 | Printer rename | User reported a rename in Digital Factory; `/tmp/df-rename-e213599.summary` | `deneb-api digital-factory status --timeout 20` stayed `state=connected`. `deneb-dfsvc` stayed on PID `17025` with VSZ `3776 KB`, RSS `3068 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. UCI showed `ultimaker.option.printer_name='Ultimaker-2C-test'`, and `/cluster-api/v1/printers` reported `friendly_name:"Ultimaker-2C-test"`. Syslog showed native `deneb-dfsvc` receiving `printer_action_request` messages and sending `printer_action_response` messages at the rename time, followed by normal connected status responses. |
-| Remote print with material mismatch | User reported Digital Factory showed "In transit..." and accurately requested changing material 1 from Generic Tough PLA to Generic PLA; `/tmp/df-remote-print-material-mismatch-e213599.summary` | **Open/failing gate.** The native connector stayed connected as PID `23596` with VSZ `3720 KB`, RSS `3040 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Syslog proved `deneb-dfsvc` received two `print_request` messages and sent `print_response` messages, but the diagnostic result was `status=failed reason=download_failed` with required fields present (`job_id`, `job_name`, `job_instance_uuid`, and `download_url`). `/cluster-api/v1/print_jobs` returned `[]`, `/api/v1/printer/status` remained `idle`, and no local pending job was created. The cloud material warning is therefore not sufficient printer-side proof of queued remote print. |
+| Remote print with material mismatch | User reported Digital Factory showed "In transit..." and accurately requested changing material 1 from Generic Tough PLA to Generic PLA; fixed follow-up captured in `/tmp/df-remote-print-material-mismatch-wait-user-action-e213599.summary` | `deneb-dfsvc` downloaded the signed Digital Factory UFP, extracted `3D/model.gcode`, uploaded the extracted G-code through the local cluster API, and kept stock `connector.py pid=0`. The shared print metadata parser read the Cura header material (`EXTRUDER_TRAIN.0.MATERIAL.GUID`) so the existing Cura-style pending conflict path stopped before printing. `/cluster-api/v1/print_jobs` reported `status:"wait_user_action"`, `started:false`, and `configuration_changes_required` with `type_of_change:"material_change"` from Tough PLA to PLA. `/api/v1/printer/status` stayed `idle`; the touchscreen showed the material-mismatch decision prompt. User selected Cancel, after which `/cluster-api/v1/print_jobs` returned `[]`, the pending metadata file was absent, and printer status remained `idle`. Native connector PID `31966` sampled VSZ `3768 KB`, RSS `3072 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. |
 
 These samples prove the native service starts from the intended touchscreen
 pairing flow, reaches the PIN state, completes cloud account confirmation, and
@@ -143,15 +143,16 @@ remains connected without a stock Python connector fallback. They also prove
 the touchscreen disconnect flow clears pairing state, disables/stops the native
 connector, leaves stock `connector.py` absent, and handles cloud-originated
 printer rename. They also prove the native connector receives remote print
-requests without falling back to Python. They do **not** prove queued remote
-print or print-job action behavior; the latest remote print attempt failed
-before local queue creation with `reason=download_failed`.
+requests without falling back to Python. They now prove remote print download,
+UFP extraction, local queue registration, material-mismatch user-action gating,
+and Cancel cleanup. They do **not** yet prove Continue/start after the material
+prompt or print-job action behavior.
 
 ## Classification Decision
 
 | Option | Verdict | Rationale |
 |--------|---------|-----------|
-| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, printer rename, and receipt of remote print requests run through `deneb-dfsvc` without shipping or starting the stock Python connector. Remote print currently fails at native download before local queue creation, and print-job actions still need target proof. |
+| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, printer rename, and remote print material-mismatch user-action gating run through `deneb-dfsvc` without shipping or starting the stock Python connector. Continue/start after prompt and print-job actions still need target proof. |
 | Lazy start/stop | **Implemented** | Installer disables at boot when unpaired; DF screen controls enable/start/stop. The native bridge (`deneb-api digital-factory`) is C code, and active cloud use starts the native service. |
 | Documentation only | Insufficient | Documentation records the boundary but does not remove Python from active Digital Factory use. |
 | Leave stock behavior | Insufficient | Gating reduces idle/local-first footprint, but a paired/active connector still depends on stock Python. |
@@ -175,8 +176,8 @@ Track the remaining active-use de-Python work as target/cloud proof, not as a
 missing package implementation. The native connector must be validated without
 copying vendor Python into Deneb C code.
 
-The remaining on-target measurements (successful cloud print queue/start and
-print-job action) should be collected via
+The remaining on-target measurements (Continue/start after the remote material
+prompt and print-job action) should be collected via
 `tools/deneb-df-measure.sh --state <STATE>` before closing or promoting the
 native connector, because those samples define whether the current active
 connector behavior and cost are acceptable.
@@ -218,10 +219,9 @@ cloud controls. The implemented package work is:
   the native service only after equivalent behavior is proven.
 - Add source/package/install audits that fail when Deneb starts or ships a
   Python Digital Factory connector fallback.
-- Validate on target in successful cloud print and print-job action states
+- Validate on target in Continue/start-after-prompt and print-job action states
   before marking Digital Factory de-Python complete. Disabled/unpaired,
   pairing-PIN, connected steady-state, reconnect after cloud interruption,
-  touchscreen disconnect, printer rename, and failed remote-print request
-  receipt are now covered by 2026-06-13 hardware evidence. The failed remote
-  print evidence narrows the open gate to native download/queue handling,
-  starting with `reason=download_failed`.
+  touchscreen disconnect, printer rename, and remote-print material-mismatch
+  wait-user-action plus Cancel cleanup are now covered by 2026-06-13 hardware
+  evidence.

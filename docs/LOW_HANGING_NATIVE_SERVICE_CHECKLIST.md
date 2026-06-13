@@ -305,10 +305,11 @@ proof.
     connection response, pairing PIN receipt, cloud account confirmation, and
     connected status responses, controlled cloud interruption, reconnect
     recovery, disconnect request handling, service stop, and cleared pairing
-    state, and printer rename request handling. A remote print request with an
-    accurate Digital Factory material mismatch warning was captured, but the
-    native connector reported `reason=download_failed`, the local queue stayed
-    empty, and the printer remained idle. Successful remote print and
+    state, and printer rename request handling. Remote print with an accurate
+    Digital Factory material mismatch warning now downloads through
+    `deneb-dfsvc`, extracts the UFP to G-code, enters the Cura-style
+    `wait_user_action` material-mismatch prompt, and Cancel clears the pending
+    job while the printer remains idle. Continue/start after that prompt and
     print-job action samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
@@ -360,9 +361,10 @@ proof.
   Disabled/unpaired, pairing-PIN, and connected steady-state are now covered by
   2026-06-13 hardware evidence. Reconnect after controlled cloud interruption
   and touchscreen disconnect are covered by the same run. Printer rename is
-  also covered by that run. Remote print request receipt is covered, but the
-  current native path fails at `download_failed` before local queue creation;
-  treat this as the next open closure gate, not as successful remote print.
+  also covered by that run. Remote print download/UFP extraction, material
+  mismatch wait-user-action gating, and Cancel cleanup are covered by the
+  2026-06-13 hardware run. Continue/start after the prompt and print-job
+  actions remain open closure gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
