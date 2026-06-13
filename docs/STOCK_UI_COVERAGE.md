@@ -98,8 +98,9 @@ Deneb now exposes:
    disconnect are now covered by 2026-06-13 hardware evidence. Remote print
    material mismatch now reaches the touchscreen user-action prompt through the
    native connector and Cancel clears the pending job while the printer remains
-   idle. Continue/start after the prompt is covered by live hardware evidence.
-   Print-job action proof remains open.
+   idle. Continue/start after the prompt is **not** covered as safe: the
+   attempted run exposed a native `G280`/homing parity blocker. Print-job action
+   proof remains open.
 
 7. Print-state controls
 

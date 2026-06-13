@@ -309,9 +309,12 @@ proof.
     Digital Factory material mismatch warning now downloads through
     `deneb-dfsvc`, extracts the UFP to G-code, enters the Cura-style
     `wait_user_action` material-mismatch prompt, and Cancel clears the pending
-    job while the printer remains idle. Continue Anyway starts the same job
-    and reports `status:"printing"`, `native_active:true`, and
-    `native_stop_allowed:true`. Print-job action samples still need capture.
+    job while the printer remains idle. Continue Anyway is **not** accepted as
+    successful proof: the attempted run entered software `printing` state but
+    skipped expected safe startup/homing behavior and moved dangerously. Native
+    `deneb-printsvc` now rejects jobs containing `G280` before motion as a
+    temporary safety guard. Stock-equivalent `G280`/homing behavior and
+    print-job action samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -364,8 +367,10 @@ proof.
   and touchscreen disconnect are covered by the same run. Printer rename is
   also covered by that run. Remote print download/UFP extraction, material
   mismatch wait-user-action gating, and Cancel cleanup are covered by the
-  2026-06-13 hardware run. Continue/start after the prompt is also covered by
-  the same run. Remote print-job actions remain the open closure gate.
+  2026-06-13 hardware run. Continue/start after the prompt is reopened as a
+  safety blocker because the Cura job's `G280` startup path is not
+  stock-equivalent in native `deneb-printsvc`. Remote print-job actions also
+  remain open closure gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 

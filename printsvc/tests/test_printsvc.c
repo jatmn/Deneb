@@ -702,6 +702,22 @@ static void test_job_control_policy(void)
     assert(!svc.abort_requested);
     assert(deneb_flow_inflight(&svc.flow) == 0);
 
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("M190 S60\nG280\nG1 X10\n", f);
+    fclose(f);
+    snprintf(frame, sizeof(frame), "JOB<{\"file\":\"%s\"}", path);
+    assert(deneb_command_parse(frame, &cmd) == 0);
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "unsupported G280") != NULL);
+    assert(!svc.job_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("G1 X1\n", f);
+    fclose(f);
+    deneb_print_service_init(&svc);
     snprintf(frame, sizeof(frame),
              "JOB<{\"file\":\"%s\",\"source\":\"Cura\",\"uuid\":\"job-1\","
              "\"bedTset\":60,\"headTset\":200}",
