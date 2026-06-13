@@ -56,6 +56,7 @@ int deneb_service_context_job_streamer(deneb_print_service_t *svc,
     streamer->finish_cleanup_policy = &svc->finish_cleanup_policy;
     streamer->finish_cleanup_index = &svc->finish_cleanup_index;
     streamer->planner_starvation_count = &svc->planner_starvation_count;
+    streamer->job_nozzle_resume_setpoint = &svc->job_nozzle_resume_setpoint;
     return 0;
 }
 
@@ -102,6 +103,8 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     svc->resume_policy_pending = 0;
     svc->resume_policy_index = 0;
     svc->paused_position_valid = 0;
+    svc->paused_nozzle_setpoint = 0.0f;
+    svc->job_nozzle_resume_setpoint = 0.0f;
     svc->gcode_queue_count = 0;
     svc->gcode_queue_index = 0;
     svc->gcode_queue_active = 0;

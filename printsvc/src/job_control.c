@@ -64,6 +64,10 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     svc->resume_policy_pending = 0;
     svc->resume_policy_index = 0;
     svc->paused_position_valid = 0;
+    svc->paused_nozzle_setpoint = 0.0f;
+    svc->job_nozzle_resume_setpoint = cmd->head_target > 0.0f ?
+                                          cmd->head_target :
+                                          0.0f;
     svc->finish_cleanup_pending = 0;
     svc->finish_cleanup_index = 0;
     svc->finish_drain_ticks = 0;
@@ -116,6 +120,8 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     svc->resume_policy_pending = 0;
     svc->resume_policy_index = 0;
     svc->paused_position_valid = 0;
+    svc->paused_nozzle_setpoint = 0.0f;
+    svc->job_nozzle_resume_setpoint = 0.0f;
     svc->gcode_queue_count = 0;
     svc->gcode_queue_index = 0;
     svc->gcode_queue_active = 0;
@@ -180,6 +186,7 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     deneb_flow_clear_inflight(&svc->flow);
     svc->job_stream.line_number = 0;
     deneb_job_lifecycle_abort(&svc->status);
+    svc->job_nozzle_resume_setpoint = 0.0f;
     return 1;
 }
 
@@ -228,6 +235,7 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
         deneb_flow_clear_inflight(&svc->flow);
         svc->job_stream.line_number = 0;
         deneb_job_lifecycle_complete(&svc->status);
+        svc->job_nozzle_resume_setpoint = 0.0f;
         svc->job_active = 0;
         return 1;
     }
@@ -243,6 +251,7 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
     deneb_flow_clear_inflight(&svc->flow);
     svc->job_stream.line_number = 0;
     deneb_job_lifecycle_complete(&svc->status);
+    svc->job_nozzle_resume_setpoint = 0.0f;
     svc->job_active = 0;
     return 1;
 }

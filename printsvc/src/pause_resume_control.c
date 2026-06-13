@@ -15,13 +15,20 @@ static int position_is_valid(const deneb_status_t *status)
 
 static void save_pause_state(deneb_print_service_t *svc)
 {
+    float nozzle_setpoint;
+
     svc->paused_position_valid = position_is_valid(&svc->status);
     svc->paused_x = svc->status.x;
     svc->paused_y = svc->status.y;
     svc->paused_z = svc->status.z;
     svc->paused_e = svc->status.e;
     svc->paused_r0 = svc->status.r0;
-    svc->paused_nozzle_setpoint = svc->status.head_t_set;
+    nozzle_setpoint = svc->status.head_t_set > 0.0f ?
+                          svc->status.head_t_set :
+                          svc->job_nozzle_resume_setpoint;
+    svc->paused_nozzle_setpoint = nozzle_setpoint;
+    if (nozzle_setpoint > 0.0f)
+        svc->job_nozzle_resume_setpoint = nozzle_setpoint;
 }
 
 static void begin_pause_cleanup_from_current_position(deneb_print_service_t *svc)
@@ -133,6 +140,8 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
     }
 
     svc->paused_position_valid = 0;
+    if (svc->status.head_t_set > 0.0f)
+        svc->job_nozzle_resume_setpoint = svc->status.head_t_set;
     if (svc->job_active && svc->status.state == DENEB_PRINT_STATE_PAUSED) {
         svc->pause_position_probe_pending = 1;
         svc->pause_position_probe_sent = 0;
@@ -169,6 +178,12 @@ int deneb_pause_resume_control_resume(deneb_print_service_t *svc,
 
     if (svc->status.state != DENEB_PRINT_STATE_PAUSED) {
         deneb_command_reply_error(reply, reply_sz, "print is not paused");
+        return -1;
+    }
+
+    if (svc->paused_nozzle_setpoint <= 0.0f) {
+        deneb_command_reply_error(reply, reply_sz,
+                                  "missing pause nozzle target");
         return -1;
     }
 

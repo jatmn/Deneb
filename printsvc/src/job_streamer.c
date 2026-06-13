@@ -329,6 +329,9 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
                                             1.0f);
             } else if (wait_nozzle) {
                 streamer->status->head_t_set = wait_target;
+                if (streamer->job_nozzle_resume_setpoint &&
+                    wait_target > 0.0f)
+                    *streamer->job_nozzle_resume_setpoint = wait_target;
                 deneb_heater_wait_start_head(streamer->heater_wait, wait_target,
                                              1.0f);
             }

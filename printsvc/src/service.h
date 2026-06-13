@@ -57,6 +57,7 @@ typedef struct {
     float paused_e;
     float paused_r0;
     float paused_nozzle_setpoint;
+    float job_nozzle_resume_setpoint;
     unsigned int planner_starvation_count;
     unsigned int temperature_poll_ticks;
     int startup_status_probe_pending;

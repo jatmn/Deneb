@@ -20,7 +20,7 @@ promotion evidence lives in
 | `printhandling.py`, `marlin_executor.py`, `marlin_companion/stream.py` | Print prepare homes/centers, releases Z, waits, heats/extracts, re-homes Z, then `JOB` startup handles first-50-line `G280` detection, optional no-`G280` filament-to-tip priming, startup modal commands, `M190`/`M109` waits, and `G280` prime replacement. | Native `job_streamer.*`, `gcode_stream.*`, and `gcode_rewrite.*` now implement the stock-derived prepare/startup path with host coverage. The 2026-06-13 unsafe Continue run remains a target evidence blocker until this path is deployed and physically validated on hardware. |
 | `marlin_executor.py` | Abort cleanup sends stock XY/Z cleanup and homing moves. | Native `motion_policy.c` now sends a stock-derived abort cleanup sequence with relative wipe/retract, `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and `M84`. Host tests cover the command order. Target Stop proof remains open until the fixed package is deployed and the touchscreen Stop path is observed to park/home safely. |
 | `print_service.py` | Completion clears active file/type after final queue-completed callback. | Native keeps active state until finish cleanup/drain completes, then clears active identity. Bounded completion proof exists; representative slicer completion remains open. |
-| `marlin_executor.py` | Pause saves position with `M114`, retracts/parks/cools, then resumes by reheating and restoring position/extrusion state. | Native pause/resume follows the stock ordering shape and has bounded hardware proof. Cura-started and broader slicer geometry proof remain open. |
+| `marlin_executor.py` | Pause saves position with `M114`, retracts/parks/cools, then resumes by reheating and restoring position/extrusion state. | Native pause/resume follows the stock ordering shape in host tests, but current target promotion is open. A 2026-06-13 touchscreen run on package `68af57c` paused and stopped correctly, but Resume attempted to restore cold after Pause cooled the nozzle. Host code now preserves the positive job nozzle target for `M109` resume and fail-closes if it is missing; deploy and target proof are still required. |
 | `marlin_datalink.py` | Tracks pending packets, handles ACK/reject/resend, and skips sequence 255 by wrapping 254 to 0. | Native flow-control tests cover the current ring/resend behavior. Live desync/fault behavior remains safety-sensitive and must stay evidence-backed. |
 
 ## No-Overclaim Rules
@@ -58,8 +58,9 @@ representative slicer, Digital Factory lifecycle, or multi-hour soak gates.
 ## Open Parity Work
 
 - Prove LCD hands-on queued/start/pause/resume/abort/completion/stale-state
-  workflow, including that the active Status screen exposes Pause/Resume and
-  that Stop runs the stock-derived park/home cleanup.
+  workflow, including that the active Status screen exposes the combined
+  Pause/Resume control, Resume reheats before restoring motion, and Stop runs
+  the stock-derived park/home cleanup.
 - Prove Web UI hands-on status/control workflow.
 - Prove desktop Cura client discovery, upload/start, monitor,
   pause/resume/abort/delete, and pending-job behavior.

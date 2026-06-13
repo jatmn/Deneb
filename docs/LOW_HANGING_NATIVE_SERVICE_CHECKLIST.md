@@ -375,10 +375,14 @@ proof.
   deployment proof before this gate closes. A later package started safely, but
   exposed a separate active-print UI/Stop parity blocker: the Status screen had
   no Pause button, and Stop returned idle without the expected stock park/home
-  routine. Native source now adds Status-screen Pause/Resume controls and a
-  stock-derived abort cleanup policy, but deployment plus supervised target
-  proof is still required. Remote print-job actions also remain open closure
-  gates.
+  routine. Package `68af57c` added active-print Pause/Resume controls and
+  stock-derived Stop cleanup; supervised target testing proved Pause exposed
+  Resume and Stop behaved as expected, but Resume restored motion cold after
+  Pause cooled the nozzle. Native source now combines Pause/Resume into one
+  Status button, preserves the positive job nozzle target for `M109` resume,
+  and fail-closes Resume if that target is missing. Deployment plus supervised
+  target proof is still required. Remote print-job actions also remain open
+  closure gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 

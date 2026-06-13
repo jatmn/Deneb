@@ -62,6 +62,9 @@ identity.
   recurring polling on the stock-shaped `M105`/`M114` cadence.
 - Pause captures a fresh `M114` position before retract/park/cool so resume does
   not rely on a stale periodic position sample.
+- Resume uses the saved positive job nozzle target for the leading `M109`
+  reheat. If a paused position-aware job has no positive saved nozzle target,
+  resume fails closed instead of restoring motion cold.
 - Abort uses a stock-derived cleanup sequence with relative wipe/retract,
   `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and `M84`. It keeps status in
   `aborting` until cleanup drains, then clears active identity to idle.
@@ -197,7 +200,8 @@ Track current status in
 [docs/PRINTSVC_EVIDENCE_LEDGER.md](../docs/PRINTSVC_EVIDENCE_LEDGER.md). The
 native service remains experimental until these pass:
 
-- LCD hands-on queued/start/pause/resume/abort/completion/stale-state workflow.
+- LCD hands-on queued/start/pause/resume/abort/completion/stale-state workflow,
+  including fixed-package proof that Resume reheats after Pause cooldown.
 - Web UI hands-on status/control workflow.
 - Desktop Cura discovery, upload/start, monitor, pause/resume/abort/delete, and
   pending-job behavior.

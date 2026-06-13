@@ -19,8 +19,8 @@ static lv_obj_t *progress_bar = NULL;
 static lv_obj_t *progress_label = NULL;
 static lv_obj_t *file_label = NULL;
 static lv_obj_t *pos_label = NULL;
-static lv_obj_t *pause_btn = NULL;
-static lv_obj_t *resume_btn = NULL;
+static lv_obj_t *pause_resume_btn = NULL;
+static lv_obj_t *pause_resume_label = NULL;
 static lv_obj_t *stop_btn = NULL;
 static int stop_inflight = 0;
 
@@ -56,29 +56,25 @@ static void stop_btn_cb(lv_event_t *e)
     }
 }
 
-static void pause_btn_cb(lv_event_t *e)
+static void pause_resume_btn_cb(lv_event_t *e)
 {
     (void)e;
 
     const printer_state_t *s = backend_get_state();
-    if (!backend_has_active_print_context() || !s->is_printing ||
-        s->is_paused || backend_has_abort_print_context())
+    if (backend_has_abort_print_context())
+        return;
+
+    if (s->is_paused) {
+        if (backend_resume_print() == 0)
+            lv_label_set_text(state_label, locale_get("print.resumed"));
+        return;
+    }
+
+    if (!backend_has_active_print_context() || !s->is_printing)
         return;
 
     if (backend_pause_print() == 0)
         lv_label_set_text(state_label, locale_get("status.paused"));
-}
-
-static void resume_btn_cb(lv_event_t *e)
-{
-    (void)e;
-
-    const printer_state_t *s = backend_get_state();
-    if (!s->is_paused || backend_has_abort_print_context())
-        return;
-
-    if (backend_resume_print() == 0)
-        lv_label_set_text(state_label, locale_get("print.resumed"));
 }
 
 static void set_temp_label(lv_obj_t *label, float cur, float target)
@@ -128,8 +124,9 @@ static void update_timer_cb(lv_timer_t *timer)
         lv_label_set_text(progress_label, "0%");
         lv_label_set_text(file_label, locale_get("status.no_file"));
         lv_label_set_text(pos_label, "X:-- Y:-- Z:--");
-        set_btn_enabled(pause_btn, 0);
-        set_btn_enabled(resume_btn, 0);
+        set_btn_enabled(pause_resume_btn, 0);
+        if (pause_resume_label)
+            lv_label_set_text(pause_resume_label, locale_get("print.pause"));
         set_btn_enabled(stop_btn, 0);
         return;
     }
@@ -179,9 +176,13 @@ static void update_timer_cb(lv_timer_t *timer)
         backend_clear_print_display_context_if_idle();
 
     int aborting = backend_has_abort_print_context();
-    set_btn_enabled(pause_btn, job_active && s->is_printing && !s->is_paused &&
-                                   !aborting);
-    set_btn_enabled(resume_btn, s->is_paused && !aborting);
+    if (pause_resume_label)
+        lv_label_set_text(pause_resume_label,
+                          locale_get(s->is_paused ? "print.resume" :
+                                                   "print.pause"));
+    set_btn_enabled(pause_resume_btn,
+                    ((job_active && s->is_printing) || s->is_paused) &&
+                    !aborting);
     set_btn_enabled(stop_btn, backend_has_stoppable_print_context() &&
                                   !stop_inflight &&
                                   !backend_is_stop_print_inflight());
@@ -287,32 +288,21 @@ static lv_obj_t *status_create(void)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_remove_flag(ctrl_row, LV_OBJ_FLAG_SCROLLABLE);
 
-    pause_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(pause_btn, 92, 30);
-    lv_obj_set_style_bg_color(pause_btn, lv_color_hex(0x16213e), 0);
-    lv_obj_set_style_radius(pause_btn, 4, 0);
-    lv_obj_add_event_cb(pause_btn, pause_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_style_text_color(pause_btn, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_t *pause_lbl = lv_label_create(pause_btn);
-    lv_label_set_text(pause_lbl, locale_get("print.pause"));
-    lv_obj_set_style_text_font(pause_lbl, &deneb_font_12, 0);
-    lv_obj_center(pause_lbl);
-    set_btn_enabled(pause_btn, 0);
-
-    resume_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(resume_btn, 92, 30);
-    lv_obj_set_style_bg_color(resume_btn, lv_color_hex(0x16213e), 0);
-    lv_obj_set_style_radius(resume_btn, 4, 0);
-    lv_obj_add_event_cb(resume_btn, resume_btn_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_set_style_text_color(resume_btn, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_t *resume_lbl = lv_label_create(resume_btn);
-    lv_label_set_text(resume_lbl, locale_get("print.resume"));
-    lv_obj_set_style_text_font(resume_lbl, &deneb_font_12, 0);
-    lv_obj_center(resume_lbl);
-    set_btn_enabled(resume_btn, 0);
+    pause_resume_btn = lv_button_create(ctrl_row);
+    lv_obj_set_size(pause_resume_btn, 140, 30);
+    lv_obj_set_style_bg_color(pause_resume_btn, lv_color_hex(0x16213e), 0);
+    lv_obj_set_style_radius(pause_resume_btn, 4, 0);
+    lv_obj_add_event_cb(pause_resume_btn, pause_resume_btn_cb,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_text_color(pause_resume_btn, lv_color_hex(0xe0e0e0), 0);
+    pause_resume_label = lv_label_create(pause_resume_btn);
+    lv_label_set_text(pause_resume_label, locale_get("print.pause"));
+    lv_obj_set_style_text_font(pause_resume_label, &deneb_font_12, 0);
+    lv_obj_center(pause_resume_label);
+    set_btn_enabled(pause_resume_btn, 0);
 
     stop_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(stop_btn, 92, 30);
+    lv_obj_set_size(stop_btn, 140, 30);
     lv_obj_set_style_bg_color(stop_btn, lv_color_hex(0xe94560), 0);
     lv_obj_set_style_radius(stop_btn, 4, 0);
     lv_obj_add_event_cb(stop_btn, stop_btn_cb, LV_EVENT_CLICKED, NULL);
@@ -349,8 +339,8 @@ static void status_destroy(void)
     progress_label = NULL;
     file_label = NULL;
     pos_label = NULL;
-    pause_btn = NULL;
-    resume_btn = NULL;
+    pause_resume_btn = NULL;
+    pause_resume_label = NULL;
     stop_btn = NULL;
 }
 

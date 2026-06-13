@@ -25,6 +25,7 @@ typedef struct {
     deneb_motion_policy_t *finish_cleanup_policy;
     size_t *finish_cleanup_index;
     unsigned int *planner_starvation_count;
+    float *job_nozzle_resume_setpoint;
 } deneb_job_streamer_t;
 
 int deneb_job_streamer_poll(deneb_job_streamer_t *streamer);

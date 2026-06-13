@@ -423,6 +423,7 @@ static void test_pause_resume_control_policy(void)
     assert(svc.pause_position_probe_sent);
     assert(!svc.pause_policy_pending);
     assert(!svc.paused_position_valid);
+    svc.status.head_t_set = 0.0f;
     svc.status.position_report_count = 2;
     svc.status.x = 121.0f;
     svc.status.y = 81.0f;
@@ -432,9 +433,21 @@ static void test_pause_resume_control_policy(void)
     assert(svc.paused_position_valid);
     assert(svc.paused_x == 121.0f);
     assert(svc.paused_y == 81.0f);
+    assert(svc.paused_nozzle_setpoint == 210.0f);
     assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
     assert(svc.resume_policy_pending);
+    assert(strcmp(svc.resume_policy.commands[0], "M109 S210") == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.status.state = DENEB_PRINT_STATE_PAUSED;
+    svc.paused_position_valid = 1;
+    svc.paused_x = 120.0f;
+    svc.paused_y = 80.0f;
+    svc.paused_z = 12.0f;
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "missing pause nozzle target") != NULL);
 }
 
 static int command_audit_fake_handler(void *ctx, const deneb_command_t *cmd,
@@ -4922,12 +4935,14 @@ static void test_pause_gates_active_job_streaming(void)
     assert(svc.pause_position_probe_pending);
     assert(svc.pause_position_probe_sent);
     assert(!svc.pause_policy_pending);
+    svc.status.head_t_set = 0.0f;
     svc.status.position_report_count = 2;
     svc.status.x = 121.0f;
     assert(deneb_pause_resume_control_poll(&svc) == 0);
     assert(!svc.pause_position_probe_pending);
     assert(svc.pause_policy_pending);
     assert(svc.paused_x == 121.0f);
+    assert(svc.paused_nozzle_setpoint == 210.0f);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 1);
 
@@ -4935,6 +4950,7 @@ static void test_pause_gates_active_job_streaming(void)
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
     assert(svc.resume_policy_pending);
+    assert(strcmp(svc.resume_policy.commands[0], "M109 S210") == 0);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 1);
     for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
