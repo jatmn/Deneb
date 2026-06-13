@@ -135,7 +135,7 @@ Captured on hardware on 2026-06-13 after installing
 | Disconnect | User reported touchscreen sequence: confirm prompt, "disconnect requested", then "disconnected"; `/tmp/df-disconnect-e213599.summary` | `deneb-api digital-factory status --timeout 20` returned `state=disconnected`. The helper recorded `df_enabled=0`, process-backed `df_running=0`, `deneb-dfsvc pid=0`, and `connector.py pid=0`. The Digital Factory `cluster_id` was absent from UCI after disconnect, and syslog showed `digital_factory action=disconnect result=state=disconnected` followed by `deneb-dfsvc: info: stopped`. Raw `df_init_running=1` remains only the known init-script diagnostic. |
 | Reconnect after cloud interruption | `/tmp/df-reconnect-baseline-e213599.summary` and `/tmp/df-reconnect-recovery-e213599.summary` | Started from `state=connected` with native `deneb-dfsvc` PID `17025`, VSZ `3720 KB`, RSS `3024 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. A temporary iptables block of the active Digital Factory cloud peer `34.49.252.186` changed bridge status to `state=reconnecting`; `deneb-dfsvc` remained running and stock Python stayed absent. After removing the temporary rules, bridge status returned to `state=connected` with the same PID `17025`, VSZ `3728 KB`, RSS `3036 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Follow-up verification showed no cloud-block rules left behind. |
 | Printer rename | User reported a rename in Digital Factory; `/tmp/df-rename-e213599.summary` | `deneb-api digital-factory status --timeout 20` stayed `state=connected`. `deneb-dfsvc` stayed on PID `17025` with VSZ `3776 KB`, RSS `3068 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. UCI showed `ultimaker.option.printer_name='Ultimaker-2C-test'`, and `/cluster-api/v1/printers` reported `friendly_name:"Ultimaker-2C-test"`. Syslog showed native `deneb-dfsvc` receiving `printer_action_request` messages and sending `printer_action_response` messages at the rename time, followed by normal connected status responses. |
-| Remote print with material mismatch | User reported Digital Factory showed "In transit..." and accurately requested changing material 1 from Generic Tough PLA to Generic PLA; fixed follow-up captured in `/tmp/df-remote-print-material-mismatch-wait-user-action-e213599.summary`; unsafe Continue run captured before reboot in `/tmp/df-remote-print-material-mismatch-continue-printing-e213599.summary` | **Partially proven, implementation fixed on host, target start still open.** `deneb-dfsvc` downloaded the signed Digital Factory UFP, extracted `3D/model.gcode`, uploaded the extracted G-code through the local cluster API, and kept stock `connector.py pid=0`. The shared print metadata parser read the Cura header material (`EXTRUDER_TRAIN.0.MATERIAL.GUID`) so the existing Cura-style pending conflict path stopped before printing. `/cluster-api/v1/print_jobs` reported `status:"wait_user_action"`, `started:false`, and `configuration_changes_required` with `type_of_change:"material_change"` from Tough PLA to PLA. `/api/v1/printer/status` stayed `idle`; the touchscreen showed the material-mismatch decision prompt. User selected Cancel, after which `/cluster-api/v1/print_jobs` returned `[]`, the pending metadata file was absent, and printer status remained `idle`. On a follow-up run the user selected Continue Anyway; software status changed to `printing`, but the printer skipped expected stock prepare behavior and moved unsafely, requiring a user reboot. Post-incident stock review showed the coordinator prepare path runs `home_and_center_head.gcode`, `M18 Z`, waits for motion, heats/extracts, then sends `G28 Z` before `JOB`; stock `JOB` startup then handles first-50-line `G280` detection, optional no-`G280` filament-to-tip priming, `G90`, `M82`, `G92 E0`, `G0 F9000`, and `G280` prime expansion. Native `deneb-printsvc` now implements that prepare/startup boundary in host-tested code and no longer rejects `G280` jobs as a temporary guard. A later user-supervised run with package `7be1d77` started safely, but the touchscreen Status screen exposed only Stop and the native Stop path returned idle without the expected stock park/home routine. Package `68af57c` added Status-screen Pause/Resume controls and stock-derived Stop cleanup; target testing proved Pause changed to Resume and Stop behaved as expected, but exposed a cold-resume blocker where Resume moved without reheating after Pause cooled the nozzle. Host source now combines Pause/Resume into one button, preserves the last positive job nozzle target for `M109` resume, and rejects resume if no positive target is available. Deployment plus supervised target proof remains required before this remote-print closure gate closes. Native connector PID `31966` sampled VSZ `3768 KB`, RSS `3072 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0` in the prompt sample. |
+| Remote print with material mismatch | User reported Digital Factory showed "In transit..." and accurately requested changing material 1 from Generic Tough PLA to Generic PLA; fixed follow-up captured in `/tmp/df-remote-print-material-mismatch-wait-user-action-e213599.summary`; unsafe Continue run captured before reboot in `/tmp/df-remote-print-material-mismatch-continue-printing-e213599.summary` | **Partially proven, print start and touchscreen pause/resume improved; remote job actions still open.** `deneb-dfsvc` downloaded the signed Digital Factory UFP, extracted `3D/model.gcode`, uploaded the extracted G-code through the local cluster API, and kept stock `connector.py pid=0`. The shared print metadata parser read the Cura header material (`EXTRUDER_TRAIN.0.MATERIAL.GUID`) so the existing Cura-style pending conflict path stopped before printing. `/cluster-api/v1/print_jobs` reported `status:"wait_user_action"`, `started:false`, and `configuration_changes_required` with `type_of_change:"material_change"` from Tough PLA to PLA. `/api/v1/printer/status` stayed `idle`; the touchscreen showed the material-mismatch decision prompt. User selected Cancel, after which `/cluster-api/v1/print_jobs` returned `[]`, the pending metadata file was absent, and printer status remained `idle`. On a follow-up run the user selected Continue Anyway; software status changed to `printing`, but the printer skipped expected stock prepare behavior and moved unsafely, requiring a user reboot. Post-incident stock review showed the coordinator prepare path runs `home_and_center_head.gcode`, `M18 Z`, waits for motion, heats/extracts, then sends `G28 Z` before `JOB`; stock `JOB` startup then handles first-50-line `G280` detection, optional no-`G280` filament-to-tip priming, `G90`, `M82`, `G92 E0`, `G0 F9000`, and `G280` prime expansion. Native `deneb-printsvc` now implements that prepare/startup boundary in host-tested code and no longer rejects `G280` jobs as a temporary guard. A later user-supervised run with package `7be1d77` started safely, but the touchscreen Status screen exposed only Stop and the native Stop path returned idle without the expected stock park/home routine. Package `68af57c` added Status-screen Pause/Resume controls and stock-derived Stop cleanup; target testing proved Pause changed to Resume and Stop behaved as expected, but exposed a cold-resume blocker where Resume moved without reheating after Pause cooled the nozzle. Package `072edbc` reasserts the saved nozzle target before waiting and restoring motion; 2026-06-13 supervised target testing proved Resume preheated the nozzle again, waited for it to reach temperature, returned to position, and continued printing. The same start testing exposed a double-Z-home startup delay: the printer homes XYZ, moves to the prepare position, then runs the stock-derived `G28 Z` again. Track that as an explicit follow-up before removing or conditionally skipping the second Z home. Native connector PID `31966` sampled VSZ `3768 KB`, RSS `3072 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0` in the prompt sample. |
 
 These samples prove the native service starts from the intended touchscreen
 pairing flow, reaches the PIN state, completes cloud account confirmation, and
@@ -145,17 +145,19 @@ connector, leaves stock `connector.py` absent, and handles cloud-originated
 printer rename. They also prove the native connector receives remote print
 requests without falling back to Python. They now prove remote print download,
 UFP extraction, local queue registration, material-mismatch user-action gating,
-and Cancel cleanup. They do **not** prove safe remote print start. The
+and Cancel cleanup. They prove the later supervised native print start did not
+repeat the dangerous skipped-prepare failure, but they do **not** yet prove a
+complete Digital Factory remote-action lifecycle. The
 Continue/start sample exposed a physical safety blocker in native handling of
 Cura/stock prepare/startup semantics; host code now implements the stock-derived
-sequence, but target proof is still required. Remote print-job action behavior is
-also unproven.
+sequence and later target testing started safely. Startup still has a
+double-Z-home delay to fix. Remote print-job action behavior is also unproven.
 
 ## Classification Decision
 
 | Option | Verdict | Rationale |
 |--------|---------|-----------|
-| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, printer rename, and remote print material-mismatch user-action gating run through `deneb-dfsvc` without shipping or starting the stock Python connector. Native print-service host code now implements the stock-derived prepare/startup/`G280` path, but safe remote print start and print-job actions still need target proof. |
+| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, printer rename, and remote print material-mismatch user-action gating run through `deneb-dfsvc` without shipping or starting the stock Python connector. Native print-service code now implements the stock-derived prepare/startup/`G280` path and later target testing started safely, but the observed double-Z-home startup delay and remote print-job actions still need closure. |
 | Lazy start/stop | **Implemented** | Installer disables at boot when unpaired; DF screen controls enable/start/stop. The native bridge (`deneb-api digital-factory`) is C code, and active cloud use starts the native service. |
 | Documentation only | Insufficient | Documentation records the boundary but does not remove Python from active Digital Factory use. |
 | Leave stock behavior | Insufficient | Gating reduces idle/local-first footprint, but a paired/active connector still depends on stock Python. |
@@ -179,10 +181,9 @@ Track the remaining active-use de-Python work as target/cloud proof, not as a
 missing package implementation. The native connector must be validated without
 copying vendor Python into Deneb C code.
 
-The remaining on-target measurements (safe remote print start after deploying
-the stock-derived prepare/startup/`G280` handling, touchscreen combined
-Pause/Resume visibility, Resume reheating after Pause cooldown, touchscreen
-Stop stock-derived park/home behavior, then remote print-job action)
+The remaining on-target measurements (print-start double-Z-home cleanup,
+touchscreen Stop stock-derived park/home behavior under any remaining edge
+cases, then remote print-job action)
 should be
 collected via
 `tools/deneb-df-measure.sh --state <STATE>` before closing or promoting the
@@ -229,19 +230,20 @@ cloud controls. The implemented package work is:
   the native service only after equivalent behavior is proven.
 - Add source/package/install audits that fail when Deneb starts or ships a
   Python Digital Factory connector fallback.
-- Validate on target in safe remote print start, touchscreen active-print
-  Pause/Resume/Stop behavior, and remote print-job action states before marking
-  Digital Factory de-Python complete. Disabled/unpaired,
+- Validate on target in print-start double-Z-home cleanup, any remaining
+  touchscreen active-print Stop edge cases, and remote print-job action states
+  before marking Digital Factory de-Python complete. Disabled/unpaired,
   pairing-PIN, connected steady-state, reconnect after cloud interruption,
   touchscreen disconnect, printer rename, and remote-print material-mismatch
   wait-user-action plus Cancel are covered by 2026-06-13 hardware evidence.
-  Continue/start is explicitly **not** covered as safe: the attempted run moved
-  dangerously before native print-service gained host-tested stock-derived
-  prepare/startup/`G280` handling, and the fixed path still needs supervised
-  target proof. A later package started safely but exposed a separate Stop
-  parity gap: the old touchscreen Status screen had no Pause button, and Stop
-  did not run the expected stock park/home cleanup. Package `68af57c` fixed
-  that surface enough to prove Pause and Stop, but Resume attempted to restore
-  cold after Pause cooldown. Host code now addresses the remaining Resume
-  target preservation and combined-control UI gaps; deployment and target proof
-  remain required.
+  The original Continue/start trial is explicitly rejected as safe proof: it
+  moved dangerously before native print-service gained host-tested stock-derived
+  prepare/startup/`G280` handling. A later package started safely but exposed a
+  separate Stop parity gap: the old touchscreen Status screen had no Pause
+  button, and Stop did not run the expected stock park/home cleanup. Package
+  `68af57c` fixed that surface enough to prove Pause and Stop, but Resume
+  attempted to restore cold after Pause cooldown. Package `072edbc` fixed the
+  remaining Resume target preservation path and 2026-06-13 supervised target
+  testing proved Resume reheated before restoring motion. The same target run
+  exposed a double-Z-home startup delay that remains open before this workflow
+  is polished.

@@ -315,8 +315,12 @@ proof.
     found the missing boundary in `printhandling.py` plus `marlin_executor.py`:
     home/center, Z release, heat/extract, Z re-home, then `JOB` startup and
     `G280`/prime handling. Native `deneb-printsvc` now implements that
-    prepare/startup path with host coverage. Target physical validation and
-    print-job action samples still need capture.
+    prepare/startup path with host coverage. A 2026-06-13 supervised target run
+    started safely, but exposed a follow-up prepare inefficiency: startup homes
+    XYZ, moves to the prepare position, then runs a second Z home. Track that as
+    an explicit fix task; do not remove the stock-derived second Z home until
+    the current `M18 Z` release/re-home reason is reviewed and target safety is
+    preserved. Print-job action samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -371,18 +375,18 @@ proof.
   mismatch wait-user-action gating, and Cancel cleanup are covered by the
   2026-06-13 hardware run. Continue/start after the prompt is reopened as a
   target-validation blocker: native `deneb-printsvc` now has host-tested
-  stock-derived prepare/startup/`G280` handling, but it still needs supervised
-  deployment proof before this gate closes. A later package started safely, but
-  exposed a separate active-print UI/Stop parity blocker: the Status screen had
-  no Pause button, and Stop returned idle without the expected stock park/home
-  routine. Package `68af57c` added active-print Pause/Resume controls and
-  stock-derived Stop cleanup; supervised target testing proved Pause exposed
-  Resume and Stop behaved as expected, but Resume restored motion cold after
-  Pause cooled the nozzle. Native source now combines Pause/Resume into one
-  Status button, preserves the positive job nozzle target for `M109` resume,
-  and fail-closes Resume if that target is missing. Deployment plus supervised
-  target proof is still required. Remote print-job actions also remain open
-  closure gates.
+  stock-derived prepare/startup/`G280` handling. A later package started
+  safely, but exposed a separate active-print UI/Stop parity blocker: the
+  Status screen had no Pause button, and Stop returned idle without the
+  expected stock park/home routine. Package `68af57c` added active-print
+  Pause/Resume controls and stock-derived Stop cleanup; supervised target
+  testing proved Pause exposed Resume and Stop behaved as expected, but Resume
+  restored motion cold after Pause cooled the nozzle. Package `072edbc`
+  reasserts the saved nozzle target before waiting and restoring motion, and a
+  2026-06-13 supervised target run proved Resume reheated, waited, returned to
+  position, and continued printing successfully. Startup still has an observed
+  double-Z-home delay that should be fixed as a follow-up. Remote print-job
+  actions also remain open closure gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
