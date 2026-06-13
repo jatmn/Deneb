@@ -25,6 +25,9 @@ typedef struct {
     int gcode_queue_active;
     int serial_ready;
     int job_active;
+    int job_prepare_stage;
+    size_t job_prepare_index;
+    size_t job_startup_index;
     int abort_requested;
     int abort_cleanup_pending;
     deneb_motion_policy_t abort_cleanup_policy;

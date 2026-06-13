@@ -12,52 +12,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static int job_command_starts_with(const char *line, const char *prefix)
-{
-    size_t len;
-
-    if (!line || !prefix)
-        return 0;
-    while (*line && isspace((unsigned char)*line))
-        line++;
-    len = strlen(prefix);
-    return strncmp(line, prefix, len) == 0 &&
-           (line[len] == '\0' || isspace((unsigned char)line[len]));
-}
-
-static int job_file_contains_unsupported_g280(const char *path)
-{
-    FILE *f;
-    char line[512];
-
-    if (!path || !path[0])
-        return 0;
-
-    f = fopen(path, "rb");
-    if (!f)
-        return 0;
-
-    while (fgets(line, sizeof(line), f)) {
-        char *p = line;
-        char *comment;
-
-        while (*p && isspace((unsigned char)*p))
-            p++;
-        if (*p == ';' || *p == '\0')
-            continue;
-        comment = strchr(p, ';');
-        if (comment)
-            *comment = '\0';
-        if (job_command_starts_with(p, "G280")) {
-            fclose(f);
-            return 1;
-        }
-    }
-
-    fclose(f);
-    return 0;
-}
-
 static int job_control_abortable(const deneb_print_service_t *svc)
 {
     if (!svc)
@@ -81,15 +35,6 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
 
     if (!cmd->file[0]) {
         deneb_command_reply_error(reply, reply_sz, "missing job file");
-        return -1;
-    }
-
-    if (job_file_contains_unsupported_g280(cmd->file)) {
-        svc->status.error =
-            deneb_error_make(DENEB_ERROR_COMMAND,
-                             "job contains unsupported G280 prime command");
-        deneb_command_reply_error(reply, reply_sz,
-                                  "unsupported G280 in job file");
         return -1;
     }
 
@@ -124,6 +69,9 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     svc->finish_drain_ticks = 0;
     svc->finish_position_report_count = 0;
     svc->finish_stable_reports = 0;
+    svc->job_prepare_stage = 1;
+    svc->job_prepare_index = 0;
+    svc->job_startup_index = 0;
     svc->job_active = 1;
     deneb_job_lifecycle_start(&svc->status, cmd->file, cmd->source,
                               cmd->uuid, cmd->cloud_job_id,
@@ -154,6 +102,9 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;
     }
+    svc->job_prepare_stage = 0;
+    svc->job_prepare_index = 0;
+    svc->job_startup_index = 0;
     svc->abort_requested = 0;
     svc->finish_cleanup_pending = 0;
     svc->finish_cleanup_index = 0;

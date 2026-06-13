@@ -17,6 +17,9 @@ typedef struct {
     deneb_serial_transport_t *serial;
     int *serial_ready;
     int *job_active;
+    int *job_prepare_stage;
+    size_t *job_prepare_index;
+    size_t *job_startup_index;
     int *abort_requested;
     int *finish_cleanup_pending;
     deneb_motion_policy_t *finish_cleanup_policy;

@@ -77,6 +77,41 @@ int deneb_gcode_stream_open(deneb_gcode_stream_t *stream, const char *path)
         return -1;
 
     strncpy(stream->path, path, sizeof(stream->path) - 1);
+    stream->has_prime_cmd = deneb_gcode_stream_has_file_prime_command(path);
+    return 0;
+}
+
+int deneb_gcode_stream_has_file_prime_command(const char *path)
+{
+    FILE *f;
+    char line[DENEB_PRINTSVC_MAX_GCODE_LINE];
+    unsigned int line_nr = 0;
+
+    if (!path || !*path)
+        return 0;
+
+    f = fopen(path, "rb");
+    if (!f)
+        return 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+
+        if (line_nr > 50)
+            break;
+        while (*p && isspace((unsigned char)*p))
+            p++;
+        if (*p == ';')
+            continue;
+        if (strncmp(p, "G280", 4) == 0 &&
+            (p[4] == '\0' || isspace((unsigned char)p[4]))) {
+            fclose(f);
+            return 1;
+        }
+        line_nr++;
+    }
+
+    fclose(f);
     return 0;
 }
 

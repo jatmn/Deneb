@@ -48,6 +48,9 @@ int deneb_service_context_job_streamer(deneb_print_service_t *svc,
     streamer->serial = &svc->serial;
     streamer->serial_ready = &svc->serial_ready;
     streamer->job_active = &svc->job_active;
+    streamer->job_prepare_stage = &svc->job_prepare_stage;
+    streamer->job_prepare_index = &svc->job_prepare_index;
+    streamer->job_startup_index = &svc->job_startup_index;
     streamer->abort_requested = &svc->abort_requested;
     streamer->finish_cleanup_pending = &svc->finish_cleanup_pending;
     streamer->finish_cleanup_policy = &svc->finish_cleanup_policy;
@@ -79,6 +82,9 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     deneb_gcode_stream_close(&svc->job_stream);
     svc->job_stream.line_number = 0;
     svc->job_active = 0;
+    svc->job_prepare_stage = 0;
+    svc->job_prepare_index = 0;
+    svc->job_startup_index = 0;
     svc->abort_requested = 0;
     svc->abort_cleanup_pending = 0;
     svc->abort_cleanup_index = 0;

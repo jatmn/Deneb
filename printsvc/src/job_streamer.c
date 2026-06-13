@@ -10,14 +10,195 @@
 
 #include <stdio.h>
 
+enum {
+    DENEB_JOB_PREPARE_DONE = 0,
+    DENEB_JOB_PREPARE_HOME = 1,
+    DENEB_JOB_PREPARE_HOME_DRAIN = 2,
+    DENEB_JOB_PREPARE_HEAT = 3,
+    DENEB_JOB_PREPARE_Z_HOME = 4,
+    DENEB_JOB_PREPARE_Z_DRAIN = 5,
+    DENEB_JOB_PREPARE_STARTUP = 6,
+    DENEB_JOB_PREPARE_STARTUP_DRAIN = 7
+};
+
+static const char *const DENEB_JOB_PREPARE_HOME_COMMANDS[] = {
+    "G28",
+    "G0 X105 Y0 F9000",
+    "M18 Z",
+};
+
+static const char *const DENEB_JOB_PREPARE_Z_HOME_COMMANDS[] = {
+    "G28 Z",
+};
+
+static const char *const DENEB_JOB_PRIME_FILAMENT_COMMANDS[] = {
+    "G10 S-6.5 F1500",
+    "G10 S0 F300",
+};
+
+static const char *const DENEB_JOB_STARTUP_COMMANDS[] = {
+    "G90",
+    "M82",
+    "G92 E0",
+    "G0 F9000",
+};
+
 static int streamer_valid(const deneb_job_streamer_t *streamer)
 {
     return streamer && streamer->status && streamer->flow && streamer->stream &&
            streamer->heater_wait && streamer->serial && streamer->job_active &&
-           streamer->serial_ready && streamer->abort_requested &&
+           streamer->serial_ready && streamer->job_prepare_stage &&
+           streamer->job_prepare_index && streamer->job_startup_index &&
+           streamer->abort_requested &&
            streamer->finish_cleanup_pending &&
            streamer->finish_cleanup_policy && streamer->finish_cleanup_index &&
            streamer->planner_starvation_count;
+}
+
+static int send_command_list(deneb_job_streamer_t *streamer,
+                             const char *const *commands,
+                             size_t command_count,
+                             size_t *index)
+{
+    int sent_any = 0;
+
+    while (*index < command_count) {
+        int rc;
+        if (deneb_flow_has_pending_barrier(streamer->flow) ||
+            !deneb_flow_can_send(streamer->flow) ||
+            deneb_flow_inflight(streamer->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
+            return sent_any ? 1 : 0;
+        rc = deneb_motion_sender_send_gcode(streamer->flow, streamer->serial,
+                                            *streamer->serial_ready,
+                                            commands[*index]);
+        if (rc != 0) {
+            char detail[96];
+            if (rc == DENEB_MOTION_SEND_FLOW_FULL)
+                return 0;
+            snprintf(detail, sizeof(detail), "job prepare send failed: %s",
+                     deneb_motion_send_error_name(rc));
+            deneb_job_lifecycle_error(
+                streamer->status,
+                deneb_error_make(deneb_motion_send_error_code(rc), detail));
+            return -1;
+        }
+        (*index)++;
+        sent_any = 1;
+    }
+    return 2;
+}
+
+static int send_job_startup(deneb_job_streamer_t *streamer)
+{
+    size_t prime_count = sizeof(DENEB_JOB_PRIME_FILAMENT_COMMANDS) /
+                         sizeof(DENEB_JOB_PRIME_FILAMENT_COMMANDS[0]);
+    size_t startup_count = sizeof(DENEB_JOB_STARTUP_COMMANDS) /
+                           sizeof(DENEB_JOB_STARTUP_COMMANDS[0]);
+
+    if (!streamer->stream->has_prime_cmd &&
+        *streamer->job_startup_index < prime_count) {
+        int rc = send_command_list(streamer, DENEB_JOB_PRIME_FILAMENT_COMMANDS,
+                                   prime_count,
+                                   streamer->job_startup_index);
+        if (rc <= 0)
+            return rc;
+        if (rc == 1)
+            return 1;
+    }
+
+    if (!streamer->stream->has_prime_cmd)
+        *streamer->job_startup_index -= prime_count;
+
+    {
+        int rc = send_command_list(streamer, DENEB_JOB_STARTUP_COMMANDS,
+                                   startup_count,
+                                   streamer->job_startup_index);
+        if (!streamer->stream->has_prime_cmd)
+            *streamer->job_startup_index += prime_count;
+        return rc;
+    }
+}
+
+static int poll_job_prepare(deneb_job_streamer_t *streamer)
+{
+    int rc;
+
+    switch (*streamer->job_prepare_stage) {
+        case DENEB_JOB_PREPARE_HOME:
+            rc = send_command_list(
+                streamer, DENEB_JOB_PREPARE_HOME_COMMANDS,
+                sizeof(DENEB_JOB_PREPARE_HOME_COMMANDS) /
+                    sizeof(DENEB_JOB_PREPARE_HOME_COMMANDS[0]),
+                streamer->job_prepare_index);
+            if (rc <= 0)
+                return rc;
+            if (rc == 1)
+                return 1;
+            *streamer->job_prepare_index = 0;
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_HOME_DRAIN;
+            return 1;
+
+        case DENEB_JOB_PREPARE_HOME_DRAIN:
+            if (deneb_flow_inflight(streamer->flow) != 0)
+                return 0;
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_HEAT;
+            return 0;
+
+        case DENEB_JOB_PREPARE_HEAT:
+            if (deneb_heater_wait_ready(streamer->heater_wait,
+                                        streamer->status)) {
+                streamer->heater_wait->active = 0;
+                *streamer->job_prepare_stage = DENEB_JOB_PREPARE_Z_HOME;
+                return 0;
+            }
+            if (streamer->heater_wait->active) {
+                deneb_heater_wait_apply_status(streamer->heater_wait,
+                                               streamer->status);
+                return 0;
+            }
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_Z_HOME;
+            return 0;
+
+        case DENEB_JOB_PREPARE_Z_HOME:
+            rc = send_command_list(
+                streamer, DENEB_JOB_PREPARE_Z_HOME_COMMANDS,
+                sizeof(DENEB_JOB_PREPARE_Z_HOME_COMMANDS) /
+                    sizeof(DENEB_JOB_PREPARE_Z_HOME_COMMANDS[0]),
+                streamer->job_prepare_index);
+            if (rc <= 0)
+                return rc;
+            if (rc == 1)
+                return 1;
+            *streamer->job_prepare_index = 0;
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_Z_DRAIN;
+            return 1;
+
+        case DENEB_JOB_PREPARE_Z_DRAIN:
+            if (deneb_flow_inflight(streamer->flow) != 0)
+                return 0;
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_STARTUP;
+            return 0;
+
+        case DENEB_JOB_PREPARE_STARTUP:
+            rc = send_job_startup(streamer);
+            if (rc <= 0)
+                return rc;
+            if (rc == 1)
+                return 1;
+            *streamer->job_startup_index = 0;
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_STARTUP_DRAIN;
+            return 1;
+
+        case DENEB_JOB_PREPARE_STARTUP_DRAIN:
+            if (deneb_flow_inflight(streamer->flow) != 0)
+                return 0;
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_DONE;
+            return 0;
+
+        default:
+            *streamer->job_prepare_stage = DENEB_JOB_PREPARE_DONE;
+            return 0;
+    }
 }
 
 int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
@@ -40,6 +221,9 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         *streamer->job_active = 0;
         *streamer->finish_cleanup_pending = 0;
         *streamer->abort_requested = 0;
+        *streamer->job_prepare_stage = DENEB_JOB_PREPARE_DONE;
+        *streamer->job_prepare_index = 0;
+        *streamer->job_startup_index = 0;
         streamer->heater_wait->active = 0;
         return -1;
     }
@@ -60,9 +244,15 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         *streamer->finish_cleanup_pending = 0;
         deneb_job_lifecycle_abort(streamer->status);
         *streamer->abort_requested = 0;
+        *streamer->job_prepare_stage = DENEB_JOB_PREPARE_DONE;
+        *streamer->job_prepare_index = 0;
+        *streamer->job_startup_index = 0;
         streamer->heater_wait->active = 0;
         return -2;
     }
+
+    if (*streamer->job_prepare_stage != DENEB_JOB_PREPARE_DONE)
+        return poll_job_prepare(streamer);
 
     if (deneb_heater_wait_ready(streamer->heater_wait, streamer->status)) {
         streamer->heater_wait->active = 0;

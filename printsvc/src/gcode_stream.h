@@ -14,6 +14,7 @@ typedef struct {
     size_t read_len;
     int eof;
     unsigned long line_number;
+    int has_prime_cmd;
     char pending[DENEB_PRINTSVC_MAX_COMMANDS][DENEB_PRINTSVC_MAX_GCODE_LINE];
     size_t pending_count;
     size_t pending_index;
@@ -23,6 +24,7 @@ typedef struct {
 } deneb_gcode_stream_t;
 
 int deneb_gcode_stream_open(deneb_gcode_stream_t *stream, const char *path);
+int deneb_gcode_stream_has_file_prime_command(const char *path);
 int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t line_sz);
 int deneb_gcode_stream_last_wait(const deneb_gcode_stream_t *stream,
                                  int *wait_for_bed,

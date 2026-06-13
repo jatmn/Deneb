@@ -311,9 +311,11 @@ proof.
     `wait_user_action` material-mismatch prompt, and Cancel clears the pending
     job while the printer remains idle. Continue Anyway is **not** accepted as
     successful proof: the attempted run entered software `printing` state but
-    skipped expected safe startup/homing behavior and moved dangerously. Native
-    `deneb-printsvc` now rejects jobs containing `G280` before motion as a
-    temporary safety guard. Stock-equivalent `G280`/homing behavior and
+    skipped expected stock prepare behavior and moved dangerously. Stock review
+    found the missing boundary in `printhandling.py` plus `marlin_executor.py`:
+    home/center, Z release, heat/extract, Z re-home, then `JOB` startup and
+    `G280`/prime handling. Native `deneb-printsvc` now implements that
+    prepare/startup path with host coverage. Target physical validation and
     print-job action samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
@@ -368,9 +370,10 @@ proof.
   also covered by that run. Remote print download/UFP extraction, material
   mismatch wait-user-action gating, and Cancel cleanup are covered by the
   2026-06-13 hardware run. Continue/start after the prompt is reopened as a
-  safety blocker because the Cura job's `G280` startup path is not
-  stock-equivalent in native `deneb-printsvc`. Remote print-job actions also
-  remain open closure gates.
+  target-validation blocker: native `deneb-printsvc` now has host-tested
+  stock-derived prepare/startup/`G280` handling, but it still needs supervised
+  deployment proof before this gate closes. Remote print-job actions also remain
+  open closure gates.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
