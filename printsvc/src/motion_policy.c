@@ -120,6 +120,7 @@ void deneb_motion_policy_resume(deneb_motion_policy_t *policy,
     if (nozzle_setpoint > DENEB_GCODE_MAX_NOZZLE_TEMP_C)
         nozzle_setpoint = DENEB_GCODE_MAX_NOZZLE_TEMP_C;
 
+    policy_addf(policy, "M104 S%.3g", nozzle_setpoint);
     policy_addf(policy, "M109 S%.3g", nozzle_setpoint);
     policy_add(policy, "M83");
     policy_add(policy, "G0 E10 F1500");

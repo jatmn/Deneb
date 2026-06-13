@@ -434,10 +434,24 @@ static void test_pause_resume_control_policy(void)
     assert(svc.paused_x == 121.0f);
     assert(svc.paused_y == 81.0f);
     assert(svc.paused_nozzle_setpoint == 210.0f);
+    for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!deneb_pause_resume_control_busy(&svc));
     assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
     assert(svc.resume_policy_pending);
-    assert(strcmp(svc.resume_policy.commands[0], "M109 S210") == 0);
-    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(strcmp(svc.resume_policy.commands[0], "M104 S210") == 0);
+    assert(strcmp(svc.resume_policy.commands[1], "M109 S210") == 0);
+    assert(svc.status.head_t_set == 210.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.resume_policy_index == 1);
+    assert(svc.heater_wait.active);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.resume_policy_index == 1);
 
     deneb_print_service_init(&svc);
     svc.job_active = 1;
@@ -4945,14 +4959,30 @@ static void test_pause_gates_active_job_streaming(void)
     assert(svc.paused_nozzle_setpoint == 210.0f);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 1);
+    for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!deneb_pause_resume_control_busy(&svc));
 
     assert(deneb_command_parse("RESUME<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
-    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
     assert(svc.resume_policy_pending);
-    assert(strcmp(svc.resume_policy.commands[0], "M109 S210") == 0);
+    assert(strcmp(svc.resume_policy.commands[0], "M104 S210") == 0);
+    assert(strcmp(svc.resume_policy.commands[1], "M109 S210") == 0);
+    assert(svc.status.head_t_set == 210.0f);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 1);
+    assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    assert(svc.resume_policy_index == 1);
+    assert(svc.heater_wait.active);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.resume_policy_index == 1);
+    svc.status.head_t_cur = 210.0f;
     for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
         deneb_flow_clear_inflight(&svc.flow);
         assert(deneb_pause_resume_control_poll(&svc) >= 0);
@@ -5444,12 +5474,13 @@ static void test_motion_policy(void)
 
     deneb_motion_policy_resume(&policy, 120.0f, 80.0f, 12.0f, 4.2f,
                                -3.0f, 210.0f);
-    assert(policy.count == 11);
-    assert(strcmp(policy.commands[0], "M109 S210") == 0);
-    assert(strcmp(policy.commands[4], "G0 X120 Y80") == 0);
-    assert(strcmp(policy.commands[5], "G0 Z12") == 0);
-    assert(strcmp(policy.commands[8], "G10 S-3") == 0);
-    assert(strcmp(policy.commands[9], "G92 E4.2") == 0);
+    assert(policy.count == 12);
+    assert(strcmp(policy.commands[0], "M104 S210") == 0);
+    assert(strcmp(policy.commands[1], "M109 S210") == 0);
+    assert(strcmp(policy.commands[5], "G0 X120 Y80") == 0);
+    assert(strcmp(policy.commands[6], "G0 Z12") == 0);
+    assert(strcmp(policy.commands[9], "G10 S-3") == 0);
+    assert(strcmp(policy.commands[10], "G92 E4.2") == 0);
 }
 
 static void test_motion_firmware_cache(void)

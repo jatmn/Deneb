@@ -122,6 +122,41 @@ static int poll_policy(deneb_print_service_t *svc,
     return 1;
 }
 
+static int send_resume_heat_command(deneb_print_service_t *svc)
+{
+    int send_rc;
+
+    if (!svc || !svc->resume_policy_pending || svc->resume_policy_index != 0)
+        return 0;
+    if (svc->resume_policy.count == 0 || svc->paused_nozzle_setpoint <= 0.0f)
+        return 0;
+    if (deneb_flow_has_pending_barrier(&svc->flow) ||
+        !deneb_flow_can_send(&svc->flow) ||
+        deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
+        return 0;
+
+    send_rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                             svc->serial_ready,
+                                             svc->resume_policy.commands[0]);
+    if (send_rc != 0) {
+        if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
+            return 0;
+        svc->resume_policy_pending = 0;
+        svc->resume_policy_index = 0;
+        deneb_job_lifecycle_error(
+            &svc->status,
+            deneb_error_make(deneb_motion_send_error_code(send_rc),
+                             "resume heat failed"));
+        return -1;
+    }
+
+    svc->resume_policy_index = 1;
+    deneb_heater_wait_start_head(&svc->heater_wait,
+                                 svc->paused_nozzle_setpoint, 1.0f);
+    deneb_heater_wait_apply_status(&svc->heater_wait, &svc->status);
+    return 1;
+}
+
 int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
                                      char *reply, size_t reply_sz)
 {
@@ -192,8 +227,10 @@ int deneb_pause_resume_control_resume(deneb_print_service_t *svc,
                                svc->paused_r0, svc->paused_nozzle_setpoint);
     svc->resume_policy_index = 0;
     svc->resume_policy_pending = 1;
-    if (deneb_pause_resume_resume(&svc->status, 0) < 0) {
+    svc->status.head_t_set = svc->paused_nozzle_setpoint;
+    if (deneb_pause_resume_resume(&svc->status, 1) < 0) {
         svc->resume_policy_pending = 0;
+        svc->heater_wait.active = 0;
         deneb_command_reply_error(reply, reply_sz, "print is not paused");
         return -1;
     }
@@ -222,12 +259,28 @@ int deneb_pause_resume_control_poll(deneb_print_service_t *svc)
     if (rc < 0 || (had_pause && rc == 0))
         return rc;
 
+    if (svc->resume_policy_pending && !svc->heater_wait.active &&
+        svc->resume_policy_index == 0) {
+        rc = send_resume_heat_command(svc);
+        if (rc <= 0)
+            return rc;
+    }
+
+    if (svc->resume_policy_pending && svc->heater_wait.active) {
+        if (!deneb_heater_wait_ready(&svc->heater_wait, &svc->status)) {
+            deneb_heater_wait_apply_status(&svc->heater_wait, &svc->status);
+            return 0;
+        }
+        svc->heater_wait.active = 0;
+    }
+
     rc = poll_policy(svc, &svc->resume_policy, &svc->resume_policy_index,
                      &svc->resume_policy_pending, "resume cleanup failed");
     if (rc < 0)
         return rc;
     if (rc > 0) {
         svc->paused_position_valid = 0;
+        deneb_job_lifecycle_streaming(&svc->status);
     }
     return rc;
 }
