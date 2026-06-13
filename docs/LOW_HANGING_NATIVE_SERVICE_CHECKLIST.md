@@ -228,9 +228,11 @@ proof.
   → Helper supports all state labels and now samples `deneb-dfsvc` as the
     expected native connector process while separately recording any
     `connector.py` fallback as a regression. CONNECTED stock baseline:
-    connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md). Native PAIRING,
-    CONNECTED, RECONNECTING, DISCONNECT, cloud-print, print-job-action, and
-    rename captures remain outstanding.
+    connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md). Native DISABLED and
+    PAIRING-PIN captures were recorded on hardware on 2026-06-13 with
+    `dist/Deneb_Update_e213599.deneb`; native CONNECTED, RECONNECTING,
+    DISCONNECT, cloud-print, print-job-action, and rename captures remain
+    outstanding.
 - [x] If the measurement helper includes native parsing, summarizing, or audit
   code, run it under Valgrind or sanitizers in host mode.
   → Helper is pure shell script (no native code). Memory-tooling not applicable.
@@ -289,15 +291,21 @@ proof.
   Factory cloud connector lifecycle proven."
   → Bridge is one-shot ZMQ IPC client (zero idle footprint). Connector.py is
     the long-running cloud WebSocket manager. Distinguished in workflow table.
-- [ ] Measurements include at least one run where the connector is not running
+- [x] Measurements include at least one run where the connector is not running
   and one supervised run where it is started by the intended flow.
-  → Partial. Existing baseline shows stock run-with-connector (33.5 MB VSZ) and
-    disabled/unpaired behavior, but current `deneb-dfsvc` pairing/connected
-    measurements still need on-target capture using the helper.
-- [ ] Logs and process samples are saved or summarized in the relevant evidence
+  → 2026-06-13 hardware evidence: `/tmp/df-disabled-e213599-v3.summary`
+    recorded disabled/unpaired with `deneb-dfsvc pid=0`, `connector.py pid=0`,
+    and bridge `state=disconnected`. `/tmp/df-pairing-e213599.summary`
+    recorded touchscreen-initiated pairing with bridge
+    `state=enter_pin pin=869281`, `deneb-dfsvc` PID `13157`, VSZ `3744 KB`,
+    RSS `3032 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`.
+- [x] Logs and process samples are saved or summarized in the relevant evidence
   doc.
-  → Partial. The evidence doc records the classification and baseline numbers;
-    remaining pairing, reconnecting, and disconnect samples still need capture.
+  → `docs/DF_LIFECYCLE_CLASSIFICATION.md` summarizes the disabled and pairing
+    samples, including the native syslog evidence for connection request,
+    connection response, and pairing PIN receipt. Remaining connected,
+    reconnecting, disconnect, remote print, print-job action, and rename
+    samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -306,21 +314,27 @@ proof.
     Remaining work is live cloud proof, not deciding whether to port.
 - [ ] Active pairing and connected states run without `connector.py`,
   `/usr/bin/python3 connector.py`, or `stardustWebsocketProtocol` imports.
+  → Partial. Pairing-PIN state is proven without `connector.py`; connected
+  steady-state is still open.
 - [ ] Digital Factory pairing, status, reconnect, and authenticated disconnect
   behavior are validated on target against the native connector.
+  → Partial. Touchscreen status/connect reached `state=enter_pin pin=869281`
+  through native `deneb-dfsvc`. Cloud account completion, reconnect, and
+  authenticated disconnect remain open.
 - [ ] The existing native bridge/API command path remains the shared control
   boundary for UI-side status/connect/disconnect unless a tested replacement
   deliberately consolidates it with the native connector.
 
 ### Suggested Validation
 
-- [ ] Collect `/etc/init.d/digitalfactory enabled`, service status, process list,
+- [x] Collect `/etc/init.d/digitalfactory enabled`, service status, process list,
   and relevant `/var/log/ultimaker/digitalfactory.log*` lines before starting.
   → Use `tools/deneb-df-measure.sh --state disabled` to capture baseline.
-- [ ] Use the Deneb Digital Factory screen to request status/pairing.
+- [x] Use the Deneb Digital Factory screen to request status/pairing.
   → Use `tools/deneb-df-measure.sh --state pairing` or `--state connected`.
 - [ ] Collect process and log samples during pairing and after disconnect.
-  → Use `tools/deneb-df-measure.sh --state disconnect`.
+  → Pairing-PIN sample captured on 2026-06-13; disconnect sample still open.
+    Use `tools/deneb-df-measure.sh --state disconnect`.
 - [ ] Confirm local-first Deneb workflows remain usable when the connector is
   stopped.
   → Verified by analysis: all local-first workflows (printing, USB, language,

@@ -163,20 +163,20 @@ find_native_connector_pids() {
 
 # Locate stock connector.py process(es). Returns space-separated PIDs.
 find_stock_connector_pids() {
-    # Match connector.py (the stock Digital Factory cloud connector fallback)
-    local pids
-    pids="$(pgrep -f 'connector\.py' 2>/dev/null || true)"
-    if [ -z "$pids" ]; then
-        # Fallback: scan /proc for python processes with connector in cmdline
-        for pd in /proc/[0-9]*/cmdline; do
-            if grep -qa 'connector\.py' "$pd" 2>/dev/null; then
-                local pid
+    # Match stock Python connector.py only. A broad pgrep can match this helper
+    # or the SSH shell command when the measurement command mentions connector.py.
+    local pids=""
+    local pd cmdline pid
+    for pd in /proc/[0-9]*/cmdline; do
+        cmdline="$(tr '\0' ' ' < "$pd" 2>/dev/null || true)"
+        case "$cmdline" in
+            *python*connector.py*|*python*connector.py[[:space:]]*)
                 pid="${pd#/proc/}"
                 pid="${pid%/cmdline}"
                 pids="$pids $pid"
-            fi
-        done
-    fi
+                ;;
+        esac
+    done
     echo "$pids" | tr -s ' ' | sed 's/^ //'
 }
 
@@ -288,15 +288,22 @@ capture_service_state() {
     local ts
     ts="$(capture_datetime)"
 
-    local enabled=0 running=0
+    local enabled=0 init_running=0 process_running=0
     /etc/init.d/digitalfactory enabled 2>/dev/null && enabled=1
-    /etc/init.d/digitalfactory running 2>/dev/null && running=1
+    /etc/init.d/digitalfactory running 2>/dev/null && init_running=1
+
+    # Some stock init scripts report a successful "running" command even when
+    # no connector process exists. Treat process presence as the lifecycle truth
+    # and keep the raw init return as a separate diagnostic.
+    if [ -n "$(find_native_connector_pids)" ] || [ -n "$(find_stock_connector_pids)" ]; then
+        process_running=1
+    fi
 
     local bridge_status=""
     bridge_status="$(deneb-api digital-factory status --timeout 10 2>>"$LOG" || true)"
 
-    printf '%s state=%s df_enabled=%d df_running=%d bridge_status="%s"\n' \
-        "$ts" "$state_label" "$enabled" "$running" "$bridge_status"
+    printf '%s state=%s df_enabled=%d df_running=%d df_init_running=%d bridge_status="%s"\n' \
+        "$ts" "$state_label" "$enabled" "$process_running" "$init_running" "$bridge_status"
 }
 
 # Main measurement capture
