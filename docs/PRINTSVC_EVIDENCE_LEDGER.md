@@ -20,7 +20,7 @@ long active-soak proof.
 | Heat/preheat Stop safety | Proven for bounded native smoke | `/tmp/deneb-native-heat-fixed2.summary`; `/tmp/deneb-cd4724a-preheat55.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Low-temperature generated proof. |
 | Active abort cleanup | Proven for bounded native/generated paths | `/tmp/deneb-printsvc-smoke-status-fix-active.summary`; `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Shows native `printing` -> `aborting` -> `idle`; does not prove every slicer/client path. |
 | Pause/resume | Proven for bounded native representative fixture and 2026-06-13 touchscreen run on package `072edbc` | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; user-supervised target observation: pause during print, Resume reasserted nozzle heat, waited for temperature, returned to position, and continued print | Cura-started pause/resume still needs its own proof class, but the cold-resume target blocker is closed for the touchscreen path. |
-| Print-start prepare sequence | Safe start observed; optimized no-second-Z-home path is host-tested, target proof pending | 2026-06-13 user-supervised target observation after stock-derived prepare/startup deployment; current host tests for `job_streamer` prepare ordering | Previous startup homes XYZ, moves to prepare position, then runs a second Z home. Current code removes the normal-print `M18 Z` release and second `G28 Z`; supervised target proof is still required. |
+| Print-start prepare sequence | Proven for supervised target startup on package `6cd72899` | 2026-06-13 user-supervised target observation after package `6cd72899`: no double Z home; print started as expected. Host tests cover `job_streamer` prepare ordering. | Native removes the normal-print `M18 Z` release and second `G28 Z`; representative slicer/client classes still have their own open proof gates. |
 | Generated cluster upload/start/abort | Proven through cluster API | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Desktop Cura client behavior remains open. |
 | Completion flow drain | Proven for bounded native completion | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Representative long slicer completion remains open. |
 | Stock/native bounded throughput | Proven within accepted floor | Stock `/tmp/deneb-precisewait-stock-resource.summary`: 1401 bytes / 29 s / 48 B/s. Native `/tmp/deneb-precisewait-native-resource.summary`: 1401 bytes / 34 s / 41 B/s. | Comparator enforces the current 85% bounded-fixture floor. |
@@ -70,8 +70,6 @@ hardware:
   pending-job behavior.
 - Digital Factory job lifecycle behavior, not only bridge status reachability.
 - Representative real slicer output for completion, pause/resume, and abort.
-- Target proof for the optimized print-start prepare sequence with no second Z
-  home.
 - Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and
   diagnostics-log behavior.
 
