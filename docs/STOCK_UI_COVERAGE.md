@@ -94,8 +94,12 @@ Deneb now exposes:
    native connector service. The current native Digital Factory screen exposes a
    `Connect` action that starts the service and requests pairing, plus a guarded
    two-tap `Disconnect` action when the status says a disconnectable cloud state
-   is active. Live cloud pairing PIN, connected/reconnecting, remote print,
-   print-job action, rename, and disconnect proof remains open.
+   is active. Live cloud pairing PIN, connected/reconnecting, rename, and
+   disconnect are now covered by 2026-06-13 hardware evidence. Remote print
+   request receipt is covered, including a cloud-side material mismatch warning,
+   but the printer-side job did not queue because the native connector reported
+   `download_failed`. Successful remote print and print-job action proof remains
+   open.
 
 7. Print-state controls
 

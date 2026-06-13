@@ -142,7 +142,7 @@ with static C binaries:
 | Component | Current status | Evidence boundary |
 |-----------|----------------|-------------------|
 | `print_service.py` | Native implementation/package path exists as experimental `deneb-printsvc` | Strong bounded hardware, host test, package, and no-Python route evidence exists in `docs/PRINTSVC_EVIDENCE_LEDGER.md`. Promotion is still blocked by LCD/Web/Cura/Digital Factory client workflows, representative slicer output, and long active-soak memory behavior. |
-| `connector.py` | Native implementation/package path exists as `deneb-dfsvc` | Commit `1415245` adds the native connector, init replacement, package staging, and native audit gates. `docs/DF_LIFECYCLE_CLASSIFICATION.md` keeps live cloud validation open for pairing, connected, reconnecting, disconnect, remote print, print-job action, and rename states. |
+| `connector.py` | Native implementation/package path exists as `deneb-dfsvc` | Commit `1415245` adds the native connector, init replacement, package staging, and native audit gates. `docs/DF_LIFECYCLE_CLASSIFICATION.md` records 2026-06-13 hardware proof for pairing PIN, connected steady-state, reconnect after controlled cloud interruption, touchscreen disconnect, printer rename, and remote print request receipt without stock `connector.py`. Successful remote print still fails at native `download_failed`, and print-job action proof remains open. |
 | `coordinator.py` | Not replaced | Still the main remaining stock Python backend service. Any replacement is a larger clean-room service project and should not be grouped with low-hanging cleanup. |
 | `wificonnect/server.py` | Avoided for Deneb setup | Deneb uses USB `wifi.txt` import and disables/hides stock AP/captive-portal paths where applicable. This is containment/avoidance, not deletion from read-only firmware. |
 
@@ -167,8 +167,10 @@ de-Python service-replacement work, not a feature-removal task.
   Digital Factory screen when the user begins pairing
 - [x] Stock `connector.py` Digital Factory cloud connector has a Deneb-owned C
   replacement path (`deneb-dfsvc`) in source, package staging, and native init
-  replacement. Live cloud lifecycle validation remains open before calling this
-  fully proven.
+  replacement. Pairing, connected, reconnecting, disconnect, rename, and failed
+  remote-print request receipt now have live hardware evidence without a stock
+  Python connector fallback. Successful remote print and print-job actions
+  remain open before calling this fully proven.
 - [x] WiFi setup replacement: USB `wifi.txt` import, stock AP/captive portal disabled by installer
 - [x] Lightweight web runtime bundled into Deneb update releases: `lighttpd`,
   `deneb-api`, static web UI, and `deneb-mdns`

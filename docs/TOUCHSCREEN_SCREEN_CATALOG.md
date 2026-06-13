@@ -49,7 +49,7 @@ on a 320x240 resistive touchscreen, so several screens use vertical scrolling.
 | Language | <img src="touchscreen-screens/language.png" width="160" alt="Language screen"> | Runtime language selector. | Switch between English, Dutch, German, French, Simplified Chinese, Pirate English, and L33T English. | Generated font subsets must be refreshed when locale strings add new non-ASCII glyphs. |
 | Nozzle Size | <img src="touchscreen-screens/nozzle-size.png" width="160" alt="Nozzle Size screen"> | Installed nozzle size selection. | Choose the configured nozzle diameter. | Future work can connect this more visibly to print compatibility checks. |
 | Network | <img src="touchscreen-screens/network.png" width="160" alt="Network screen"> | Network status and USB-based configuration. | Toggle WiFi, import WiFi settings from USB, import Ethernet settings from USB, reset Ethernet to DHCP. | Host screenshot uses deterministic placeholder network values; real-device docs should include WiFi and Ethernet variants. |
-| Digital Factory | <img src="touchscreen-screens/digital-factory.png" width="160" alt="Digital Factory screen"> | Digital Factory connection controls backed by `deneb-api digital-factory` and native `deneb-dfsvc`. | Start setup with Connect, show native bridge/service status when available, and expose guarded Disconnect only for disconnectable states. | Host screenshot shows the stub default Connect/disabled Disconnect state. Pairing PIN, connected, reconnecting, disconnecting, service-error, and cloud-print states need target/cloud captures. |
+| Digital Factory | <img src="touchscreen-screens/digital-factory.png" width="160" alt="Digital Factory screen"> | Digital Factory connection controls backed by `deneb-api digital-factory` and native `deneb-dfsvc`. | Start setup with Connect, show native bridge/service status when available, and expose guarded Disconnect only for disconnectable states. | Host screenshot shows the stub default Connect/disabled Disconnect state and is outdated for the live pairing/connected/reconnecting/disconnect flows. Hardware evidence now covers those flows plus printer rename; fresh screenshots are still needed for pairing PIN, connected, reconnecting, disconnecting, service-error, material-mismatch/cloud-print, and print-job-action screens. |
 | Frame Lighting | <img src="touchscreen-screens/frame-lighting.png" width="160" alt="Frame Lighting screen"> | Frame light control. | Turn frame lighting on or off. | Simple enough today; future brightness control would need more space. |
 | Factory Reset | <img src="touchscreen-screens/factory-reset.png" width="160" alt="Factory Reset screen"> | Local settings reset confirmation. | Tap once, then tap again to erase local printer settings and reboot. | Keep the two-step confirmation; this is intentionally destructive. |
 | About Deneb | <img src="touchscreen-screens/about.png" width="160" alt="About Deneb screen"> | Version, license, repository, and printer identity reference. | Review Deneb version, stock base, project URL, printer ID, and certifications. | Useful for support screenshots. The host-rendered version includes `-dirty` when local changes are present. |
@@ -61,6 +61,8 @@ on a 320x240 resistive touchscreen, so several screens use vertical scrolling.
 - USB file browser populated with real print files.
 - Material workflow while the printer is busy or actively moving material.
 - Network screen with WiFi connected, WiFi disabled, and static Ethernet.
-- Digital Factory pairing PIN, paired, reconnecting, disconnecting,
-  service-error, cloud-print, print-job-action, and printer-rename states.
+- Digital Factory screenshot refresh for pairing PIN, paired, reconnecting,
+  disconnecting, service-error, material-mismatch/cloud-print, and
+  print-job-action states. Printer rename has behavior evidence but no distinct
+  touchscreen state.
 - Real ER-code examples tied to known recovery instructions.

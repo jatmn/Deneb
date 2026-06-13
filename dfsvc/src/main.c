@@ -1810,11 +1810,13 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     char download_url[512] = "";
     char file_name[192];
     char path[256];
-    char api_body[1024];
+    char api_body[1024] = "";
     char response[512];
     char safe_job_id[192];
     const char *status = "failed";
+    const char *reason = "unknown";
     int code = -1;
+    int download_rc = -1;
 
     json_str_value(msg, "job_id", job_id, sizeof(job_id));
     json_str_value(msg, "job_instance_uuid", job_instance_uuid,
@@ -1826,15 +1828,41 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     snprintf(path, sizeof(path), "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
              (long long)time(NULL), file_name);
 
-    if (df_printer_is_idle() &&
-        job_id[0] && job_name[0] && df_is_guid(job_instance_uuid) &&
-        download_url[0] &&
-        download_file_with_wget(download_url, path) == 0) {
-        code = local_api_upload_file(path, file_name, job_instance_uuid, job_id,
-                                     api_body, sizeof(api_body));
-        if (code >= 200 && code < 300)
-            status = "queued";
+    if (!df_printer_is_idle()) {
+        reason = "printer_not_idle";
+    } else if (!job_id[0]) {
+        reason = "missing_job_id";
+    } else if (!job_name[0]) {
+        reason = "missing_job_name";
+    } else if (!job_instance_uuid[0]) {
+        reason = "missing_job_instance_uuid";
+    } else if (!df_is_guid(job_instance_uuid)) {
+        reason = "invalid_job_instance_uuid";
+    } else if (!download_url[0]) {
+        reason = "missing_download_url";
+    } else {
+        download_rc = download_file_with_wget(download_url, path);
+        if (download_rc != 0) {
+            reason = "download_failed";
+        } else {
+            code = local_api_upload_file(path, file_name, job_instance_uuid,
+                                         job_id, api_body, sizeof(api_body));
+            if (code >= 200 && code < 300) {
+                reason = "queued";
+                status = "queued";
+            } else {
+                reason = "local_upload_failed";
+            }
+        }
     }
+    logf_line("info",
+              "Digital Factory print request result status=%s reason=%s "
+              "api_code=%d download_rc=%d job_id=%d job_name=%d "
+              "job_instance_uuid=%d download_url=%d file=%s api_body=%.180s",
+              status, reason, code, download_rc, job_id[0] ? 1 : 0,
+              job_name[0] ? 1 : 0, job_instance_uuid[0] ? 1 : 0,
+              download_url[0] ? 1 : 0, file_name,
+              api_body[0] ? api_body : "-");
     unlink(path);
     json_escape_string(job_id, safe_job_id, sizeof(safe_job_id));
     snprintf(response, sizeof(response),
