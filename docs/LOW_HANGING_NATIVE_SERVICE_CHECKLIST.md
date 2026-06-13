@@ -229,9 +229,9 @@ proof.
     expected native connector process while separately recording any
     `connector.py` fallback as a regression. CONNECTED stock baseline:
     connector.py ~33.5 MB VSZ (BASELINE_MEASUREMENTS.md). Native DISABLED,
-    PAIRING-PIN, CONNECTED, DISCONNECT, and RECONNECTING captures were recorded
-    on hardware on 2026-06-13 with `dist/Deneb_Update_e213599.deneb`. Native
-    cloud-print, print-job-action, and rename captures remain outstanding.
+    PAIRING-PIN, CONNECTED, DISCONNECT, RECONNECTING, and RENAME captures were
+    recorded on hardware on 2026-06-13 with `dist/Deneb_Update_e213599.deneb`.
+    Native cloud-print and print-job-action captures remain outstanding.
 - [x] If the measurement helper includes native parsing, summarizing, or audit
   code, run it under Valgrind or sanitizers in host mode.
   → Helper is pure shell script (no native code). Memory-tooling not applicable.
@@ -305,8 +305,8 @@ proof.
     connection response, pairing PIN receipt, cloud account confirmation, and
     connected status responses, controlled cloud interruption, reconnect
     recovery, disconnect request handling, service stop, and cleared pairing
-    state. Remaining remote print, print-job action, and rename samples still
-    need capture.
+    state, and printer rename request handling. Remaining remote print and
+    print-job action samples still need capture.
 - [x] Any new native measurement helper has clean memory-tool evidence or a
   documented reason why host memory tooling is not practical.
   → Helper is pure shell. Documented in evidence doc.
@@ -351,12 +351,13 @@ proof.
   connector grounded in observed contracts and measurements; do not copy stock
   Python implementation into Deneb native code or guess at cloud protocol
   behavior.
-- Do not mark Digital Factory fully de-Pythoned until on-target remote print,
-  print-job action, and rename states are validated with `deneb-dfsvc` and no
-  stock `connector.py` fallback.
+- Do not mark Digital Factory fully de-Pythoned until on-target remote print and
+  print-job action states are validated with `deneb-dfsvc` and no stock
+  `connector.py` fallback.
   Disabled/unpaired, pairing-PIN, and connected steady-state are now covered by
   2026-06-13 hardware evidence. Reconnect after controlled cloud interruption
-  and touchscreen disconnect are covered by the same run.
+  and touchscreen disconnect are covered by the same run. Printer rename is
+  also covered by that run.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 

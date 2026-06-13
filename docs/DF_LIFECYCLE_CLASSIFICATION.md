@@ -18,7 +18,7 @@ This closes the source/package/install side of the Digital Factory C port.
 On-target evidence now proves the disabled/unpaired baseline, the live
 pairing-PIN flow, and connected steady-state through `deneb-dfsvc` without
 stock `connector.py`. The remaining blockers before marking the lifecycle fully
-proven are remote print, print-job action, and printer rename validation.
+proven are remote print and print-job action validation.
 
 ## Workflow Analysis: Native Bridge vs Stock Connector
 
@@ -134,19 +134,20 @@ Captured on hardware on 2026-06-13 after installing
 | Connected steady-state | User reported touchscreen changed to connected; `/tmp/df-connected-e213599.summary` and `/tmp/df-connected-e213599-60s.summary` | `deneb-api digital-factory status --timeout 20` returned `state=connected`. `deneb-dfsvc` stayed on PID `13157`; immediate connected sample was VSZ `3744 KB`, RSS `3044 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Settled sample about 60 seconds later was VSZ `3744 KB`, RSS `3052 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Syslog showed native cloud account confirmation, then repeated status requests with `state=2 pin=0` and native status responses. |
 | Disconnect | User reported touchscreen sequence: confirm prompt, "disconnect requested", then "disconnected"; `/tmp/df-disconnect-e213599.summary` | `deneb-api digital-factory status --timeout 20` returned `state=disconnected`. The helper recorded `df_enabled=0`, process-backed `df_running=0`, `deneb-dfsvc pid=0`, and `connector.py pid=0`. The Digital Factory `cluster_id` was absent from UCI after disconnect, and syslog showed `digital_factory action=disconnect result=state=disconnected` followed by `deneb-dfsvc: info: stopped`. Raw `df_init_running=1` remains only the known init-script diagnostic. |
 | Reconnect after cloud interruption | `/tmp/df-reconnect-baseline-e213599.summary` and `/tmp/df-reconnect-recovery-e213599.summary` | Started from `state=connected` with native `deneb-dfsvc` PID `17025`, VSZ `3720 KB`, RSS `3024 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. A temporary iptables block of the active Digital Factory cloud peer `34.49.252.186` changed bridge status to `state=reconnecting`; `deneb-dfsvc` remained running and stock Python stayed absent. After removing the temporary rules, bridge status returned to `state=connected` with the same PID `17025`, VSZ `3728 KB`, RSS `3036 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Follow-up verification showed no cloud-block rules left behind. |
+| Printer rename | User reported a rename in Digital Factory; `/tmp/df-rename-e213599.summary` | `deneb-api digital-factory status --timeout 20` stayed `state=connected`. `deneb-dfsvc` stayed on PID `17025` with VSZ `3776 KB`, RSS `3068 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. UCI showed `ultimaker.option.printer_name='Ultimaker-2C-test'`, and `/cluster-api/v1/printers` reported `friendly_name:"Ultimaker-2C-test"`. Syslog showed native `deneb-dfsvc` receiving `printer_action_request` messages and sending `printer_action_response` messages at the rename time, followed by normal connected status responses. |
 
 These samples prove the native service starts from the intended touchscreen
 pairing flow, reaches the PIN state, completes cloud account confirmation, and
 remains connected without a stock Python connector fallback. They also prove
 the touchscreen disconnect flow clears pairing state, disables/stops the native
 connector, and leaves stock `connector.py` absent. They do **not** prove
-remote print, print-job action, or rename behavior.
+remote print or print-job action behavior.
 
 ## Classification Decision
 
 | Option | Verdict | Rationale |
 |--------|---------|-----------|
-| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, and touchscreen disconnect run through `deneb-dfsvc` without shipping or starting the stock Python connector. Remote workflows still need target proof. |
+| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, and printer rename run through `deneb-dfsvc` without shipping or starting the stock Python connector. Remote print/job-action workflows still need target proof. |
 | Lazy start/stop | **Implemented** | Installer disables at boot when unpaired; DF screen controls enable/start/stop. The native bridge (`deneb-api digital-factory`) is C code, and active cloud use starts the native service. |
 | Documentation only | Insufficient | Documentation records the boundary but does not remove Python from active Digital Factory use. |
 | Leave stock behavior | Insufficient | Gating reduces idle/local-first footprint, but a paired/active connector still depends on stock Python. |
@@ -170,8 +171,8 @@ Track the remaining active-use de-Python work as target/cloud proof, not as a
 missing package implementation. The native connector must be validated without
 copying vendor Python into Deneb C code.
 
-The remaining on-target measurements (cloud print, print-job action, printer
-rename) should be collected via
+The remaining on-target measurements (cloud print and print-job action) should
+be collected via
 `tools/deneb-df-measure.sh --state <STATE>` before closing or promoting the
 native connector, because those samples define whether the current active
 connector behavior and cost are acceptable.
@@ -213,7 +214,7 @@ cloud controls. The implemented package work is:
   the native service only after equivalent behavior is proven.
 - Add source/package/install audits that fail when Deneb starts or ships a
   Python Digital Factory connector fallback.
-- Validate on target in cloud print, print-job action, and printer rename states
-  before marking Digital Factory de-Python complete. Disabled/unpaired,
-  pairing-PIN, connected steady-state, reconnect after cloud interruption, and
-  touchscreen disconnect are now covered by 2026-06-13 hardware evidence.
+- Validate on target in cloud print and print-job action states before marking
+  Digital Factory de-Python complete. Disabled/unpaired, pairing-PIN, connected
+  steady-state, reconnect after cloud interruption, touchscreen disconnect, and
+  printer rename are now covered by 2026-06-13 hardware evidence.
