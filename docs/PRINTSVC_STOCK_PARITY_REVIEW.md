@@ -65,9 +65,9 @@ different for safety/resource reasons.
   package `ff49e86b`.
 - LCD UI and Web UI hands-on proof against native service without Python
   fallback or stale print state.
-- Desktop Cura client proof for Continue-after-restart recovery, progress/time
-  reporting, and broader failure modes beyond the 2026-06-14
-  discovery/upload/mismatch/completion/pause/resume/cancel and pending Cancel
+- Desktop Cura client proof for progress/time reporting and broader failure
+  modes beyond the 2026-06-14
+  discovery/upload/mismatch/completion/pause/resume/cancel and pending recovery
   after restart proof.
 - Digital Factory lifecycle proof beyond observe-only bridge status.
 - Multi-hour active heat/motion/job soak evidence that explains or eliminates
