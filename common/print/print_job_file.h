@@ -45,6 +45,13 @@ int deneb_print_job_file_metadata_extract_value(const char *buf,
                                                 size_t out_sz);
 int deneb_print_job_file_metadata_load(const char *path,
                                        deneb_print_job_file_metadata_t *meta);
+int deneb_print_job_file_has_extension(const char *name, const char *extension);
+int deneb_print_job_file_replace_extension(const char *name,
+                                           const char *extension,
+                                           char *out,
+                                           size_t out_sz);
+int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
+                                                 const char *gcode_path);
 int deneb_print_job_file_sanitize_name(const char *name, char *out,
                                        size_t out_sz);
 int deneb_print_job_file_spool_path(const char *name, char *out,

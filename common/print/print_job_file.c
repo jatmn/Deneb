@@ -8,7 +8,9 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta)
@@ -136,6 +138,98 @@ int deneb_print_job_file_metadata_load(const char *path,
         found = 1;
 
     return found ? 0 : -1;
+}
+
+int deneb_print_job_file_has_extension(const char *name, const char *extension)
+{
+    size_t name_len;
+    size_t extension_len;
+
+    if (!name || !extension)
+        return 0;
+    name_len = strlen(name);
+    extension_len = strlen(extension);
+    return name_len >= extension_len &&
+           strcasecmp(name + name_len - extension_len, extension) == 0;
+}
+
+int deneb_print_job_file_replace_extension(const char *name,
+                                           const char *extension,
+                                           char *out,
+                                           size_t out_sz)
+{
+    const char *dot;
+    size_t base_len;
+
+    if (!name || !*name || !extension || !out || out_sz == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    dot = strrchr(name, '.');
+    base_len = dot ? (size_t)(dot - name) : strlen(name);
+    if (base_len == 0 || base_len + strlen(extension) + 1 > out_sz) {
+        errno = ENAMETOOLONG;
+        out[0] = '\0';
+        return -1;
+    }
+
+    memcpy(out, name, base_len);
+    out[base_len] = '\0';
+    strncat(out, extension, out_sz - strlen(out) - 1);
+    return 0;
+}
+
+static int extract_ufp_member(const char *ufp_path, const char *member,
+                              const char *gcode_path)
+{
+    int out_fd;
+    int status = 0;
+    pid_t pid;
+    struct stat st;
+
+    out_fd = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out_fd < 0)
+        return -1;
+
+    pid = fork();
+    if (pid < 0) {
+        close(out_fd);
+        return -1;
+    }
+    if (pid == 0) {
+        if (dup2(out_fd, STDOUT_FILENO) < 0)
+            _exit(126);
+        close(out_fd);
+        execlp("unzip", "unzip", "-p", ufp_path, member, (char *)NULL);
+        _exit(127);
+    }
+    close(out_fd);
+
+    if (waitpid(pid, &status, 0) < 0)
+        return -1;
+    if (stat(gcode_path, &st) == 0 && st.st_size > 0)
+        return 0;
+    unlink(gcode_path);
+    if (!WIFEXITED(status))
+        return -2;
+    return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
+}
+
+int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
+                                                 const char *gcode_path)
+{
+    int rc;
+
+    if (!ufp_path || !*ufp_path || !gcode_path || !*gcode_path) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path);
+    if (rc == 0)
+        return 0;
+    return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path);
 }
 
 int deneb_print_job_file_sanitize_name(const char *name, char *out,

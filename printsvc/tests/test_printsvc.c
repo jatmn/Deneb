@@ -4042,6 +4042,11 @@ static void test_print_job_file_metadata(void)
                   DENEB_PRINT_JOB_SPOOL_DIR "/upload.gcode") == 0);
     assert(deneb_print_job_file_upload_storage_plan(
                "cube.gcode", NULL) != 0);
+    assert(deneb_print_job_file_has_extension("print.UFP", ".ufp"));
+    assert(!deneb_print_job_file_has_extension("print.gcode", ".ufp"));
+    assert(deneb_print_job_file_replace_extension(
+               "print.UFP", ".gcode", safe, sizeof(safe)) == 0);
+    assert(strcmp(safe, "print.gcode") == 0);
     assert(deneb_print_job_file_metadata_extract_value(
                "; material_guid = target-guid\n", "material_guid",
                value, sizeof(value)) == 0);

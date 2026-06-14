@@ -343,6 +343,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     char job_instance_uuid[96] = "";
     char cloud_job_id[96] = "";
     char owner[32] = "";
+    int ufp_normalized = 0;
     deneb_print_job_upload_storage_plan_t storage;
 
     if (req->multipart_boundary[0] &&
@@ -370,6 +371,40 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         resp->status_code = 400;
         api_http_set_body_str(resp, "{\"message\":\"No file field in upload\"}");
         return;
+    }
+
+    if (deneb_print_job_file_has_extension(filename, ".ufp")) {
+        char extracted_path[] = "/tmp/deneb-ufp-model-XXXXXX";
+        char extracted_name[sizeof(filename)];
+        int fd = mkstemp(extracted_path);
+
+        if (fd >= 0)
+            close(fd);
+        if (fd < 0 ||
+            deneb_print_job_file_replace_extension(
+                filename, ".gcode", extracted_name,
+                sizeof(extracted_name)) < 0 ||
+            deneb_print_job_file_extract_ufp_model_gcode(
+                gcode_path, extracted_path) < 0) {
+            if (fd >= 0)
+                unlink(extracted_path);
+            fprintf(stderr,
+                    "deneb-api: print upload rejected: failed to extract UFP model.gcode from %s\n",
+                    filename);
+            unlink(gcode_path);
+            resp->status_code = 400;
+            api_http_set_body_str(resp,
+                                  "{\"message\":\"Failed to extract UFP model.gcode\"}");
+            return;
+        }
+
+        unlink(gcode_path);
+        snprintf(gcode_path, sizeof(gcode_path), "%s", extracted_path);
+        snprintf(filename, sizeof(filename), "%s", extracted_name);
+        ufp_normalized = 1;
+        fprintf(stderr,
+                "deneb-api: normalized UFP upload to extracted G-code %s\n",
+                filename);
     }
 
     if (deneb_print_job_file_upload_storage_plan(filename, &storage) < 0) {
@@ -412,7 +447,9 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         return;
     }
 
-    fprintf(stderr, "deneb-api: print file saved to %s\n", storage.dest_path);
+    fprintf(stderr, "deneb-api: print file saved to %s%s\n",
+            storage.dest_path,
+            ufp_normalized ? " (extracted from UFP)" : "");
 
     fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n",
             storage.filename, storage.dest_path);
