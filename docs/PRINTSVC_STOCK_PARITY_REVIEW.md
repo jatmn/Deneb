@@ -59,13 +59,15 @@ different for safety/resource reasons.
 
 ## Remaining proof after source review
 
-- Representative Cura/slicer geometry for abort, pause/resume, progress/time
-  reporting, and any remaining touchscreen Stop park/home edge cases.
+- Representative Cura/slicer geometry for progress/time reporting and any
+  remaining touchscreen Stop park/home edge cases. Cura-local completion,
+  pause/resume, and cancel/abort were proven for the tested Cura 5.13 job on
+  package `ff49e86b`.
 - LCD UI and Web UI hands-on proof against native service without Python
   fallback or stale print state.
-- Desktop Cura client proof for pause/resume, abort/delete, stale-state
-  recovery, progress/time reporting, and broader failure modes beyond the
-  2026-06-14 discovery/upload/mismatch/completion proof.
+- Desktop Cura client proof for stale-state recovery, progress/time reporting,
+  and broader failure modes beyond the 2026-06-14
+  discovery/upload/mismatch/completion/pause/resume/cancel proof.
 - Digital Factory lifecycle proof beyond observe-only bridge status.
 - Multi-hour active heat/motion/job soak evidence that explains or eliminates
   the remaining RSS/private-memory staircase.
