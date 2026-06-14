@@ -209,9 +209,10 @@ native service remains experimental until these pass:
 - LCD hands-on queued/start/pause/resume/abort/completion/stale-state workflow,
   including fixed-package proof that Resume reheats after Pause cooldown.
 - Web UI hands-on status/control workflow.
-- Desktop Cura stale-state recovery, progress/time reporting, and broader
-  failure-mode behavior after the 2026-06-14 Cura-local
-  discovery/upload/start/pause/resume/cancel proof.
+- Desktop Cura Continue-after-restart recovery, progress/time reporting, and
+  broader failure-mode behavior after the 2026-06-14 Cura-local
+  discovery/upload/start/pause/resume/cancel and pending Cancel-after-restart
+  proof.
 - Digital Factory job lifecycle.
 - Representative real slicer output.
 - Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and

@@ -73,10 +73,10 @@ Current Cura sends UM2+ Connect jobs as `.ufp` archives. Deneb extracts
 `3D/model.gcode` before native registration so the material/nozzle header is
 validated before any motion starts. A 2026-06-14 Cura 5.13 local-network test on
 package `ff49e86b` proved this path for material-mismatch prompt, Cancel,
-Continue/start, completion, pause/resume, and cancel/abort back to idle. The
-first pre-fix Cura-local `.ufp` upload is retained as negative evidence: the raw
-archive reached native print registration and produced a Marlin payload ASCII
-error.
+Continue/start, completion, pause/resume, cancel/abort back to idle, and pending
+mismatch Cancel after UI/API/print-service restarts. The first pre-fix
+Cura-local `.ufp` upload is retained as negative evidence: the raw archive
+reached native print registration and produced a Marlin payload ASCII error.
 
 Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. `deneb-api` assigns a native pending-job tracker,
@@ -98,11 +98,12 @@ install flow, then restart Cura before testing discovery.
 
 ## Remaining Release Blockers
 
-- Validate stale-state recovery and status/progress updates against current
-  Cura builds on real hardware. Discovery, upload, material-mismatch prompt,
-  Cancel, Continue/start, completion, pause/resume, and cancel/abort back to
-  idle are covered by the 2026-06-14 Cura 5.13 local-network run on package
-  `ff49e86b`.
+- Validate Continue-after-restart recovery, broader stale-state recovery, and
+  status/progress updates against current Cura builds on real hardware.
+  Discovery, upload, material-mismatch prompt, Cancel, Continue/start,
+  completion, pause/resume, cancel/abort back to idle, and pending mismatch
+  Cancel after UI/API/print-service restarts are covered by the 2026-06-14 Cura
+  5.13 local-network run on package `ff49e86b`.
 - Review stock firmware progress/time calculation and implement parity. The
   Cura-local completion stayed at `progress:0.0`, `time_total:0`, and
   `time_elapsed:0`.
