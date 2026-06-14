@@ -146,11 +146,12 @@ printer rename. They also prove the native connector receives remote print
 requests without falling back to Python. They now prove remote print download,
 UFP extraction, local queue registration, material-mismatch user-action gating,
 Cancel cleanup, Continue/start, Pause, Resume, Stop, and no-double-Z startup
-through the Digital Factory material-mismatch route. The 2026-06-14 completion
-run proves the representative file can finish, but it also exposed a native
-finish-park/completion-status bug: the head/bed stayed at the final print
-position and history recorded `stopped`. They do **not** yet prove a complete
-Digital Factory remote-action lifecycle through completion. The
+through the Digital Factory material-mismatch route. The first 2026-06-14
+completion run proved the representative file can finish, but it also exposed a
+native finish-park/completion-status bug: the head/bed stayed at the final print
+position and history recorded `stopped`. Package `022077b9` fixed that path,
+and the follow-up supervised Digital Factory completion completed with expected
+end actions. The
 original Continue/start sample exposed a physical safety blocker in native
 handling of Cura/stock prepare/startup semantics; host code now implements the
 stock-derived sequence and later target testing started safely. Startup
@@ -161,7 +162,7 @@ longer double homes Z and starts as expected.
 
 | Option | Verdict | Rationale |
 |--------|---------|-----------|
-| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, printer rename, and remote print material-mismatch user-action gating run through `deneb-dfsvc` without shipping or starting the stock Python connector. Native print-service code now implements the stock-derived prepare/startup/`G280` path; the Digital Factory material-mismatch route has target proof for Cancel, Continue/start, Pause, Resume with reheating, Stop, and no-double-Z startup on package `6cd72899`. Completion/full lifecycle still needs closure after target proof of the host-tested finish-park fix. |
+| Native replacement | **Implemented, target validation partially proven** | Digital Factory cloud pairing, connected steady-state, reconnect after cloud interruption, touchscreen disconnect, printer rename, and remote print material-mismatch user-action gating run through `deneb-dfsvc` without shipping or starting the stock Python connector. Native print-service code now implements the stock-derived prepare/startup/`G280` path; the Digital Factory material-mismatch route has target proof for Cancel, Continue/start, Pause, Resume with reheating, Stop, no-double-Z startup, and completion with expected end actions on package `022077b9`. Remaining proof is broader-client and soak coverage, not this route's completion behavior. |
 | Lazy start/stop | **Implemented** | Installer disables at boot when unpaired; DF screen controls enable/start/stop. The native bridge (`deneb-api digital-factory`) is C code, and active cloud use starts the native service. |
 | Documentation only | Insufficient | Documentation records the boundary but does not remove Python from active Digital Factory use. |
 | Leave stock behavior | Insufficient | Gating reduces idle/local-first footprint, but a paired/active connector still depends on stock Python. |
@@ -185,8 +186,8 @@ Track the remaining active-use de-Python work as target/cloud proof, not as a
 missing package implementation. The native connector must be validated without
 copying vendor Python into Deneb C code.
 
-The remaining on-target measurements (Digital Factory completion/full-lifecycle
-state after the now-proven material-mismatch action path, plus touchscreen Stop
+The remaining on-target measurements (broader client coverage beyond the
+now-proven Digital Factory material-mismatch route, plus touchscreen Stop
 stock-derived park/home behavior under any remaining edge cases)
 should be
 collected via
@@ -234,9 +235,9 @@ cloud controls. The implemented package work is:
   the native service only after equivalent behavior is proven.
 - Add source/package/install audits that fail when Deneb starts or ships a
   Python Digital Factory connector fallback.
-- Validate on target in Digital Factory completion/full-lifecycle state and any
-  remaining touchscreen active-print Stop edge cases before marking Digital
-  Factory de-Python complete. Disabled/unpaired,
+- Validate on target in broader client routes and any remaining touchscreen
+  active-print Stop edge cases before marking Digital Factory de-Python
+  complete. Disabled/unpaired,
   pairing-PIN, connected steady-state, reconnect after cloud interruption,
   touchscreen disconnect, printer rename, and remote-print material-mismatch
   wait-user-action plus Cancel are covered by 2026-06-13 hardware evidence.

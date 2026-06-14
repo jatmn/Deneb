@@ -390,8 +390,8 @@ proof.
   position, and continued printing successfully. Package `6cd72899` removed the
   startup double-Z-home by omitting the normal-print Z release/re-home, and
   supervised target testing through the same route confirmed startup no longer
-  double homes Z. Digital Factory completion/full-lifecycle remains an open
-  closure gate.
+  double homes Z. Package `022077b9` fixed the completion finish-park path, and
+  supervised Digital Factory completion finished with expected end actions.
 
 ## 4. Disable Or Bypass Stock Python Compile Work Under Deneb Installs
 
