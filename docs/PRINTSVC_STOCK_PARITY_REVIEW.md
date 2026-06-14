@@ -39,6 +39,10 @@ different for safety/resource reasons.
   expected.
 - Native finish cleanup intentionally keeps active print state until finish
   policy and planner-drain checks complete, preventing premature idle UI.
+  Representative Digital Factory completion on 2026-06-14 showed that Cura end
+  G-code may only cool/retract and leave the head/bed at the final print
+  position, so native finish cleanup now adds stock-derived park/home cleanup
+  after EOF. Target proof of that fixed completion path is still required.
 - Native stream window remains below stock Python's receive-buffer size after
   live hardware showed that a window of 6 caused resend debt and partial
   completion on this old Marlin path. This is a deliberate safety/stability

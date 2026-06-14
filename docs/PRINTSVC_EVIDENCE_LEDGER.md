@@ -22,7 +22,7 @@ long active-soak proof.
 | Pause/resume | Proven for bounded native representative fixture and 2026-06-13 touchscreen run on package `072edbc` | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; user-supervised target observation: pause during print, Resume reasserted nozzle heat, waited for temperature, returned to position, and continued print | Cura-started pause/resume still needs its own proof class, but the cold-resume target blocker is closed for the touchscreen path. |
 | Print-start prepare sequence | Proven for supervised Digital Factory material-mismatch Continue startup on package `6cd72899` | 2026-06-13 user-supervised target observation through the Digital Factory material-mismatch decision path after package `6cd72899`: no double Z home; print started as expected. Host tests cover `job_streamer` prepare ordering. | Native removes the normal-print `M18 Z` release and second `G28 Z`; representative completion/full-lifecycle classes still have their own open proof gates. |
 | Generated cluster upload/start/abort | Proven through cluster API | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Desktop Cura client behavior remains open. |
-| Completion flow drain | Proven for bounded native completion | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Representative long slicer completion remains open. |
+| Completion flow drain | Bounded completion proven; representative Digital Factory completion exposed finish-park bug | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised DF completion on package `6cd72899` finished but left head/bed at the final print position and recorded history as stopped | Host-tested fix adds stock-derived finish cleanup after EOF: `M400`, relative `G1 Z3`, `G28 X Y`, `G28 Z`, heaters/fan off, `M400`, `M84`, and preserves `Complete` status for API/history. Target proof pending. |
 | Stock/native bounded throughput | Proven within accepted floor | Stock `/tmp/deneb-precisewait-stock-resource.summary`: 1401 bytes / 29 s / 48 B/s. Native `/tmp/deneb-precisewait-native-resource.summary`: 1401 bytes / 34 s / 41 B/s. | Comparator enforces the current 85% bounded-fixture floor. |
 | Native driver RSS reduction | Proven in paired completion evidence | Stock final `print_service.py` RSS 14616 KiB; native final `deneb-printsvc` RSS 1648 KiB | Applies to the accepted bounded fixture set. |
 | Strict stock/native resource gate | Proven for current bounded set | `deneb-printsvc-smoke-compare --require-reduction` over the stock/native summaries plus attached lifecycle and stability evidence | Not a substitute for the still-open client and multi-hour gates. |
@@ -70,8 +70,8 @@ hardware:
   pending-job behavior.
 - Digital Factory job lifecycle behavior, not only bridge status reachability.
   Material-mismatch Cancel, Continue/start, Pause, Resume, Stop, and no-double-Z
-  startup are covered by the current supervised route; completion/full lifecycle
-  remains open.
+  startup are covered by the current supervised route. Completion/full lifecycle
+  is open until the host-tested finish-park fix is target-proven.
 - Representative real slicer output for completion, pause/resume, and abort.
 - Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and
   diagnostics-log behavior.

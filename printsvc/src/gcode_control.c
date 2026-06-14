@@ -74,7 +74,8 @@ void deneb_gcode_control_refresh_manual_status(deneb_print_service_t *svc)
     if (!svc || service_has_lifecycle_work(svc) ||
         svc->gcode_queue_active ||
         svc->heater_wait.active ||
-        svc->status.state == DENEB_PRINT_STATE_ERROR)
+        svc->status.state == DENEB_PRINT_STATE_ERROR ||
+        svc->status.state == DENEB_PRINT_STATE_COMPLETE)
         return;
 
     if (heater_targets_active(svc)) {

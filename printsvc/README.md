@@ -72,8 +72,10 @@ identity.
 - Abort uses a stock-derived cleanup sequence with relative wipe/retract,
   `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and `M84`. It keeps status in
   `aborting` until cleanup drains, then clears active identity to idle.
-- Completion keeps the job active until finish cleanup and flow drain complete,
-  then clears active file/source/UUID/heater state.
+- Completion keeps the job active until stock-derived finish cleanup and flow
+  drain complete. Finish cleanup waits for motion, lowers the bed slightly,
+  homes XY/Z, cools heaters/fan, waits again, releases motors, then clears
+  active file/source/UUID/heater state.
 - G-code streaming is bounded and line-oriented; jobs and macros are not loaded
   fully into memory.
 - Deneb-owned macros are resolved from `/etc/deneb/marlindriver/gcode/` and

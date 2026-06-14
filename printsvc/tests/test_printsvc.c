@@ -294,6 +294,13 @@ static void test_gcode_control_policy(void)
     assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
     svc.heater_wait.active = 0;
 
+    svc.status.state = DENEB_PRINT_STATE_COMPLETE;
+    snprintf(svc.status.req, sizeof(svc.status.req), "%s",
+             DENEB_PRINT_REQ_COMPLETE);
+    deneb_gcode_control_refresh_manual_status(&svc);
+    assert(svc.status.state == DENEB_PRINT_STATE_COMPLETE);
+    assert(strcmp(svc.status.req, DENEB_PRINT_REQ_COMPLETE) == 0);
+
     deneb_print_service_init(&svc);
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     assert(deneb_command_parse("GCODE<[\"M140 S0\",\"M104 S0\",\"M105\",\"M105\",\"M105\"]", &cmd) == 0);
@@ -5452,10 +5459,19 @@ static void test_motion_policy(void)
     assert(deneb_motion_policy_contains_xy_home(&policy));
 
     deneb_motion_policy_finish(&policy);
-    assert(policy.count == 2);
+    assert(policy.count == 11);
     assert(strcmp(policy.commands[0], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
-    assert(strcmp(policy.commands[1], "M114") == 0);
-    assert(!deneb_motion_policy_contains_xy_home(&policy));
+    assert(strcmp(policy.commands[1], DENEB_GCODE_RELATIVE_MODE) == 0);
+    assert(strcmp(policy.commands[2], "G1 Z3") == 0);
+    assert(strcmp(policy.commands[3], DENEB_GCODE_ABSOLUTE_MODE) == 0);
+    assert(strcmp(policy.commands[4], "G28 X Y") == 0);
+    assert(strcmp(policy.commands[5], DENEB_GCODE_HOME_Z) == 0);
+    assert(strcmp(policy.commands[6], "M104 S0") == 0);
+    assert(strcmp(policy.commands[7], "M140 S0") == 0);
+    assert(strcmp(policy.commands[8], DENEB_GCODE_FAN_OFF) == 0);
+    assert(strcmp(policy.commands[9], DENEB_GCODE_WAIT_FOR_MOVES) == 0);
+    assert(strcmp(policy.commands[10], DENEB_GCODE_DISABLE_ALL_STEPPERS) == 0);
+    assert(deneb_motion_policy_contains_xy_home(&policy));
 
     deneb_motion_policy_pause(&policy, 120.0f, 80.0f, 12.0f);
     assert(policy.count == 10);

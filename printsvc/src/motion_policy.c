@@ -79,7 +79,16 @@ void deneb_motion_policy_finish(deneb_motion_policy_t *policy)
 {
     policy_clear(policy);
     policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
-    policy_add(policy, "M114");
+    policy_add(policy, DENEB_GCODE_RELATIVE_MODE);
+    policy_add(policy, "G1 Z3");
+    policy_add(policy, DENEB_GCODE_ABSOLUTE_MODE);
+    policy_add(policy, "G28 X Y");
+    policy_add(policy, DENEB_GCODE_HOME_Z);
+    policy_add(policy, "M104 S0");
+    policy_add(policy, "M140 S0");
+    policy_add(policy, DENEB_GCODE_FAN_OFF);
+    policy_add(policy, DENEB_GCODE_WAIT_FOR_MOVES);
+    policy_add(policy, DENEB_GCODE_DISABLE_ALL_STEPPERS);
 }
 
 void deneb_motion_policy_pause(deneb_motion_policy_t *policy,
