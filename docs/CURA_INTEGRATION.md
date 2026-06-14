@@ -16,7 +16,8 @@ id back to Cura's stock UM2+ Connect profile.
 
 ## Discovery Model
 
-Deneb advertises the printer with `type=printer`, `machine=deneb_um2c`, and a
+Deneb advertises the printer with `type=printer`, `machine=deneb_um2c`, a
+`name` formatted as `<configured printer name> (Deneb UM2C)`, and a
 Cura-compatible `firmware_version`. Cura rejects local-network devices whose
 advertised firmware version is older than `4.0.0`, so Deneb defaults the mDNS
 firmware TXT value to `4.0.0`.

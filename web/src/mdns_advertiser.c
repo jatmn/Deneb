@@ -85,10 +85,37 @@ static int read_first_line(const char *path, char *buf, size_t size)
     return buf[0] ? 0 : -1;
 }
 
+static int read_command_line(const char *command, char *buf, size_t size)
+{
+    FILE *f = popen(command, "r");
+    if (!f)
+        return -1;
+    if (!fgets(buf, (int)size, f)) {
+        pclose(f);
+        return -1;
+    }
+    pclose(f);
+    buf[strcspn(buf, "\r\n")] = '\0';
+    return buf[0] ? 0 : -1;
+}
+
 static void get_printer_name(char *buf, size_t size)
 {
-    if (read_first_line("/etc/hostname", buf, size) < 0)
-        snprintf(buf, size, "Deneb UM2C");
+    char name[96] = "";
+
+    if (read_command_line("uci -q get ultimaker.option.printer_name 2>/dev/null",
+                          name, sizeof(name)) < 0 &&
+        read_command_line("uci -q get system.@system[0].hostname 2>/dev/null",
+                          name, sizeof(name)) < 0 &&
+        read_first_line("/proc/sys/kernel/hostname", name, sizeof(name)) < 0 &&
+        read_first_line("/etc/hostname", name, sizeof(name)) < 0) {
+        snprintf(name, sizeof(name), "Deneb");
+    }
+
+    if (strstr(name, "Deneb UM2C"))
+        snprintf(buf, size, "%s", name);
+    else
+        snprintf(buf, size, "%s (Deneb UM2C)", name);
 }
 
 static void get_instance_id(char *buf, size_t size)
