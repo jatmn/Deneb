@@ -45,11 +45,14 @@ different for safety/resource reasons.
   after EOF. Target proof now exists for the Digital Factory material-mismatch
   route on package `022077b9` and for Cura 5.13 local-network completion on
   package `ff49e86b`.
-- Native progress/time reporting is not stock-parity complete. The 2026-06-14
-  Cura-local print completed successfully, but progress stayed at 0% and
-  history recorded `progress:0.0`, `time_total:0`, and `time_elapsed:0`.
-  Review stock firmware progress calculation before implementing the native
-  fix.
+- Native progress/time reporting now follows the stock metadata source, pending
+  target proof. The 2026-06-14 Cura-local print on package `ff49e86b`
+  completed successfully, but progress stayed at 0% and history recorded
+  `progress:0.0`, `time_total:0`, and `time_elapsed:0`. Stock review found
+  Charon validates `TIME` or `PRINT.TIME`, and stock `PrintJob` assigns the
+  parsed print time to `estimated_time_total` and `time_total`. Native now
+  parses the same G-code metadata, publishes `Ttot`, and derives active
+  `Tleft`/progress from elapsed time.
 - Native stream window remains below stock Python's receive-buffer size after
   live hardware showed that a window of 6 caused resend debt and partial
   completion on this old Marlin path. This is a deliberate safety/stability
@@ -59,14 +62,14 @@ different for safety/resource reasons.
 
 ## Remaining proof after source review
 
-- Representative Cura/slicer geometry for progress/time reporting and any
+- Target proof for representative Cura/slicer progress/time reporting and any
   remaining touchscreen Stop park/home edge cases. Cura-local completion,
   pause/resume, and cancel/abort were proven for the tested Cura 5.13 job on
   package `ff49e86b`.
 - LCD UI and Web UI hands-on proof against native service without Python
   fallback or stale print state.
-- Desktop Cura client proof for progress/time reporting and broader failure
-  modes beyond the 2026-06-14
+- Desktop Cura client target proof for progress/time reporting and broader
+  failure modes beyond the 2026-06-14
   discovery/upload/mismatch/completion/pause/resume/cancel and pending recovery
   after restart proof.
 - Digital Factory lifecycle proof beyond observe-only bridge status.

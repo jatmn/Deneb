@@ -38,6 +38,8 @@ void deneb_job_lifecycle_start(deneb_status_t *status,
         status->bed_t_set = bed_target;
     if (head_target > 0.0f)
         status->head_t_set = head_target;
+    status->time_total = 0;
+    status->time_left = 0;
 }
 
 void deneb_job_lifecycle_streaming(deneb_status_t *status)

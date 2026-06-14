@@ -21,7 +21,7 @@ long active-soak proof.
 | Active abort cleanup | Proven for bounded native/generated paths | `/tmp/deneb-printsvc-smoke-status-fix-active.summary`; `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Shows native `printing` -> `aborting` -> `idle`; does not prove every slicer/client path. |
 | Pause/resume | Proven for bounded native representative fixture, 2026-06-13 touchscreen run on package `072edbc`, and 2026-06-14 Cura-local run on package `ff49e86b` | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; user-supervised touchscreen target observation: pause during print, Resume reasserted nozzle heat, waited for temperature, returned to position, and continued print; user-supervised Cura-local target observation plus logs: `JOB` -> `Paused`, `Paused` -> `PREPARE` -> `JOB` | Cold-resume target blocker is closed for touchscreen and Cura-local paths. |
 | Print-start prepare sequence | Proven for supervised Digital Factory material-mismatch Continue startup on package `6cd72899` | 2026-06-13 user-supervised target observation through the Digital Factory material-mismatch decision path after package `6cd72899`: no double Z home; print started as expected. Host tests cover `job_streamer` prepare ordering. | Native removes the normal-print `M18 Z` release and second `G28 Z`. |
-| Generated cluster upload/start/abort | Proven through cluster API; Desktop Cura discovery/upload/mismatch Cancel/Continue/start/completion/pause/resume/cancel proven on package `ff49e86b` | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised Cura 5.13 local-network run: discovery label `Ultimaker-2C-test (Deneb UM2C)`, `.ufp` normalized to extracted `.gcode`, material mismatch reached `wait_user_action`, Cancel returned idle with queue `[]`, Continue transitioned `Idle` -> `PREPARE` -> `JOB`, completion transitioned `JOB` -> `Complete` with history `state":"completed"`, later Cura-local pause/resume transitioned `JOB` -> `Paused` -> `PREPARE` -> `JOB`, cancel transitioned `JOB` -> `ABORT` -> `Idle` with status `idle`, queue `[]`, and no pending metadata, and pending mismatch recovery survived UI/API/print-service restarts before clearing to idle | Cura progress/time reporting and broader failure modes remain open. |
+| Generated cluster upload/start/abort | Proven through cluster API; Desktop Cura discovery/upload/mismatch Cancel/Continue/start/completion/pause/resume/cancel proven on package `ff49e86b` | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised Cura 5.13 local-network run: discovery label `Ultimaker-2C-test (Deneb UM2C)`, `.ufp` normalized to extracted `.gcode`, material mismatch reached `wait_user_action`, Cancel returned idle with queue `[]`, Continue transitioned `Idle` -> `PREPARE` -> `JOB`, completion transitioned `JOB` -> `Complete` with history `state":"completed"`, later Cura-local pause/resume transitioned `JOB` -> `Paused` -> `PREPARE` -> `JOB`, cancel transitioned `JOB` -> `ABORT` -> `Idle` with status `idle`, queue `[]`, and no pending metadata, and pending mismatch recovery survived UI/API/print-service restarts before clearing to idle | Cura progress/time target proof and broader failure modes remain open. |
 | Completion flow drain | Proven for representative Digital Factory completion on package `022077b9` and Desktop Cura-local completion on package `ff49e86b` | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised DF completion on package `6cd72899` exposed the finish-park bug; 2026-06-14 user-supervised DF completion on package `022077b9` completed with expected end actions; 2026-06-14 user-supervised Cura-local completion on package `ff49e86b` showed `JOB` -> `Complete`, print history `state":"completed"`, queue `[]`, and pending metadata absent | Native finish cleanup after EOF now runs `M400`, relative `G1 Z3`, `G28 X Y`, `G28 Z`, heaters/fan off, `M400`, `M84`, and preserves `Complete` status for API/history. |
 | Stock/native bounded throughput | Proven within accepted floor | Stock `/tmp/deneb-precisewait-stock-resource.summary`: 1401 bytes / 29 s / 48 B/s. Native `/tmp/deneb-precisewait-native-resource.summary`: 1401 bytes / 34 s / 41 B/s. | Comparator enforces the current 85% bounded-fixture floor. |
 | Native driver RSS reduction | Proven in paired completion evidence | Stock final `print_service.py` RSS 14616 KiB; native final `deneb-printsvc` RSS 1648 KiB | Applies to the accepted bounded fixture set. |
@@ -71,7 +71,7 @@ hardware:
   completion, pause/resume, cancel/abort back to idle, and pending mismatch
   recovery after UI/API/print-service restarts are covered by the 2026-06-14
   supervised Cura 5.13 local-network run on package `ff49e86b`;
-  progress/time reporting remains open.
+  progress/time target proof remains open.
 - Digital Factory job lifecycle behavior, not only bridge status reachability.
   Material-mismatch Cancel, Continue/start, Pause, Resume, Stop, and no-double-Z
   startup are covered by the current supervised route. Completion with expected
@@ -79,9 +79,11 @@ hardware:
 - Representative real slicer output for completion, pause/resume, and abort is
   covered for the tested Cura-local job on package `ff49e86b`; broader slicer
   geometry/failure-mode coverage remains open.
-- Stock-parity review for print progress/time reporting: the 2026-06-14
-  Cura-local completion stayed at `progress:0.0`, `time_total:0`, and
-  `time_elapsed:0` for the whole print and in history.
+- Target proof for native print progress/time reporting: the 2026-06-14
+  Cura-local completion on `ff49e86b` stayed at `progress:0.0`,
+  `time_total:0`, and `time_elapsed:0`; stock review found G-code `TIME` /
+  `PRINT.TIME` drives `time_total`, and native now implements that parser plus
+  active elapsed/remaining timing pending deployment proof.
 - Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and
   diagnostics-log behavior.
 

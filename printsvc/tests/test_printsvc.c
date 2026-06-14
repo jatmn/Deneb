@@ -4083,6 +4083,7 @@ static void test_print_job_file_metadata(void)
           ";EXTRUDER_TRAIN.0.MATERIAL.GUID:"
           "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9\n"
           ";EXTRUDER_TRAIN.0.NOZZLE.DIAMETER:0.4\n"
+          ";PRINT.TIME:1334\n"
           ";END_OF_HEADER\n", f);
     fclose(f);
     deneb_print_job_file_metadata_init(&meta);
@@ -4090,6 +4091,22 @@ static void test_print_job_file_metadata(void)
     assert(strcmp(meta.material_guid,
                   "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9") == 0);
     assert(strcmp(meta.nozzle_size, "0.4") == 0);
+    assert(meta.print_time_seconds == 1334);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs(";TIME:42\n;TIME_ELAPSED:1.0\n", f);
+    fclose(f);
+    deneb_print_job_file_metadata_init(&meta);
+    assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+    assert(meta.print_time_seconds == 42);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs(";TIME_ELAPSED:99.0\n", f);
+    fclose(f);
+    deneb_print_job_file_metadata_init(&meta);
+    assert(deneb_print_job_file_metadata_load(path, &meta) != 0);
     remove(path);
 }
 

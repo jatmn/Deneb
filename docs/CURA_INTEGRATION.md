@@ -103,9 +103,10 @@ install flow, then restart Cura before testing discovery.
   Cancel, Continue/start, completion, pause/resume, cancel/abort back to idle,
   and pending mismatch recovery after UI/API/print-service restarts are covered
   by the 2026-06-14 Cura 5.13 local-network run on package `ff49e86b`.
-- Review stock firmware progress/time calculation and implement parity. The
-  Cura-local completion stayed at `progress:0.0`, `time_total:0`, and
-  `time_elapsed:0`.
+- Deploy and prove native progress/time reporting on target. Stock review found
+  the Python/Charon path reads G-code `TIME`/`PRINT.TIME` into
+  `time_total`; native now parses the same metadata and derives elapsed/left
+  time while the job is active, but target proof is still required.
 - Confirm local-storage and USB-removal-safe behavior for uploaded jobs.
 - Add free-space and failure-mode validation around uploads.
 - Decide how much of the current web/touch/API print-control duplication moves

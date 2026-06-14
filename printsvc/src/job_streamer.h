@@ -9,6 +9,8 @@
 #include "serial_transport.h"
 #include "status.h"
 
+#include <time.h>
+
 typedef struct {
     deneb_status_t *status;
     deneb_flow_control_t *flow;
@@ -17,6 +19,7 @@ typedef struct {
     deneb_serial_transport_t *serial;
     int *serial_ready;
     int *job_active;
+    time_t *job_started_at;
     int *job_prepare_stage;
     size_t *job_prepare_index;
     size_t *job_startup_index;

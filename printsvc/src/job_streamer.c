@@ -9,6 +9,7 @@
 #include "motion_sender.h"
 
 #include <stdio.h>
+#include <time.h>
 
 enum {
     DENEB_JOB_PREPARE_DONE = 0,
@@ -46,6 +47,34 @@ static int streamer_valid(const deneb_job_streamer_t *streamer)
            streamer->finish_cleanup_pending &&
            streamer->finish_cleanup_policy && streamer->finish_cleanup_index &&
            streamer->planner_starvation_count;
+}
+
+static void update_job_timing(deneb_job_streamer_t *streamer)
+{
+    time_t now;
+    int elapsed;
+
+    if (!streamer || !streamer->status || !streamer->job_started_at ||
+        streamer->status->time_total <= 0 || *streamer->job_started_at <= 0)
+        return;
+
+    now = time(NULL);
+    if (now <= *streamer->job_started_at)
+        elapsed = 0;
+    else if (now - *streamer->job_started_at > 2147483647L)
+        elapsed = streamer->status->time_total;
+    else
+        elapsed = (int)(now - *streamer->job_started_at);
+
+    streamer->status->time_left =
+        elapsed >= streamer->status->time_total ?
+            0 : streamer->status->time_total - elapsed;
+}
+
+static void clear_job_timer(deneb_job_streamer_t *streamer)
+{
+    if (streamer && streamer->job_started_at)
+        *streamer->job_started_at = 0;
 }
 
 static int send_command_list(deneb_job_streamer_t *streamer,
@@ -186,12 +215,14 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         streamer->heater_wait->active = 0;
         return 0;
     }
+    update_job_timing(streamer);
 
     if (streamer->status->state == DENEB_PRINT_STATE_ERROR) {
         deneb_gcode_stream_close(streamer->stream);
         deneb_flow_clear_inflight(streamer->flow);
         streamer->stream->line_number = 0;
         *streamer->job_active = 0;
+        clear_job_timer(streamer);
         *streamer->finish_cleanup_pending = 0;
         *streamer->abort_requested = 0;
         *streamer->job_prepare_stage = DENEB_JOB_PREPARE_DONE;
@@ -214,6 +245,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         deneb_flow_clear_inflight(streamer->flow);
         streamer->stream->line_number = 0;
         *streamer->job_active = 0;
+        clear_job_timer(streamer);
         *streamer->finish_cleanup_pending = 0;
         deneb_job_lifecycle_abort(streamer->status);
         *streamer->abort_requested = 0;
@@ -245,6 +277,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         deneb_flow_clear_inflight(streamer->flow);
         streamer->stream->line_number = 0;
         *streamer->job_active = 0;
+        clear_job_timer(streamer);
         *streamer->finish_cleanup_pending = 0;
         streamer->heater_wait->active = 0;
         deneb_job_lifecycle_error(streamer->status,
@@ -280,6 +313,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         deneb_flow_clear_inflight(streamer->flow);
         streamer->stream->line_number = 0;
         *streamer->job_active = 0;
+        clear_job_timer(streamer);
         *streamer->finish_cleanup_pending = 0;
         streamer->heater_wait->active = 0;
         snprintf(detail, sizeof(detail), "job stream send failed: %s",

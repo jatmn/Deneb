@@ -11,6 +11,7 @@
 typedef struct {
     char material_guid[64];
     char nozzle_size[24];
+    int print_time_seconds;
 } deneb_print_job_file_metadata_t;
 
 typedef struct {

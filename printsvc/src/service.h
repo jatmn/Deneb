@@ -10,6 +10,8 @@
 #include "serial_transport.h"
 #include "status.h"
 
+#include <time.h>
+
 typedef struct {
     deneb_status_t status;
     deneb_serial_transport_t serial;
@@ -25,6 +27,7 @@ typedef struct {
     int gcode_queue_active;
     int serial_ready;
     int job_active;
+    time_t job_started_at;
     int job_prepare_stage;
     size_t job_prepare_index;
     size_t job_startup_index;

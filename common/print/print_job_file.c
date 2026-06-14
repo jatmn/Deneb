@@ -95,6 +95,43 @@ int deneb_print_job_file_metadata_extract_value(const char *buf,
     return i > 0 ? 0 : -1;
 }
 
+static int metadata_extract_positive_int(const char *buf,
+                                         const char *key,
+                                         int *out)
+{
+    const char *p;
+    size_t key_len;
+
+    if (!buf || !key || !out)
+        return -1;
+
+    key_len = strlen(key);
+    for (p = strstr(buf, key); p; p = strstr(p + 1, key)) {
+        const char *v = p + key_len;
+        long value = 0;
+        int digits = 0;
+
+        if (*v && *v != ' ' && *v != '\t' && *v != ':' && *v != '=' &&
+            *v != '"' && *v != '\'')
+            continue;
+        while (*v && (*v == ' ' || *v == '\t' || *v == ':' ||
+                      *v == '=' || *v == '"' || *v == '\''))
+            v++;
+        while (*v >= '0' && *v <= '9') {
+            value = value * 10 + (*v - '0');
+            if (value > 2147483647L)
+                return -1;
+            v++;
+            digits++;
+        }
+        if (digits > 0) {
+            *out = (int)value;
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int deneb_print_job_file_metadata_load(const char *path,
                                        deneb_print_job_file_metadata_t *meta)
 {
@@ -135,6 +172,12 @@ int deneb_print_job_file_metadata_load(const char *path,
         deneb_print_job_file_metadata_extract_value(
             buf, "EXTRUDER_TRAIN.0.NOZZLE.DIAMETER", meta->nozzle_size,
             sizeof(meta->nozzle_size)) == 0)
+        found = 1;
+    if (metadata_extract_positive_int(buf, "PRINT.TIME",
+                                      &meta->print_time_seconds) == 0)
+        found = 1;
+    else if (metadata_extract_positive_int(buf, "TIME",
+                                           &meta->print_time_seconds) == 0)
         found = 1;
 
     return found ? 0 : -1;
