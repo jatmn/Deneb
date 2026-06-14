@@ -85,6 +85,10 @@ validate_package() {
     [ "$missing" -eq 0 ] || exit 1
 }
 
+cleanup_tmp_deneb_packages() {
+    rm -f /tmp/Deneb_Update_*.deneb 2>/dev/null || true
+}
+
 # Backup files we're about to replace
 backup_stock() {
     mkdir -p "${DENEB_BACKUP_DIR}"
@@ -744,6 +748,7 @@ log "starting Deneb Touchscreen UI installation"
 trap schedule_reboot EXIT
 
 validate_package
+cleanup_tmp_deneb_packages
 backup_stock
 install_binary
 install_web_runtime

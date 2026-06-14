@@ -147,6 +147,11 @@ body {
     text-align: center;
     margin-top: 4px;
 }
+.progress-time {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+}
 
 /* Buttons */
 .btn {

@@ -98,15 +98,18 @@ install flow, then restart Cura before testing discovery.
 
 ## Remaining Release Blockers
 
-- Validate status/progress updates and broader failure modes against current
-  Cura builds on real hardware. Discovery, upload, material-mismatch prompt,
-  Cancel, Continue/start, completion, pause/resume, cancel/abort back to idle,
-  and pending mismatch recovery after UI/API/print-service restarts are covered
-  by the 2026-06-14 Cura 5.13 local-network run on package `ff49e86b`.
-- Deploy and prove native progress/time reporting on target. Stock review found
-  the Python/Charon path reads G-code `TIME`/`PRINT.TIME` into
-  `time_total`; native now parses the same metadata and derives elapsed/left
-  time while the job is active, but target proof is still required.
+- Validate broader failure modes against current Cura builds on real hardware.
+  Discovery, upload, material-mismatch prompt, Cancel, Continue/start,
+  completion, pause/resume, cancel/abort back to idle, pending mismatch recovery
+  after UI/API/print-service restarts, and package `9cdb5d6f` progress/time
+  reporting are covered by the 2026-06-14 Cura 5.13 local-network runs.
+- Native progress/time reporting is target-proven for package `9cdb5d6f`.
+  Stock/S5 review found Griffin `TimeEstimator` reads G-code `TIME_ELAPSED`
+  layer markers against metadata total time; native parses `TIME` /
+  `PRINT.TIME`, starts active timing at the model layer boundary, compensates
+  total time from `TIME_ELAPSED`, and publishes `Tleft` for UI/API progress.
+  User-supervised target proof observed print start at 0% with reasonable
+  progress and timer behavior.
 - Confirm local-storage and USB-removal-safe behavior for uploaded jobs.
 - Add free-space and failure-mode validation around uploads.
 - Decide how much of the current web/touch/API print-control duplication moves

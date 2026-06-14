@@ -45,14 +45,16 @@ different for safety/resource reasons.
   after EOF. Target proof now exists for the Digital Factory material-mismatch
   route on package `022077b9` and for Cura 5.13 local-network completion on
   package `ff49e86b`.
-- Native progress/time reporting now follows the stock metadata source, pending
-  target proof. The 2026-06-14 Cura-local print on package `ff49e86b`
+- Native progress/time reporting now follows the stock/S5 timing source and is
+  target-proven for package `9cdb5d6f`. The 2026-06-14 Cura-local print on package `ff49e86b`
   completed successfully, but progress stayed at 0% and history recorded
-  `progress:0.0`, `time_total:0`, and `time_elapsed:0`. Stock review found
-  Charon validates `TIME` or `PRINT.TIME`, and stock `PrintJob` assigns the
-  parsed print time to `estimated_time_total` and `time_total`. Native now
-  parses the same G-code metadata, publishes `Ttot`, and derives active
-  `Tleft`/progress from elapsed time.
+  `progress:0.0`, `time_total:0`, and `time_elapsed:0`. Stock/S5 review found
+  Charon validates `TIME` or `PRINT.TIME`, Griffin `TimeEstimator` consumes
+  `;TIME_ELAPSED` layer markers, and total time is compensated by actual
+  elapsed-at-layer versus estimated elapsed-at-layer. Package `9cdb5d6f`
+  parses the same metadata/markers, starts active timing at the model layer
+  boundary, publishes `Ttot`/`Tleft`, and target proof observed print start at
+  0% with reasonable progress and timer behavior.
 - Native stream window remains below stock Python's receive-buffer size after
   live hardware showed that a window of 6 caused resend debt and partial
   completion on this old Marlin path. This is a deliberate safety/stability
@@ -62,16 +64,15 @@ different for safety/resource reasons.
 
 ## Remaining proof after source review
 
-- Target proof for representative Cura/slicer progress/time reporting and any
-  remaining touchscreen Stop park/home edge cases. Cura-local completion,
+- Target proof for any remaining touchscreen Stop park/home edge cases.
+  Cura-local completion,
   pause/resume, and cancel/abort were proven for the tested Cura 5.13 job on
   package `ff49e86b`.
 - LCD UI and Web UI hands-on proof against native service without Python
   fallback or stale print state.
-- Desktop Cura client target proof for progress/time reporting and broader
-  failure modes beyond the 2026-06-14
-  discovery/upload/mismatch/completion/pause/resume/cancel and pending recovery
-  after restart proof.
+- Desktop Cura client target proof for broader failure modes beyond the
+  2026-06-14 discovery/upload/mismatch/completion/pause/resume/cancel,
+  progress/time, and pending recovery after restart proof.
 - Digital Factory lifecycle proof beyond observe-only bridge status.
 - Multi-hour active heat/motion/job soak evidence that explains or eliminates
   the remaining RSS/private-memory staircase.

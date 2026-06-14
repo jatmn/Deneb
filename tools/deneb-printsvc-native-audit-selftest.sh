@@ -320,6 +320,7 @@ configure_digitalfactory_boot() {
     /etc/init.d/digitalfactory disable
 }
 rm -f /usr/bin/deneb-df-bridge
+rm -f /tmp/Deneb_Update_*.deneb
 cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
 cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner
 cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline

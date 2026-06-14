@@ -28,6 +28,9 @@ typedef struct {
     int serial_ready;
     int job_active;
     time_t job_started_at;
+    int job_elapsed_seconds;
+    int job_progress_started;
+    int job_original_time_total;
     int job_prepare_stage;
     size_t job_prepare_index;
     size_t job_startup_index;

@@ -17,6 +17,7 @@ static lv_obj_t *nozzle_temp_label = NULL;
 static lv_obj_t *bed_temp_label = NULL;
 static lv_obj_t *progress_bar = NULL;
 static lv_obj_t *progress_label = NULL;
+static lv_obj_t *time_left_label = NULL;
 static lv_obj_t *file_label = NULL;
 static lv_obj_t *pos_label = NULL;
 static lv_obj_t *pause_resume_btn = NULL;
@@ -91,6 +92,35 @@ static void set_position_label(lv_obj_t *label, float x, float y, float z)
     lv_label_set_text(label, text);
 }
 
+static void format_duration(int seconds, char *out, size_t out_sz)
+{
+    if (seconds < 0)
+        seconds = 0;
+
+    int hours = seconds / 3600;
+    int minutes = (seconds % 3600) / 60;
+    if (hours > 0)
+        snprintf(out, out_sz, "%d:%02d", hours, minutes);
+    else
+        snprintf(out, out_sz, "%02d:%02d", minutes, seconds % 60);
+}
+
+static void set_time_left_label(lv_obj_t *label, const printer_state_t *s)
+{
+    char duration[16];
+
+    if (!label)
+        return;
+
+    if (!s || !backend_has_active_print_context() || s->time_left <= 0) {
+        lv_label_set_text(label, "Left --:--");
+        return;
+    }
+
+    format_duration(s->time_left, duration, sizeof(duration));
+    lv_label_set_text_fmt(label, "Left %s", duration);
+}
+
 static const char *display_state_locale_key(deneb_print_display_state_t state)
 {
     switch (state) {
@@ -122,6 +152,7 @@ static void update_timer_cb(lv_timer_t *timer)
         lv_label_set_text(bed_temp_label, "--- / --- \u00b0C");
         lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
         lv_label_set_text(progress_label, "0%");
+        set_time_left_label(time_left_label, NULL);
         lv_label_set_text(file_label, locale_get("status.no_file"));
         lv_label_set_text(pos_label, "X:-- Y:-- Z:--");
         set_btn_enabled(pause_resume_btn, 0);
@@ -161,6 +192,7 @@ static void update_timer_cb(lv_timer_t *timer)
     if (pct > 100) pct = 100;
     lv_bar_set_value(progress_bar, pct, LV_ANIM_OFF);
     lv_label_set_text_fmt(progress_label, "%d%%", pct);
+    set_time_left_label(time_left_label, s);
 
     /* File */
     lv_label_set_text(file_label, display_name);
@@ -255,7 +287,7 @@ static lv_obj_t *status_create(void)
     lv_obj_remove_flag(prog_row, LV_OBJ_FLAG_SCROLLABLE);
 
     progress_bar = lv_bar_create(prog_row);
-    lv_obj_set_size(progress_bar, 240, 14);
+    lv_obj_set_size(progress_bar, 150, 14);
     lv_obj_align(progress_bar, LV_ALIGN_LEFT_MID, 0, 0);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
@@ -267,7 +299,18 @@ static lv_obj_t *status_create(void)
     lv_label_set_text(progress_label, "0%");
     lv_obj_set_style_text_color(progress_label, lv_color_hex(0xe0e0e0), 0);
     lv_obj_set_style_text_font(progress_label, &deneb_font_12, 0);
-    lv_obj_align(progress_label, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_width(progress_label, 44);
+    lv_label_set_long_mode(progress_label, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_align(progress_label, LV_ALIGN_LEFT_MID, 158, 0);
+
+    time_left_label = lv_label_create(prog_row);
+    lv_label_set_text(time_left_label, "Left --:--");
+    lv_obj_set_width(time_left_label, 92);
+    lv_label_set_long_mode(time_left_label, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_set_style_text_color(time_left_label, lv_color_hex(0xe0e0e0), 0);
+    lv_obj_set_style_text_font(time_left_label, &deneb_font_12, 0);
+    lv_obj_set_style_text_align(time_left_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(time_left_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
     /* File name */
     file_label = lv_label_create(status_screen);
@@ -337,6 +380,7 @@ static void status_destroy(void)
     bed_temp_label = NULL;
     progress_bar = NULL;
     progress_label = NULL;
+    time_left_label = NULL;
     file_label = NULL;
     pos_label = NULL;
     pause_resume_btn = NULL;

@@ -49,6 +49,9 @@ int deneb_service_context_job_streamer(deneb_print_service_t *svc,
     streamer->serial_ready = &svc->serial_ready;
     streamer->job_active = &svc->job_active;
     streamer->job_started_at = &svc->job_started_at;
+    streamer->job_elapsed_seconds = &svc->job_elapsed_seconds;
+    streamer->job_progress_started = &svc->job_progress_started;
+    streamer->job_original_time_total = &svc->job_original_time_total;
     streamer->job_prepare_stage = &svc->job_prepare_stage;
     streamer->job_prepare_index = &svc->job_prepare_index;
     streamer->job_startup_index = &svc->job_startup_index;
@@ -85,6 +88,9 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     svc->job_stream.line_number = 0;
     svc->job_active = 0;
     svc->job_started_at = 0;
+    svc->job_elapsed_seconds = 0;
+    svc->job_progress_started = 0;
+    svc->job_original_time_total = 0;
     svc->job_prepare_stage = 0;
     svc->job_prepare_index = 0;
     svc->job_startup_index = 0;

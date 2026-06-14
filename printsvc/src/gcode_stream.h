@@ -21,6 +21,9 @@ typedef struct {
     int last_wait_for_bed;
     int last_wait_for_nozzle;
     float last_wait_target;
+    int last_layer_zero;
+    int last_time_elapsed_valid;
+    float last_time_elapsed;
 } deneb_gcode_stream_t;
 
 int deneb_gcode_stream_open(deneb_gcode_stream_t *stream, const char *path);

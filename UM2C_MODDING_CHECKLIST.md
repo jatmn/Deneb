@@ -19,8 +19,8 @@ Authoritative status companions:
 
 1. Prove LCD and Web UI hands-on workflows against the native print service:
    queued print, start, pause/resume, abort, completion, stale-state recovery.
-2. Prove real desktop Cura discovery/upload/start/actions with current Cura
-   builds, not only generated cluster-API fixtures.
+2. Close broader Cura failure-mode cleanup after the proven Cura 5.13
+   local-network workflow and proven S5-style progress/time estimator.
 3. Resolve or explain the native print-service active-soak RSS/private-memory
    staircase with longer heat/motion/job loops.
 4. Finish `.deneb` manifest, rollback, signing, release-channel, and restore
@@ -143,10 +143,16 @@ Authoritative status companions:
 - [x] Cura/cluster upload-start path, pending-job metadata, conflict
   continue/cancel, and cluster action routing are implemented through shared
   native helpers where current audits require it.
-- [ ] Validate real desktop Cura discovery, upload/start, monitor polling,
-  pause/resume/abort/delete, pending-job visibility, and failed-upload cleanup
-  against current Cura builds.
+- [ ] Validate remaining real desktop Cura gaps against current Cura builds:
+  failed-upload cleanup and delete behavior if current Cura still exposes that
+  path. Discovery, upload/start, material-mismatch Continue/Cancel, monitor
+  polling, pause/resume, cancel/abort, pending-job visibility, pending recovery
+  after restarts, and package `9cdb5d6f` S5-style progress/time reporting are
+  already proven for the 2026-06-14 Cura 5.13 runs.
 - [ ] Hardware-test Web UI user workflows separately from API smoke evidence.
+  Live Web UI status/progress/time-left display was proven during the
+  2026-06-14 package `9cdb5d6f` print after the timer label was made explicit;
+  Web UI pause/resume/cancel and stale-state recovery remain open.
 - [ ] Measure web/API resource behavior under polling, upload, motion, heat, and
   print-action load.
 - [ ] Keep extruder jog out of web controls until safe-temperature gating exists.
@@ -183,8 +189,11 @@ long-soak proof.
   diagnostics-log mitigation, short repeated-job stability, and strict
   stock/native resource comparison for the current bounded evidence set.
 - [ ] Prove LCD hands-on workflow against native service.
-- [ ] Prove Web UI hands-on workflow against native service.
-- [ ] Prove desktop Cura client workflow, not just generated cluster API routes.
+- [ ] Prove Web UI hands-on workflow against native service. Live status,
+  progress, and time-left display are proven on package `9cdb5d6f`; controls
+  and stale-state recovery remain open.
+- [ ] Close remaining desktop Cura client gaps after the proven Cura 5.13
+  local-network workflow: broader failure modes.
 - [ ] Prove Digital Factory lifecycle behavior with the native `deneb-dfsvc`
   connector, not just bridge status or package audits.
 - [ ] Prove broader real slicer output for completion, pause/resume, and abort.
@@ -241,7 +250,7 @@ long-soak proof.
 | SSH bootstrap | Complete for development use |
 | Native touchscreen UI | Implemented; broader real-state hardware proof remains |
 | Web/API runtime | Implemented; hands-on and resource validation remain |
-| Cura compatibility | Initial implementation exists; desktop Cura proof remains |
+| Cura compatibility | Cura 5.13 local-network happy path and S5-style progress/time proven; failure modes remain |
 | `.deneb` installer | Functional experimental lane; rollback/signing/stable release hardening remain |
 | Native print-service replacement | Experimental with strong bounded evidence; client workflows and long soak remain |
 | Stable public release | Not ready |

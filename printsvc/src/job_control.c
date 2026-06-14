@@ -81,7 +81,10 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     svc->job_prepare_index = 0;
     svc->job_startup_index = 0;
     svc->job_active = 1;
-    svc->job_started_at = time(NULL);
+    svc->job_started_at = 0;
+    svc->job_elapsed_seconds = 0;
+    svc->job_progress_started = 0;
+    svc->job_original_time_total = 0;
     deneb_job_lifecycle_start(&svc->status, cmd->file, cmd->source,
                               cmd->uuid, cmd->cloud_job_id,
                               cmd->bed_target, cmd->head_target);
@@ -90,6 +93,7 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
         meta.print_time_seconds > 0) {
         svc->status.time_total = meta.print_time_seconds;
         svc->status.time_left = meta.print_time_seconds;
+        svc->job_original_time_total = meta.print_time_seconds;
     }
     deneb_heater_wait_start(&svc->heater_wait, svc->status.bed_t_set,
                             svc->status.head_t_set, 1.0f);
@@ -118,6 +122,9 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         svc->job_active = 0;
     }
     svc->job_started_at = 0;
+    svc->job_elapsed_seconds = 0;
+    svc->job_progress_started = 0;
+    svc->job_original_time_total = 0;
     svc->job_prepare_stage = 0;
     svc->job_prepare_index = 0;
     svc->job_startup_index = 0;
@@ -154,6 +161,9 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         svc->job_stream.line_number = 0;
         deneb_job_lifecycle_abort(&svc->status);
         svc->job_started_at = 0;
+        svc->job_elapsed_seconds = 0;
+        svc->job_progress_started = 0;
+        svc->job_original_time_total = 0;
     }
     deneb_command_reply_ok(reply, reply_sz, "abort accepted");
     return 0;
@@ -200,6 +210,9 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     svc->job_stream.line_number = 0;
     deneb_job_lifecycle_abort(&svc->status);
     svc->job_started_at = 0;
+    svc->job_elapsed_seconds = 0;
+    svc->job_progress_started = 0;
+    svc->job_original_time_total = 0;
     svc->job_nozzle_resume_setpoint = 0.0f;
     return 1;
 }
@@ -253,6 +266,9 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
         svc->job_nozzle_resume_setpoint = 0.0f;
         svc->job_active = 0;
         svc->job_started_at = 0;
+        svc->job_elapsed_seconds = 0;
+        svc->job_progress_started = 0;
+        svc->job_original_time_total = 0;
         return 1;
     }
 
@@ -271,5 +287,8 @@ int deneb_job_control_poll_finish_cleanup(deneb_print_service_t *svc)
     svc->job_nozzle_resume_setpoint = 0.0f;
     svc->job_active = 0;
     svc->job_started_at = 0;
+    svc->job_elapsed_seconds = 0;
+    svc->job_progress_started = 0;
+    svc->job_original_time_total = 0;
     return 1;
 }

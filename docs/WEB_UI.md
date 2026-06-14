@@ -105,6 +105,11 @@ on real hardware remains open.
 
 - Web/API resource numbers still need hardware measurement while idle, polling,
   uploading, printing, and updating.
+- Live status display has target proof for package `9cdb5d6f`: during a
+  user-supervised print, the Web UI showed printing progress and, after a
+  static asset update, an explicit `Left <time>` timer line matching the native
+  `time_left` field. Web UI pause/resume/cancel and stale-state recovery still
+  need hands-on proof.
 - Upload/start behavior exists in `deneb-api` for both UM API v1 and Cura's
   local cluster API, but local storage behavior, free-space checks,
   USB-removal-safe printing, and real Cura upload/start testing remain release

@@ -450,6 +450,9 @@ audit_source() {
         "deneb-printsvc-native-audit" \
         "installer runs de-Python audit"
     require_pattern "${repo}/ui/installer/update.sh" \
+        'rm -f /tmp/Deneb_Update_[*][.]deneb' \
+        "installer removes stale temporary update archives"
+    require_pattern "${repo}/ui/installer/update.sh" \
         'rm -f /usr/bin/deneb-df-bridge' \
         "installer removes stale standalone Digital Factory bridge"
     reject_pattern "${repo}/ui/installer/update.sh" \

@@ -19,6 +19,8 @@ static lv_obj_t *print_screen = NULL;
 static lv_obj_t *file_list = NULL;
 static lv_obj_t *status_msg = NULL;
 static lv_obj_t *preview_label = NULL;
+static lv_obj_t *time_left_label = NULL;
+static lv_timer_t *print_timer = NULL;
 
 #define MAX_FILES 32
 #define MAX_FILENAME 64
@@ -32,6 +34,50 @@ extern const screen_ops_t screen_material;
 static char file_names[MAX_FILES][MAX_FILENAME];
 static char file_paths[MAX_FILES][MAX_FILE_PATH];
 static int file_count = 0;
+
+static void format_duration(int seconds, char *out, size_t out_sz)
+{
+    int hours;
+    int minutes;
+
+    if (!out || out_sz == 0)
+        return;
+    if (seconds <= 0) {
+        snprintf(out, out_sz, "--:--");
+        return;
+    }
+
+    hours = seconds / 3600;
+    minutes = (seconds % 3600) / 60;
+    if (hours > 0)
+        snprintf(out, out_sz, "%d:%02d", hours, minutes);
+    else
+        snprintf(out, out_sz, "%d min", minutes > 0 ? minutes : 1);
+}
+
+static void update_print_runtime(void)
+{
+    const printer_state_t *s;
+    char duration[16];
+
+    if (!time_left_label)
+        return;
+
+    s = backend_get_state();
+    if (!s || (!backend_has_active_print_context() && !s->is_paused)) {
+        lv_label_set_text(time_left_label, "Left --:--");
+        return;
+    }
+
+    format_duration(s->time_left, duration, sizeof(duration));
+    lv_label_set_text_fmt(time_left_label, "Left %s", duration);
+}
+
+static void print_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    update_print_runtime();
+}
 
 static void scan_print_files(const char *path)
 {
@@ -217,6 +263,15 @@ static lv_obj_t *print_create(void)
     lv_obj_set_style_text_font(preview_label, &deneb_font_12, 0);
     lv_obj_align(preview_label, LV_ALIGN_TOP_LEFT, 0, 0);
 
+    time_left_label = lv_label_create(print_screen);
+    lv_label_set_text(time_left_label, "Left --:--");
+    lv_obj_set_width(time_left_label, 88);
+    lv_label_set_long_mode(time_left_label, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_set_style_text_color(time_left_label, lv_color_hex(0xe0e0e0), 0);
+    lv_obj_set_style_text_font(time_left_label, &deneb_font_12, 0);
+    lv_obj_set_style_text_align(time_left_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(time_left_label, LV_ALIGN_TOP_RIGHT, 0, 36);
+
     /* Control buttons row */
     lv_obj_t *ctrl_row = lv_obj_create(print_screen);
     lv_obj_set_size(ctrl_row, 300, 64);
@@ -292,16 +347,23 @@ static lv_obj_t *print_create(void)
 
     /* Initial scan */
     refresh_btn_cb(NULL);
+    update_print_runtime();
+    print_timer = lv_timer_create(print_timer_cb, 500, NULL);
 
     return print_screen;
 }
 
 static void print_destroy(void)
 {
+    if (print_timer) {
+        lv_timer_delete(print_timer);
+        print_timer = NULL;
+    }
     print_screen = NULL;
     file_list = NULL;
     status_msg = NULL;
     preview_label = NULL;
+    time_left_label = NULL;
     selected_path[0] = '\0';
     selected_name[0] = '\0';
 }

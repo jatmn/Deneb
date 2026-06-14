@@ -946,10 +946,15 @@ static void test_job_streamer_policy(void)
     deneb_motion_policy_t finish_cleanup_policy;
     size_t finish_cleanup_index = 0;
     int serial_ready = 0;
+    time_t job_started_at = 0;
+    int job_elapsed_seconds = 0;
+    int job_progress_started = 0;
+    int job_original_time_total = 0;
     unsigned int starvation = 0;
     FILE *f = fopen(path, "wb");
 
     assert(f != NULL);
+    fputs(";LAYER:0\n", f);
     fputs("G1 X1\n", f);
     fclose(f);
 
@@ -961,6 +966,8 @@ static void test_job_streamer_policy(void)
 
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
                               "streamer-uuid", "", 60.0f, 200.0f);
+    status.time_total = 100;
+    status.time_left = 100;
     deneb_heater_wait_start(&wait, status.bed_t_set, status.head_t_set, 1.0f);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
 
@@ -971,6 +978,10 @@ static void test_job_streamer_policy(void)
     streamer.serial = &serial;
     streamer.serial_ready = &serial_ready;
     streamer.job_active = &job_active;
+    streamer.job_started_at = &job_started_at;
+    streamer.job_elapsed_seconds = &job_elapsed_seconds;
+    streamer.job_progress_started = &job_progress_started;
+    streamer.job_original_time_total = &job_original_time_total;
     streamer.job_prepare_stage = &job_prepare_stage;
     streamer.job_prepare_index = &job_prepare_index;
     streamer.job_startup_index = &job_startup_index;
@@ -997,6 +1008,8 @@ static void test_job_streamer_policy(void)
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(status.state == DENEB_PRINT_STATE_PREPARING);
     assert(stream.line_number == 0);
+    assert(status.time_left == 100);
+    assert(job_started_at == 0);
     assert(deneb_flow_inflight(&flow) == 1);
 
     deneb_flow_clear_inflight(&flow);
@@ -1016,9 +1029,25 @@ static void test_job_streamer_policy(void)
     deneb_flow_clear_inflight(&flow);
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
-    assert(stream.line_number == 1);
+    assert(stream.line_number == 2);
+    assert(status.time_left == 100);
+    assert(job_started_at > 0);
+    assert(job_progress_started);
     assert(starvation == 1);
     assert(deneb_flow_inflight(&flow) == 1);
+
+    status.state = DENEB_PRINT_STATE_PAUSED;
+    job_started_at = time(NULL) - 10;
+    job_elapsed_seconds = 0;
+    status.time_left = 100;
+    assert(deneb_job_streamer_poll(&streamer) == 0);
+    assert(job_started_at == 0);
+    assert(job_elapsed_seconds >= 10);
+    assert(status.time_left <= 90);
+    assert(status.time_left > 0);
+    status.state = DENEB_PRINT_STATE_PRINTING;
+    job_started_at = time(NULL);
+    job_progress_started = 1;
 
     assert(deneb_job_streamer_poll(&streamer) == 0);
     assert(job_active);
@@ -1121,6 +1150,7 @@ static void test_job_streamer_policy(void)
     f = fopen(path, "wb");
     assert(f != NULL);
     fputs("M190 S55\n", f);
+    fputs(";LAYER:0\n", f);
     fputs("G1 X2\n", f);
     fclose(f);
     deneb_status_init(&status);
@@ -1130,7 +1160,13 @@ static void test_job_streamer_policy(void)
     deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
                               "stream-wait", "", 0.0f, 0.0f);
     status.bed_t_cur = 25.0f;
+    status.time_total = 100;
+    status.time_left = 100;
+    job_original_time_total = 100;
     job_active = 1;
+    job_started_at = 0;
+    job_elapsed_seconds = 0;
+    job_progress_started = 0;
     job_prepare_stage = 0;
     job_prepare_index = 0;
     job_startup_index = 0;
@@ -1147,11 +1183,57 @@ static void test_job_streamer_policy(void)
     assert(deneb_flow_inflight(&flow) == 1);
     assert(deneb_job_streamer_poll(&streamer) == 0);
     assert(stream.line_number == 1);
+    assert(status.time_left == 100);
+    assert(job_started_at == 0);
     status.bed_t_cur = 55.0f;
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(!wait.active);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(stream.line_number == 3);
+    assert(status.time_left == 100);
+    assert(job_started_at > 0);
+
+    deneb_gcode_stream_close(&stream);
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs(";LAYER:0\n", f);
+    fputs("G1 X3\n", f);
+    fputs(";TIME_ELAPSED:25.0\n", f);
+    fputs("G1 X4\n", f);
+    fclose(f);
+    deneb_status_init(&status);
+    deneb_flow_init(&flow);
+    deneb_heater_wait_init(&wait);
+    assert(deneb_gcode_stream_open(&stream, path) == 0);
+    deneb_job_lifecycle_start(&status, path, DENEB_PRINT_USB_JOB_SOURCE,
+                              "stream-time-estimator", "", 0.0f, 0.0f);
+    status.time_total = 100;
+    status.time_left = 100;
+    job_active = 1;
+    job_started_at = 0;
+    job_elapsed_seconds = 0;
+    job_progress_started = 0;
+    job_original_time_total = 100;
+    job_prepare_stage = 0;
+    job_prepare_index = 0;
+    job_startup_index = 0;
+    abort_requested = 0;
+    finish_cleanup_pending = 0;
+    serial_ready = 0;
+    assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(stream.line_number == 2);
+    assert(status.time_total == 100);
+    assert(status.time_left == 100);
+    assert(job_progress_started);
+    deneb_flow_clear_inflight(&flow);
+    job_started_at = time(NULL) - 10;
+    job_elapsed_seconds = 0;
+    assert(deneb_job_streamer_poll(&streamer) == 1);
+    assert(stream.line_number == 4);
+    assert(status.time_total <= 86);
+    assert(status.time_total >= 84);
+    assert(status.time_left <= 76);
+    assert(status.time_left >= 74);
 
     remove(path);
 }

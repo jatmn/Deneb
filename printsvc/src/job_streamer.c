@@ -41,7 +41,9 @@ static int streamer_valid(const deneb_job_streamer_t *streamer)
 {
     return streamer && streamer->status && streamer->flow && streamer->stream &&
            streamer->heater_wait && streamer->serial && streamer->job_active &&
-           streamer->serial_ready && streamer->job_prepare_stage &&
+           streamer->serial_ready && streamer->job_started_at &&
+           streamer->job_elapsed_seconds && streamer->job_progress_started &&
+           streamer->job_original_time_total && streamer->job_prepare_stage &&
            streamer->job_prepare_index && streamer->job_startup_index &&
            streamer->abort_requested &&
            streamer->finish_cleanup_pending &&
@@ -55,26 +57,139 @@ static void update_job_timing(deneb_job_streamer_t *streamer)
     int elapsed;
 
     if (!streamer || !streamer->status || !streamer->job_started_at ||
-        streamer->status->time_total <= 0 || *streamer->job_started_at <= 0)
+        !streamer->job_elapsed_seconds || !streamer->job_progress_started ||
+        streamer->status->time_total <= 0)
         return;
 
     now = time(NULL);
+    if (streamer->status->state == DENEB_PRINT_STATE_PAUSED ||
+        streamer->status->state == DENEB_PRINT_STATE_ABORTING ||
+        streamer->status->state == DENEB_PRINT_STATE_COMPLETE ||
+        streamer->status->state == DENEB_PRINT_STATE_ERROR ||
+        !*streamer->job_active) {
+        if (*streamer->job_started_at > 0 && now > *streamer->job_started_at)
+            *streamer->job_elapsed_seconds +=
+                (int)(now - *streamer->job_started_at);
+        *streamer->job_started_at = 0;
+        elapsed = *streamer->job_elapsed_seconds;
+        if (elapsed >= streamer->status->time_total)
+            streamer->status->time_left = 0;
+        else
+            streamer->status->time_left =
+                streamer->status->time_total - elapsed;
+        return;
+    }
+
+    if (streamer->status->state != DENEB_PRINT_STATE_PRINTING)
+        return;
+
+    if (!*streamer->job_progress_started) {
+        *streamer->job_started_at = 0;
+        streamer->status->time_left = streamer->status->time_total;
+        return;
+    }
+
+    if (streamer->heater_wait && streamer->heater_wait->active) {
+        if (*streamer->job_started_at > 0 && now > *streamer->job_started_at)
+            *streamer->job_elapsed_seconds +=
+                (int)(now - *streamer->job_started_at);
+        *streamer->job_started_at = 0;
+        elapsed = *streamer->job_elapsed_seconds;
+        if (elapsed >= streamer->status->time_total)
+            streamer->status->time_left = 0;
+        else
+            streamer->status->time_left =
+                streamer->status->time_total - elapsed;
+        return;
+    }
+
+    if (*streamer->job_started_at <= 0)
+        *streamer->job_started_at = now;
+
     if (now <= *streamer->job_started_at)
-        elapsed = 0;
+        elapsed = *streamer->job_elapsed_seconds;
     else if (now - *streamer->job_started_at > 2147483647L)
         elapsed = streamer->status->time_total;
     else
-        elapsed = (int)(now - *streamer->job_started_at);
+        elapsed = *streamer->job_elapsed_seconds +
+                  (int)(now - *streamer->job_started_at);
 
-    streamer->status->time_left =
-        elapsed >= streamer->status->time_total ?
-            0 : streamer->status->time_total - elapsed;
+    if (elapsed >= streamer->status->time_total)
+        streamer->status->time_left = 0;
+    else
+        streamer->status->time_left = streamer->status->time_total - elapsed;
 }
 
 static void clear_job_timer(deneb_job_streamer_t *streamer)
 {
     if (streamer && streamer->job_started_at)
         *streamer->job_started_at = 0;
+    if (streamer && streamer->job_elapsed_seconds)
+        *streamer->job_elapsed_seconds = 0;
+    if (streamer && streamer->job_progress_started)
+        *streamer->job_progress_started = 0;
+    if (streamer && streamer->job_original_time_total)
+        *streamer->job_original_time_total = 0;
+}
+
+static int current_booked_elapsed(const deneb_job_streamer_t *streamer,
+                                  time_t now)
+{
+    if (!streamer || !streamer->job_started_at ||
+        !streamer->job_elapsed_seconds)
+        return 0;
+
+    if (*streamer->job_started_at <= 0 || now <= *streamer->job_started_at)
+        return *streamer->job_elapsed_seconds;
+    if (now - *streamer->job_started_at > 2147483647L)
+        return 2147483647;
+    return *streamer->job_elapsed_seconds +
+           (int)(now - *streamer->job_started_at);
+}
+
+static void apply_gcode_timing_markers(deneb_job_streamer_t *streamer)
+{
+    time_t now;
+    int elapsed;
+
+    if (!streamer || !streamer->stream || !streamer->status ||
+        !streamer->job_progress_started || !streamer->job_started_at ||
+        !streamer->job_elapsed_seconds || !streamer->job_original_time_total ||
+        streamer->status->time_total <= 0)
+        return;
+
+    now = time(NULL);
+    if (*streamer->job_original_time_total <= 0)
+        *streamer->job_original_time_total = streamer->status->time_total;
+
+    if (streamer->stream->last_layer_zero &&
+        !*streamer->job_progress_started) {
+        *streamer->job_progress_started = 1;
+        *streamer->job_started_at = now;
+        *streamer->job_elapsed_seconds = 0;
+        streamer->status->time_left = streamer->status->time_total;
+    }
+
+    if (!streamer->stream->last_time_elapsed_valid)
+        return;
+
+    elapsed = current_booked_elapsed(streamer, now);
+    if (elapsed < 0)
+        elapsed = 0;
+
+    streamer->status->time_total =
+        *streamer->job_original_time_total +
+        elapsed - (int)(streamer->stream->last_time_elapsed + 0.5f);
+    if (streamer->status->time_total < 1)
+        streamer->status->time_total = 1;
+
+    if (elapsed > streamer->status->time_total)
+        elapsed = streamer->status->time_total;
+
+    *streamer->job_progress_started = 1;
+    *streamer->job_elapsed_seconds = elapsed;
+    *streamer->job_started_at = now;
+    streamer->status->time_left = streamer->status->time_total - elapsed;
 }
 
 static int send_command_list(deneb_job_streamer_t *streamer,
@@ -233,7 +348,10 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
     }
 
     if (streamer->status->state == DENEB_PRINT_STATE_PAUSED)
+    {
+        update_job_timing(streamer);
         return 0;
+    }
 
     if (*streamer->finish_cleanup_pending) {
         deneb_job_lifecycle_streaming(streamer->status);
@@ -346,5 +464,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
                                            streamer->status);
         }
     }
+    apply_gcode_timing_markers(streamer);
+    update_job_timing(streamer);
     return 1;
 }

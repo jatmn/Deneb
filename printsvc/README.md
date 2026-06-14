@@ -208,11 +208,12 @@ native service remains experimental until these pass:
 
 - LCD hands-on queued/start/pause/resume/abort/completion/stale-state workflow,
   including fixed-package proof that Resume reheats after Pause cooldown.
-- Web UI hands-on status/control workflow.
-- Desktop Cura target proof for progress/time reporting and broader
-  failure-mode behavior after the 2026-06-14 Cura-local
-  discovery/upload/start/pause/resume/cancel and pending recovery-after-restart
-  proof.
+- Web UI hands-on control workflow and stale-state recovery. Live status,
+  progress, temperature, filename, and explicit time-left display are proven on
+  package `9cdb5d6f`.
+- Desktop Cura target proof for broader failure-mode behavior after the
+  2026-06-14 Cura-local discovery/upload/start/pause/resume/cancel,
+  progress/time, and pending recovery-after-restart proof.
 - Digital Factory job lifecycle.
 - Representative real slicer output.
 - Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and

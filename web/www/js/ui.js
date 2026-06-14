@@ -82,8 +82,9 @@ Deneb.ui = {
         if (el) el.textContent = data.name || data.filename || Deneb.i18n.t('web.status.no_print');
         el = document.getElementById('time-left');
         if (el) {
-            var tl = data.time_left || data.time_total || 0;
-            el.textContent = tl > 0 ? this.formatTime(tl) : '--:--';
+            var tl = data.time_left;
+            if (tl === undefined || tl === null) tl = data.time_total || 0;
+            el.textContent = tl > 0 ? 'Left ' + this.formatTime(tl) : 'Left --:--';
         }
         el = document.getElementById('abort-print-btn');
         if (el) {
@@ -309,7 +310,7 @@ Deneb.ui = {
                 '<div class="card-title" data-i18n="web.status.progress">Print Progress</div>' +
                 '<div class="progress-text" id="progress-text">0%</div>' +
                 '<div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>' +
-                '<div class="progress-info"><span id="filename">--</span> &middot; <span id="time-left">--:--</span></div>' +
+                '<div class="progress-info"><div id="filename">--</div><div class="progress-time" id="time-left">Left --:--</div></div>' +
                 '</div>' +
                 '<div class="card">' +
                 '<div class="card-title">Print Control</div>' +

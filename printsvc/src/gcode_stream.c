@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -127,6 +128,9 @@ int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t lin
     stream->last_wait_for_bed = 0;
     stream->last_wait_for_nozzle = 0;
     stream->last_wait_target = 0.0f;
+    stream->last_layer_zero = 0;
+    stream->last_time_elapsed_valid = 0;
+    stream->last_time_elapsed = 0.0f;
 
     if (stream->pending_index < stream->pending_count) {
         snprintf(line, line_sz, "%s", stream->pending[stream->pending_index++]);
@@ -143,6 +147,19 @@ int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t lin
         p = line;
         while (*p && isspace((unsigned char)*p))
             p++;
+        if (strncmp(p, ";LAYER:0", 8) == 0) {
+            stream->last_layer_zero = 1;
+            continue;
+        }
+        if (strncmp(p, ";TIME_ELAPSED:", 14) == 0) {
+            char *endptr = NULL;
+            double elapsed = strtod(p + 14, &endptr);
+            if (endptr != p + 14 && elapsed >= 0.0) {
+                stream->last_time_elapsed_valid = 1;
+                stream->last_time_elapsed = (float)elapsed;
+            }
+            continue;
+        }
         if (*p == ';' || *p == '\0')
             continue;
 
