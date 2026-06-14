@@ -21,8 +21,8 @@ long active-soak proof.
 | Active abort cleanup | Proven for bounded native/generated paths | `/tmp/deneb-printsvc-smoke-status-fix-active.summary`; `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Shows native `printing` -> `aborting` -> `idle`; does not prove every slicer/client path. |
 | Pause/resume | Proven for bounded native representative fixture and 2026-06-13 touchscreen run on package `072edbc` | `/tmp/deneb-printsvc-smoke-pause-resume-home.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; user-supervised target observation: pause during print, Resume reasserted nozzle heat, waited for temperature, returned to position, and continued print | Cura-started pause/resume still needs its own proof class, but the cold-resume target blocker is closed for the touchscreen path. |
 | Print-start prepare sequence | Proven for supervised Digital Factory material-mismatch Continue startup on package `6cd72899` | 2026-06-13 user-supervised target observation through the Digital Factory material-mismatch decision path after package `6cd72899`: no double Z home; print started as expected. Host tests cover `job_streamer` prepare ordering. | Native removes the normal-print `M18 Z` release and second `G28 Z`. |
-| Generated cluster upload/start/abort | Proven through cluster API | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary` | Desktop Cura client behavior remains open. |
-| Completion flow drain | Proven for representative Digital Factory completion on package `022077b9` | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised DF completion on package `6cd72899` exposed the finish-park bug; 2026-06-14 user-supervised DF completion on package `022077b9` completed with expected end actions; target log showed `JOB` -> `Complete`, print history recorded `state":"completed"`, and `/cluster-api/v1/print_jobs` returned `[]` | Native finish cleanup after EOF now runs `M400`, relative `G1 Z3`, `G28 X Y`, `G28 Z`, heaters/fan off, `M400`, `M84`, and preserves `Complete` status for API/history. |
+| Generated cluster upload/start/abort | Proven through cluster API; Desktop Cura discovery/upload/mismatch Cancel/Continue/start/completion proven on package `ff49e86b` | `/tmp/deneb-cura-representative-xyz.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised Cura 5.13 local-network run: discovery label `Ultimaker-2C-test (Deneb UM2C)`, `.ufp` normalized to extracted `.gcode`, material mismatch reached `wait_user_action`, Cancel returned idle with queue `[]`, Continue transitioned `Idle` -> `PREPARE` -> `JOB`, and completion transitioned `JOB` -> `Complete` with history `state":"completed"` | Cura pause/resume, abort/delete, stale-state recovery, progress/time reporting, and broader failure modes remain open. |
+| Completion flow drain | Proven for representative Digital Factory completion on package `022077b9` and Desktop Cura-local completion on package `ff49e86b` | `/tmp/deneb-native-g280-resource-v5.summary`; `/tmp/deneb-native-g280-api-catchup-v6.summary`; `/tmp/deneb-cd4724a-complete80.summary`; `/tmp/deneb-b745cfd-physical-lifecycle-long.summary`; 2026-06-14 user-supervised DF completion on package `6cd72899` exposed the finish-park bug; 2026-06-14 user-supervised DF completion on package `022077b9` completed with expected end actions; 2026-06-14 user-supervised Cura-local completion on package `ff49e86b` showed `JOB` -> `Complete`, print history `state":"completed"`, queue `[]`, and pending metadata absent | Native finish cleanup after EOF now runs `M400`, relative `G1 Z3`, `G28 X Y`, `G28 Z`, heaters/fan off, `M400`, `M84`, and preserves `Complete` status for API/history. |
 | Stock/native bounded throughput | Proven within accepted floor | Stock `/tmp/deneb-precisewait-stock-resource.summary`: 1401 bytes / 29 s / 48 B/s. Native `/tmp/deneb-precisewait-native-resource.summary`: 1401 bytes / 34 s / 41 B/s. | Comparator enforces the current 85% bounded-fixture floor. |
 | Native driver RSS reduction | Proven in paired completion evidence | Stock final `print_service.py` RSS 14616 KiB; native final `deneb-printsvc` RSS 1648 KiB | Applies to the accepted bounded fixture set. |
 | Strict stock/native resource gate | Proven for current bounded set | `deneb-printsvc-smoke-compare --require-reduction` over the stock/native summaries plus attached lifecycle and stability evidence | Not a substitute for the still-open client and multi-hour gates. |
@@ -67,12 +67,18 @@ hardware:
 - LCD hands-on queued/start/pause/resume/abort/completion/stale-state workflow.
 - Web UI hands-on status/control workflow.
 - Desktop Cura discovery, upload/start, monitor, pause/resume/abort/delete, and
-  pending-job behavior.
+  pending-job behavior. Discovery, mismatch prompt, mismatch Cancel,
+  mismatch Continue/start, and completion are covered by the 2026-06-14
+  supervised Cura 5.13 local-network run on package `ff49e86b`; pause/resume,
+  abort/delete, stale-state recovery, and progress/time reporting remain open.
 - Digital Factory job lifecycle behavior, not only bridge status reachability.
   Material-mismatch Cancel, Continue/start, Pause, Resume, Stop, and no-double-Z
   startup are covered by the current supervised route. Completion with expected
   end actions is covered on package `022077b9`.
 - Representative real slicer output for completion, pause/resume, and abort.
+- Stock-parity review for print progress/time reporting: the 2026-06-14
+  Cura-local completion stayed at `progress:0.0`, `time_total:0`, and
+  `time_elapsed:0` for the whole print and in history.
 - Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and
   diagnostics-log behavior.
 

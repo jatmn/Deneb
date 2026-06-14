@@ -69,6 +69,14 @@ instead of buffering whole jobs in RAM. A pending-job metadata file at
 `/tmp/deneb-cluster-print-job.json` keeps the job visible while Deneb validates
 metadata, waits for conflict confirmation, prepares, and preheats.
 
+Current Cura sends UM2+ Connect jobs as `.ufp` archives. Deneb extracts
+`3D/model.gcode` before native registration so the material/nozzle header is
+validated before any motion starts. A 2026-06-14 Cura 5.13 local-network test on
+package `ff49e86b` proved this path for material-mismatch prompt, Cancel,
+Continue/start, and completion. The first pre-fix Cura-local `.ufp` upload is
+retained as negative evidence: the raw archive reached native print registration
+and produced a Marlin payload ASCII error.
+
 Upload registration, conflict continue/cancel, and pending-job cancel now use
 native Deneb code paths. `deneb-api` assigns a native pending-job tracker,
 writes Cura-visible pending metadata from UCI/file hints, leaves material/nozzle
@@ -89,8 +97,13 @@ install flow, then restart Cura before testing discovery.
 
 ## Remaining Release Blockers
 
-- Validate discovery, upload, start, pause/resume, abort, and status updates
-  against current Cura builds on real hardware.
+- Validate pause/resume, abort/delete, stale-state recovery, and status/progress
+  updates against current Cura builds on real hardware. Discovery, upload,
+  material-mismatch prompt, Cancel, Continue/start, and completion are covered
+  by the 2026-06-14 Cura 5.13 local-network run on package `ff49e86b`.
+- Review stock firmware progress/time calculation and implement parity. The
+  Cura-local completion stayed at `progress:0.0`, `time_total:0`, and
+  `time_elapsed:0`.
 - Confirm local-storage and USB-removal-safe behavior for uploaded jobs.
 - Add free-space and failure-mode validation around uploads.
 - Decide how much of the current web/touch/API print-control duplication moves
