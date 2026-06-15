@@ -20,7 +20,7 @@
    MEMORY
  *====================*/
 #define LV_MEM_CUSTOM           0
-#define LV_MEM_SIZE             (48U * 1024U)
+#define LV_MEM_SIZE             (160U * 1024U)
 
 /*====================
    STDLIB
@@ -92,7 +92,7 @@
 #define LV_USE_CHART            0
 #define LV_USE_CHECKBOX         0
 #define LV_USE_DROPDOWN         0
-#define LV_USE_IMAGE            0
+#define LV_USE_IMAGE            1
 #define LV_USE_IMAGEBUTTON      0
 #define LV_USE_KEYBOARD         0
 #define LV_USE_LABEL            1
@@ -167,12 +167,19 @@
 #define LV_USE_DRAW_EVE            0
 #define LV_USE_DRAW_NANOVG         0
 #define LV_USE_FS_STDIO            0
-#define LV_USE_FS_POSIX            0
+#define LV_USE_FS_POSIX            1
 #define LV_USE_FS_WIN32            0
 #define LV_USE_FS_FATFS            0
 #define LV_USE_FS_MEMFS            0
 #define LV_USE_FS_LITTLEFS         0
-#define LV_USE_LODEPNG             0
+
+#define LV_FS_POSIX_LETTER         'A'
+#define LV_FS_POSIX_PATH           ""
+#define LV_FS_POSIX_CACHE_SIZE     0
+
+#define LV_CACHE_DEF_SIZE          (80U * 1024U)
+
+#define LV_USE_LODEPNG             1
 #define LV_USE_LIBPNG              0
 #define LV_USE_BMP                 0
 #define LV_USE_TJPGD               0

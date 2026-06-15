@@ -7,6 +7,7 @@
 #define DENEB_PRINT_JOB_USB_SCAN_DIR "/mnt/sda1"
 #define DENEB_PRINT_JOB_LOCAL_SCAN_DIR "/home/3D"
 #define DENEB_PRINT_JOB_SPOOL_DIR "/home/3D/deneb-uploads"
+#define DENEB_ACTIVE_THUMB_PATH "/tmp/deneb-active-thumb.rgb565"
 
 typedef struct {
     char material_guid[64];
@@ -53,6 +54,9 @@ int deneb_print_job_file_replace_extension(const char *name,
                                            size_t out_sz);
 int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
                                                  const char *gcode_path);
+int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
+                                               const char *out_path);
+void deneb_print_job_file_clear_active_thumbnail(void);
 int deneb_print_job_file_sanitize_name(const char *name, char *out,
                                        size_t out_sz);
 int deneb_print_job_file_spool_path(const char *name, char *out,

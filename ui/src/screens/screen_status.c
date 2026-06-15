@@ -7,23 +7,53 @@
 #include "screen_mgr.h"
 #include "locale.h"
 #include "backend_comm.h"
+#include "print_job_file.h"
 #include "print_state_rules.h"
 #include "lvgl.h"
+#include "misc/cache/instance/lv_image_cache.h"
 #include <stdio.h>
+#include <sys/stat.h>
+
+LV_IMAGE_DECLARE(deneb_logo_116);
+LV_IMAGE_DECLARE(ic_nozzle_16);
+LV_IMAGE_DECLARE(ic_bed_16);
+
+#define STATUS_THUMB_SIZE 116
+#define STATUS_THUMB_STRIDE (STATUS_THUMB_SIZE * 2)
+#define STATUS_THUMB_BYTES (STATUS_THUMB_STRIDE * STATUS_THUMB_SIZE)
 
 static lv_obj_t *status_screen = NULL;
 static lv_obj_t *state_label = NULL;
 static lv_obj_t *nozzle_temp_label = NULL;
 static lv_obj_t *bed_temp_label = NULL;
+static lv_obj_t *time_left_label = NULL;
 static lv_obj_t *progress_bar = NULL;
 static lv_obj_t *progress_label = NULL;
-static lv_obj_t *time_left_label = NULL;
 static lv_obj_t *file_label = NULL;
-static lv_obj_t *pos_label = NULL;
+static lv_obj_t *thumb = NULL;
 static lv_obj_t *pause_resume_btn = NULL;
 static lv_obj_t *pause_resume_label = NULL;
 static lv_obj_t *stop_btn = NULL;
 static int stop_inflight = 0;
+static int thumb_is_job = 0;
+static ino_t thumb_inode = 0;
+static time_t thumb_mtime = 0;
+static off_t thumb_size = 0;
+static uint8_t active_thumb_map[STATUS_THUMB_BYTES];
+static lv_image_dsc_t active_thumb_dsc = {
+  .header = {
+    .magic = LV_IMAGE_HEADER_MAGIC,
+    .cf = LV_COLOR_FORMAT_RGB565,
+    .flags = 0,
+    .w = STATUS_THUMB_SIZE,
+    .h = STATUS_THUMB_SIZE,
+    .stride = STATUS_THUMB_STRIDE,
+    .reserved_2 = 0,
+  },
+  .data_size = sizeof(active_thumb_map),
+  .data = active_thumb_map,
+  .reserved = NULL,
+};
 
 static lv_timer_t *update_timer = NULL;
 
@@ -85,24 +115,17 @@ static void set_temp_label(lv_obj_t *label, float cur, float target)
     lv_label_set_text(label, text);
 }
 
-static void set_position_label(lv_obj_t *label, float x, float y, float z)
-{
-    char text[40];
-    snprintf(text, sizeof(text), "X:%.0f Y:%.0f Z:%.1f", x, y, z);
-    lv_label_set_text(label, text);
-}
-
 static void format_duration(int seconds, char *out, size_t out_sz)
 {
+    int hours, minutes;
+
     if (seconds < 0)
         seconds = 0;
 
-    int hours = seconds / 3600;
-    int minutes = (seconds % 3600) / 60;
-    if (hours > 0)
-        snprintf(out, out_sz, "%d:%02d", hours, minutes);
-    else
-        snprintf(out, out_sz, "%02d:%02d", minutes, seconds % 60);
+    hours = seconds / 3600;
+    minutes = (seconds % 3600) / 60;
+    seconds = seconds % 60;
+    snprintf(out, out_sz, "%d:%02d:%02d", hours, minutes, seconds);
 }
 
 static void set_time_left_label(lv_obj_t *label, const printer_state_t *s)
@@ -140,6 +163,49 @@ static const char *display_state_locale_key(deneb_print_display_state_t state)
     }
 }
 
+static void set_thumb_source(int job_active)
+{
+    const void *src;
+    int want_job;
+    struct stat st;
+    FILE *f;
+
+    if (!thumb)
+        return;
+
+    want_job = job_active &&
+               stat(DENEB_ACTIVE_THUMB_PATH, &st) == 0 &&
+               st.st_size == (off_t)sizeof(active_thumb_map);
+
+    if (want_job == thumb_is_job &&
+        (!want_job || (st.st_ino == thumb_inode &&
+                       st.st_mtime == thumb_mtime &&
+                       st.st_size == thumb_size)))
+        return;
+
+    if (want_job) {
+        f = fopen(DENEB_ACTIVE_THUMB_PATH, "rb");
+        if (!f ||
+            fread(active_thumb_map, 1, sizeof(active_thumb_map), f) !=
+                sizeof(active_thumb_map)) {
+            if (f)
+                fclose(f);
+            want_job = 0;
+        } else
+            fclose(f);
+    }
+
+    src = want_job ? (const void *)&active_thumb_dsc
+                   : (const void *)&deneb_logo_116;
+    thumb_is_job = want_job;
+    thumb_inode = want_job ? st.st_ino : 0;
+    thumb_mtime = want_job ? st.st_mtime : 0;
+    thumb_size = want_job ? st.st_size : 0;
+    lv_image_cache_drop(NULL);
+    lv_image_set_src(thumb, src);
+    lv_obj_invalidate(thumb);
+}
+
 static void update_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -148,17 +214,17 @@ static void update_timer_cb(lv_timer_t *timer)
     const printer_state_t *s = backend_get_state();
     if (!s->connected) {
         lv_label_set_text(state_label, locale_get("status.preparing"));
-        lv_label_set_text(nozzle_temp_label, "--- / --- \u00b0C");
-        lv_label_set_text(bed_temp_label, "--- / --- \u00b0C");
+        lv_label_set_text(nozzle_temp_label, "-- / --");
+        lv_label_set_text(bed_temp_label, "-- / --");
+        lv_label_set_text(time_left_label, "Left --:--");
         lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
         lv_label_set_text(progress_label, "0%");
-        set_time_left_label(time_left_label, NULL);
         lv_label_set_text(file_label, locale_get("status.no_file"));
-        lv_label_set_text(pos_label, "X:-- Y:-- Z:--");
         set_btn_enabled(pause_resume_btn, 0);
         if (pause_resume_label)
             lv_label_set_text(pause_resume_label, locale_get("print.pause"));
         set_btn_enabled(stop_btn, 0);
+        set_thumb_source(0);
         return;
     }
 
@@ -186,13 +252,15 @@ static void update_timer_cb(lv_timer_t *timer)
     set_temp_label(nozzle_temp_label, s->nozzle_temp_cur, s->nozzle_temp_set);
     set_temp_label(bed_temp_label, s->bed_temp_cur, s->bed_temp_set);
 
+    /* Time remaining */
+    set_time_left_label(time_left_label, s);
+
     /* Progress */
     int pct = (int)s->progress;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     lv_bar_set_value(progress_bar, pct, LV_ANIM_OFF);
     lv_label_set_text_fmt(progress_label, "%d%%", pct);
-    set_time_left_label(time_left_label, s);
 
     /* File */
     lv_label_set_text(file_label, display_name);
@@ -219,37 +287,30 @@ static void update_timer_cb(lv_timer_t *timer)
                                   !stop_inflight &&
                                   !backend_is_stop_print_inflight());
 
-    /* Position */
-    set_position_label(pos_label, s->pos_x, s->pos_y, s->pos_z);
-
+    /* Thumbnail */
+    set_thumb_source(job_active);
 }
 
-static lv_obj_t *create_temp_row(lv_obj_t *parent, const char *icon,
-                                 const char *label_text)
+static lv_obj_t *create_temp_row(lv_obj_t *parent, const lv_image_dsc_t *icon)
 {
     lv_obj_t *row = lv_obj_create(parent);
-    lv_obj_set_size(row, 300, 28);
+    lv_obj_set_size(row, 108, 24);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *icon_lbl = lv_label_create(row);
-    lv_label_set_text(icon_lbl, icon);
-    lv_obj_set_style_text_color(icon_lbl, lv_color_hex(0xe94560), 0);
-    lv_obj_align(icon_lbl, LV_ALIGN_LEFT_MID, 0, 0);
-
-    lv_obj_t *name_lbl = lv_label_create(row);
-    lv_label_set_text(name_lbl, label_text);
-    lv_obj_set_style_text_color(name_lbl, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(name_lbl, &deneb_font_12, 0);
-    lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, 24, 0);
+    lv_obj_t *icon_img = lv_image_create(row);
+    lv_image_set_src(icon_img, icon);
+    lv_obj_align(icon_img, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *temp_lbl = lv_label_create(row);
-    lv_label_set_text(temp_lbl, "--- / --- \u00b0C");
+    lv_label_set_text(temp_lbl, "-- / --");
+    lv_obj_set_width(temp_lbl, 80);
+    lv_obj_set_style_text_align(temp_lbl, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_style_text_color(temp_lbl, lv_color_hex(0xe0e0e0), 0);
     lv_obj_set_style_text_font(temp_lbl, &deneb_font_14, 0);
-    lv_obj_align(temp_lbl, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_align(temp_lbl, LV_ALIGN_LEFT_MID, 28, 0);
 
     return temp_lbl;
 }
@@ -262,32 +323,75 @@ static lv_obj_t *status_create(void)
     lv_obj_set_style_bg_color(status_screen, lv_color_hex(0x0a0a1a), 0);
     lv_obj_set_style_radius(status_screen, 0, 0);
     lv_obj_set_style_border_width(status_screen, 0, 0);
-    lv_obj_set_style_pad_all(status_screen, 10, 0);
+    lv_obj_set_style_pad_all(status_screen, 4, 0);
     lv_obj_set_flex_flow(status_screen, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(status_screen, 6, 0);
+    lv_obj_set_style_pad_gap(status_screen, 3, 0);
+
+    /* Top row: thumbnail + info */
+    lv_obj_t *top_row = lv_obj_create(status_screen);
+    lv_obj_set_size(top_row, 312, 116);
+    lv_obj_set_flex_flow(top_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(top_row, 0, 0);
+    lv_obj_set_style_pad_gap(top_row, 4, 0);
+    lv_obj_set_style_bg_opa(top_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(top_row, 0, 0);
+    lv_obj_remove_flag(top_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    thumb = lv_image_create(top_row);
+    lv_image_set_src(thumb, &deneb_logo_116);
+    lv_obj_set_size(thumb, 116, 116);
+    lv_image_set_inner_align(thumb, LV_IMAGE_ALIGN_CONTAIN);
+    thumb_is_job = 0;
+
+    lv_obj_t *info_col = lv_obj_create(top_row);
+    lv_obj_set_size(info_col, 192, 116);
+    lv_obj_set_flex_flow(info_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(info_col, 0, 0);
+    lv_obj_set_style_pad_gap(info_col, 2, 0);
+    lv_obj_set_style_bg_opa(info_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(info_col, 0, 0);
+    lv_obj_set_flex_align(info_col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_START);
+    lv_obj_remove_flag(info_col, LV_OBJ_FLAG_SCROLLABLE);
 
     /* State */
-    state_label = lv_label_create(status_screen);
+    state_label = lv_label_create(info_col);
     lv_label_set_text(state_label, locale_get("status.idle"));
+    lv_obj_set_width(state_label, 192);
     lv_obj_set_style_text_color(state_label, lv_color_hex(0x53a8b6), 0);
     lv_obj_set_style_text_font(state_label, &deneb_font_16, 0);
 
-    /* Temperatures */
-    nozzle_temp_label = create_temp_row(status_screen, LV_SYMBOL_WARNING,
-                                        locale_get("status.nozzle"));
-    bed_temp_label = create_temp_row(status_screen, LV_SYMBOL_WARNING,
-                                     locale_get("status.bed"));
+    /* Temps */
+    nozzle_temp_label = create_temp_row(info_col, &ic_nozzle_16);
+    bed_temp_label = create_temp_row(info_col, &ic_bed_16);
+
+    /* Time remaining */
+    time_left_label = lv_label_create(info_col);
+    lv_label_set_text(time_left_label, "Left --:--");
+    lv_obj_set_width(time_left_label, 192);
+    lv_label_set_long_mode(time_left_label, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_set_style_text_color(time_left_label, lv_color_hex(0xe0e0e0), 0);
+    lv_obj_set_style_text_font(time_left_label, &deneb_font_12, 0);
+    lv_obj_set_style_text_align(time_left_label, LV_TEXT_ALIGN_RIGHT, 0);
+
+    /* File name */
+    file_label = lv_label_create(status_screen);
+    lv_label_set_text(file_label, locale_get("status.no_file"));
+    lv_obj_set_width(file_label, 312);
+    lv_obj_set_style_text_color(file_label, lv_color_hex(0xa0a0a0), 0);
+    lv_obj_set_style_text_font(file_label, &deneb_font_12, 0);
+    lv_label_set_long_mode(file_label, LV_LABEL_LONG_MODE_DOTS);
 
     /* Progress bar */
     lv_obj_t *prog_row = lv_obj_create(status_screen);
-    lv_obj_set_size(prog_row, 300, 20);
+    lv_obj_set_size(prog_row, 312, 18);
     lv_obj_set_style_bg_opa(prog_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(prog_row, 0, 0);
     lv_obj_set_style_pad_all(prog_row, 0, 0);
     lv_obj_remove_flag(prog_row, LV_OBJ_FLAG_SCROLLABLE);
 
     progress_bar = lv_bar_create(prog_row);
-    lv_obj_set_size(progress_bar, 150, 14);
+    lv_obj_set_size(progress_bar, 262, 12);
     lv_obj_align(progress_bar, LV_ALIGN_LEFT_MID, 0, 0);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
@@ -301,28 +405,11 @@ static lv_obj_t *status_create(void)
     lv_obj_set_style_text_font(progress_label, &deneb_font_12, 0);
     lv_obj_set_width(progress_label, 44);
     lv_label_set_long_mode(progress_label, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_align(progress_label, LV_ALIGN_LEFT_MID, 158, 0);
+    lv_obj_align(progress_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
-    time_left_label = lv_label_create(prog_row);
-    lv_label_set_text(time_left_label, "Left --:--");
-    lv_obj_set_width(time_left_label, 92);
-    lv_label_set_long_mode(time_left_label, LV_LABEL_LONG_MODE_CLIP);
-    lv_obj_set_style_text_color(time_left_label, lv_color_hex(0xe0e0e0), 0);
-    lv_obj_set_style_text_font(time_left_label, &deneb_font_12, 0);
-    lv_obj_set_style_text_align(time_left_label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(time_left_label, LV_ALIGN_RIGHT_MID, 0, 0);
-
-    /* File name */
-    file_label = lv_label_create(status_screen);
-    lv_label_set_text(file_label, locale_get("status.no_file"));
-    lv_obj_set_style_text_color(file_label, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(file_label, &deneb_font_12, 0);
-    lv_label_set_long_mode(file_label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_width(file_label, 300);
-
-    /* Active print controls */
+    /* Controls */
     lv_obj_t *ctrl_row = lv_obj_create(status_screen);
-    lv_obj_set_size(ctrl_row, 300, 36);
+    lv_obj_set_size(ctrl_row, 312, 36);
     lv_obj_set_style_bg_opa(ctrl_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ctrl_row, 0, 0);
     lv_obj_set_style_pad_all(ctrl_row, 0, 0);
@@ -332,7 +419,7 @@ static lv_obj_t *status_create(void)
     lv_obj_remove_flag(ctrl_row, LV_OBJ_FLAG_SCROLLABLE);
 
     pause_resume_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(pause_resume_btn, 140, 30);
+    lv_obj_set_size(pause_resume_btn, 150, 36);
     lv_obj_set_style_bg_color(pause_resume_btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_radius(pause_resume_btn, 4, 0);
     lv_obj_add_event_cb(pause_resume_btn, pause_resume_btn_cb,
@@ -345,7 +432,7 @@ static lv_obj_t *status_create(void)
     set_btn_enabled(pause_resume_btn, 0);
 
     stop_btn = lv_button_create(ctrl_row);
-    lv_obj_set_size(stop_btn, 140, 30);
+    lv_obj_set_size(stop_btn, 150, 36);
     lv_obj_set_style_bg_color(stop_btn, lv_color_hex(0xe94560), 0);
     lv_obj_set_style_radius(stop_btn, 4, 0);
     lv_obj_add_event_cb(stop_btn, stop_btn_cb, LV_EVENT_CLICKED, NULL);
@@ -355,12 +442,6 @@ static lv_obj_t *status_create(void)
     lv_obj_set_style_text_font(stop_lbl, &deneb_font_12, 0);
     lv_obj_center(stop_lbl);
     set_btn_enabled(stop_btn, 0);
-
-    /* Position */
-    pos_label = lv_label_create(status_screen);
-    lv_label_set_text(pos_label, "X:--- Y:--- Z:---");
-    lv_obj_set_style_text_color(pos_label, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(pos_label, &deneb_font_12, 0);
 
     /* Start live update timer (every 250ms) */
     update_timer = lv_timer_create(update_timer_cb, 250, NULL);
@@ -378,14 +459,19 @@ static void status_destroy(void)
     state_label = NULL;
     nozzle_temp_label = NULL;
     bed_temp_label = NULL;
+    time_left_label = NULL;
     progress_bar = NULL;
     progress_label = NULL;
-    time_left_label = NULL;
     file_label = NULL;
-    pos_label = NULL;
+    thumb = NULL;
     pause_resume_btn = NULL;
     pause_resume_label = NULL;
     stop_btn = NULL;
+    stop_inflight = 0;
+    thumb_is_job = 0;
+    thumb_inode = 0;
+    thumb_mtime = 0;
+    thumb_size = 0;
 }
 
 const screen_ops_t screen_status = {

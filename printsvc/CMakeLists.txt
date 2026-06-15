@@ -59,6 +59,7 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     ../common/print/json_field.c
     ../common/print/json_file.c
     ../common/print/json_string.c
+    ../common/print/lodepng_standalone_alloc.c
     ../common/print/manual_motion.c
     ../common/print/material_catalog.c
     ../common/print/material_workflow.c
@@ -118,11 +119,30 @@ set(DENEB_PRINTSVC_LIB_SOURCES
     src/service_context.c
     src/status.c
     src/status_parser.c
+    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
+)
+
+set_source_files_properties(
+    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
+    PROPERTIES
+    COMPILE_DEFINITIONS "LODEPNG_NO_COMPILE_PNG;LODEPNG_NO_COMPILE_ENCODER;LODEPNG_NO_COMPILE_DISK;LODEPNG_NO_COMPILE_ERROR_TEXT"
 )
 
 add_library(deneb-printsvc-core STATIC ${DENEB_PRINTSVC_LIB_SOURCES})
-target_include_directories(deneb-printsvc-core PUBLIC src ../common/print)
-target_compile_definitions(deneb-printsvc-core PUBLIC DENEB_VERSION="${GIT_VERSION}")
+target_include_directories(deneb-printsvc-core PUBLIC
+    src
+    ../common/print
+    ../ui/config
+    ../ui/lib/lvgl
+    ../ui/lib/lvgl/include
+    ../ui/lib/lvgl/src
+    ../ui/lib/lvgl/src/libs/lodepng
+)
+target_compile_definitions(deneb-printsvc-core PUBLIC
+    DENEB_VERSION="${GIT_VERSION}"
+    LV_CONF_INCLUDE_SIMPLE
+    LV_DISABLE_API_MAPPING
+)
 
 add_executable(deneb-printsvc
     src/main.c

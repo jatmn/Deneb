@@ -1,17 +1,36 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+#define _GNU_SOURCE
 #include "print_job_file.h"
 
+#include "lodepng.h"
 #include "print_state_rules.h"
 
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#define DENEB_THUMB_TARGET_SIZE 116
+#define DENEB_THUMB_RGB565_BYTES \
+    (DENEB_THUMB_TARGET_SIZE * DENEB_THUMB_TARGET_SIZE * 2)
+#define DENEB_UFP_THUMB_MAX_CANDIDATES 16
+#define DENEB_UFP_MEMBER_MAX 256
+#define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
+
+typedef struct {
+    char name[DENEB_UFP_MEMBER_MAX];
+    uint16_t method;
+    uint32_t compressed_size;
+    uint32_t uncompressed_size;
+    uint32_t local_header_offset;
+} deneb_ufp_thumb_candidate_t;
 
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta)
 {
@@ -259,6 +278,627 @@ static int extract_ufp_member(const char *ufp_path, const char *member,
     return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
 }
 
+static int contains_ci(const char *haystack, const char *needle)
+{
+    size_t needle_len;
+
+    if (!haystack || !needle)
+        return 0;
+
+    needle_len = strlen(needle);
+    if (needle_len == 0)
+        return 1;
+
+    for (; *haystack; haystack++) {
+        size_t i;
+
+        for (i = 0; i < needle_len; i++) {
+            unsigned char a = (unsigned char)haystack[i];
+            unsigned char b = (unsigned char)needle[i];
+
+            if (!a || tolower(a) != tolower(b))
+                break;
+        }
+        if (i == needle_len)
+            return 1;
+    }
+    return 0;
+}
+
+static uint16_t read_le16(const unsigned char *p)
+{
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+static uint32_t read_le32(const unsigned char *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static uint32_t read_be32(const unsigned char *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static int read_png_dimensions_data(const unsigned char *data, size_t size,
+                                    int *width, int *height)
+{
+    static const unsigned char png_sig[8] =
+        {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    uint32_t png_width;
+    uint32_t png_height;
+
+    if (!data || size < 24 || !width || !height)
+        return -1;
+
+    if (memcmp(data, png_sig, sizeof(png_sig)) != 0 ||
+        memcmp(data + 12, "IHDR", 4) != 0)
+        return -1;
+
+    png_width = read_be32(data + 16);
+    png_height = read_be32(data + 20);
+    if (png_width == 0 || png_height == 0 ||
+        png_width > 2147483647U || png_height > 2147483647U)
+        return -1;
+
+    *width = (int)png_width;
+    *height = (int)png_height;
+    return 0;
+}
+
+static int thumbnail_score(int width, int height)
+{
+    int dw = width - DENEB_THUMB_TARGET_SIZE;
+    int dh = height - DENEB_THUMB_TARGET_SIZE;
+
+    if (dw < 0)
+        dw = -dw;
+    if (dh < 0)
+        dh = -dh;
+    return dw + dh;
+}
+
+static int inflate_zip_deflate(const unsigned char *compressed,
+                               size_t compressed_size,
+                               size_t uncompressed_size,
+                               unsigned char **out,
+                               size_t *out_size)
+{
+    LodePNGDecompressSettings settings;
+    unsigned char *buf = NULL;
+    size_t inflated_size = 0;
+    unsigned error;
+
+    if (!compressed || compressed_size == 0 || uncompressed_size == 0 ||
+        uncompressed_size > DENEB_UFP_THUMB_MAX_BYTES || !out || !out_size)
+        return -1;
+
+    lodepng_decompress_settings_init(&settings);
+    settings.max_output_size = uncompressed_size;
+
+    error = lodepng_inflate(&buf, &inflated_size, compressed,
+                            compressed_size, &settings);
+    if (error || inflated_size != uncompressed_size) {
+        free(buf);
+        return -1;
+    }
+
+    *out = buf;
+    *out_size = inflated_size;
+    return 0;
+}
+
+static int read_file_at(FILE *f, uint32_t offset, void *buf, size_t size)
+{
+    if (fseek(f, (long)offset, SEEK_SET) < 0)
+        return -1;
+    return fread(buf, 1, size, f) == size ? 0 : -1;
+}
+
+static int find_zip_central_directory(FILE *f, uint32_t *cd_offset)
+{
+    long file_size;
+    size_t tail_size;
+    unsigned char *tail;
+    size_t i;
+    int found = -1;
+
+    if (!f || !cd_offset || fseek(f, 0, SEEK_END) < 0)
+        return -1;
+
+    file_size = ftell(f);
+    if (file_size < 22)
+        return -1;
+
+    tail_size = (size_t)(file_size < 66000 ? file_size : 66000);
+    tail = malloc(tail_size);
+    if (!tail)
+        return -1;
+
+    if (fseek(f, file_size - (long)tail_size, SEEK_SET) < 0 ||
+        fread(tail, 1, tail_size, f) != tail_size) {
+        free(tail);
+        return -1;
+    }
+
+    for (i = tail_size - 22;; i--) {
+        if (tail[i] == 0x50 && tail[i + 1] == 0x4b &&
+            tail[i + 2] == 0x05 && tail[i + 3] == 0x06) {
+            *cd_offset = read_le32(tail + i + 16);
+            found = 0;
+            break;
+        }
+        if (i == 0)
+            break;
+    }
+
+    free(tail);
+    return found;
+}
+
+static size_t list_ufp_thumbnail_members(
+    const char *ufp_path,
+    deneb_ufp_thumb_candidate_t candidates[],
+    size_t max_candidates)
+{
+    FILE *f;
+    uint32_t offset;
+    size_t count = 0;
+
+    if (!ufp_path || !candidates || max_candidates == 0)
+        return 0;
+
+    f = fopen(ufp_path, "rb");
+    if (!f)
+        return 0;
+
+    if (find_zip_central_directory(f, &offset) < 0) {
+        fclose(f);
+        return 0;
+    }
+
+    while (count < max_candidates) {
+        unsigned char hdr[46];
+        uint16_t name_len;
+        uint16_t extra_len;
+        uint16_t comment_len;
+        char name[DENEB_UFP_MEMBER_MAX];
+        uint16_t method;
+        uint32_t compressed_size;
+        uint32_t uncompressed_size;
+        uint32_t local_header_offset;
+        long next_offset;
+
+        if (read_file_at(f, offset, hdr, sizeof(hdr)) < 0 ||
+            read_le32(hdr) != 0x02014b50U)
+            break;
+
+        method = read_le16(hdr + 10);
+        compressed_size = read_le32(hdr + 20);
+        uncompressed_size = read_le32(hdr + 24);
+        name_len = read_le16(hdr + 28);
+        extra_len = read_le16(hdr + 30);
+        comment_len = read_le16(hdr + 32);
+        local_header_offset = read_le32(hdr + 42);
+        next_offset = (long)offset + 46L + name_len + extra_len +
+                      comment_len;
+
+        if (name_len > 0 && name_len < sizeof(name) &&
+            read_file_at(f, offset + 46U, name, name_len) == 0) {
+            name[name_len] = '\0';
+
+            if ((method == 0 || method == 8) &&
+                compressed_size > 0 &&
+                uncompressed_size > 0 &&
+                uncompressed_size <= DENEB_UFP_THUMB_MAX_BYTES &&
+                deneb_print_job_file_has_extension(name, ".png") &&
+                contains_ci(name, "thumbnail")) {
+                snprintf(candidates[count].name,
+                         sizeof(candidates[count].name), "%s", name);
+                candidates[count].method = method;
+                candidates[count].compressed_size = compressed_size;
+                candidates[count].uncompressed_size = uncompressed_size;
+                candidates[count].local_header_offset = local_header_offset;
+                count++;
+            }
+        }
+
+        if (next_offset <= (long)offset)
+            break;
+        offset = (uint32_t)next_offset;
+    }
+
+    fclose(f);
+    return count;
+}
+
+static int extract_zip_candidate(const char *ufp_path,
+                                 const deneb_ufp_thumb_candidate_t *candidate,
+                                 unsigned char **out,
+                                 size_t *out_size)
+{
+    FILE *f;
+    unsigned char local[30];
+    uint16_t name_len;
+    uint16_t extra_len;
+    uint32_t data_offset;
+    unsigned char *compressed;
+    unsigned char *inflated = NULL;
+    size_t inflated_size = 0;
+    int rc = -1;
+
+    if (!ufp_path || !candidate || !out || !out_size)
+        return -1;
+
+    *out = NULL;
+    *out_size = 0;
+    f = fopen(ufp_path, "rb");
+    if (!f)
+        return -1;
+
+    if (read_file_at(f, candidate->local_header_offset, local,
+                     sizeof(local)) < 0 ||
+        read_le32(local) != 0x04034b50U)
+        goto done;
+
+    name_len = read_le16(local + 26);
+    extra_len = read_le16(local + 28);
+    data_offset = candidate->local_header_offset + 30U + name_len +
+                  extra_len;
+    compressed = malloc(candidate->compressed_size);
+    if (!compressed)
+        goto done;
+
+    if (read_file_at(f, data_offset, compressed,
+                     candidate->compressed_size) < 0) {
+        free(compressed);
+        goto done;
+    }
+
+    if (candidate->method == 0) {
+        inflated = compressed;
+        inflated_size = candidate->compressed_size;
+        compressed = NULL;
+    } else {
+        if (inflate_zip_deflate(compressed, candidate->compressed_size,
+                                candidate->uncompressed_size, &inflated,
+                                &inflated_size) != 0) {
+            free(compressed);
+            goto done;
+        }
+        free(compressed);
+    }
+
+    *out = inflated;
+    *out_size = inflated_size;
+    inflated = NULL;
+    rc = 0;
+
+done:
+    free(inflated);
+    fclose(f);
+    return rc;
+}
+
+static int write_all_bytes(const char *path, const unsigned char *data,
+                           size_t size)
+{
+    FILE *f;
+    size_t written;
+
+    if (!path || !data)
+        return -1;
+
+    f = fopen(path, "wb");
+    if (!f)
+        return -1;
+    written = fwrite(data, 1, size, f);
+    fclose(f);
+    return written == size ? 0 : -1;
+}
+
+static unsigned short rgb_to_rgb565(unsigned char r, unsigned char g,
+                                    unsigned char b)
+{
+    return (unsigned short)(((unsigned short)(r & 0xf8) << 8) |
+                            ((unsigned short)(g & 0xfc) << 3) |
+                            ((unsigned short)b >> 3));
+}
+
+static void write_rgb565_pixel(unsigned char *buf, size_t pixel,
+                               unsigned short color)
+{
+    buf[pixel * 2U] = (unsigned char)(color & 0xffU);
+    buf[pixel * 2U + 1U] = (unsigned char)((color >> 8) & 0xffU);
+}
+
+static int paeth_predictor(int a, int b, int c)
+{
+    int p = a + b - c;
+    int pa = p > a ? p - a : a - p;
+    int pb = p > b ? p - b : b - p;
+    int pc = p > c ? p - c : c - p;
+
+    if (pa <= pb && pa <= pc)
+        return a;
+    return pb <= pc ? b : c;
+}
+
+static int append_png_chunk(unsigned char **buf, size_t *size, size_t *cap,
+                            const unsigned char *data, size_t data_size)
+{
+    unsigned char *grown;
+    size_t next_cap;
+
+    if (!buf || !size || !cap || !data)
+        return -1;
+    if (data_size > DENEB_UFP_THUMB_MAX_BYTES ||
+        *size > DENEB_UFP_THUMB_MAX_BYTES - data_size)
+        return -1;
+    if (*size + data_size > *cap) {
+        next_cap = *cap ? *cap : 4096U;
+        while (next_cap < *size + data_size) {
+            if (next_cap > DENEB_UFP_THUMB_MAX_BYTES / 2U)
+                next_cap = DENEB_UFP_THUMB_MAX_BYTES;
+            else
+                next_cap *= 2U;
+            if (next_cap < *size + data_size &&
+                next_cap == DENEB_UFP_THUMB_MAX_BYTES)
+                return -1;
+        }
+        grown = realloc(*buf, next_cap);
+        if (!grown)
+            return -1;
+        *buf = grown;
+        *cap = next_cap;
+    }
+    memcpy(*buf + *size, data, data_size);
+    *size += data_size;
+    return 0;
+}
+
+static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
+                             unsigned char **out_rgba, unsigned *out_width,
+                             unsigned *out_height)
+{
+    static const unsigned char png_sig[8] =
+        {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    unsigned char *idat = NULL;
+    unsigned char *raw = NULL;
+    unsigned char *rgba = NULL;
+    unsigned char *prev = NULL;
+    unsigned char *cur = NULL;
+    size_t idat_size = 0;
+    size_t idat_cap = 0;
+    size_t raw_size = 0;
+    size_t pos = 8;
+    size_t stride;
+    size_t expected_raw_size;
+    unsigned width = 0;
+    unsigned height = 0;
+    unsigned color_type = 0;
+    unsigned bpp = 0;
+    int saw_ihdr = 0;
+    int saw_iend = 0;
+    int rc = -1;
+
+    if (!png_data || png_size < 33 || !out_rgba || !out_width ||
+        !out_height || memcmp(png_data, png_sig, sizeof(png_sig)) != 0)
+        return -1;
+
+    while (pos + 12U <= png_size) {
+        uint32_t chunk_len = read_be32(png_data + pos);
+        const unsigned char *type = png_data + pos + 4U;
+        const unsigned char *chunk = png_data + pos + 8U;
+
+        pos += 8U;
+        if (chunk_len > png_size - pos || chunk_len > DENEB_UFP_THUMB_MAX_BYTES)
+            goto done;
+
+        if (memcmp(type, "IHDR", 4) == 0) {
+            if (chunk_len != 13U)
+                goto done;
+            width = read_be32(chunk);
+            height = read_be32(chunk + 4);
+            color_type = chunk[9];
+            if (width == 0 || height == 0 || width > 4096U ||
+                height > 4096U || chunk[8] != 8U ||
+                (color_type != 2U && color_type != 6U) || chunk[10] != 0U ||
+                chunk[11] != 0U || chunk[12] != 0U)
+                goto done;
+            bpp = color_type == 6U ? 4U : 3U;
+            saw_ihdr = 1;
+        } else if (memcmp(type, "IDAT", 4) == 0) {
+            if (append_png_chunk(&idat, &idat_size, &idat_cap, chunk,
+                                 chunk_len) < 0)
+                goto done;
+        } else if (memcmp(type, "IEND", 4) == 0) {
+            saw_iend = 1;
+            break;
+        }
+
+        pos += (size_t)chunk_len + 4U;
+    }
+
+    if (!saw_ihdr || !saw_iend || idat_size == 0)
+        goto done;
+
+    stride = (size_t)width * bpp;
+    if (height > SIZE_MAX / (stride + 1U))
+        goto done;
+    expected_raw_size = (stride + 1U) * height;
+
+    {
+        LodePNGDecompressSettings settings;
+
+        lodepng_decompress_settings_init(&settings);
+        settings.max_output_size = expected_raw_size;
+        if (lodepng_zlib_decompress(&raw, &raw_size, idat, idat_size,
+                                    &settings) != 0 ||
+            raw_size != expected_raw_size)
+            goto done;
+    }
+
+    if ((size_t)width > SIZE_MAX / height ||
+        (size_t)width * height > SIZE_MAX / 4U)
+        goto done;
+    rgba = malloc((size_t)width * height * 4U);
+    prev = calloc(1, stride);
+    cur = malloc(stride);
+    if (!rgba || !prev || !cur)
+        goto done;
+
+    pos = 0;
+    for (unsigned y = 0; y < height; y++) {
+        unsigned filter = raw[pos++];
+        const unsigned char *scanline = raw + pos;
+
+        if (filter > 4U)
+            goto done;
+        for (size_t i = 0; i < stride; i++) {
+            int x = scanline[i];
+            int left = i >= bpp ? cur[i - bpp] : 0;
+            int up = prev[i];
+            int upper_left = i >= bpp ? prev[i - bpp] : 0;
+
+            if (filter == 1U)
+                x += left;
+            else if (filter == 2U)
+                x += up;
+            else if (filter == 3U)
+                x += (left + up) / 2;
+            else if (filter == 4U)
+                x += paeth_predictor(left, up, upper_left);
+            cur[i] = (unsigned char)(x & 0xff);
+        }
+        for (unsigned x = 0; x < width; x++) {
+            const unsigned char *src = cur + (size_t)x * bpp;
+            unsigned char *dst = rgba + (((size_t)y * width + x) * 4U);
+
+            dst[0] = src[0];
+            dst[1] = src[1];
+            dst[2] = src[2];
+            dst[3] = bpp == 4U ? src[3] : 255U;
+        }
+        memcpy(prev, cur, stride);
+        pos += stride;
+    }
+
+    *out_rgba = rgba;
+    *out_width = width;
+    *out_height = height;
+    rgba = NULL;
+    rc = 0;
+
+done:
+    free(cur);
+    free(prev);
+    free(rgba);
+    free(raw);
+    free(idat);
+    return rc;
+}
+
+static int write_png_thumbnail_rgb565(const unsigned char *png_data,
+                                      size_t png_size,
+                                      const char *target_path)
+{
+    static const unsigned char bg_r = 10;
+    static const unsigned char bg_g = 10;
+    static const unsigned char bg_b = 26;
+    unsigned char *rgba = NULL;
+    unsigned char *rgb565 = NULL;
+    unsigned width = 0;
+    unsigned height = 0;
+    unsigned scaled_w;
+    unsigned scaled_h;
+    unsigned offset_x;
+    unsigned offset_y;
+    unsigned x;
+    unsigned y;
+    unsigned short bg_color = rgb_to_rgb565(bg_r, bg_g, bg_b);
+    int rc = -1;
+
+    if (!png_data || png_size == 0 || !target_path || !*target_path)
+        return -1;
+
+    if (decode_png_rgba32(png_data, png_size, &rgba, &width, &height) < 0)
+        goto done;
+
+    rgb565 = malloc(DENEB_THUMB_RGB565_BYTES);
+    if (!rgb565)
+        goto done;
+
+    for (y = 0; y < DENEB_THUMB_TARGET_SIZE; y++) {
+        for (x = 0; x < DENEB_THUMB_TARGET_SIZE; x++) {
+            write_rgb565_pixel(rgb565,
+                               (size_t)y * DENEB_THUMB_TARGET_SIZE + x,
+                               bg_color);
+        }
+    }
+
+    if (width >= height) {
+        scaled_w = DENEB_THUMB_TARGET_SIZE;
+        scaled_h = (unsigned)(((uint64_t)height * DENEB_THUMB_TARGET_SIZE +
+                               width / 2U) /
+                              width);
+    } else {
+        scaled_h = DENEB_THUMB_TARGET_SIZE;
+        scaled_w = (unsigned)(((uint64_t)width * DENEB_THUMB_TARGET_SIZE +
+                               height / 2U) /
+                              height);
+    }
+    if (scaled_w == 0)
+        scaled_w = 1;
+    if (scaled_h == 0)
+        scaled_h = 1;
+
+    offset_x = (DENEB_THUMB_TARGET_SIZE - scaled_w) / 2U;
+    offset_y = (DENEB_THUMB_TARGET_SIZE - scaled_h) / 2U;
+
+    for (y = 0; y < scaled_h; y++) {
+        unsigned src_y = (unsigned)(((uint64_t)y * height) / scaled_h);
+
+        if (src_y >= height)
+            src_y = height - 1U;
+        for (x = 0; x < scaled_w; x++) {
+            unsigned src_x = (unsigned)(((uint64_t)x * width) / scaled_w);
+            const unsigned char *src;
+            unsigned alpha;
+            unsigned r;
+            unsigned g;
+            unsigned b;
+
+            if (src_x >= width)
+                src_x = width - 1U;
+            src = rgba + (((size_t)src_y * width + src_x) * 4U);
+            alpha = src[3];
+            r = ((unsigned)src[0] * alpha + (unsigned)bg_r * (255U - alpha)) /
+                255U;
+            g = ((unsigned)src[1] * alpha + (unsigned)bg_g * (255U - alpha)) /
+                255U;
+            b = ((unsigned)src[2] * alpha + (unsigned)bg_b * (255U - alpha)) /
+                255U;
+            write_rgb565_pixel(rgb565,
+                               (size_t)(y + offset_y) *
+                                   DENEB_THUMB_TARGET_SIZE +
+                                   (x + offset_x),
+                               rgb_to_rgb565((unsigned char)r,
+                                             (unsigned char)g,
+                                             (unsigned char)b));
+        }
+    }
+
+    rc = write_all_bytes(target_path, rgb565, DENEB_THUMB_RGB565_BYTES);
+
+done:
+    free(rgb565);
+    free(rgba);
+    return rc;
+}
+
 int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
                                                  const char *gcode_path)
 {
@@ -273,6 +913,72 @@ int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
     if (rc == 0)
         return 0;
     return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path);
+}
+
+int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
+                                               const char *out_path)
+{
+    deneb_ufp_thumb_candidate_t candidates[DENEB_UFP_THUMB_MAX_CANDIDATES];
+    unsigned char *best_data = NULL;
+    size_t best_size = 0;
+    int best_score = 0;
+    int best_ready = 0;
+    size_t candidate_count;
+    size_t i;
+    const char *target_path = out_path ? out_path : DENEB_ACTIVE_THUMB_PATH;
+
+    if (!ufp_path || !*ufp_path || !target_path || !*target_path) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    candidate_count = list_ufp_thumbnail_members(
+        ufp_path, candidates, DENEB_UFP_THUMB_MAX_CANDIDATES);
+    if (candidate_count == 0)
+        return -1;
+
+    for (i = 0; i < candidate_count; i++) {
+        unsigned char *data = NULL;
+        size_t data_size = 0;
+        int width = 0;
+        int height = 0;
+        int score;
+
+        if (extract_zip_candidate(ufp_path, &candidates[i], &data,
+                                  &data_size) != 0 ||
+            read_png_dimensions_data(data, data_size, &width, &height) != 0) {
+            free(data);
+            continue;
+        }
+
+        score = thumbnail_score(width, height);
+        if (!best_ready || score < best_score) {
+            free(best_data);
+            best_data = data;
+            best_size = data_size;
+            best_score = score;
+            best_ready = 1;
+            continue;
+        }
+        free(data);
+    }
+
+    if (!best_ready) {
+        free(best_data);
+        return -1;
+    }
+
+    if (write_png_thumbnail_rgb565(best_data, best_size, target_path) < 0) {
+        free(best_data);
+        return -1;
+    }
+    free(best_data);
+    return 0;
+}
+
+void deneb_print_job_file_clear_active_thumbnail(void)
+{
+    unlink(DENEB_ACTIVE_THUMB_PATH);
 }
 
 int deneb_print_job_file_sanitize_name(const char *name, char *out,

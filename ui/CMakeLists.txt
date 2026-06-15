@@ -99,9 +99,12 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/tick/*.c"
     "${LVGL_DIR}/src/widgets/bar/*.c"
     "${LVGL_DIR}/src/widgets/button/*.c"
+    "${LVGL_DIR}/src/widgets/image/*.c"
     "${LVGL_DIR}/src/widgets/label/*.c"
     "${LVGL_DIR}/src/widgets/slider/*.c"
     "${LVGL_DIR}/src/widgets/switch/*.c"
+    "${LVGL_DIR}/src/libs/lodepng/*.c"
+    "${LVGL_DIR}/src/libs/fsdrv/lv_fs_posix.c"
 )
 
 set(LVGL_SOURCES)
@@ -160,6 +163,9 @@ set(DENEB_SOURCES
     src/eth_setup.c
     src/screens/screen_home.c
     src/screens/screen_status.c
+    src/assets/deneb_logo_116.c
+    src/assets/ic_nozzle_16.c
+    src/assets/ic_bed_16.c
     src/screens/screen_print.c
     src/screens/screen_print_conflict.c
     src/screens/screen_maintenance.c
@@ -220,6 +226,7 @@ target_include_directories(deneb-ui PRIVATE
     ${CMAKE_SOURCE_DIR}/src          # project headers
     ${CMAKE_SOURCE_DIR}/../common/print
     ${LVGL_DIR}/src                  # LVGL internal headers
+    ${LVGL_DIR}/src/libs/lodepng     # shared UFP thumbnail decoder
     ${LVGL_DIR}/include              # LVGL v9 public headers
     ${LVGL_DIR}                      # lvgl.h
 )

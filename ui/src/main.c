@@ -100,7 +100,27 @@ static int save_current_screenshot(const char *dir, const char *slug)
     return fb_driver_save_ppm(path);
 }
 
-static int run_screenshot_catalog(const char *dir)
+static int render_screenshot_entry(const char *dir,
+                                   const screenshot_screen_t *screen)
+{
+    int rc = 0;
+
+    screen_mgr_push(screen->ops);
+    if (screen->er_code) {
+        error_screen_show(screen->er_code, screen->er_desc,
+                          screen->er_action);
+    }
+
+    if (save_current_screenshot(dir, screen->slug) < 0) {
+        fprintf(stderr, "deneb-ui: failed to save %s screenshot\n",
+                screen->slug);
+        rc = 1;
+    }
+    screen_mgr_pop();
+    return rc;
+}
+
+static int run_screenshot_catalog(const char *dir, const char *only_slug)
 {
 #if !defined(_WIN32)
     if (mkdir(dir, 0755) < 0 && errno != EEXIST) {
@@ -136,27 +156,41 @@ static int run_screenshot_catalog(const char *dir)
          "Resolve the condition, then confirm on the printer."},
     };
 
-    if (save_current_screenshot(dir, "home") < 0) {
-        fprintf(stderr, "deneb-ui: failed to save home screenshot\n");
-        return 1;
+    if (only_slug && strcmp(only_slug, "all") == 0)
+        only_slug = NULL;
+
+    if (!only_slug || strcmp(only_slug, "home") == 0) {
+        if (save_current_screenshot(dir, "home") < 0) {
+            fprintf(stderr, "deneb-ui: failed to save home screenshot\n");
+            screen_network_set_catalog_placeholder_mode(0);
+            return 1;
+        }
+        if (only_slug) {
+            screen_network_set_catalog_placeholder_mode(0);
+            return 0;
+        }
     }
 
     for (size_t i = 0; i < sizeof(screens) / sizeof(screens[0]); i++) {
-        screen_mgr_push(screens[i].ops);
-        if (screens[i].er_code) {
-            error_screen_show(screens[i].er_code, screens[i].er_desc,
-                              screens[i].er_action);
-        }
-
-        if (save_current_screenshot(dir, screens[i].slug) < 0) {
-            fprintf(stderr, "deneb-ui: failed to save %s screenshot\n",
-                    screens[i].slug);
+        if (only_slug && strcmp(only_slug, screens[i].slug) != 0)
+            continue;
+        if (render_screenshot_entry(dir, &screens[i]) != 0) {
+            screen_network_set_catalog_placeholder_mode(0);
             return 1;
         }
-        screen_mgr_pop();
+        if (only_slug) {
+            screen_network_set_catalog_placeholder_mode(0);
+            return 0;
+        }
     }
 
     screen_network_set_catalog_placeholder_mode(0);
+
+    if (only_slug) {
+        fprintf(stderr, "deneb-ui: unknown screenshot screen: %s\n",
+                only_slug);
+        return 1;
+    }
 
     return 0;
 }
@@ -166,6 +200,7 @@ int main(int argc, char *argv[])
 {
     const char *lang = "en";
     const char *screenshot_dir = NULL;
+    const char *screenshot_screen = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--lang") == 0 && i + 1 < argc) {
@@ -173,6 +208,8 @@ int main(int argc, char *argv[])
 #ifdef BACKEND_COMM_STUB
         } else if (strcmp(argv[i], "--screenshot-dir") == 0 && i + 1 < argc) {
             screenshot_dir = argv[++i];
+        } else if (strcmp(argv[i], "--screenshot-screen") == 0 && i + 1 < argc) {
+            screenshot_screen = argv[++i];
 #endif
         } else if (strcmp(argv[i], "--smoke-test") == 0) {
             fprintf(stderr, "deneb-ui: smoke test ok\n");
@@ -230,7 +267,7 @@ int main(int argc, char *argv[])
 
 #ifdef BACKEND_COMM_STUB
     if (screenshot_dir) {
-        int rc = run_screenshot_catalog(screenshot_dir);
+        int rc = run_screenshot_catalog(screenshot_dir, screenshot_screen);
         backend_deinit();
         locale_deinit();
         touch_driver_deinit();

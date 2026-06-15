@@ -85,9 +85,13 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     svc->job_elapsed_seconds = 0;
     svc->job_progress_started = 0;
     svc->job_original_time_total = 0;
+    deneb_print_job_file_clear_active_thumbnail();
     deneb_job_lifecycle_start(&svc->status, cmd->file, cmd->source,
                               cmd->uuid, cmd->cloud_job_id,
                               cmd->bed_target, cmd->head_target);
+    if (deneb_print_job_file_has_extension(cmd->file, ".ufp"))
+        deneb_print_job_file_extract_ufp_thumbnail(cmd->file,
+                                                   DENEB_ACTIVE_THUMB_PATH);
     deneb_print_job_file_metadata_init(&meta);
     if (deneb_print_job_file_metadata_load(cmd->file, &meta) == 0 &&
         meta.print_time_seconds > 0) {

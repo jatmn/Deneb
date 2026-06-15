@@ -2,6 +2,7 @@
 #include "job_lifecycle.h"
 #include "error_map.h"
 #include "print_control.h"
+#include "print_job_file.h"
 #include "print_state_rules.h"
 
 #include <stdio.h>
@@ -54,6 +55,7 @@ void deneb_job_lifecycle_complete(deneb_status_t *status)
     if (!status)
         return;
     set_phase(status, DENEB_PRINT_PHASE_COMPLETE);
+    deneb_print_job_file_clear_active_thumbnail();
     snprintf(status->file, sizeof(status->file), "%s", DENEB_PRINT_NONE_VALUE);
     status->source[0] = '\0';
     status->uuid[0] = '\0';
@@ -75,6 +77,7 @@ void deneb_job_lifecycle_abort(deneb_status_t *status)
         return;
 
     set_phase(status, DENEB_PRINT_PHASE_IDLE);
+    deneb_print_job_file_clear_active_thumbnail();
     status->fault = false;
     deneb_error_clear(&status->error);
     snprintf(status->file, sizeof(status->file), "%s", DENEB_PRINT_NONE_VALUE);

@@ -78,6 +78,7 @@ set(DENEB_API_SOURCES
     ../common/print/json_field.c
     ../common/print/json_file.c
     ../common/print/json_string.c
+    ../common/print/lodepng_standalone_alloc.c
     ../common/print/manual_motion.c
     ../common/print/material_catalog.c
     ../common/print/material_workflow.c
@@ -98,13 +99,33 @@ set(DENEB_API_SOURCES
     ../common/print/status_payload.c
     ../common/print/status_state.c
     ../common/print/system_language.c
+    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
     ../printsvc/src/pending_job.c
     ../printsvc/src/pending_job_registration.c
     ../printsvc/src/print_control.c
 )
 
+set_source_files_properties(
+    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
+    PROPERTIES
+    COMPILE_DEFINITIONS "LODEPNG_NO_COMPILE_PNG;LODEPNG_NO_COMPILE_ENCODER;LODEPNG_NO_COMPILE_DISK;LODEPNG_NO_COMPILE_ERROR_TEXT"
+)
+
 add_executable(deneb-api ${DENEB_API_SOURCES})
-target_include_directories(deneb-api PRIVATE src ../common/print ../printsvc/src)
+target_include_directories(deneb-api PRIVATE
+    src
+    ../common/print
+    ../printsvc/src
+    ../ui/config
+    ../ui/lib/lvgl
+    ../ui/lib/lvgl/include
+    ../ui/lib/lvgl/src
+    ../ui/lib/lvgl/src/libs/lodepng
+)
+target_compile_definitions(deneb-api PRIVATE
+    LV_CONF_INCLUDE_SIMPLE
+    LV_DISABLE_API_MAPPING
+)
 
 # Host stub build (no ZMQ)
 option(BUILD_HOST_STUB "Build with stub ZMQ for host testing" OFF)
@@ -131,7 +152,7 @@ if(NOT BUILD_HOST_STUB)
     endif()
 endif()
 
-target_link_libraries(deneb-api PRIVATE m pthread dl crypt)
+target_link_libraries(deneb-api PRIVATE m pthread crypt)
 
 if(BUILD_HOST_STUB)
     target_compile_definitions(deneb-api PRIVATE BACKEND_ZMQ_STUB)

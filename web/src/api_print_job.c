@@ -344,6 +344,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     char cloud_job_id[96] = "";
     char owner[32] = "";
     int ufp_normalized = 0;
+    char ufp_thumbnail_path[] = "/tmp/deneb-ufp-thumb-upload-XXXXXX";
+    int ufp_thumbnail_ready = 0;
     deneb_print_job_upload_storage_plan_t storage;
 
     if (req->multipart_boundary[0] &&
@@ -398,6 +400,15 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
             return;
         }
 
+        int thumb_fd = mkstemp(ufp_thumbnail_path);
+        if (thumb_fd >= 0) {
+            close(thumb_fd);
+            if (deneb_print_job_file_extract_ufp_thumbnail(
+                    gcode_path, ufp_thumbnail_path) == 0)
+                ufp_thumbnail_ready = 1;
+            else
+                unlink(ufp_thumbnail_path);
+        }
         unlink(gcode_path);
         snprintf(gcode_path, sizeof(gcode_path), "%s", extracted_path);
         snprintf(filename, sizeof(filename), "%s", extracted_name);
@@ -410,6 +421,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     if (deneb_print_job_file_upload_storage_plan(filename, &storage) < 0) {
         fprintf(stderr, "deneb-api: failed to prepare print spool path for %s: %s\n",
                 filename, strerror(errno));
+        if (ufp_thumbnail_ready)
+            unlink(ufp_thumbnail_path);
         unlink(gcode_path);
         resp->status_code = 500;
         api_http_set_body_str(resp, "{\"message\":\"Failed to prepare print storage\"}");
@@ -425,6 +438,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
             fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n",
                     pending_upload.path);
             write_pending_job_response(resp, pending_upload.display_name, 200);
+            if (ufp_thumbnail_ready)
+                unlink(ufp_thumbnail_path);
             unlink(gcode_path);
             return;
         }
@@ -434,6 +449,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
                 pending_upload.path);
         resp->status_code = 409;
         api_http_set_body_str(resp, "{\"message\":\"Another print job is already pending\"}");
+        if (ufp_thumbnail_ready)
+            unlink(ufp_thumbnail_path);
         unlink(gcode_path);
         return;
     }
@@ -441,6 +458,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     if (deneb_print_job_file_store_upload(gcode_path, storage.dest_path) < 0) {
         fprintf(stderr, "deneb-api: failed to save print file to %s: %s\n",
                 storage.dest_path, strerror(errno));
+        if (ufp_thumbnail_ready)
+            unlink(ufp_thumbnail_path);
         unlink(gcode_path);
         resp->status_code = 500;
         api_http_set_body_str(resp, "{\"message\":\"Failed to save file\"}");
@@ -461,11 +480,16 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
         fprintf(stderr, "deneb-api: failed to register print natively for %s\n",
                 storage.dest_path);
         deneb_pending_job_file_clear_default();
+        if (ufp_thumbnail_ready)
+            unlink(ufp_thumbnail_path);
         unlink(storage.dest_path);
         resp->status_code = 503;
         api_http_set_body_str(resp, "{\"message\":\"Failed to start print\"}");
         return;
     }
+    if (ufp_thumbnail_ready &&
+        rename(ufp_thumbnail_path, DENEB_ACTIVE_THUMB_PATH) < 0)
+        unlink(ufp_thumbnail_path);
     fprintf(stderr, "deneb-api: native registration accepted and print metadata prepared for %s\n",
             storage.filename);
 

@@ -14,12 +14,17 @@ need target/cloud captures before those workflows are documented as proven.
 Regenerate the screenshots from a WSL host build:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/build-ui-host.ps1
-wsl -- bash -lc "cd /mnt/c/temp/Deneb && rm -rf .tmp-screen-ppm && mkdir .tmp-screen-ppm && ui/build-wsl-host/deneb-ui --lang en --screenshot-dir .tmp-screen-ppm"
+powershell -ExecutionPolicy Bypass -File tools/capture-ui-screens.ps1 -OutputDirectory docs/touchscreen-screens
 ```
 
-The screenshot mode writes PPM files. Convert them to PNG before updating the
-files in `docs/touchscreen-screens/`.
+Regenerate one screen by slug:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/capture-ui-screens.ps1 -Screen status -OutputDirectory docs/touchscreen-screens
+```
+
+The wrapper uses temporary PPM files from the host renderer, converts them to
+PNG, and removes the temporary files before exiting.
 
 ## Top-Level Flow
 
