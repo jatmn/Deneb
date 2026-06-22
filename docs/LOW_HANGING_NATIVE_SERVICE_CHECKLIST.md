@@ -1,9 +1,9 @@
 # Low-Hanging De-Python Checklist
 
-Date: 2026-06-11
+Date: 2026-06-22
 
 This checklist captures small tasks that reduce Deneb's active dependency on
-stock Python before starting a full native coordinator replacement. The goal is
+stock Python before scoping a full native coordinator replacement. The goal is
 to de-Python the source base and shipped/runtime surface in controlled steps:
 remove Deneb-owned Python helpers from release paths, quarantine reference-only
 Python, disable avoidable stock Python startup work, and document which stock
@@ -491,7 +491,110 @@ backed up at `/home/deneb/backups/deneb-ui/compile_all.init.orig`, and
 - Disabling the init service can avoid runtime compile work, but it does not
   delete stock Python source files from read-only firmware.
 
-## 5. Audit Non-Python Service Disables Separately From De-Pythoning
+## 5. Inventory And Classify Remaining Live Python Runtime Dependencies
+
+### Why This Is The Next Bounded Step
+
+The earlier low-hanging tasks removed Deneb-owned Python helpers, hid dormant
+stock touchscreen UI files, moved active Digital Factory cloud use to
+`deneb-dfsvc`, moved print execution to `deneb-printsvc`, and disabled the
+avoidable stock `compile_all` boot task. The next de-Python step is the
+coordinator-replacement scoping gate: a measured live inventory that shows
+exactly which Python process still runs, why it still runs, and what Deneb
+workflow would break if it were stopped.
+
+This keeps the de-Python track honest: remaining vendor Python in the read-only
+firmware is not a failure by itself, but a live Python process in Deneb mode
+must be classified as retained, disabled/avoided, removed, quarantined, or a
+regression.
+
+### Scope
+
+- [x] Add a repeatable target helper for remaining runtime dependency capture.
+  -> `tools/deneb-python-runtime-inventory.sh` emits Markdown from `/proc`, init
+     state, and local printer status. The package installs it as
+     `/usr/bin/deneb-runtime-inventory` so the archive keeps the existing
+     no-`*python*` artifact-name guard.
+- [x] Package and install the helper through the Deneb update path.
+  -> `ui/build-package.sh` stages `deneb-runtime-inventory`; the installer
+     requires and copies it to `/usr/bin/deneb-runtime-inventory`.
+- [x] Capture a current live snapshot on the development printer.
+  -> 2026-06-22 SSH snapshot and target helper run: the only matched live
+     Python process was `/usr/bin/python3 /home/cygnus/coordinator/coordinator.py`,
+     PID `1119`. The helper sample
+     recorded VSZ `27352 KB`, RSS `22424 KB`, VmData `11908 KB`, 9 threads,
+     63 FDs, and printer status `idle`.
+- [x] Classify the current live Python process.
+  -> `coordinator.py` is a stock dependency to keep only until a native coordinator
+     owner exists. It remains the largest active stock Python runtime surface and
+     is the obvious next major replacement target after dependency ownership is
+     mapped.
+- [x] Confirm expected absent Python paths in the manual snapshot and target
+  helper output.
+  -> No live `connector.py`, `print_service.py`, stock menu `executor.py`, or
+     `compile_all`/`compileall` process appeared in either process sample.
+- [x] Record current init ownership signals.
+  -> `coordinator enabled_rc=0 running_rc=0`; `printserver enabled_rc=0
+     running_rc=0`; `menu enabled_rc=1 running_rc=0`; `digitalfactory
+     enabled_rc=1 running_rc=0`; `compile_all enabled_rc=1 running_rc=0`.
+     `printserver` now reports through the Deneb native handoff shim; do not
+     treat that as live `print_service.py` without a matching process.
+- [x] Verify the helper on target without changing services.
+  -> Copied the helper to `/tmp/deneb-runtime-inventory` and ran
+     `/tmp/deneb-runtime-inventory --summary /tmp/deneb-runtime-inventory.md`
+     on 2026-06-22; it generated the Markdown inventory successfully.
+- [ ] Run `/usr/bin/deneb-runtime-inventory` from an installed package after the
+  next build/deploy and attach or summarize its generated Markdown output.
+- [ ] Add an audit or package check if the helper ever observes `connector.py`,
+  `print_service.py`, stock menu `executor.py`, or `compile_all` during normal
+  Deneb mode.
+- [ ] Decide the first safe native-coordinator replacement slice after the
+  inventory has enough evidence for that slice. For the currently recommended
+  Digital Factory coordinator-IPC slice, the unlock is an installed-helper idle
+  capture plus active Digital Factory status/connect/remote-print captures. The
+  broader local print, Web/API, Cura, diagnostics/export, update, and soak
+  matrix remains required evidence before claiming full coordinator replacement
+  readiness, but it should not block walking through the Digital Factory slice.
+
+### Acceptance Criteria
+
+- [x] The team has a repeatable command to capture live Python process state on
+  target hardware without adding native code or copying vendor implementation.
+- [x] The current idle Deneb development snapshot is classified and recorded.
+- [x] The helper itself runs successfully on target when copied to `/tmp`.
+- [ ] A post-package run proves the installed helper works from `/usr/bin` on
+  target.
+- [ ] For the first selected slice, each relevant remaining live Python process
+  has an owner, workflow dependency, resource sample, and next action: keep,
+  lazy-start, disable, replace, or investigate.
+- [ ] No checklist item claims a Python path is gone unless package/audit proof
+  or live process evidence supports it.
+
+### Suggested Validation
+
+- [ ] On target, run
+  `/usr/bin/deneb-runtime-inventory --summary /tmp/deneb-runtime-inventory.md`.
+- [ ] Save or summarize `/tmp/deneb-runtime-inventory.md` in this checklist or a
+  companion evidence doc.
+- [ ] For the Digital Factory coordinator-IPC slice, repeat the capture during
+  idle and active Digital Factory status/connect/remote-print workflows.
+- [ ] Continue the broader inventory matrix across local print, Cura/Web/API,
+  update, material, diagnostics/export, and soak workflows before claiming full
+  coordinator replacement readiness.
+- [ ] If a new live Python process appears, classify it before changing service
+  enablement.
+
+### Risks And Guardrails
+
+- Do not stop `coordinator.py` just because it is the remaining live Python
+  process. It still owns stock Gershwin IPC paths used by unreplaced workflows.
+- Keep the helper read-only. Any service-disable experiment belongs in a
+  separate supervised task with rollback and workflow proof.
+- The package-safe installed name is `deneb-runtime-inventory`; do not package a
+  file with `python` in its name, because the archive gate intentionally rejects
+  `*python*` artifact names.
+
+## 6. Audit Non-Python Service Disables Separately From De-Pythoning
 
 ### Why This Is Low-Hanging
 
@@ -552,7 +655,9 @@ native port.
    that the Python connector no longer launches during active cloud use.
 4. Disable or bypass `compile_all` only after the remaining Python dependency
    picture is clearer.
-5. Keep `onion-helper` separate as a non-Python supervised service experiment.
+5. Inventory and classify remaining live Python runtime dependencies as the
+   evidence gate for scoping the native coordinator replacement.
+6. Keep `onion-helper` separate as a non-Python supervised service experiment.
 
 ## Handoff Notes
 
@@ -562,7 +667,10 @@ native port.
   live cloud evidence collection and parity validation.
 - The fourth task is deliberately later because stock coordinator and Digital
   Factory can still rely on source Python imports.
-- The fifth task should not be promoted unless fresh measurements show the small
+- The fifth task is the current coordinator-replacement scoping step; it should
+  produce live process/resource evidence before choosing the first native
+  coordinator replacement slice.
+- The sixth task should not be promoted unless fresh measurements show the small
   memory win is worth the risk.
 - None of these tasks should promise read-only firmware space savings. The wins
   are boot behavior, live process count, RAM/CPU/log churn, package cleanliness,

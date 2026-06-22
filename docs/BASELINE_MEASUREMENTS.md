@@ -1,6 +1,6 @@
 # Deneb Baseline Measurements
 
-Date: 2026-05-30 baseline, updated 2026-05-31 with Deneb UI measurements
+Date: 2026-05-30 baseline, updated 2026-06-22 with current Deneb idle resource measurements
 Source: Live UltiMaker 2+ Connect (10.10.10.244)
 Firmware: Stock Cygnus baseline plus Deneb UI test builds
 
@@ -23,6 +23,29 @@ Mem:        124584     102556      22028         76       9292      18552
 Swap:            0          0          0
 ```
 
+## Memory (current Deneb idle, no active print)
+
+Measured on the same live printer on 2026-06-22 after Deneb native UI/API,
+native print service, lighttpd, mDNS, and remaining stock coordinator had
+settled idle.
+
+```
+             total       used       free     shared    buffers     cached
+Mem:        124584      72908      51676         76      11508      29584
+-/+ buffers/cache:      31816      92768
+Swap:            0          0          0
+```
+
+### Whole-System Memory Delta
+
+| Metric | Stock idle | Current Deneb idle | Change | Result |
+| --- | ---: | ---: | ---: | ---: |
+| Total RAM | 124,584 KB | 124,584 KB | 0 KB | Same hardware |
+| Used RAM | 102,556 KB | 72,908 KB | -29,648 KB | 28.9% lower |
+| Free RAM | 22,028 KB | 51,676 KB | +29,648 KB | 2.35x stock free RAM |
+| Used excluding buffers/cache | 74,712 KB | 31,816 KB | -42,896 KB | 57.4% lower |
+| Free excluding buffers/cache | 49,872 KB | 92,768 KB | +42,896 KB | 86.0% more available |
+
 ## Process Memory (stock Python services)
 
 | PID | Service | VSZ (KB) | VSZ (MB) |
@@ -32,6 +55,27 @@ Swap:            0          0          0
 | 1129 | Coordinator (coordinator.py) | 27,964 | 27.3 |
 | 1124 | Print Service (print_service.py) | 19,120 | 18.7 |
 | **Total** | **All Python** | **115,964** | **113.2** |
+
+## Process Memory (current Deneb idle)
+
+Measured on the same live printer on 2026-06-22. The process size column below
+comes from BusyBox `ps`; use it as a VSZ-style live process-size comparison, not
+as an RSS/private-memory substitute.
+
+| Process | Size (KB) | Notes |
+| --- | ---: | --- |
+| `/usr/bin/deneb-printsvc` | 2,128 | Native print backend |
+| `/usr/bin/python3 /home/cygnus/coordinator/coordinator.py` | 27,352 | Remaining stock coordinator dependency |
+| `/usr/bin/deneb-ui --lang en` | 2,996 | Native touchscreen UI |
+| `/usr/bin/deneb-api` | 2,080 | Native API service |
+| `/usr/sbin/lighttpd -f /etc/deneb/lighttpd.conf -D` | 664 | Web server |
+| `/usr/bin/deneb-mdns` | 252 | Native mDNS helper |
+| **Total shown idle stack** | **35,472** | Relevant Deneb long-running services plus remaining Python coordinator |
+
+Clean Python runtime inventory from the same sample showed only
+`coordinator.py` alive: VSZ 27,352 KB, RSS 22,424 KB, VmData 11,908 KB, 9
+threads, and 63 file descriptors. `connector.py`, `print_service.py`, stock
+menu `executor.py`, and `compile_all` were absent.
 
 ## Deneb UI Binary Sizes
 
@@ -99,10 +143,21 @@ samples before release gates should rely on the numbers.
 | Metric | Stock (measured) | Deneb | Reduction |
 |--------|-----------------|-------|-----------|
 | Menu binary/package | N/A (Python app tree) | ~1.8 MiB package | N/A |
-| Menu RAM (VSZ) | 33.7 MB | 2.7 MB measured | ~92% |
+| Menu RAM (VSZ) | 33.7 MB | 2.9 MB current live sample | ~91% |
 | Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
-| All Python service VSZ | 113.2 MB | ~79.5 MB after stock menu disable | ~30% |
+| All Python service VSZ | 113.2 MB | 26.7 MB current live Python inventory | 76.4% |
+| Relevant long-running service size | 113.2 MB stock Python set | 34.6 MB current Deneb idle stack | 69.4% |
+| Whole-system used excluding buffers/cache | 74,712 KB | 31,816 KB current live sample | 57.4% |
+| Whole-system free excluding buffers/cache | 49,872 KB | 92,768 KB current live sample | 86.0% more available |
 | ZMQ ports | Same | Same | Compatible |
+
+The current Deneb sample is a stronger live idle result than the older
+post-menu-disable estimate because the native print-service and native Digital
+Factory work have removed the stock `print_service.py` and `connector.py`
+runtime paths from the idle process set. It is still not a release-wide resource
+proof: active print soak, Web/API polling, Cura upload/start, diagnostics
+export, package update, rollback, and Digital Factory lifecycle workloads need
+their own current measurements.
 
 ## Stock Menu Files
 

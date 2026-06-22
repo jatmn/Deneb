@@ -9,7 +9,17 @@ target state is measurably lighter and easier to reason about.
 Evidence accepted so far:
 
 - Stock Python touchscreen baseline: about 33.7 MB VSZ and 21 MB RSS.
-- Deneb native touchscreen idle: about 2.7-2.8 MB VSZ and 1.5-2 MB RSS.
+- Current Deneb native touchscreen idle sample: about 2.9 MB VSZ-style process
+  size on 2026-06-22, with earlier RSS samples around 1.5-2 MB.
+- Current Deneb whole-system idle sample on 2026-06-22: `-/+ buffers/cache`
+  used/free improved from stock 74,712/49,872 KB to 31,816/92,768 KB.
+- Current live Python inventory on 2026-06-22 showed only stock
+  `coordinator.py` remaining: 27,352 KB VSZ, 22,424 KB RSS. Stock
+  `executor.py`, `connector.py`, `print_service.py`, and `compile_all` were
+  absent from the live Python process set.
+- Current relevant long-running idle stack sample was 35,472 KB across
+  `deneb-printsvc`, `coordinator.py`, `deneb-ui`, `deneb-api`, `lighttpd`, and
+  `deneb-mdns`, compared with 115,964 KB VSZ for the original stock Python set.
 - Deneb UI package lane bundles LVGL, generated i18n fonts, web/API runtime,
   mDNS, native print-service, smoke/audit tools, macros, notices, and manifest
   data.
@@ -75,7 +85,9 @@ Open promotion gates:
 
 ## Current Measurements To Collect Next
 
-Collect these on stock where practical and on Deneb native packages:
+Collect these on stock where practical and on Deneb native packages. Treat this
+as the full promotion matrix; a narrower native replacement slice can proceed
+when the workflows it touches have current inventory/resource evidence.
 
 | Workflow | Evidence needed |
 | --- | --- |
