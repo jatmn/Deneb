@@ -470,6 +470,37 @@ static int read_map_value(zmq_msg_t *msg, const char *key, mp_reader_t *value)
     return -1;
 }
 
+static void create_pair_request_file(void)
+{
+    FILE *fp = fopen(DF_PAIR_REQUEST_FILE, "w");
+    if (fp)
+        fclose(fp);
+}
+
+static void clear_pair_request_file(void)
+{
+    remove(DF_PAIR_REQUEST_FILE);
+}
+
+static int ensure_native_connector_started_for_connect(void)
+{
+    int enable_rc;
+    int start_rc;
+
+    create_pair_request_file();
+    enable_rc = system("/etc/init.d/digitalfactory enable >/dev/null 2>&1");
+    start_rc = system("/etc/init.d/digitalfactory start >/dev/null 2>&1");
+#if !defined(_WIN32)
+    syslog(LOG_INFO,
+           "digital_factory connect lifecycle enable_rc=%d start_rc=%d",
+           enable_rc, start_rc);
+#endif
+    if (enable_rc == 0 && start_rc == 0)
+        return 0;
+    clear_pair_request_file();
+    return -1;
+}
+
 static int send_request(void *pub, const char *action)
 {
     int instr = strcmp(action, "connect") == 0 ? DF_INSTR_CONNECT
@@ -480,11 +511,8 @@ static int send_request(void *pub, const char *action)
     mp_buf_t data = {0};
     int rc = -1;
 
-    if (strcmp(action, "connect") == 0) {
-        FILE *fp = fopen(DF_PAIR_REQUEST_FILE, "w");
-        if (fp)
-            fclose(fp);
-    }
+    if (strcmp(action, "connect") == 0)
+        create_pair_request_file();
 
     if (mp_encode_key(&key, monotonic_ms(), "rpc-request", SOURCE, target) < 0)
         goto out;
@@ -515,6 +543,13 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
         timeout_seconds = 20;
     if (timeout_seconds > 60)
         timeout_seconds = 60;
+
+    if (strcmp(action, "connect") == 0 &&
+        ensure_native_connector_started_for_connect() < 0) {
+        snprintf(out, out_size,
+                 "status=error reason=digitalfactory-start-failed");
+        return -1;
+    }
 
     void *ctx = zmq_ctx_new();
     if (!ctx) {

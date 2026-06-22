@@ -156,7 +156,24 @@ deneb_print_backend_route_t deneb_print_backend_route(int backend);
 EOF
     cat > "$root/web/src/df_bridge.c" <<'EOF'
 #include "df_bridge.h"
+#define DF_PAIR_REQUEST_FILE "/tmp/deneb-df-pair-request"
+static void clear_pair_request_file(void) {
+    remove(DF_PAIR_REQUEST_FILE);
+}
+static int ensure_native_connector_started_for_connect(void) {
+    int enable_rc = system("/etc/init.d/digitalfactory enable >/dev/null 2>&1");
+    int start_rc = system("/etc/init.d/digitalfactory start >/dev/null 2>&1");
+    if (enable_rc == 0 && start_rc == 0)
+        return 0;
+    clear_pair_request_file();
+    return -1;
+}
 int deneb_df_bridge_run(const char *action, int timeout_seconds, char *out, unsigned long out_size) {
+    if (ensure_native_connector_started_for_connect() != 0) {
+        (void)out;
+        (void)out_size;
+        return -1; /* digitalfactory-start-failed */
+    }
     return 0;
 }
 EOF

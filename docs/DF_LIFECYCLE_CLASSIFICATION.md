@@ -16,9 +16,11 @@ Digital Factory connector fallback.
 
 This closes the source/package/install side of the Digital Factory C port.
 On-target evidence now proves the disabled/unpaired baseline, the live
-pairing-PIN flow, and connected steady-state through `deneb-dfsvc` without
-stock `connector.py`. The remaining blockers before marking the lifecycle fully
-proven are remote print and print-job action validation.
+pairing-PIN flow, connected steady-state, reconnect, disconnect, printer rename,
+remote print, print-job action, and CLI connect lifecycle paths through
+`deneb-dfsvc` without stock `connector.py`. The remaining blockers before
+marking the lifecycle fully proven are broader-client coverage and soak, not
+missing native implementation or the representative Digital Factory route.
 
 ## Workflow Analysis: Native Bridge vs Stock Connector
 
@@ -26,18 +28,18 @@ proven are remote print and print-job action validation.
 
 | Layer | Component | What it does | Zero-footprint? |
 |-------|-----------|--------------|-----------------|
-| **Native bridge** | `deneb-api digital-factory` | One-shot CLI; talks ZMQ to the stock Gershwin coordinator IPC to read DF state and send connect/disconnect RPCs. No lingering process. | Yes — runs and exits |
-| **Deneb API runtime** | `deneb-api` HTTP service | Owns local UM/Cura compatibility APIs plus the DF command-mode binary entry point. It is not currently a DF cloud endpoint, but it already contains the native DF bridge code and linked coordinator IPC stack. | Yes for bridge commands — one-shot mode exits |
+| **Native bridge** | `deneb-api digital-factory` | One-shot CLI; talks the Digital Factory Gershwin/ZMQ control contract to read DF state and send connect/disconnect RPCs. For connect, it creates the pair request and starts native `digitalfactory` before sending the RPC. No lingering bridge process. | Yes — runs and exits |
+| **Deneb API runtime** | `deneb-api` HTTP service | Owns local UM/Cura compatibility APIs plus the DF command-mode binary entry point. It is not a DF cloud endpoint, but it contains the native DF bridge code and service-lifecycle handoff. | Yes for bridge commands — one-shot mode exits |
 | **Native connector** | `deneb-dfsvc` via `/etc/init.d/digitalfactory` | Long-running C service; maintains the WebSocket to Digital Factory cloud, handles pairing/status, routes cloud prints through Deneb cluster upload/start, routes print-job actions through Deneb native action rules, and handles printer rename. | No — runs continuously |
 | **Stock connector baseline** | `connector.py` via stock `/etc/init.d/digitalfactory` | Historical Python reference (~33.5 MB VSZ); maintained the WebSocket to Digital Factory cloud using `stardustWebsocketProtocol`. | No — replaced in the Deneb package |
-| **Coordinator** | `coordinator.py` | Stock Gershwin IPC node graph. Multiplexes IPC between the bridge (ZMQ) and the connector (Gershwin internal protocol). | No — runs continuously |
+| **Coordinator** | `coordinator.py` | Stock Gershwin IPC node graph retained for unreplaced stock workflows. The 2026-06-22 connected, remote-print, abort, and CLI-connect DF route was proven with no live `coordinator.py` process; remaining coordinator replacement work must be scoped by workflow evidence, not assumed from protocol names. | No — stock process when enabled |
 
 ### Which Workflows Need What
 
 | Workflow | Native Bridge | Long-Running Connector | Notes |
 |----------|---------------|-----------------|-------|
-| DF status display | Required | Not required | Bridge reads coordinator IPC directly; connector.py can be stopped |
-| DF connect initiation | Required | **Required** | Bridge sends connect RPC; Deneb package starts `deneb-dfsvc` for active WebSocket pairing |
+| DF status display | Required | Not required when disconnected; required when reporting live cloud state | Bridge reads the DF control contract. On 2026-06-22 connected-ready proof, `deneb-dfsvc` owned live status while `connector.py` and `coordinator.py` were absent. |
+| DF connect initiation | Required | **Required** | Bridge creates the pair request, starts native `digitalfactory`, and sends the connect RPC; 2026-06-22 CLI proof returned `state=enter_pin pin=249996` from a no-service/no-cluster-id state. |
 | DF disconnect | Required | **Required** | Bridge sends disconnect RPC; native connector clears cluster state and publishes disconnected status |
 | Cloud pairing (live) | Not required | **Required** | `deneb-dfsvc` runs the WebSocket protocol; bridge is still just a control interface |
 | Steady-state cloud connection | Not required | **Required** | `deneb-dfsvc` maintains the live WebSocket to DF cloud |
@@ -50,14 +52,18 @@ proven are remote print and print-job action validation.
 ### Key Insight
 
 The native bridge is **not a replacement** for the stock connector — it is a
-thin IPC control interface. The bridge enables the Deneb UI to:
-1. Read DF status from the Gershwin coordinator IPC
-2. Send connect/disconnect commands to the coordinator
+thin IPC control interface. The bridge enables Deneb UI/API flows to:
+1. Read DF status from the Digital Factory control contract
+2. Start the native connector for pairing when needed
+3. Send connect/disconnect commands over the same DF control contract
 
 But the actual cloud connectivity, pairing protocol, and WebSocket management
 are handled by the long-running connector service. In the Deneb package that
 service is now Deneb-owned native C code (`deneb-dfsvc`) instead of
-`connector.py` stock Python.
+`connector.py` stock Python. Some protocol targets and log labels still contain
+`coordinator::digitalfactory::...` names for compatibility with the observed
+Gershwin contract; those labels are not, by themselves, evidence that a live
+Python coordinator process handled the route.
 Removal/disablement of Digital Factory cloud pairing is not a valid completion
 path for this task unless a separate product decision explicitly drops the
 feature.
@@ -68,8 +74,9 @@ The Deneb installer and DF screen already implement proper lifecycle control:
 
 1. **At install time** — `/etc/init.d/digitalfactory` is disabled when
    `ultimaker.option.cluster_id` is empty (no prior pairing)
-2. **DF screen "Connect" button** — Enables + starts `digitalfactory` when the
-   user initiates connect/pairing, then initiates bridge `connect` RPC
+2. **DF screen "Connect" button and CLI connect path** — Enables + starts
+   `digitalfactory` when the user initiates connect/pairing, then initiates the
+   bridge `connect` RPC
 3. **DF screen "Disconnect" button** — Sends bridge `disconnect` RPC; if
    cluster_id was cleared, also stops + disables `digitalfactory`
 4. **Boot** — Service stays disabled unless cluster_id is configured
@@ -136,6 +143,8 @@ Captured on hardware on 2026-06-13 after installing
 | Reconnect after cloud interruption | `/tmp/df-reconnect-baseline-e213599.summary` and `/tmp/df-reconnect-recovery-e213599.summary` | Started from `state=connected` with native `deneb-dfsvc` PID `17025`, VSZ `3720 KB`, RSS `3024 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. A temporary iptables block of the active Digital Factory cloud peer `34.49.252.186` changed bridge status to `state=reconnecting`; `deneb-dfsvc` remained running and stock Python stayed absent. After removing the temporary rules, bridge status returned to `state=connected` with the same PID `17025`, VSZ `3728 KB`, RSS `3036 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. Follow-up verification showed no cloud-block rules left behind. |
 | Printer rename | User reported a rename in Digital Factory; `/tmp/df-rename-e213599.summary` | `deneb-api digital-factory status --timeout 20` stayed `state=connected`. `deneb-dfsvc` stayed on PID `17025` with VSZ `3776 KB`, RSS `3068 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`. UCI showed `ultimaker.option.printer_name='Ultimaker-2C-test'`, and `/cluster-api/v1/printers` reported `friendly_name:"Ultimaker-2C-test"`. Syslog showed native `deneb-dfsvc` receiving `printer_action_request` messages and sending `printer_action_response` messages at the rename time, followed by normal connected status responses. |
 | Remote print with material mismatch | User reported Digital Factory showed "In transit..." and accurately requested changing material 1 from Generic Tough PLA to Generic PLA; fixed follow-up captured in `/tmp/df-remote-print-material-mismatch-wait-user-action-e213599.summary`; unsafe Continue run captured before reboot in `/tmp/df-remote-print-material-mismatch-continue-printing-e213599.summary` | **Proven through the supervised Digital Factory material-mismatch route for Cancel, Continue/start, Pause, Resume, Stop, no-double-Z startup, and completion with expected end actions.** `deneb-dfsvc` downloaded the signed Digital Factory UFP, extracted `3D/model.gcode`, uploaded the extracted G-code through the local cluster API, and kept stock `connector.py pid=0`. The shared print metadata parser read the Cura header material (`EXTRUDER_TRAIN.0.MATERIAL.GUID`) so the existing Cura-style pending conflict path stopped before printing. `/cluster-api/v1/print_jobs` reported `status:"wait_user_action"`, `started:false`, and `configuration_changes_required` with `type_of_change:"material_change"` from Tough PLA to PLA. `/api/v1/printer/status` stayed `idle`; the touchscreen showed the material-mismatch decision prompt. User selected Cancel, after which `/cluster-api/v1/print_jobs` returned `[]`, the pending metadata file was absent, and printer status remained `idle`. On a follow-up run the user selected Continue Anyway; software status changed to `printing`, but the printer skipped expected stock prepare behavior and moved unsafely, requiring a user reboot. Post-incident stock review showed the coordinator prepare path runs `home_and_center_head.gcode`, `M18 Z`, waits for motion, heats/extracts, then sends `G28 Z` before `JOB`; stock `JOB` startup then handles first-50-line `G280` detection, optional no-`G280` filament-to-tip priming, `G90`, `M82`, `G92 E0`, `G0 F9000`, and `G280` prime expansion. Native `deneb-printsvc` now implements that prepare/startup boundary in host-tested code and no longer rejects `G280` jobs as a temporary guard. A later user-supervised Digital Factory material-mismatch Continue run with package `7be1d77` started safely, but the touchscreen Status screen exposed only Stop and the native Stop path returned idle without the expected stock park/home routine. Package `68af57c` added Status-screen Pause/Resume controls and stock-derived Stop cleanup; target testing through the same Digital Factory material-mismatch route proved Pause changed to Resume and Stop behaved as expected, but exposed a cold-resume blocker where Resume moved without reheating after Pause cooled the nozzle. Package `072edbc` reasserts the saved nozzle target before waiting and restoring motion; 2026-06-13 supervised target testing through the same route proved Resume preheated the nozzle again, waited for it to reach temperature, returned to position, and continued printing. The same Digital Factory route exposed a double-Z-home startup delay: the printer homes XYZ, moves to the prepare position, then runs the stock-derived `G28 Z` again. Package `6cd72899` removes the normal-print `M18 Z` release and second `G28 Z`; supervised target testing through the same route confirmed no double Z home and normal startup. A 2026-06-14 full Digital Factory material-mismatch print on package `6cd72899` finished, but the representative Cura end G-code only cooled/retracted (`M140 S0`, `M107`, `M104 S0`) and native finish cleanup did not park/home, so the nozzle and bed stayed at the final print position and API history recorded the run as stopped. Package `022077b9` added host-tested stock-derived finish cleanup and completion-status preservation; follow-up target proof showed expected end actions, `JOB` -> `Complete`, history `state":"completed"`, and `/cluster-api/v1/print_jobs` returned `[]`. Native connector PID `31966` sampled VSZ `3768 KB`, RSS `3072 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0` in the prompt sample. |
+| Remote print without material mismatch | `/tmp/deneb-inventory-df-remote-print-a236e954.md`, `/tmp/deneb-inventory-df-remote-print-active2-a236e954.md`, `/tmp/deneb-inventory-df-remote-print-stop-a236e954.md` | 2026-06-22 Digital Factory remote print `UM2C_keychain_spinner_vv_vcdesign.gcode` started and reached `/cluster-api/v1/print_jobs` `status:"printing"`. Runtime inventory during connected-ready, active-print first sample, active-print second sample, and abort cleanup found no live Python processes while `deneb-dfsvc`, `deneb-printsvc`, and `deneb-ui` owned the route. Abort via the print-job action API returned `{"message":"OK"}`, printer status returned `"idle"`, and the job list returned `[]`. |
+| CLI connect lifecycle from unpaired/disabled | `/tmp/deneb-inventory-df-connect-fix-a236e954-dirty.md` | 2026-06-22 dirty package from commit `a236e954` fixed the CLI connect path. From no `ultimaker.option.cluster_id`, no `deneb-dfsvc` process, no pair-request file, and stopped/disabled `digitalfactory`, `deneb-api digital-factory connect --timeout 60` created the pair request, enabled/started native `digitalfactory`, logged `digital_factory connect lifecycle enable_rc=0 start_rc=0`, returned `state=enter_pin pin=249996`, and inventory found no live Python processes. |
 
 These samples prove the native service starts from the intended touchscreen
 pairing flow, reaches the PIN state, completes cloud account confirmation, and
@@ -170,10 +179,12 @@ longer double homes Z and starts as expected.
 
 ### Recommendation
 
-Close the implementation/package subtask, pairing-PIN proof, and connected
-steady-state proof as **native connector built, packaged, started by the
-intended touchscreen flow, and connected to the cloud account**, but do not mark
-Digital Factory fully proven until remote cloud action validation is captured.
+Close the implementation/package subtask, pairing-PIN proof, connected
+steady-state proof, remote print/action proof for the representative DF route,
+and CLI connect lifecycle proof as **native connector built, packaged, started
+by the intended touchscreen/CLI flows, and connected to the cloud account**, but
+do not mark Digital Factory fully proven until broader-client and soak evidence
+is captured.
 The current connector is properly lifecycle-managed for the states proven so far:
 - Zero footprint when unpaired (service disabled at boot)
 - Lazy-started only when user initiates DF pairing from the C-native UI
@@ -187,10 +198,8 @@ missing package implementation. The native connector must be validated without
 copying vendor Python into Deneb C code.
 
 The remaining on-target measurements (broader client coverage beyond the
-now-proven Digital Factory material-mismatch route, plus touchscreen Stop
-stock-derived park/home behavior under any remaining edge cases)
-should be
-collected via
+now-proven Digital Factory routes, plus longer active soak and any touchscreen
+Stop edge cases not covered by the representative tests) should be collected via
 `tools/deneb-df-measure.sh --state <STATE>` before closing or promoting the
 native connector, because those samples define whether the current active
 connector behavior and cost are acceptable.
@@ -220,10 +229,11 @@ cloud controls. The implemented package work is:
 - Route cloud print requests through native download plus the existing
   `/cluster-api/v1/print_jobs` upload/start path.
 - Route cloud print-job actions through the existing cluster action endpoint
-  so pause/resume/abort/force share Deneb's native action rules. Keep this open
-  until Digital Factory action requests are observed on target, because the
-  touchscreen Status-screen Pause/Resume and Stop paths are separate local UI
-  proof.
+  so pause/resume/abort/force share Deneb's native action rules. The
+  representative Digital Factory route has target proof for local
+  Pause/Resume/Stop controls and 2026-06-22 proof that a cloud-originated print
+  can be aborted cleanly; keep broader action coverage open until more DF
+  action variants are observed on target.
 - Preserve the stock-observed Digital Factory UUID grammar in `deneb-dfsvc`.
   The connector-local `df_is_guid()` intentionally accepts lowercase UUID
   hexadecimal only (`0-9`, `a-f`) for cloud-originated fields such as

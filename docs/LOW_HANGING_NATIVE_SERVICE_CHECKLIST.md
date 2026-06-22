@@ -548,6 +548,26 @@ regression.
 - [ ] Add an audit or package check if the helper ever observes `connector.py`,
   `print_service.py`, stock menu `executor.py`, or `compile_all` during normal
   Deneb mode.
+- [x] Run the installed helper across the Digital Factory coordinator-IPC slice.
+  -> 2026-06-22 package `a236e954` installed `/usr/bin/deneb-runtime-inventory`.
+     Connected-ready, active Digital Factory remote print, active print second
+     sample, and abort-cleanup samples all showed no live Python processes while
+     `deneb-dfsvc`, `deneb-printsvc`, and `deneb-ui` owned the route. The remote
+     print `UM2C_keychain_spinner_vv_vcdesign.gcode` started from Digital
+     Factory, `/cluster-api/v1/print_jobs` reported `status:"printing"`, and
+     the abort action returned `{"message":"OK"}` followed by printer status
+     `"idle"` and an empty job list.
+- [x] Fix and prove the Digital Factory unpaired CLI connect lifecycle bug.
+  -> Initial 2026-06-22 CLI `deneb-api digital-factory connect --timeout 120`
+     timed out when `digitalfactory` was disabled/unpaired; manually starting
+     `deneb-dfsvc` allowed pairing. `web/src/df_bridge.c` now creates the pair
+     request, enables/starts `/etc/init.d/digitalfactory`, and reports
+     `digitalfactory-start-failed` if the native connector cannot start. The
+     native audit now requires this lifecycle behavior. Live proof after
+     redeploy: from no `cluster_id` and no `deneb-dfsvc` process, CLI connect
+     logged `digital_factory connect lifecycle enable_rc=0 start_rc=0`, started
+     native `deneb-dfsvc`, returned `state=enter_pin pin=249996`, and the
+     installed inventory found no live Python processes.
 - [ ] Decide the first safe native-coordinator replacement slice after the
   inventory has enough evidence for that slice. For the currently recommended
   Digital Factory coordinator-IPC slice, the unlock is an installed-helper idle
@@ -562,22 +582,34 @@ regression.
   target hardware without adding native code or copying vendor implementation.
 - [x] The current idle Deneb development snapshot is classified and recorded.
 - [x] The helper itself runs successfully on target when copied to `/tmp`.
-- [ ] A post-package run proves the installed helper works from `/usr/bin` on
+- [x] A post-package run proves the installed helper works from `/usr/bin` on
   target.
-- [ ] For the first selected slice, each relevant remaining live Python process
+  -> 2026-06-22 package `a236e954` installed `/usr/bin/deneb-runtime-inventory`;
+     connected-ready, active remote-print, second active-print, abort-cleanup,
+     and CLI-connect-fix captures ran from the installed helper path.
+- [x] For the first selected slice, each relevant remaining live Python process
   has an owner, workflow dependency, resource sample, and next action: keep,
   lazy-start, disable, replace, or investigate.
-- [ ] No checklist item claims a Python path is gone unless package/audit proof
+  -> For the Digital Factory coordinator-IPC slice, the installed-helper samples
+     showed no live Python process to classify during connected-ready, active
+     remote print, abort cleanup, or CLI connect. Broader coordinator workflow
+     classification remains open below and is not implied complete by this slice.
+- [x] No checklist item claims a Python path is gone unless package/audit proof
   or live process evidence supports it.
+  -> The Digital Factory slice claims are backed by installed-helper process
+     captures and audit/package gates; broader coordinator replacement remains open.
 
 ### Suggested Validation
 
-- [ ] On target, run
+- [x] On target, run
   `/usr/bin/deneb-runtime-inventory --summary /tmp/deneb-runtime-inventory.md`.
-- [ ] Save or summarize `/tmp/deneb-runtime-inventory.md` in this checklist or a
+- [x] Save or summarize `/tmp/deneb-runtime-inventory.md` in this checklist or a
   companion evidence doc.
-- [ ] For the Digital Factory coordinator-IPC slice, repeat the capture during
+  -> Summarized above with installed-helper Digital Factory slice captures.
+- [x] For the Digital Factory coordinator-IPC slice, repeat the capture during
   idle and active Digital Factory status/connect/remote-print workflows.
+  -> Completed for connected-ready/status, active remote print, abort cleanup,
+     and unpaired CLI connect lifecycle proof.
 - [ ] Continue the broader inventory matrix across local print, Cura/Web/API,
   update, material, diagnostics/export, and soak workflows before claiming full
   coordinator replacement readiness.

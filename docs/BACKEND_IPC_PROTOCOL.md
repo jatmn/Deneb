@@ -96,6 +96,15 @@ For Deneb's LVGL UI, the native print path uses raw ZMQ commands on port `5556`
 directly. Deneb print-control clients do not select the stock coordinator proxy
 on port `5566`.
 
+Digital Factory control is separate from the print-service route. Some Digital
+Factory protocol targets still use stock-compatible names such as
+`coordinator::digitalfactory::status`, but the 2026-06-22 connected, remote
+print, abort, and CLI-connect evidence proved that the active DF route can run
+with native `deneb-dfsvc` and no live Python `coordinator.py`, `connector.py`,
+or `print_service.py` process. Treat those labels as protocol compatibility
+names unless a live process sample proves a coordinator dependency for the
+specific workflow under test.
+
 ## Deneb Compatibility Layers
 
 Current Deneb clients of this native print IPC include:

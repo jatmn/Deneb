@@ -145,6 +145,21 @@ audit_source() {
     require_pattern "${repo}/web/src/main.c" \
         'deneb_df_bridge_run' \
         "deneb-api command mode invokes Digital Factory bridge"
+    require_pattern "${repo}/web/src/df_bridge.c" \
+        '/etc/init[.]d/digitalfactory enable' \
+        "Digital Factory bridge enables native connector for connect requests"
+    require_pattern "${repo}/web/src/df_bridge.c" \
+        '/etc/init[.]d/digitalfactory start' \
+        "Digital Factory bridge starts native connector for connect requests"
+    require_pattern "${repo}/web/src/df_bridge.c" \
+        'enable_rc == 0 && start_rc == 0' \
+        "Digital Factory bridge fails connect lifecycle if enable or start fails"
+    require_pattern "${repo}/web/src/df_bridge.c" \
+        'remove\(DF_PAIR_REQUEST_FILE\)' \
+        "Digital Factory bridge clears stale pair request on connect lifecycle failure"
+    require_pattern "${repo}/web/src/df_bridge.c" \
+        'digitalfactory-start-failed' \
+        "Digital Factory bridge reports native connector start failures"
     df_http_matches=$(grep -nE '/api/v1/deneb/digital_factory|digital_factory' \
         "${repo}/web/src/api_http.c" | \
         grep -Ev '/api/v1/deneb/digital_factory/(auth|unlink)|api_deneb_digital_factory_(auth_get|auth_post|unlink_post)' || true)
