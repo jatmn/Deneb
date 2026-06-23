@@ -16,10 +16,14 @@ Evidence accepted so far:
 - Current live Python inventory on 2026-06-22 showed only stock
   `coordinator.py` remaining: 27,352 KB VSZ, 22,424 KB RSS. Stock
   `executor.py`, `connector.py`, `print_service.py`, and `compile_all` were
-  absent from the live Python process set.
+  absent from the live Python process set. Source audit shows this remaining
+  coordinator process is a startup/fallback policy issue, not the selected Deneb
+  LCD/Web/API/Cura print-status route.
 - Current relevant long-running idle stack sample was 35,472 KB across
   `deneb-printsvc`, `coordinator.py`, `deneb-ui`, `deneb-api`, `lighttpd`, and
   `deneb-mdns`, compared with 115,964 KB VSZ for the original stock Python set.
+  The next resource-reduction target is removing/gating the stock coordinator
+  fallback from this stack after package and workflow proof.
 - Deneb UI package lane bundles LVGL, generated i18n fonts, web/API runtime,
   mDNS, native print-service, smoke/audit tools, macros, notices, and manifest
   data.

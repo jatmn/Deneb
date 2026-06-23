@@ -505,8 +505,10 @@ workflow would break if it were stopped.
 
 This keeps the de-Python track honest: remaining vendor Python in the read-only
 firmware is not a failure by itself, but a live Python process in Deneb mode
-must be classified as retained, disabled/avoided, removed, quarantined, or a
-regression.
+must be classified as retained fallback, disabled/avoided, removed,
+quarantined, or a regression. The source audit also distinguishes "stock
+coordinator still bootable" from "Deneb clients still depend on coordinator";
+those are no longer the same claim.
 
 ### Scope
 
@@ -525,10 +527,14 @@ regression.
      recorded VSZ `27352 KB`, RSS `22424 KB`, VmData `11908 KB`, 9 threads,
      63 FDs, and printer status `idle`.
 - [x] Classify the current live Python process.
-  -> `coordinator.py` is a stock dependency to keep only until a native coordinator
-     owner exists. It remains the largest active stock Python runtime surface and
-     is the obvious next major replacement target after dependency ownership is
-     mapped.
+  -> `coordinator.py` is now classified as a stock fallback/service-start policy
+     dependency, not as the selected Deneb print/status route. Source audit shows
+     Deneb LCD, Web/API, Cura/UM print-job, temperature, material, leveling, and
+     Digital Factory remote-print/action flows route through native
+     `deneb-printsvc`, native helpers, and/or native `deneb-dfsvc`. The next
+     major coordinator task is to retire or gate the installer/runtime
+     coordinator fallback after source/package audit and workflow proof, not to
+     start a vague whole-coordinator rewrite.
 - [x] Confirm expected absent Python paths in the manual snapshot and target
   helper output.
   -> No live `connector.py`, `print_service.py`, stock menu `executor.py`, or
@@ -568,13 +574,16 @@ regression.
      logged `digital_factory connect lifecycle enable_rc=0 start_rc=0`, started
      native `deneb-dfsvc`, returned `state=enter_pin pin=249996`, and the
      installed inventory found no live Python processes.
-- [ ] Decide the first safe native-coordinator replacement slice after the
-  inventory has enough evidence for that slice. For the currently recommended
-  Digital Factory coordinator-IPC slice, the unlock is an installed-helper idle
-  capture plus active Digital Factory status/connect/remote-print captures. The
-  broader local print, Web/API, Cura, diagnostics/export, update, and soak
-  matrix remains required evidence before claiming full coordinator replacement
-  readiness, but it should not block walking through the Digital Factory slice.
+- [ ] Retire the hidden coordinator fallback dependency in stages.
+  -> Source audit on 2026-06-22 found no Deneb C client selecting stock
+     coordinator ports `5565/5566` for normal print/status/control routes; the
+     remaining coordinator surface is the installer-created
+     `/etc/init.d/coordinator` recovery handoff shim plus stock rootfs reference
+     code. The handoff plan is `docs/COORDINATOR_PARITY_COMPLETION_PLAN.md`.
+     It requires all remaining parity work to be Deneb-owned native code, not
+     Python, then a source/package audit gate and supervised installer/runtime
+     change that stops delegating to stock coordinator by default while
+     preserving rollback.
 
 ### Acceptance Criteria
 
@@ -611,17 +620,18 @@ regression.
   -> Completed for connected-ready/status, active remote print, abort cleanup,
      and unpaired CLI connect lifecycle proof.
 - [ ] Continue the broader inventory matrix across local print, Cura/Web/API,
-  update, material, diagnostics/export, and soak workflows before claiming full
-  coordinator replacement readiness.
+  update, material, diagnostics/export, and soak workflows before claiming the
+  stock coordinator fallback can be disabled by default in a promoted package.
 - [ ] If a new live Python process appears, classify it before changing service
   enablement.
 
 ### Risks And Guardrails
 
-- Do not stop `coordinator.py` just because it is the remaining live Python
-  process. It still owns stock Gershwin IPC paths used by unreplaced workflows.
-- Keep the helper read-only. Any service-disable experiment belongs in a
-  separate supervised task with rollback and workflow proof.
+- Do not stop `coordinator.py` merely because it is the remaining live Python
+  process. First prove the Deneb package no longer starts it as a hidden fallback
+  dependency and that each exposed Deneb workflow stays on native routes.
+- Keep the helper read-only. Any coordinator service-disable experiment belongs
+  in a separate supervised task with rollback and workflow proof.
 - The package-safe installed name is `deneb-runtime-inventory`; do not package a
   file with `python` in its name, because the archive gate intentionally rejects
   `*python*` artifact names.

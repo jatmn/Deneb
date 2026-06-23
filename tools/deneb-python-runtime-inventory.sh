@@ -125,7 +125,7 @@ python_pids() {
 classification_for_cmd() {
     case "$1" in
         *"/home/cygnus/coordinator/coordinator.py"*)
-            printf '%s' "stock dependency - keep until native coordinator owner exists"
+            printf '%s' "stock coordinator fallback/service-start policy - retire or gate after source/package audit and workflow proof"
             ;;
         *"connector.py"*)
             printf '%s' "unexpected regression in Deneb-native DF path - investigate"

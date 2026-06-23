@@ -32,7 +32,7 @@ missing native implementation or the representative Digital Factory route.
 | **Deneb API runtime** | `deneb-api` HTTP service | Owns local UM/Cura compatibility APIs plus the DF command-mode binary entry point. It is not a DF cloud endpoint, but it contains the native DF bridge code and service-lifecycle handoff. | Yes for bridge commands — one-shot mode exits |
 | **Native connector** | `deneb-dfsvc` via `/etc/init.d/digitalfactory` | Long-running C service; maintains the WebSocket to Digital Factory cloud, handles pairing/status, routes cloud prints through Deneb cluster upload/start, routes print-job actions through Deneb native action rules, and handles printer rename. | No — runs continuously |
 | **Stock connector baseline** | `connector.py` via stock `/etc/init.d/digitalfactory` | Historical Python reference (~33.5 MB VSZ); maintained the WebSocket to Digital Factory cloud using `stardustWebsocketProtocol`. | No — replaced in the Deneb package |
-| **Coordinator** | `coordinator.py` | Stock Gershwin IPC node graph retained for unreplaced stock workflows. The 2026-06-22 connected, remote-print, abort, and CLI-connect DF route was proven with no live `coordinator.py` process; remaining coordinator replacement work must be scoped by workflow evidence, not assumed from protocol names. | No — stock process when enabled |
+| **Coordinator** | `coordinator.py` | Not selected by the proven Deneb Digital Factory route and not selected by Deneb native print/status clients. Stock coordinator remains bootable through the installer recovery handoff shim, so remaining work is fallback retirement/gating with workflow proof, not DF implementation. | No — stock process only when fallback starts it |
 
 ### Which Workflows Need What
 
