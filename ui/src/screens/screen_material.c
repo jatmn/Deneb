@@ -25,10 +25,8 @@ static lv_obj_t *workflow_load_btn = NULL;
 static lv_obj_t *workflow_unload_btn = NULL;
 static lv_obj_t *workflow_stop_btn = NULL;
 static lv_timer_t *workflow_timer = NULL;
-static int workflow_target_temp = DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C;
-static int workflow_moving = 0;
+static deneb_material_workflow_t workflow_state;
 static uint32_t workflow_move_done_at = 0;
-static int workflow_target_sent = 0;
 
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
@@ -46,7 +44,10 @@ static int material_motion_allowed(void)
 static int material_temp_ready(const printer_state_t *s)
 {
     return s && deneb_print_material_move_ready(
-                    s->nozzle_temp_cur, (float)workflow_target_temp);
+                    s->nozzle_temp_cur,
+                    (float)(workflow_state.target_sent ?
+                                workflow_state.accepted_target_temp_c :
+                                workflow_state.target_temp_c));
 }
 
 static void set_btn_enabled(lv_obj_t *btn, int enabled)
@@ -96,9 +97,9 @@ static void workflow_update(void)
     int motion_allowed = material_motion_allowed();
     int ready = material_temp_ready(s);
 
-    if (workflow_moving && workflow_move_done_at &&
+    if (workflow_state.moving && workflow_move_done_at &&
         (int32_t)(lv_tick_get() - workflow_move_done_at) >= 0) {
-        workflow_moving = 0;
+        deneb_material_workflow_complete_move(&workflow_state);
         workflow_move_done_at = 0;
     }
 
@@ -107,22 +108,22 @@ static void workflow_update(void)
 
     if (workflow_target_label)
         lv_label_set_text_fmt(workflow_target_label, "%d\u00b0C",
-                              workflow_target_temp);
+                              workflow_state.target_temp_c);
 
     if (workflow_status_label)
         lv_label_set_text(
             workflow_status_label,
             locale_get(workflow_status_locale_key(
-                deneb_material_workflow_status(
-                    backend_ready, workflow_moving, workflow_target_sent,
-                    workflow_target_temp, ready))));
+                deneb_material_workflow_status_for_state(
+                    &workflow_state, backend_ready, ready))));
 
     set_btn_enabled(workflow_load_btn,
-                    motion_allowed && ready && !workflow_moving);
+                    motion_allowed && ready && !workflow_state.moving);
     set_btn_enabled(workflow_unload_btn,
-                    motion_allowed && ready && !workflow_moving);
+                    motion_allowed && ready && !workflow_state.moving);
     set_btn_enabled(workflow_stop_btn,
-                    backend_ready && (workflow_moving || workflow_target_sent));
+                    backend_ready &&
+                    (workflow_state.moving || workflow_state.target_sent));
 }
 
 static void workflow_timer_cb(lv_timer_t *timer)
@@ -134,15 +135,17 @@ static void workflow_timer_cb(lv_timer_t *timer)
 static void send_material_target(void)
 {
     char gcode[32];
-    if (deneb_gcode_format_nozzle_target((float)workflow_target_temp, gcode,
+    if (deneb_gcode_format_nozzle_target((float)workflow_state.target_temp_c, gcode,
                                          sizeof(gcode)) == 0 &&
         backend_send_gcode(gcode) == 0)
-        workflow_target_sent = workflow_target_temp > 0;
+        deneb_material_workflow_set_target(&workflow_state,
+                                           workflow_state.target_temp_c, 1);
 }
 
 static void workflow_slider_cb(lv_event_t *e)
 {
-    workflow_target_temp = lv_slider_get_value(lv_event_get_target(e));
+    deneb_material_workflow_edit_target(&workflow_state,
+                                        lv_slider_get_value(lv_event_get_target(e)));
     workflow_update();
 }
 
@@ -175,7 +178,8 @@ static void workflow_load_cb(lv_event_t *e)
     if (deneb_gcode_build_material_move_sequence(0, &seq) < 0)
         return;
     if (backend_send_gcodes(seq.lines, 2) == 0) {
-        workflow_moving = 1;
+        deneb_material_workflow_begin_move(&workflow_state,
+                                           DENEB_MATERIAL_WORKFLOW_OP_LOAD);
         workflow_move_done_at = lv_tick_get() + seq.duration_ms;
     }
     workflow_update();
@@ -194,7 +198,8 @@ static void workflow_unload_cb(lv_event_t *e)
     if (deneb_gcode_build_material_move_sequence(1, &seq) < 0)
         return;
     if (backend_send_gcodes(seq.lines, 2) == 0) {
-        workflow_moving = 1;
+        deneb_material_workflow_begin_move(&workflow_state,
+                                           DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
         workflow_move_done_at = lv_tick_get() + seq.duration_ms;
     }
     workflow_update();
@@ -204,12 +209,11 @@ static void workflow_cooldown_nozzle(int update_ui)
 {
     deneb_material_workflow_stop_plan_t plan;
 
-    workflow_target_temp = 0;
     if (deneb_material_workflow_stop_plan(0, &plan) == 0 &&
         backend_send_gcode(plan.cooldown_gcode) == 0)
-        workflow_target_sent = 0;
+        deneb_material_workflow_set_target(&workflow_state, 0, 0);
     if (update_ui && workflow_slider)
-        lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_ON);
+        lv_slider_set_value(workflow_slider, workflow_state.target_temp_c, LV_ANIM_ON);
     if (update_ui)
         workflow_update();
 }
@@ -217,18 +221,25 @@ static void workflow_cooldown_nozzle(int update_ui)
 static void workflow_stop_material(int update_ui)
 {
     deneb_material_workflow_stop_plan_t plan;
+    int cooldown_sent = 0;
 
-    if (deneb_material_workflow_stop_plan(workflow_moving, &plan) == 0) {
+    if (deneb_material_workflow_stop_plan(workflow_state.moving, &plan) == 0) {
         if (plan.stop_gcode)
             backend_send_gcode(plan.stop_gcode);
-        if (backend_send_gcode(plan.cooldown_gcode) == 0)
-            workflow_target_sent = 0;
+        cooldown_sent = backend_send_gcode(plan.cooldown_gcode) == 0;
     }
-    workflow_target_temp = 0;
-    workflow_moving = 0;
-    workflow_move_done_at = 0;
+    if (cooldown_sent) {
+        deneb_material_workflow_set_target(&workflow_state, 0, 0);
+        if (workflow_state.state != DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED)
+            deneb_material_workflow_cancel(&workflow_state);
+        deneb_material_workflow_finalize(&workflow_state);
+        deneb_material_workflow_prepare(&workflow_state,
+                                        DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
+        deneb_material_workflow_set_target(&workflow_state, 0, 0);
+        workflow_move_done_at = 0;
+    }
     if (update_ui && workflow_slider)
-        lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_ON);
+        lv_slider_set_value(workflow_slider, workflow_state.target_temp_c, LV_ANIM_ON);
     if (update_ui)
         workflow_update();
 }
@@ -332,10 +343,10 @@ static lv_obj_t *create_workflow_btn(lv_obj_t *parent, const char *label,
 
 static lv_obj_t *material_workflow_create(void)
 {
-    workflow_target_temp = DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C;
-    workflow_moving = 0;
+    deneb_material_workflow_init(&workflow_state);
+    deneb_material_workflow_prepare(&workflow_state,
+                                    DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
     workflow_move_done_at = 0;
-    workflow_target_sent = 0;
 
     workflow_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(workflow_screen, 320, 208);
@@ -370,7 +381,7 @@ static lv_obj_t *material_workflow_create(void)
 
     workflow_target_label = lv_label_create(panel);
     lv_label_set_text_fmt(workflow_target_label, "%d\u00b0C",
-                          workflow_target_temp);
+                          workflow_state.target_temp_c);
     lv_obj_set_style_text_color(workflow_target_label,
                                 lv_color_hex(0xe94560), 0);
     lv_obj_set_style_text_font(workflow_target_label, &deneb_font_14, 0);
@@ -381,7 +392,8 @@ static lv_obj_t *material_workflow_create(void)
     lv_obj_align(workflow_slider, LV_ALIGN_BOTTOM_LEFT, 0, -4);
     lv_slider_set_range(workflow_slider, 0,
                         (int)DENEB_GCODE_MAX_NOZZLE_TEMP_C);
-    lv_slider_set_value(workflow_slider, workflow_target_temp, LV_ANIM_OFF);
+    lv_slider_set_value(workflow_slider, workflow_state.target_temp_c,
+                        LV_ANIM_OFF);
     lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_bg_color(workflow_slider, lv_color_hex(0xe94560),
                               LV_PART_INDICATOR);
@@ -440,9 +452,9 @@ static lv_obj_t *material_workflow_create(void)
 
 static void material_workflow_destroy(void)
 {
-    if (workflow_moving)
+    if (workflow_state.moving)
         workflow_stop_material(0);
-    else if (workflow_target_sent)
+    else if (workflow_state.target_sent)
         workflow_cooldown_nozzle(0);
 
     if (workflow_timer) {

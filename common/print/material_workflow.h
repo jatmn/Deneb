@@ -39,6 +39,8 @@ typedef struct {
     int heating;
     int moving;
     int target_temp_c;
+    int accepted_target_temp_c;
+    int target_sent;
 } deneb_material_workflow_t;
 
 typedef struct {
@@ -51,6 +53,13 @@ void deneb_material_workflow_init(deneb_material_workflow_t *wf);
 int deneb_material_workflow_prepare(deneb_material_workflow_t *wf,
                                     deneb_material_workflow_op_t op);
 int deneb_material_workflow_start(deneb_material_workflow_t *wf);
+int deneb_material_workflow_set_target(deneb_material_workflow_t *wf,
+                                       int target_temp_c, int sent);
+int deneb_material_workflow_edit_target(deneb_material_workflow_t *wf,
+                                        int target_temp_c);
+int deneb_material_workflow_begin_move(deneb_material_workflow_t *wf,
+                                       deneb_material_workflow_op_t op);
+int deneb_material_workflow_complete_move(deneb_material_workflow_t *wf);
 int deneb_material_workflow_advance(deneb_material_workflow_t *wf);
 int deneb_material_workflow_cancel(deneb_material_workflow_t *wf);
 int deneb_material_workflow_finalize(deneb_material_workflow_t *wf);
@@ -68,5 +77,7 @@ deneb_material_workflow_status_t deneb_material_workflow_status(
     int target_sent,
     int target_temp_c,
     int temp_ready);
+deneb_material_workflow_status_t deneb_material_workflow_status_for_state(
+    const deneb_material_workflow_t *wf, int backend_ready, int temp_ready);
 
 #endif

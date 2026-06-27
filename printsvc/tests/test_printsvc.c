@@ -6016,8 +6016,62 @@ static void test_material_workflow_state_machine(void)
     assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_PREPARED);
     assert(deneb_material_workflow_printing_blocked(&wf));
     assert(wf.target_temp_c == DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C);
+    assert(wf.accepted_target_temp_c == 0);
 
-    assert(deneb_material_workflow_start(&wf) == 0);
+    assert(deneb_material_workflow_set_target(&wf, 205, 0) == 0);
+    assert(wf.target_temp_c == 205);
+    assert(wf.accepted_target_temp_c == 0);
+    assert(!wf.target_sent);
+    assert(deneb_material_workflow_status_for_state(&wf, 1, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_SET_TARGET);
+    assert(deneb_material_workflow_set_target(&wf, 205, 1) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_BUSY);
+    assert(wf.heating);
+    assert(wf.target_sent);
+    assert(wf.accepted_target_temp_c == 205);
+    assert(deneb_material_workflow_status_for_state(&wf, 1, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_HEATING);
+    assert(deneb_material_workflow_edit_target(&wf, 0) == 0);
+    assert(wf.target_temp_c == 0);
+    assert(wf.accepted_target_temp_c == 205);
+    assert(wf.target_sent);
+    assert(wf.heating);
+    assert(deneb_material_workflow_status_for_state(&wf, 1, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_HEATING);
+    assert(deneb_material_workflow_edit_target(&wf, 205) == 0);
+    assert(wf.target_sent);
+    assert(wf.accepted_target_temp_c == 205);
+    assert(wf.heating);
+    assert(deneb_material_workflow_begin_move(&wf,
+               DENEB_MATERIAL_WORKFLOW_OP_UNLOAD) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_FINALIZING);
+    assert(wf.moving);
+    assert(wf.operation == DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
+    assert(deneb_material_workflow_status_for_state(&wf, 1, 1) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_MOVING);
+    assert(deneb_material_workflow_complete_move(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_BUSY);
+    assert(!wf.moving);
+    assert(wf.target_temp_c == 205);
+    assert(wf.accepted_target_temp_c == 205);
+    assert(deneb_material_workflow_set_target(&wf, 0, 0) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_PREPARED);
+    assert(wf.accepted_target_temp_c == 0);
+    assert(!wf.target_sent);
+    assert(deneb_material_workflow_status_for_state(&wf, 1, 0) ==
+           DENEB_MATERIAL_WORKFLOW_STATUS_SET_TARGET);
+    assert(deneb_material_workflow_set_target(&wf, 210, 1) == 0);
+    assert(deneb_material_workflow_cancel(&wf) == 0);
+    assert(deneb_material_workflow_finalize(&wf) == 0);
+    assert(deneb_material_workflow_prepare(&wf,
+               DENEB_MATERIAL_WORKFLOW_OP_CHANGE) == 0);
+    assert(deneb_material_workflow_set_target(&wf, 0, 0) == 0);
+    assert(wf.target_temp_c == 0);
+    assert(wf.accepted_target_temp_c == 0);
+    assert(!wf.target_sent);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_PREPARED);
+    assert(deneb_material_workflow_set_target(&wf, 210, 1) == 0);
+    assert(deneb_material_workflow_start(&wf) != 0);
     assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_BUSY);
     assert(wf.heating);
 

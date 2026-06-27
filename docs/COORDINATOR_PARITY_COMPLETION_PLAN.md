@@ -252,6 +252,30 @@ Stock material handling provides:
 7. Add host tests for the state machine and generated command sequences.
 8. Add target validation steps for unload, load, cancel while heating, cancel while moving, and cooldown.
 
+### 2026-06-27 Non-Physical Runtime Wiring Checkpoint
+
+Material workflow state ownership is now wired into the user-facing touchscreen
+material workflow path without adding Python or stock coordinator dependencies:
+
+- `common/print/material_workflow.h/c` owns target-sent state, movement state,
+  prepare/start/cancel/finalize transitions, and UI display status derivation.
+- `ui/src/screens/screen_material.c` uses `deneb_material_workflow_t` for the
+  load/change screen instead of local `workflow_moving`, `workflow_target_temp`,
+  and `workflow_target_sent` state.
+- Load and unload buttons still send the existing native G-code command
+  sequences, but successful sends now transition through the shared workflow
+  state model.
+- Host test coverage exercises slider-style unsent target changes, sent target
+  heating state, unload movement begin/complete transitions, and status derived
+  from the workflow object.
+
+Non-physical validation completed:
+
+- `deneb-printsvc-tests` host binary passed.
+- MIPS `deneb-ui` target build passed.
+
+Remaining gate: user-supervised target proof for unload/load/cancel/cooldown
+with runtime inventory before, during, and after the workflow.
 ### Expected Result
 
 Deneb has a native material workflow with clear state ownership and no reliance
@@ -607,7 +631,7 @@ Current status as of 2026-06-22 after the coordinator-parity source audit:
 |---|-----------|--------|------------------------------|
 | 1 | Coordinator Dependency Audit Gate | **COMPLETE** | `tools/deneb-printsvc-native-audit.sh` rejects stock coordinator print ports, non-DF coordinator services, and new `print_on_buildplate` references. Selftest fixtures cover the negative cases. |
 | 2 | File Validation And Upload Parity | **PARTIAL** | Native build-volume metadata parsing and validation are wired into `pending_job_registration_prepare()` and `job_control_accept()`. Host tests now cover complete-bounds acceptance, out-of-bounds rejection, partial-bounds rejection, and clean `JOB` rejection without stale active state. Remaining gate: prove Web/Cura/API/DF upload paths on target. |
-| 3 | Material Workflow Parity | **PARTIAL** | Native state-machine helpers exist in `common/print/material_workflow.h/c`, but the runtime touchscreen/API workflow still uses the older status/plan helpers. Remaining gate: wire the native state machine into the user-facing material flow and run target workflow proof. |
+| 3 | Material Workflow Parity | **PARTIAL - PHYSICAL PROOF PENDING** | Native workflow state is now wired into the touchscreen material load/change path through `deneb_material_workflow_t`; host tests and MIPS UI build passed. Remaining gate: user-supervised target proof for unload/load/cancel/cooldown with clean runtime inventory. |
 | 4 | Bed Leveling Workflow Parity | **PARTIAL** | Native guided-workflow helpers exist in `common/print/buildplate_level.h/c`, but the touchscreen level screen still sends direct step macros. Remaining gate: wire the workflow state into UI/runtime behavior and run target workflow proof. |
 | 5 | Fault Handling And Auto-Abort Policy | **COMPLETE FOR ACTIVE PRINTS** | `docs/FAULT_POLICY.md` defines active-print auto-abort policy. `printsvc/src/service.c` aborts active jobs for thermal, endstop, Marlin, and storage faults while leaving serial/command faults recoverable. Idle faults display errors and do not auto-abort. |
 | 6 | `print_on_buildplate` State Decision | **COMPLETE** | Retired as stock-menu-only state. Audit check rejects new references in Deneb-owned code. Native print history (`common/print/print_history.*`) tracks active/completed prints instead. |
@@ -618,7 +642,7 @@ Current status as of 2026-06-22 after the coordinator-parity source audit:
 1. Add the coordinator dependency audit gate. **(DONE)**
 2. Finish file validation/build-volume parity. **(PARTIAL — host ingress proof added; target upload-path proof still required)**
 3. Finish fault policy because it affects print safety and all workflows. **(DONE for active-print policy)**
-4. Finish material workflow parity. **(PARTIAL — native helpers are not yet wired into runtime workflow)**
+4. Finish material workflow parity. **(PARTIAL — runtime wiring complete; target material workflow proof still required)**
 5. Finish bed-leveling parity. **(PARTIAL — native helpers are not yet wired into runtime workflow)**
 6. Decide `print_on_buildplate` retirement/replacement. **(DONE — retired)**
 7. Change installer fallback policy and run the full no-coordinator target matrix. **(PARTIAL — package installed and idle/safe-upload no-Python proof captured; physical workflow matrix still required)**

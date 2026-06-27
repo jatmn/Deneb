@@ -10,12 +10,9 @@ void deneb_material_workflow_init(deneb_material_workflow_t *wf)
 {
     if (!wf)
         return;
+    memset(wf, 0, sizeof(*wf));
     wf->operation = DENEB_MATERIAL_WORKFLOW_OP_NONE;
     wf->state = DENEB_MATERIAL_WORKFLOW_STATE_IDLE;
-    wf->printing_blocked = 0;
-    wf->heating = 0;
-    wf->moving = 0;
-    wf->target_temp_c = 0;
 }
 
 int deneb_material_workflow_prepare(deneb_material_workflow_t *wf,
@@ -37,6 +34,8 @@ int deneb_material_workflow_prepare(deneb_material_workflow_t *wf,
     wf->heating = 0;
     wf->moving = 0;
     wf->target_temp_c = DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C;
+    wf->accepted_target_temp_c = 0;
+    wf->target_sent = 0;
     return 0;
 }
 
@@ -48,21 +47,97 @@ int deneb_material_workflow_start(deneb_material_workflow_t *wf)
         return -1;
 
     wf->state = DENEB_MATERIAL_WORKFLOW_STATE_BUSY;
-    wf->heating = 1;
+    wf->accepted_target_temp_c = wf->target_temp_c;
+    wf->heating = wf->accepted_target_temp_c > 0;
+    wf->target_sent = wf->accepted_target_temp_c > 0;
+    return 0;
+}
+
+int deneb_material_workflow_set_target(deneb_material_workflow_t *wf,
+                                       int target_temp_c, int sent)
+{
+    if (!wf || target_temp_c < 0)
+        return -1;
+    if (wf->state == DENEB_MATERIAL_WORKFLOW_STATE_IDLE ||
+        wf->state == DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED)
+        return -1;
+
+    wf->target_temp_c = target_temp_c;
+    wf->accepted_target_temp_c = sent ? target_temp_c : 0;
+    wf->target_sent = sent && target_temp_c > 0;
+    wf->heating = wf->target_sent;
+    if (wf->target_sent &&
+        (wf->state == DENEB_MATERIAL_WORKFLOW_STATE_PREPARED ||
+         wf->state == DENEB_MATERIAL_WORKFLOW_STATE_FINAL))
+        wf->state = DENEB_MATERIAL_WORKFLOW_STATE_BUSY;
+    if (target_temp_c == 0 && !wf->moving)
+        wf->state = DENEB_MATERIAL_WORKFLOW_STATE_PREPARED;
+    return 0;
+}
+
+int deneb_material_workflow_edit_target(deneb_material_workflow_t *wf,
+                                        int target_temp_c)
+{
+    if (!wf || target_temp_c < 0)
+        return -1;
+    if (wf->state == DENEB_MATERIAL_WORKFLOW_STATE_IDLE ||
+        wf->state == DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED)
+        return -1;
+
+    wf->target_temp_c = target_temp_c;
+    if (!wf->target_sent) {
+        wf->heating = 0;
+        if (target_temp_c == 0 && !wf->moving)
+            wf->state = DENEB_MATERIAL_WORKFLOW_STATE_PREPARED;
+    }
+    return 0;
+}
+
+int deneb_material_workflow_begin_move(deneb_material_workflow_t *wf,
+                                       deneb_material_workflow_op_t op)
+{
+    if (!wf)
+        return -1;
+    if (op != DENEB_MATERIAL_WORKFLOW_OP_UNLOAD &&
+        op != DENEB_MATERIAL_WORKFLOW_OP_LOAD &&
+        op != DENEB_MATERIAL_WORKFLOW_OP_CHANGE)
+        return -1;
+    if (wf->state != DENEB_MATERIAL_WORKFLOW_STATE_BUSY &&
+        wf->state != DENEB_MATERIAL_WORKFLOW_STATE_PREPARED &&
+        wf->state != DENEB_MATERIAL_WORKFLOW_STATE_FINAL)
+        return -1;
+    if (wf->moving)
+        return -1;
+
+    wf->operation = op;
+    wf->state = DENEB_MATERIAL_WORKFLOW_STATE_FINALIZING;
+    wf->heating = 0;
+    wf->moving = 1;
+    return 0;
+}
+
+int deneb_material_workflow_complete_move(deneb_material_workflow_t *wf)
+{
+    if (!wf)
+        return -1;
+    if (wf->state != DENEB_MATERIAL_WORKFLOW_STATE_FINALIZING ||
+        !wf->moving)
+        return -1;
+
+    wf->operation = DENEB_MATERIAL_WORKFLOW_OP_CHANGE;
+    wf->state = (wf->target_sent ? wf->accepted_target_temp_c :
+                 wf->target_temp_c) > 0 ?
+        DENEB_MATERIAL_WORKFLOW_STATE_BUSY :
+        DENEB_MATERIAL_WORKFLOW_STATE_PREPARED;
+    wf->heating = wf->target_sent;
+    wf->moving = 0;
     return 0;
 }
 
 int deneb_material_workflow_advance(deneb_material_workflow_t *wf)
 {
-    if (!wf)
-        return -1;
-    if (wf->state != DENEB_MATERIAL_WORKFLOW_STATE_BUSY)
-        return -1;
-
-    wf->state = DENEB_MATERIAL_WORKFLOW_STATE_FINALIZING;
-    wf->heating = 0;
-    wf->moving = 1;
-    return 0;
+    return deneb_material_workflow_begin_move(
+        wf, wf ? wf->operation : DENEB_MATERIAL_WORKFLOW_OP_NONE);
 }
 
 int deneb_material_workflow_cancel(deneb_material_workflow_t *wf)
@@ -78,6 +153,8 @@ int deneb_material_workflow_cancel(deneb_material_workflow_t *wf)
     wf->heating = 0;
     wf->moving = 0;
     wf->target_temp_c = 0;
+    wf->accepted_target_temp_c = 0;
+    wf->target_sent = 0;
     return 0;
 }
 
@@ -95,6 +172,8 @@ int deneb_material_workflow_finalize(deneb_material_workflow_t *wf)
     wf->heating = 0;
     wf->moving = 0;
     wf->target_temp_c = 0;
+    wf->accepted_target_temp_c = 0;
+    wf->target_sent = 0;
     return 0;
 }
 
@@ -182,4 +261,15 @@ deneb_material_workflow_status_t deneb_material_workflow_status(
     if (temp_ready)
         return DENEB_MATERIAL_WORKFLOW_STATUS_READY_TO_MOVE;
     return DENEB_MATERIAL_WORKFLOW_STATUS_HEATING;
+}
+
+deneb_material_workflow_status_t deneb_material_workflow_status_for_state(
+    const deneb_material_workflow_t *wf, int backend_ready, int temp_ready)
+{
+    if (!wf)
+        return DENEB_MATERIAL_WORKFLOW_STATUS_BUSY;
+    return deneb_material_workflow_status(
+        backend_ready, wf->moving, wf->target_sent,
+        wf->target_sent ? wf->accepted_target_temp_c : wf->target_temp_c,
+        temp_ready);
 }
