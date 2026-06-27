@@ -53,16 +53,34 @@ int deneb_buildplate_level_workflow_advance(
 {
     if (!wf)
         return -1;
-    if (wf->state != DENEB_BUILDPLATE_LEVEL_STATE_MOVING &&
-        wf->state != DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET)
+    if (wf->state != DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET)
         return -1;
-    if (next_step < DENEB_BUILDPLATE_LEVEL_STEP_1 ||
-        next_step > DENEB_BUILDPLATE_LEVEL_STEP_FINISH)
+    if (wf->current_step == DENEB_BUILDPLATE_LEVEL_STEP_FINISH)
+        return -1;
+    if (next_step !=
+        (deneb_buildplate_level_step_t)((int)wf->current_step + 1))
         return -1;
 
     wf->state = DENEB_BUILDPLATE_LEVEL_STATE_MOVING;
     wf->current_step = next_step;
     wf->moving = 1;
+    return 0;
+}
+
+int deneb_buildplate_level_workflow_complete_move(
+    deneb_buildplate_level_workflow_t *wf)
+{
+    if (!wf)
+        return -1;
+    if (wf->state != DENEB_BUILDPLATE_LEVEL_STATE_MOVING ||
+        !wf->moving)
+        return -1;
+
+    wf->moving = 0;
+    wf->step_count++;
+    wf->state = wf->current_step == DENEB_BUILDPLATE_LEVEL_STEP_FINISH ?
+        DENEB_BUILDPLATE_LEVEL_STATE_FINAL :
+        DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET;
     return 0;
 }
 

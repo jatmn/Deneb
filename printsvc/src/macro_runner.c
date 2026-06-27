@@ -57,7 +57,11 @@ int deneb_macro_runner_run_file(const char *path,
     }
 
     deneb_gcode_stream_close(&stream);
-    return rc < 0 ? -1 : 0;
+    if (rc < 0)
+        return -1;
+    rc = io->wait_for_window(io->ctx,
+                             DENEB_MACRO_RUNNER_WINDOW_TIMEOUT_MS);
+    return rc == 0 ? 0 : rc;
 }
 
 int deneb_macro_runner_run_macro(const char *macro,

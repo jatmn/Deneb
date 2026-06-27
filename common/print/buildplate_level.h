@@ -41,6 +41,8 @@ int deneb_buildplate_level_workflow_start(
 int deneb_buildplate_level_workflow_advance(
     deneb_buildplate_level_workflow_t *wf,
     deneb_buildplate_level_step_t next_step);
+int deneb_buildplate_level_workflow_complete_move(
+    deneb_buildplate_level_workflow_t *wf);
 int deneb_buildplate_level_workflow_cancel(
     deneb_buildplate_level_workflow_t *wf);
 int deneb_buildplate_level_workflow_next_step(

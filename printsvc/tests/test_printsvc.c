@@ -6140,38 +6140,75 @@ static void test_buildplate_level_workflow(void)
 
     assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
     assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_PREPARED);
+    assert(wf.step_count == 0);
     assert(deneb_buildplate_level_workflow_next_step(&wf, &next) == 0);
     assert(next == DENEB_BUILDPLATE_LEVEL_STEP_1);
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+               DENEB_BUILDPLATE_LEVEL_STEP_2) != 0);
 
     assert(deneb_buildplate_level_workflow_start(&wf) == 0);
     assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING);
+    assert(wf.current_step == DENEB_BUILDPLATE_LEVEL_STEP_1);
     assert(wf.moving);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) != 0);
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+               DENEB_BUILDPLATE_LEVEL_STEP_2) != 0);
+
+    assert(deneb_buildplate_level_workflow_complete_move(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET);
+    assert(!wf.moving);
+    assert(wf.step_count == 1);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) == 0);
+    assert(next == DENEB_BUILDPLATE_LEVEL_STEP_2);
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+               DENEB_BUILDPLATE_LEVEL_STEP_FINISH) != 0);
 
     assert(deneb_buildplate_level_workflow_advance(&wf,
-            DENEB_BUILDPLATE_LEVEL_STEP_2) == 0);
+               DENEB_BUILDPLATE_LEVEL_STEP_2) == 0);
     assert(wf.current_step == DENEB_BUILDPLATE_LEVEL_STEP_2);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING);
+    assert(deneb_buildplate_level_workflow_complete_move(&wf) == 0);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) == 0);
+    assert(next == DENEB_BUILDPLATE_LEVEL_STEP_3);
 
     assert(deneb_buildplate_level_workflow_advance(&wf,
-            DENEB_BUILDPLATE_LEVEL_STEP_FINISH) == 0);
+               DENEB_BUILDPLATE_LEVEL_STEP_3) == 0);
+    assert(deneb_buildplate_level_workflow_complete_move(&wf) == 0);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) == 0);
+    assert(next == DENEB_BUILDPLATE_LEVEL_STEP_4);
+
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+               DENEB_BUILDPLATE_LEVEL_STEP_4) == 0);
+    assert(deneb_buildplate_level_workflow_complete_move(&wf) == 0);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) == 0);
+    assert(next == DENEB_BUILDPLATE_LEVEL_STEP_FINISH);
+
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+               DENEB_BUILDPLATE_LEVEL_STEP_FINISH) == 0);
     assert(wf.current_step == DENEB_BUILDPLATE_LEVEL_STEP_FINISH);
-
+    assert(deneb_buildplate_level_workflow_complete_move(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_FINAL);
+    assert(!wf.moving);
+    assert(wf.step_count == 5);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) != 0);
     assert(deneb_buildplate_level_workflow_advance(&wf,
-            (deneb_buildplate_level_step_t)99) != 0);
+               DENEB_BUILDPLATE_LEVEL_STEP_FINISH) != 0);
 
+    deneb_buildplate_level_workflow_init(&wf);
+    assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
+    assert(deneb_buildplate_level_workflow_start(&wf) == 0);
     assert(deneb_buildplate_level_workflow_cancel(&wf) == 0);
     assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED);
     assert(!wf.moving);
 
-    deneb_buildplate_level_workflow_init(&wf);
-    assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
-    assert(deneb_buildplate_level_workflow_cancel(&wf) == 0);
-    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED);
-
     assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
     assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_PREPARED);
+    assert(wf.current_step == DENEB_BUILDPLATE_LEVEL_STEP_1);
+    assert(wf.step_count == 0);
 
     assert(deneb_buildplate_level_workflow_start(NULL) != 0);
     assert(deneb_buildplate_level_workflow_cancel(NULL) != 0);
+    assert(deneb_buildplate_level_workflow_complete_move(NULL) != 0);
     assert(deneb_buildplate_level_workflow_next_step(NULL, &next) != 0);
     assert(deneb_buildplate_level_workflow_next_step(&wf, NULL) != 0);
 

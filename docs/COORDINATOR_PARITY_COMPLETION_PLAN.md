@@ -333,6 +333,31 @@ Stock bed leveling provides:
 6. Add host tests for macro order and state transitions.
 7. Add hardware validation for full bed-leveling sequence, cancel during sequence, and repeated sequence after cancel.
 
+### 2026-06-27 Non-Physical Runtime Wiring Checkpoint
+
+Bed-leveling workflow state ownership is now wired into the touchscreen
+maintenance leveling path without adding Python or stock coordinator
+dependencies:
+
+- `common/print/buildplate_level.h/c` owns ordered step progression,
+  wait-for-completion transitions, cancel, final, and repeat-after-cancel state.
+- `ui/src/screens/screen_level.c` uses `deneb_buildplate_level_workflow_t`
+  instead of direct always-available macro buttons.
+- The touchscreen now exposes a state-driven next-step action plus cancel, and
+  holds the workflow in moving state until the local macro wait completes before
+  enabling the next step.
+- Host test coverage exercises the full ordered step1 -> step2 -> step3 ->
+  step4 -> finish sequence, prevents skipping ahead, blocks advancing while
+  moving, and covers cancel/reprepare behavior.
+
+Non-physical validation completed:
+
+- `deneb-printsvc-tests` host binary passed.
+- MIPS `deneb-ui` target build passed.
+
+Remaining gate: user-supervised target proof for the full leveling sequence,
+cancel during sequence, and repeat after cancel with runtime inventory before,
+during, and after the workflow.
 ### Expected Result
 
 Deneb bed leveling is either documented as intentionally direct/manual, or it
@@ -632,7 +657,7 @@ Current status as of 2026-06-22 after the coordinator-parity source audit:
 | 1 | Coordinator Dependency Audit Gate | **COMPLETE** | `tools/deneb-printsvc-native-audit.sh` rejects stock coordinator print ports, non-DF coordinator services, and new `print_on_buildplate` references. Selftest fixtures cover the negative cases. |
 | 2 | File Validation And Upload Parity | **PARTIAL** | Native build-volume metadata parsing and validation are wired into `pending_job_registration_prepare()` and `job_control_accept()`. Host tests now cover complete-bounds acceptance, out-of-bounds rejection, partial-bounds rejection, and clean `JOB` rejection without stale active state. Remaining gate: prove Web/Cura/API/DF upload paths on target. |
 | 3 | Material Workflow Parity | **PARTIAL - PHYSICAL PROOF PENDING** | Native workflow state is now wired into the touchscreen material load/change path through `deneb_material_workflow_t`; host tests and MIPS UI build passed. Remaining gate: user-supervised target proof for unload/load/cancel/cooldown with clean runtime inventory. |
-| 4 | Bed Leveling Workflow Parity | **PARTIAL** | Native guided-workflow helpers exist in `common/print/buildplate_level.h/c`, but the touchscreen level screen still sends direct step macros. Remaining gate: wire the workflow state into UI/runtime behavior and run target workflow proof. |
+| 4 | Bed Leveling Workflow Parity | **PARTIAL - PHYSICAL PROOF PENDING** | Native workflow state is now wired into the touchscreen build-plate leveling path through `deneb_buildplate_level_workflow_t`; host tests and MIPS UI build passed. Remaining gate: user-supervised target proof for full sequence/cancel/retry with clean runtime inventory. |
 | 5 | Fault Handling And Auto-Abort Policy | **COMPLETE FOR ACTIVE PRINTS** | `docs/FAULT_POLICY.md` defines active-print auto-abort policy. `printsvc/src/service.c` aborts active jobs for thermal, endstop, Marlin, and storage faults while leaving serial/command faults recoverable. Idle faults display errors and do not auto-abort. |
 | 6 | `print_on_buildplate` State Decision | **COMPLETE** | Retired as stock-menu-only state. Audit check rejects new references in Deneb-owned code. Native print history (`common/print/print_history.*`) tracks active/completed prints instead. |
 | 7 | Coordinator Fallback Disablement | **PARTIAL** | `ui/installer/update.sh` writes a disabled coordinator shim with a tested `restore_stock` rollback command. Package `bc4e01d8-dirty` was built, installed on target `10.10.10.241`, rebooted, and proved idle/API/Web plus safe rejected upload with no live Python process. Remaining gate: full physical no-coordinator workflow matrix below. |
@@ -643,6 +668,6 @@ Current status as of 2026-06-22 after the coordinator-parity source audit:
 2. Finish file validation/build-volume parity. **(PARTIAL — host ingress proof added; target upload-path proof still required)**
 3. Finish fault policy because it affects print safety and all workflows. **(DONE for active-print policy)**
 4. Finish material workflow parity. **(PARTIAL — runtime wiring complete; target material workflow proof still required)**
-5. Finish bed-leveling parity. **(PARTIAL — native helpers are not yet wired into runtime workflow)**
+5. Finish bed-leveling parity. **(PARTIAL — runtime wiring complete; target bed-leveling workflow proof still required)**
 6. Decide `print_on_buildplate` retirement/replacement. **(DONE — retired)**
 7. Change installer fallback policy and run the full no-coordinator target matrix. **(PARTIAL — package installed and idle/safe-upload no-Python proof captured; physical workflow matrix still required)**
