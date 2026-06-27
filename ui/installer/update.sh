@@ -582,36 +582,38 @@ EOF
     fi
 
     if [ -f "${coordinator_init}" ] &&
-       ! grep -q "DENEB_COORDINATOR_START_WAIT" "${coordinator_init}" 2>/dev/null; then
+       ! grep -q "DENEB_COORDINATOR_DISABLED" "${coordinator_init}" 2>/dev/null; then
         if [ ! -f "${backup_dir}/coordinator.orig" ]; then
             cp "${coordinator_init}" "${backup_dir}/coordinator.orig"
         fi
 
         cat > "${coordinator_init}" <<'EOF'
 #!/bin/sh /etc/rc.common
-# Start the Coordinator node group
+# Deneb coordinator shim — stock coordinator is DISABLED by default.
+# DENEB_COORDINATOR_DISABLED
 # DENEB_COORDINATOR_START_WAIT
 
 # shellcheck disable=SC2034
 START=96
 # shellcheck disable=SC2034
 STOP=14
+# shellcheck disable=SC2034
+EXTRA_COMMANDS="restore_stock enable_manual_stock"
+# shellcheck disable=SC2034
+EXTRA_HELP="        restore_stock Restore backed-up stock coordinator init and start it"
 
 STOCK_COORDINATOR_INIT="/home/deneb/backups/deneb-ui/init/coordinator.orig"
 
-start() {
-    if [ -x "${STOCK_COORDINATOR_INIT}" ]; then
-        logger -t deneb-coordinator "delegating to backed-up stock coordinator init"
-        "${STOCK_COORDINATOR_INIT}" start
-        return $?
-    fi
+# Deneb does not start stock coordinator by default. To restore the
+# backed-up stock coordinator for diagnosis, run:
+#   /etc/init.d/coordinator restore_stock
 
-    logger -t deneb-coordinator "stock coordinator fallback unavailable"
-    return 1
+start() {
+    logger -t deneb-coordinator "stock coordinator disabled by Deneb; use backup to restore"
+    return 0
 }
 
 stop() {
-    echo Stopping coordinator
     if [ -x "${STOCK_COORDINATOR_INIT}" ]; then
         "${STOCK_COORDINATOR_INIT}" stop 2>/dev/null || true
     fi
@@ -621,9 +623,28 @@ stop() {
         rm -f /var/run/coordinator.pid
     fi
 }
+
+# WARNING: enable_manual_stock() overwrites this Deneb shim with the stock
+# init script. This is a one-way operation — re-running the Deneb installer
+# is required to restore the native coordinator-disabled shim afterwards.
+restore_stock() {
+    logger -t deneb-coordinator "manually restoring stock coordinator from backup"
+    if [ ! -x "${STOCK_COORDINATOR_INIT}" ]; then
+        logger -t deneb-coordinator "stock coordinator backup unavailable"
+        return 1
+    fi
+    cp "${STOCK_COORDINATOR_INIT}" /etc/init.d/coordinator
+    chmod 0755 /etc/init.d/coordinator
+    /etc/init.d/coordinator enable
+    /etc/init.d/coordinator start
+}
+
+enable_manual_stock() {
+    restore_stock "$@"
+}
 EOF
         chmod 0755 "${coordinator_init}"
-        log "installed coordinator recovery handoff shim"
+        log "installed coordinator disabled shim (stock coordinator not started by default)"
     fi
 }
 

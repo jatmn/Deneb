@@ -261,6 +261,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "grep -Eq '(^|/)deneb-printsvc-native-audit-selftest$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-integration-audit$' /tmp/deneb-release-package-files.txt; " +
                  "grep -Eq '(^|/)deneb-printsvc-integration-audit-selftest$' /tmp/deneb-release-package-files.txt; " +
+                 "grep -Eq '(^|/)deneb-runtime-inventory$' /tmp/deneb-release-package-files.txt; " +
                  "tar -xOf '$packageWsl' manifest.txt > /tmp/deneb-release-manifest.txt; " +
                  "grep -Eq '^channel: $ReleaseChannel$' /tmp/deneb-release-manifest.txt; " +
                  "grep -Eq '^native_printsvc: experimental$' /tmp/deneb-release-manifest.txt; " +
@@ -270,7 +271,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "printf '%s\n' '$packageWsl' >&2; exit 1; " +
                  "fi; " +
                  "rm -rf /tmp/deneb-release-smoke-selftest; mkdir -p /tmp/deneb-release-smoke-selftest; " +
-                 "tar xf '$packageWsl' -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-printsvc.init digitalfactory.init update.sh manifest.txt; " +
+                 "tar xf '$packageWsl' -C /tmp/deneb-release-smoke-selftest deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-runtime-inventory deneb-printsvc.init digitalfactory.init update.sh manifest.txt; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest >/tmp/deneb-release-smoke-selftest.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-stability --selftest >/tmp/deneb-release-stability-selftest.log; " +
                  "DENEB_REPO_ROOT='$repoWsl' sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-release-gate-selftest >/tmp/deneb-release-gate-selftest.log; " +

@@ -30,6 +30,8 @@ long active-soak proof.
 | Short repeated-job stability | Proven for five bounded Z-only completion jobs | `/tmp/deneb-84376b4-stability-complete5.summary`; `/tmp/deneb-printsvc-stability-16769-{1..5}.summary` | Multi-hour active soak remains open. |
 | Active physical soak memory behavior | Investigated, not promotion-complete | `/tmp/deneb-56c2bb5-active-physical-soak-statefix.summary`; `/tmp/deneb-56c2bb5-zmqhwm-active-soak.summary`; `/tmp/deneb-56c2bb5-cadence-cleanup-active-soak.summary`; `/tmp/deneb-56c2bb5-zmqctx-active-soak.summary`; `/tmp/deneb-a6fe410-long-active-soak.summary` | Remaining RSS/private staircase needs explanation or plateau proof. |
 | Diagnostics log growth | Mitigated for current package | Live `/var/log/ultimaker/deneb-printsvc.log` checks after dirty `56c2bb5` rebuild | Continue tracking log size during active soaks. |
+| SD card filesystem health | Needs repair outside normal mounted runtime | `docs/SD_CARD_STORAGE_FINDINGS.md`; live `e2fsck -n` on `/dev/mmcblk0p1` and `/dev/mmcblk0p2` returned `rc=4` with ext4 metadata errors | Storage corruption is a separate environmental risk from native service parity. |
+| Coordinator-disabled runtime inventory wording | Proven non-physically for source/package audit path | `tools/deneb-python-runtime-inventory.sh`; `tools/deneb-printsvc-native-audit.sh --source .`; `tools/deneb-printsvc-native-audit-selftest.sh`; `tools/build-update-release.ps1 -ReleaseChannel experimental`; package `dist/Deneb_Update_bc4e01d8.deneb` | Inventory now reports the Deneb disabled coordinator shim as `disabled shim`, not `running rc 0`; physical workflow inventory proof still required. |
 | Host native memory tooling | Proven for current unit/selftest surface | `tools/deneb-printsvc-valgrind.sh`; WSL Valgrind 3.24.0; GCC ASan/LSan | Host clean runs do not prove live MIPS long-soak behavior. |
 
 ## Latest Package/Runtime Notes
@@ -97,6 +99,11 @@ hardware:
   slicer output are separate evidence classes.
 - Static audits prove packaging/source guardrails; they do not prove physical
   safety.
+- Coordinator-disabled idle/API/Web proof and rejected-upload proof do not close
+  the physical no-coordinator promotion matrix. Material, bed-leveling, real
+  print lifecycle, Cura/Web/API start, Digital Factory remote-print, diagnostics,
+  update-screen, and reboot-after-job checks still need user-supervised target
+  evidence with runtime inventory captured before, during, and after each path.
 - Host Valgrind/ASan prove host test coverage; they do not replace target `/proc`
   and hardware evidence.
 - New host-buildable native validation should include Valgrind Memcheck where

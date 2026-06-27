@@ -479,6 +479,110 @@ A Deneb package boots and runs the supported UI/API/DF/Cura workflows with no
 live `coordinator.py` process. If stock coordinator is started manually, it is a
 documented rollback/debug action, not a normal Deneb dependency.
 
+
+### 2026-06-27 Coordinator-Disabled Target Checkpoint
+
+Package `Deneb_Update_bc4e01d8.deneb` was built from the dirty workspace and installed on the live printer at `10.10.10.241`. The packaged `update.sh` replaced `/etc/init.d/coordinator` with the Deneb disabled shim. After reboot, boot logs showed:
+
+```text
+deneb-coordinator: stock coordinator disabled by Deneb; use backup to restore
+deneb-ui: starting (lang=en) version=bc4e01d8-dirty
+deneb-ui: entered main loop
+deneb-api: starting (version=bc4e01d8-dirty)
+```
+
+Post-reboot API/runtime state:
+
+- `/api/v1/printer/status` returned `"idle"`.
+- `/cluster-api/v1/print_jobs` returned `[]`.
+- Process list contained `deneb-printsvc`, `deneb-ui`, `deneb-api`, and `lighttpd` only for the print/UI/API route.
+- Clean `/usr/bin/deneb-runtime-inventory` run reported `Live Python Processes: none`.
+- The `/etc/init.d/coordinator` start link still exists, but it now points to the disabled shim; `running rc 0` for that init script means the shim command succeeded, not that `coordinator.py` is live.
+
+Safe no-motion upload proof:
+
+- Posted an out-of-bounds G-code fixture through `POST /api/v1/print_job`.
+- API returned `422 Unprocessable Entity` with the native build-volume validation message.
+- Printer status stayed `"idle"` and job queue stayed `[]`.
+- Follow-up runtime inventory still reported no live Python processes.
+
+This closes the build/install/idle/safe-upload portion of Workstream 7. It does not close the full promotion matrix, which still requires physical material, leveling, print, Cura/Web/API start, Digital Factory remote-print, diagnostics export, update-screen, and reboot-after-job proofs without `coordinator.py`.
+
+### Next Non-Physical Work
+
+These tasks can move the coordinator-removal effort forward without commanding
+motion, heaters, extrusion, or a real print:
+
+1. Fix runtime inventory reporting for the disabled coordinator shim.
+   `/usr/bin/deneb-runtime-inventory` currently proves there are no live Python
+   processes, but the init-script table can still show coordinator `running rc 0`
+   because the disabled shim returns success. Update the inventory script to
+   detect the `DENEB_COORDINATOR_DISABLED` marker and report that state as
+   `disabled shim`, not `running`.
+2. Add a host/selftest case for the disabled-shim inventory state so future
+   package audits fail if the wording regresses.
+3. Re-run local package/native/init audit scripts after the inventory change.
+4. Rebuild the experimental package and, if target access is available, install
+   it only far enough to prove boot idle/API/Web status and clean no-Python
+   inventory. Do not start physical workflows as part of this step.
+5. Update this plan and the evidence ledger with the corrected inventory proof.
+
+Expected result: the non-physical evidence clearly says stock coordinator is
+disabled and no live Python is present, without implying the old coordinator
+daemon is still running.
+
+### 2026-06-27 Runtime Inventory Non-Physical Checkpoint
+
+The runtime inventory helper now detects the Deneb disabled coordinator shim by
+its `DENEB_COORDINATOR_DISABLED` marker and reports coordinator as
+`disabled shim` instead of `running rc 0`.
+
+Non-physical validation completed:
+
+- Focused host fixture: fake `coordinator` init containing
+  `DENEB_COORDINATOR_DISABLED` produced a coordinator service row with
+  `disabled shim | disabled shim` and did not report the coordinator row as
+  `rc 0 | rc 0`.
+- `tools/deneb-printsvc-native-audit.sh --source .` passed and now requires the
+  runtime inventory helper plus disabled-shim detection.
+- `tools/deneb-printsvc-native-audit-selftest.sh` passed and now covers missing
+  runtime inventory, missing disabled-shim detection, and the actual generated
+  inventory row.
+- `tools/build-update-release.ps1 -ReleaseChannel experimental` passed. The
+  final package verification now requires and extracts `deneb-runtime-inventory`,
+  and the archive/package audit proves the packaged helper carries disabled-shim
+  detection.
+- Built package: `dist/Deneb_Update_bc4e01d8.deneb`, version
+  `bc4e01d8-dirty`, size `7690240` bytes.
+
+This closes the non-physical inventory-wording task. It does not close the
+physical no-coordinator workflow matrix below.
+
+### Physical Tests Still Required
+
+Do not mark Workstream 7 complete until these user-supervised target workflows
+are run with no live `coordinator.py` process before, during, and after each
+workflow:
+
+- Local touchscreen status/home screen
+- Temperature set/cooldown
+- Material workflow from Workstream 3
+- Bed leveling workflow from Workstream 4
+- USB/local G-code print start, pause, resume, stop/abort, finish
+- Cura/Web/API upload/start with no conflict
+- Cura/Web/API upload/start with material/nozzle conflict
+- Digital Factory connected status
+- Digital Factory remote print with no conflict
+- Digital Factory remote print with conflict and Continue/Cancel
+- Diagnostics export
+- `.deneb` package update screen discovery/start path
+- Reboot after completed print
+- Reboot after aborted/cancelled print
+
+For each physical test, capture API status, queue state, process list, runtime
+inventory, and relevant `logread` lines. A passing physical workflow is not just
+"the printer appeared okay"; it must include evidence that the native Deneb
+route handled the workflow without stock Python coordinator processes.
 ## Final Acceptance Criteria
 
 The coordinator fallback can be disabled by default only when all of these are
@@ -495,12 +599,26 @@ true:
 - Runtime inventory on target shows no live `coordinator.py` during required workflow proof.
 - Rollback to stock coordinator remains documented and tested enough for development recovery.
 
+## Completion Log
+
+Current status as of 2026-06-22 after the coordinator-parity source audit:
+
+| # | Workstream | Status | Key Changes / Remaining Gate |
+|---|-----------|--------|------------------------------|
+| 1 | Coordinator Dependency Audit Gate | **COMPLETE** | `tools/deneb-printsvc-native-audit.sh` rejects stock coordinator print ports, non-DF coordinator services, and new `print_on_buildplate` references. Selftest fixtures cover the negative cases. |
+| 2 | File Validation And Upload Parity | **PARTIAL** | Native build-volume metadata parsing and validation are wired into `pending_job_registration_prepare()` and `job_control_accept()`. Host tests now cover complete-bounds acceptance, out-of-bounds rejection, partial-bounds rejection, and clean `JOB` rejection without stale active state. Remaining gate: prove Web/Cura/API/DF upload paths on target. |
+| 3 | Material Workflow Parity | **PARTIAL** | Native state-machine helpers exist in `common/print/material_workflow.h/c`, but the runtime touchscreen/API workflow still uses the older status/plan helpers. Remaining gate: wire the native state machine into the user-facing material flow and run target workflow proof. |
+| 4 | Bed Leveling Workflow Parity | **PARTIAL** | Native guided-workflow helpers exist in `common/print/buildplate_level.h/c`, but the touchscreen level screen still sends direct step macros. Remaining gate: wire the workflow state into UI/runtime behavior and run target workflow proof. |
+| 5 | Fault Handling And Auto-Abort Policy | **COMPLETE FOR ACTIVE PRINTS** | `docs/FAULT_POLICY.md` defines active-print auto-abort policy. `printsvc/src/service.c` aborts active jobs for thermal, endstop, Marlin, and storage faults while leaving serial/command faults recoverable. Idle faults display errors and do not auto-abort. |
+| 6 | `print_on_buildplate` State Decision | **COMPLETE** | Retired as stock-menu-only state. Audit check rejects new references in Deneb-owned code. Native print history (`common/print/print_history.*`) tracks active/completed prints instead. |
+| 7 | Coordinator Fallback Disablement | **PARTIAL** | `ui/installer/update.sh` writes a disabled coordinator shim with a tested `restore_stock` rollback command. Package `bc4e01d8-dirty` was built, installed on target `10.10.10.241`, rebooted, and proved idle/API/Web plus safe rejected upload with no live Python process. Remaining gate: full physical no-coordinator workflow matrix below. |
+
 ## Recommended Order
 
-1. Add the coordinator dependency audit gate.
-2. Finish file validation/build-volume parity.
-3. Finish fault policy because it affects print safety and all workflows.
-4. Finish material workflow parity.
-5. Finish bed-leveling parity.
-6. Decide `print_on_buildplate` retirement/replacement.
-7. Change installer fallback policy and run the full no-coordinator target matrix.
+1. Add the coordinator dependency audit gate. **(DONE)**
+2. Finish file validation/build-volume parity. **(PARTIAL — host ingress proof added; target upload-path proof still required)**
+3. Finish fault policy because it affects print safety and all workflows. **(DONE for active-print policy)**
+4. Finish material workflow parity. **(PARTIAL — native helpers are not yet wired into runtime workflow)**
+5. Finish bed-leveling parity. **(PARTIAL — native helpers are not yet wired into runtime workflow)**
+6. Decide `print_on_buildplate` retirement/replacement. **(DONE — retired)**
+7. Change installer fallback policy and run the full no-coordinator target matrix. **(PARTIAL — package installed and idle/safe-upload no-Python proof captured; physical workflow matrix still required)**

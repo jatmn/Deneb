@@ -12,6 +12,7 @@ set -u
 
 SCRIPT_NAME=$(basename "$0")
 SUMMARY="${DENEB_PYTHON_RUNTIME_SUMMARY:-/tmp/deneb-python-runtime-inventory.md}"
+INIT_DIR="${DENEB_RUNTIME_INVENTORY_INIT_DIR:-/etc/init.d}"
 
 usage() {
     cat >&2 <<EOF
@@ -147,14 +148,21 @@ classification_for_cmd() {
 
 service_state() {
     local service="$1"
-    if [ ! -x "/etc/init.d/$service" ]; then
+    local init_script="${INIT_DIR}/$service"
+    if [ ! -x "$init_script" ]; then
         printf '| `%s` | missing | missing |\n' "$service"
         return
     fi
 
-    /etc/init.d/"$service" enabled >/dev/null 2>&1
+    if [ "$service" = "coordinator" ] &&
+       grep -q 'DENEB_COORDINATOR_DISABLED' "$init_script" 2>/dev/null; then
+        printf '| `%s` | disabled shim | disabled shim |\n' "$service"
+        return
+    fi
+
+    "$init_script" enabled >/dev/null 2>&1
     enabled_rc=$?
-    /etc/init.d/"$service" running >/dev/null 2>&1
+    "$init_script" running >/dev/null 2>&1
     running_rc=$?
     printf '| `%s` | rc %s | rc %s |\n' "$service" "$enabled_rc" "$running_rc"
 }
@@ -166,11 +174,11 @@ deneb_status() {
 tmp="${SUMMARY}.$$"
 {
     printf '# Remaining Live Python Runtime Inventory\n\n'
-    printf '- Captured: `%s`\n' "$(capture_datetime)"
-    printf '- Printer status: `%s`\n\n' "$(deneb_status)"
+    printf '%s `%s`\n' '- Captured:' "$(capture_datetime)"
+    printf '%s `%s`\n\n' '- Printer status:' "$(deneb_status)"
 
     printf '## Init State Snapshot\n\n'
-    printf '| Service | enabled rc | running rc |\n'
+    printf '| Service | enabled state | running state |\n'
     printf '| --- | --- | --- |\n'
     service_state coordinator
     service_state printserver
@@ -204,10 +212,10 @@ tmp="${SUMMARY}.$$"
     fi
 
     printf '\n## Expected Deneb-Native Absences\n\n'
-    printf '- `connector.py`: absent unless investigating a Digital Factory fallback regression.\n'
-    printf '- `print_service.py`: absent when `deneb-printsvc` owns the print backend.\n'
-    printf '- `/home/cygnus/menu/executor.py`: absent after native `deneb-ui` install and reboot.\n'
-    printf '- `compile_all` / `python3 -m compileall`: absent after Deneb disables stock compile work.\n'
+    printf '%s\n' '- `connector.py`: absent unless investigating a Digital Factory fallback regression.'
+    printf '%s\n' '- `print_service.py`: absent when `deneb-printsvc` owns the print backend.'
+    printf '%s\n' '- `/home/cygnus/menu/executor.py`: absent after native `deneb-ui` install and reboot.'
+    printf '%s\n' '- `compile_all` / `python3 -m compileall`: absent after Deneb disables stock compile work.'
 } > "$tmp"
 mv "$tmp" "$SUMMARY"
 cat "$SUMMARY"

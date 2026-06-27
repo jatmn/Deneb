@@ -33,6 +33,7 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
                              char *reply, size_t reply_sz)
 {
     deneb_print_job_file_metadata_t meta;
+    int metadata_loaded;
 
     if (!svc || !cmd || !reply || reply_sz == 0)
         return -1;
@@ -55,6 +56,19 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
                                              "failed to open job file");
         deneb_command_reply_error(reply, reply_sz, "failed to open job file");
         return -1;
+    }
+
+    deneb_print_job_file_metadata_init(&meta);
+    metadata_loaded = deneb_print_job_file_metadata_load(cmd->file, &meta) == 0;
+    {
+        char bv_error[256];
+        bv_error[0] = '\0';
+        if (deneb_print_job_file_check_build_volume(&meta, bv_error,
+                                                     sizeof(bv_error)) < 0) {
+            deneb_gcode_stream_close(&svc->job_stream);
+            deneb_command_reply_error(reply, reply_sz, bv_error);
+            return -1;
+        }
     }
 
     deneb_flow_clear_inflight(&svc->flow);
@@ -92,13 +106,12 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     if (deneb_print_job_file_has_extension(cmd->file, ".ufp"))
         deneb_print_job_file_extract_ufp_thumbnail(cmd->file,
                                                    DENEB_ACTIVE_THUMB_PATH);
-    deneb_print_job_file_metadata_init(&meta);
-    if (deneb_print_job_file_metadata_load(cmd->file, &meta) == 0 &&
-        meta.print_time_seconds > 0) {
+    if (metadata_loaded && meta.print_time_seconds > 0) {
         svc->status.time_total = meta.print_time_seconds;
         svc->status.time_left = meta.print_time_seconds;
         svc->job_original_time_total = meta.print_time_seconds;
     }
+
     deneb_heater_wait_start(&svc->heater_wait, svc->status.bed_t_set,
                             svc->status.head_t_set, 1.0f);
 

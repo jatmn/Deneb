@@ -8,9 +8,14 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TMP_DIR="${TMPDIR:-/tmp}/deneb-native-audit-selftest.$$"
 AUDIT="${SCRIPT_DIR}/deneb-printsvc-native-audit.sh"
+RUNTIME_INVENTORY="${SCRIPT_DIR}/deneb-python-runtime-inventory.sh"
 
 if [ ! -f "$AUDIT" ]; then
     AUDIT="${SCRIPT_DIR}/deneb-printsvc-native-audit"
+fi
+
+if [ ! -f "$RUNTIME_INVENTORY" ]; then
+    RUNTIME_INVENTORY="${SCRIPT_DIR}/deneb-runtime-inventory"
 fi
 
 cleanup() {
@@ -102,6 +107,11 @@ wait_for_stock_api_ready() {
     :
 }
 wait_for_stock_api_ready "stock-api-ready"
+EOF
+    cat > "$root/deneb-runtime-inventory" <<'EOF'
+#!/bin/sh
+grep -q DENEB_COORDINATOR_DISABLED "$0" 2>/dev/null || true
+# DENEB_COORDINATOR_DISABLED
 EOF
     cat > "$root/manifest.txt" <<'EOF'
 package: Deneb_Update_test
@@ -237,6 +247,10 @@ find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.
 find "$STAGING_DIR" \( -name 'deneb-df-bridge.py' \)
 ! grep -Eq '(^|/)deneb-df-bridge$' "$STAGING_DIR/package-files.txt"
 EOF
+    cat > "$root/tools/deneb-python-runtime-inventory.sh" <<'EOF'
+#!/bin/sh
+# DENEB_COORDINATOR_DISABLED
+EOF
 cat > "$root/tools/build-update-release.ps1" <<'EOF'
 [ValidateSet("experimental", "nightly", "stable")]
 $ReleaseChannel = "experimental"
@@ -325,6 +339,7 @@ wait_for_stock_api_ready "stock-api-ready"
 EOF
 cat > "$root/ui/installer/update.sh" <<'EOF'
 #!/bin/sh
+DENEB_COORDINATOR_DISABLED=1
 deneb-printsvc-native-audit --package-dir /tmp/update
 deneb-printsvc-native-audit-selftest
 deneb-printsvc-integration-audit --package-dir /tmp/update
@@ -590,6 +605,19 @@ grep -v '/etc/init.d/deneb-api restart' "$SOURCE_MISSING_INSTALLER_WEB_RESTART/u
     grep -v '/etc/init.d/deneb-web restart' > "$SOURCE_MISSING_INSTALLER_WEB_RESTART/ui/installer/update.tmp"
 mv "$SOURCE_MISSING_INSTALLER_WEB_RESTART/ui/installer/update.tmp" "$SOURCE_MISSING_INSTALLER_WEB_RESTART/ui/installer/update.sh"
 expect_failure rejects_source_missing_installer_web_restart "$AUDIT" --source "$SOURCE_MISSING_INSTALLER_WEB_RESTART"
+SOURCE_MISSING_RUNTIME_INVENTORY="$TMP_DIR/source-missing-runtime-inventory"
+write_valid_source "$SOURCE_MISSING_RUNTIME_INVENTORY"
+rm -f "$SOURCE_MISSING_RUNTIME_INVENTORY/tools/deneb-python-runtime-inventory.sh"
+expect_failure rejects_source_missing_runtime_inventory "$AUDIT" --source "$SOURCE_MISSING_RUNTIME_INVENTORY"
+
+SOURCE_RUNTIME_INVENTORY_NO_SHIM="$TMP_DIR/source-runtime-inventory-no-shim"
+write_valid_source "$SOURCE_RUNTIME_INVENTORY_NO_SHIM"
+grep -v 'DENEB_COORDINATOR_DISABLED' \
+    "$SOURCE_RUNTIME_INVENTORY_NO_SHIM/tools/deneb-python-runtime-inventory.sh" > \
+    "$SOURCE_RUNTIME_INVENTORY_NO_SHIM/tools/deneb-python-runtime-inventory.tmp"
+mv "$SOURCE_RUNTIME_INVENTORY_NO_SHIM/tools/deneb-python-runtime-inventory.tmp" \
+    "$SOURCE_RUNTIME_INVENTORY_NO_SHIM/tools/deneb-python-runtime-inventory.sh"
+expect_failure rejects_source_runtime_inventory_no_shim "$AUDIT" --source "$SOURCE_RUNTIME_INVENTORY_NO_SHIM"
 
 MISSING_AUDIT="$TMP_DIR/missing-audit"
 write_valid_package "$MISSING_AUDIT"
@@ -680,6 +708,19 @@ MISSING_RELEASE_GATE_SELFTEST="$TMP_DIR/missing-release-gate-selftest"
 write_valid_package "$MISSING_RELEASE_GATE_SELFTEST"
 rm -f "$MISSING_RELEASE_GATE_SELFTEST/deneb-printsvc-release-gate-selftest"
 expect_failure rejects_missing_release_gate_selftest "$AUDIT" --package-dir "$MISSING_RELEASE_GATE_SELFTEST"
+MISSING_RUNTIME_INVENTORY="$TMP_DIR/missing-runtime-inventory"
+write_valid_package "$MISSING_RUNTIME_INVENTORY"
+rm -f "$MISSING_RUNTIME_INVENTORY/deneb-runtime-inventory"
+expect_failure rejects_missing_runtime_inventory "$AUDIT" --package-dir "$MISSING_RUNTIME_INVENTORY"
+
+RUNTIME_INVENTORY_NO_SHIM="$TMP_DIR/runtime-inventory-no-shim"
+write_valid_package "$RUNTIME_INVENTORY_NO_SHIM"
+grep -v 'DENEB_COORDINATOR_DISABLED' \
+    "$RUNTIME_INVENTORY_NO_SHIM/deneb-runtime-inventory" > \
+    "$RUNTIME_INVENTORY_NO_SHIM/deneb-runtime-inventory.tmp"
+mv "$RUNTIME_INVENTORY_NO_SHIM/deneb-runtime-inventory.tmp" \
+    "$RUNTIME_INVENTORY_NO_SHIM/deneb-runtime-inventory"
+expect_failure rejects_runtime_inventory_no_shim "$AUDIT" --package-dir "$RUNTIME_INVENTORY_NO_SHIM"
 
 MISSING_TLSF_NOTICE="$TMP_DIR/missing-tlsf-notice"
 write_valid_package "$MISSING_TLSF_NOTICE"
@@ -708,4 +749,52 @@ touch "$ARCHIVE_DIR/stock_driver.py"
 (cd "$ARCHIVE_DIR" && tar cf "$TMP_DIR/archive-bad.deneb" .)
 expect_failure rejects_archive_driver_artifact "$AUDIT" --archive "$TMP_DIR/archive-bad.deneb"
 
+# Coordinator dependency negative fixtures
+SOURCE_COORD_PORT="$TMP_DIR/source-coord-port"
+write_valid_source "$SOURCE_COORD_PORT"
+cat >> "$SOURCE_COORD_PORT/web/src/native_client.c" <<'EOF'
+const char *bad_port = "tcp://127.0.0.1:5565";
+EOF
+expect_failure rejects_source_coord_port "$AUDIT" --source "$SOURCE_COORD_PORT"
+
+SOURCE_COORD_SERVICE="$TMP_DIR/source-coord-service"
+write_valid_source "$SOURCE_COORD_SERVICE"
+cat >> "$SOURCE_COORD_SERVICE/common/print/print_backend_route.c" <<'EOF'
+const char *bad_service = "coordinator::print::handling";
+EOF
+expect_failure rejects_source_coord_service "$AUDIT" --source "$SOURCE_COORD_SERVICE"
+
+SOURCE_COORD_PRINTER_PUBSUB="$TMP_DIR/source-coord-printer-pubsub"
+write_valid_source "$SOURCE_COORD_PRINTER_PUBSUB"
+mkdir -p "$SOURCE_COORD_PRINTER_PUBSUB/ui/src"
+cat > "$SOURCE_COORD_PRINTER_PUBSUB/ui/src/bad_coord.c" <<'EOF'
+const char *bad = "PRINTER_PUBSUB";
+EOF
+expect_failure rejects_source_coord_printer_pubsub "$AUDIT" --source "$SOURCE_COORD_PRINTER_PUBSUB"
+
+SOURCE_PRINT_ON_BUILDPLATE="$TMP_DIR/source-print-on-buildplate"
+write_valid_source "$SOURCE_PRINT_ON_BUILDPLATE"
+cat >> "$SOURCE_PRINT_ON_BUILDPLATE/common/print/print_state_rules.c" <<'EOF'
+const char *bad = "print_on_buildplate";
+EOF
+expect_failure rejects_source_print_on_buildplate "$AUDIT" --source "$SOURCE_PRINT_ON_BUILDPLATE"
+
+RUNTIME_SELFTEST_INIT="$TMP_DIR/runtime-inventory-init"
+mkdir -p "$RUNTIME_SELFTEST_INIT"
+cat > "$RUNTIME_SELFTEST_INIT/coordinator" <<'EOF'
+#!/bin/sh
+# DENEB_COORDINATOR_DISABLED
+exit 0
+EOF
+chmod +x "$RUNTIME_SELFTEST_INIT/coordinator"
+DENEB_RUNTIME_INVENTORY_INIT_DIR="$RUNTIME_SELFTEST_INIT" \
+    DENEB_PYTHON_RUNTIME_SUMMARY="$TMP_DIR/runtime-inventory.md" \
+    sh "$RUNTIME_INVENTORY" > "$TMP_DIR/runtime-inventory.out"
+grep -F '| `coordinator` | disabled shim | disabled shim |' "$TMP_DIR/runtime-inventory.out" >/dev/null
+if grep -F '| `coordinator` | rc 0 | rc 0 |' "$TMP_DIR/runtime-inventory.out" >/dev/null; then
+    cat "$TMP_DIR/runtime-inventory.out"
+    echo "FAIL: disabled coordinator shim reported as running rc 0" >&2
+    exit 1
+fi
+echo "PASS: runtime inventory reports disabled coordinator shim"
 echo "deneb-printsvc native audit selftest passed"

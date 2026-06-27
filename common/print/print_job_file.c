@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,6 +152,34 @@ static int metadata_extract_positive_int(const char *buf,
     return -1;
 }
 
+static int metadata_extract_float(const char *buf, const char *key, float *out)
+{
+    const char *p;
+    size_t key_len;
+
+    if (!buf || !key || !out)
+        return -1;
+
+    key_len = strlen(key);
+    for (p = strstr(buf, key); p; p = strstr(p + 1, key)) {
+        const char *v = p + key_len;
+        float value;
+
+        if (*v && *v != ' ' && *v != '\t' && *v != ':' && *v != '=' &&
+            *v != '"' && *v != '\'' && *v != '-' && *v != '+')
+            continue;
+        while (*v && (*v == ' ' || *v == '\t' || *v == ':' ||
+                      *v == '=' || *v == '"' || *v == '\''))
+            v++;
+        if (sscanf(v, "%f", &value) == 1) {
+            *out = value;
+            return 0;
+        }
+        return 1;
+    }
+    return -1;
+}
+
 int deneb_print_job_file_metadata_load(const char *path,
                                        deneb_print_job_file_metadata_t *meta)
 {
@@ -198,6 +227,57 @@ int deneb_print_job_file_metadata_load(const char *path,
     else if (metadata_extract_positive_int(buf, "TIME",
                                            &meta->print_time_seconds) == 0)
         found = 1;
+
+    {
+        unsigned bounds_field_mask = 0;
+        int bounds_invalid = 0;
+        float min_x = 0.0f, min_y = 0.0f, min_z = 0.0f;
+        float max_x = 0.0f, max_y = 0.0f, max_z = 0.0f;
+        int rc;
+
+        rc = metadata_extract_float(buf, "PRINT.MIN.X", &min_x);
+        if (rc == 0)
+            bounds_field_mask |= (1u << 0);
+        else if (rc > 0)
+            bounds_invalid = 1;
+        rc = metadata_extract_float(buf, "PRINT.MIN.Y", &min_y);
+        if (rc == 0)
+            bounds_field_mask |= (1u << 1);
+        else if (rc > 0)
+            bounds_invalid = 1;
+        rc = metadata_extract_float(buf, "PRINT.MIN.Z", &min_z);
+        if (rc == 0)
+            bounds_field_mask |= (1u << 2);
+        else if (rc > 0)
+            bounds_invalid = 1;
+        rc = metadata_extract_float(buf, "PRINT.MAX.X", &max_x);
+        if (rc == 0)
+            bounds_field_mask |= (1u << 3);
+        else if (rc > 0)
+            bounds_invalid = 1;
+        rc = metadata_extract_float(buf, "PRINT.MAX.Y", &max_y);
+        if (rc == 0)
+            bounds_field_mask |= (1u << 4);
+        else if (rc > 0)
+            bounds_invalid = 1;
+        rc = metadata_extract_float(buf, "PRINT.MAX.Z", &max_z);
+        if (rc == 0)
+            bounds_field_mask |= (1u << 5);
+        else if (rc > 0)
+            bounds_invalid = 1;
+        if (bounds_field_mask != 0 || bounds_invalid) {
+            meta->has_bounds = 1;
+            meta->bounds_invalid = bounds_invalid;
+            meta->bounds_field_mask = bounds_field_mask;
+            meta->min_x = min_x;
+            meta->min_y = min_y;
+            meta->min_z = min_z;
+            meta->max_x = max_x;
+            meta->max_y = max_y;
+            meta->max_z = max_z;
+            found = 1;
+        }
+    }
 
     return found ? 0 : -1;
 }
@@ -1105,5 +1185,75 @@ int deneb_print_job_file_store_upload(const char *src_path,
     }
 
     unlink(src_path);
+    return 0;
+}
+
+int deneb_print_job_file_check_build_volume(
+    const deneb_print_job_file_metadata_t *meta,
+    char *out_error, size_t out_error_sz)
+{
+    const unsigned all_bounds = (1u << 6) - 1u;
+
+    if (!meta)
+        return -1;
+
+    if (!meta->has_bounds)
+        return 0;
+
+    if (meta->bounds_invalid) {
+        if (out_error && out_error_sz > 0) {
+            snprintf(out_error, out_error_sz,
+                     "model build-volume metadata is invalid");
+        }
+        return -1;
+    }
+
+    if (meta->bounds_field_mask != 0 &&
+        meta->bounds_field_mask != all_bounds) {
+        if (out_error && out_error_sz > 0) {
+            snprintf(out_error, out_error_sz,
+                     "model build-volume metadata is incomplete");
+        }
+        return -1;
+    }
+
+    if (!isfinite(meta->min_x) || !isfinite(meta->min_y) ||
+        !isfinite(meta->min_z) || !isfinite(meta->max_x) ||
+        !isfinite(meta->max_y) || !isfinite(meta->max_z) ||
+        meta->min_x > meta->max_x ||
+        meta->min_y > meta->max_y ||
+        meta->min_z > meta->max_z) {
+        if (out_error && out_error_sz > 0) {
+            snprintf(out_error, out_error_sz,
+                     "model build-volume metadata is invalid");
+        }
+        return -1;
+    }
+
+    if (meta->min_x < DENEB_BUILD_VOLUME_X_MIN_MM ||
+        meta->min_y < DENEB_BUILD_VOLUME_Y_MIN_MM ||
+        meta->min_z < DENEB_BUILD_VOLUME_Z_MIN_MM ||
+        meta->max_x > DENEB_BUILD_VOLUME_X_MAX_MM ||
+        meta->max_y > DENEB_BUILD_VOLUME_Y_MAX_MM ||
+        meta->max_z > DENEB_BUILD_VOLUME_Z_MAX_MM) {
+        if (out_error && out_error_sz > 0) {
+            snprintf(out_error, out_error_sz,
+                     "model exceeds build volume: "
+                     "X [%.0f..%.0f] Y [%.0f..%.0f] Z [%.0f..%.0f]; "
+                     "machine supports "
+                     "X [%.0f..%.0f] Y [%.0f..%.0f] Z [%.0f..%.0f]",
+                     (double)meta->min_x, (double)meta->max_x,
+                     (double)meta->min_y, (double)meta->max_y,
+                     (double)meta->min_z, (double)meta->max_z,
+                     (double)DENEB_BUILD_VOLUME_X_MIN_MM,
+                     (double)DENEB_BUILD_VOLUME_X_MAX_MM,
+                     (double)DENEB_BUILD_VOLUME_Y_MIN_MM,
+                     (double)DENEB_BUILD_VOLUME_Y_MAX_MM,
+                     (double)DENEB_BUILD_VOLUME_Z_MIN_MM,
+                     (double)DENEB_BUILD_VOLUME_Z_MAX_MM);
+        }
+        return -1;
+    }
+
     return 0;
 }

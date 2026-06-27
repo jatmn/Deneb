@@ -64,6 +64,7 @@
 #include "system_language.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +72,9 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+static void write_build_volume_fixture(const char *path,
+                                       const char *bounds_metadata);
 
 static int buffer_contains_bytes(const uint8_t *buf, size_t len,
                                  const char *needle)
@@ -765,6 +769,27 @@ static void test_job_control_policy(void)
     assert(strstr(reply, "no active print to abort") != NULL);
     assert(!svc.abort_requested);
     assert(deneb_flow_inflight(&svc.flow) == 0);
+
+    write_build_volume_fixture(
+        path,
+        ";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+        ";PRINT.MAX.X:224\n;PRINT.MAX.Y:180\n;PRINT.MAX.Z:100\n");
+    snprintf(frame, sizeof(frame), "JOB<{\"file\":\"%s\"}", path);
+    assert(deneb_command_parse(frame, &cmd) == 0);
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "build volume") != NULL);
+    assert(!svc.job_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
+
+    write_build_volume_fixture(
+        path,
+        ";PRINT.MIN.X:0\n;PRINT.MAX.X:200\n;PRINT.MAX.Y:180\n");
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "incomplete") != NULL);
+    assert(!svc.job_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(strcmp(svc.status.file, DENEB_PRINT_NONE_VALUE) == 0);
 
     f = fopen(path, "wb");
     assert(f != NULL);
@@ -3896,6 +3921,19 @@ static void write_pending_dispatch_fixture(const char *path,
     fclose(f);
 }
 
+static void write_build_volume_fixture(const char *path,
+                                       const char *bounds_metadata)
+{
+    FILE *f = fopen(path, "wb");
+    assert(f != NULL);
+    if (bounds_metadata)
+        fputs(bounds_metadata, f);
+    fputs("; material_guid='506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9'\n"
+          "; nozzle_size=0.4\n"
+          "G28\nG1 X1 Y1 Z0.2\n", f);
+    fclose(f);
+}
+
 static void test_pending_job_dispatch_helpers(void)
 {
     const char *path = "/tmp/deneb-pending-dispatch-test.json";
@@ -3998,6 +4036,9 @@ static void test_pending_job_registration_policy(void)
 {
     const char *plain_path = "/tmp/deneb-registration-plain.gcode";
     const char *conflict_path = "/tmp/deneb-registration-conflict.gcode";
+    const char *bounds_ok_path = "/tmp/deneb-registration-bounds-ok.gcode";
+    const char *bounds_bad_path = "/tmp/deneb-registration-bounds-bad.gcode";
+    const char *bounds_partial_path = "/tmp/deneb-registration-bounds-partial.gcode";
     deneb_pending_job_registration_t registration;
     deneb_pending_job_registration_dispatch_ops_t ops;
     pending_dispatch_fake_t fake;
@@ -4084,8 +4125,44 @@ static void test_pending_job_registration_policy(void)
     assert(deneb_pending_job_registration_dispatch_start(
                &registration, NULL) == 0);
 
+    write_build_volume_fixture(
+        bounds_ok_path,
+        ";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+        ";PRINT.MAX.X:200\n;PRINT.MAX.Y:180\n;PRINT.MAX.Z:100\n");
+    assert(deneb_pending_job_registration_prepare(
+               bounds_ok_path, "Cura", "uuid-bounds-ok", NULL, 789,
+               &registration) == 0);
+    assert(registration.job.tracker == 789);
+    assert(strcmp(registration.job.path, bounds_ok_path) == 0);
+    assert(strcmp(registration.job.source, "Cura") == 0);
+    assert(strcmp(registration.job.uuid, "uuid-bounds-ok") == 0);
+    assert(registration.should_start_immediately);
+
+    write_build_volume_fixture(
+        bounds_bad_path,
+        ";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+        ";PRINT.MAX.X:224\n;PRINT.MAX.Y:180\n;PRINT.MAX.Z:100\n");
+    assert(deneb_pending_job_registration_prepare(
+               bounds_bad_path, "Cura", "uuid-bounds-bad", NULL, 790,
+               &registration) != 0);
+    assert(registration.failure_status_code == 422);
+    assert(strstr(registration.failure_message, "build volume") != NULL);
+
+    write_build_volume_fixture(
+        bounds_partial_path,
+        ";PRINT.MIN.X:0\n;PRINT.MAX.X:200\n;PRINT.MAX.Y:180\n");
+    assert(deneb_pending_job_registration_prepare(
+               bounds_partial_path, "Digital Factory",
+               "uuid-bounds-partial", "cloud-job-partial", 791,
+               &registration) != 0);
+    assert(registration.failure_status_code == 422);
+    assert(strstr(registration.failure_message, "incomplete") != NULL);
+
     remove(plain_path);
     remove(conflict_path);
+    remove(bounds_ok_path);
+    remove(bounds_bad_path);
+    remove(bounds_partial_path);
 }
 
 static void test_print_job_file_metadata(void)
@@ -5800,6 +5877,335 @@ static void test_print_history_array_reader(void)
     remove(path);
 }
 
+static void test_build_volume_validation(void)
+{
+    deneb_print_job_file_metadata_t meta;
+    char err[256];
+
+    deneb_print_job_file_metadata_init(&meta);
+    assert(!meta.has_bounds);
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) == 0);
+
+    meta.has_bounds = 1;
+    meta.bounds_field_mask = 0x3f;
+    meta.min_x = 0; meta.min_y = 0; meta.min_z = 0;
+    meta.max_x = 223; meta.max_y = 220; meta.max_z = 205;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) == 0);
+
+    meta.max_x = 224;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+    assert(strstr(err, "build volume") != NULL);
+
+    meta.max_x = 223;
+    meta.max_y = 221;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+
+    meta.max_y = 220;
+    meta.max_z = 206;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+
+    meta.max_z = 205;
+    meta.min_x = -1;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+
+    meta.min_x = 200;
+    meta.max_x = 100;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+    assert(strstr(err, "invalid") != NULL);
+
+    meta.min_x = 0;
+    meta.max_x = 223;
+    meta.max_y = NAN;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+    assert(strstr(err, "invalid") != NULL);
+
+    meta.max_y = INFINITY;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+    assert(strstr(err, "invalid") != NULL);
+
+    meta.max_y = 220;
+    assert(deneb_print_job_file_check_build_volume(&meta, NULL, 0) == 0);
+
+    meta.bounds_invalid = 1;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+    assert(strstr(err, "invalid") != NULL);
+    meta.bounds_invalid = 0;
+
+    meta.bounds_field_mask = 0x0f;
+    assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+    assert(strstr(err, "incomplete") != NULL);
+    meta.bounds_field_mask = 0x3f;
+
+    {
+        const char *path = "/tmp/deneb-build-volume-meta-test.gcode";
+        FILE *f = fopen(path, "wb");
+        assert(f != NULL);
+        fputs(";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+              ";PRINT.MAX.X:223.5\n;PRINT.MAX.Y:220\n;PRINT.MAX.Z:205\n",
+              f);
+        fclose(f);
+        deneb_print_job_file_metadata_init(&meta);
+        assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+        assert(meta.has_bounds);
+        assert(meta.bounds_field_mask == 0x3f);
+        assert(meta.max_x > 223.0f);
+        assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+        remove(path);
+    }
+
+    {
+        const char *path = "/tmp/deneb-build-volume-nan-test.gcode";
+        FILE *f = fopen(path, "wb");
+        assert(f != NULL);
+        fputs(";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+              ";PRINT.MAX.X:223\n;PRINT.MAX.Y:nan\n;PRINT.MAX.Z:205\n",
+              f);
+        fclose(f);
+        deneb_print_job_file_metadata_init(&meta);
+        assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+        assert(meta.has_bounds);
+        assert(meta.bounds_field_mask == 0x3f);
+        assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+        assert(strstr(err, "invalid") != NULL);
+        remove(path);
+    }
+
+    {
+        const char *path = "/tmp/deneb-build-volume-malformed-test.gcode";
+        FILE *f = fopen(path, "wb");
+        assert(f != NULL);
+        fputs(";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+              ";PRINT.MAX.X:223\n;PRINT.MAX.Y:abc\n;PRINT.MAX.Z:205\n",
+              f);
+        fclose(f);
+        deneb_print_job_file_metadata_init(&meta);
+        assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+        assert(meta.has_bounds);
+        assert(meta.bounds_invalid);
+        assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+        assert(strstr(err, "invalid") != NULL);
+        remove(path);
+    }
+
+    {
+        const char *path = "/tmp/deneb-build-volume-partial-test.gcode";
+        FILE *f = fopen(path, "wb");
+        assert(f != NULL);
+        fputs(";PRINT.MIN.X:0\n;PRINT.MAX.X:200\n;PRINT.MAX.Y:180\n",
+              f);
+        fclose(f);
+        deneb_print_job_file_metadata_init(&meta);
+        assert(deneb_print_job_file_metadata_load(path, &meta) == 0);
+        assert(meta.has_bounds);
+        assert(meta.bounds_field_mask != 0x3f);
+        assert(deneb_print_job_file_check_build_volume(&meta, err, sizeof(err)) != 0);
+        assert(strstr(err, "incomplete") != NULL);
+        remove(path);
+    }
+}
+static void test_material_workflow_state_machine(void)
+{
+    deneb_material_workflow_t wf;
+
+    deneb_material_workflow_init(&wf);
+    assert(wf.operation == DENEB_MATERIAL_WORKFLOW_OP_NONE);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_IDLE);
+    assert(!deneb_material_workflow_printing_blocked(&wf));
+
+    assert(deneb_material_workflow_prepare(&wf, DENEB_MATERIAL_WORKFLOW_OP_LOAD) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_PREPARED);
+    assert(deneb_material_workflow_printing_blocked(&wf));
+    assert(wf.target_temp_c == DENEB_MATERIAL_WORKFLOW_DEFAULT_TEMP_C);
+
+    assert(deneb_material_workflow_start(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_BUSY);
+    assert(wf.heating);
+
+    assert(deneb_material_workflow_advance(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_FINALIZING);
+    assert(wf.moving);
+    assert(!wf.heating);
+
+    assert(deneb_material_workflow_finalize(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_FINAL);
+    assert(!deneb_material_workflow_printing_blocked(&wf));
+
+    deneb_material_workflow_init(&wf);
+    assert(deneb_material_workflow_prepare(&wf, DENEB_MATERIAL_WORKFLOW_OP_UNLOAD) == 0);
+    assert(deneb_material_workflow_cancel(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED);
+    assert(!wf.heating);
+    assert(deneb_material_workflow_finalize(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_FINAL);
+
+    deneb_material_workflow_init(&wf);
+    assert(deneb_material_workflow_prepare(&wf, DENEB_MATERIAL_WORKFLOW_OP_CHANGE) == 0);
+    assert(deneb_material_workflow_start(&wf) == 0);
+    assert(deneb_material_workflow_cancel(&wf) == 0);
+    assert(wf.state == DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED);
+    assert(deneb_material_workflow_finalize(&wf) == 0);
+
+    deneb_material_workflow_init(&wf);
+    assert(deneb_material_workflow_start(&wf) != 0);
+    assert(deneb_material_workflow_advance(&wf) != 0);
+    assert(deneb_material_workflow_cancel(&wf) != 0);
+    assert(deneb_material_workflow_finalize(&wf) != 0);
+
+    assert(deneb_material_workflow_prepare(&wf, DENEB_MATERIAL_WORKFLOW_OP_NONE) != 0);
+    assert(deneb_material_workflow_prepare(NULL, DENEB_MATERIAL_WORKFLOW_OP_LOAD) != 0);
+
+    assert(strcmp(deneb_material_workflow_op_name(DENEB_MATERIAL_WORKFLOW_OP_LOAD),
+                  "load") == 0);
+    assert(strcmp(deneb_material_workflow_op_name(DENEB_MATERIAL_WORKFLOW_OP_UNLOAD),
+                  "unload") == 0);
+    assert(strcmp(deneb_material_workflow_op_name(DENEB_MATERIAL_WORKFLOW_OP_CHANGE),
+                  "change") == 0);
+    assert(strcmp(deneb_material_workflow_op_name(DENEB_MATERIAL_WORKFLOW_OP_NONE),
+                  "none") == 0);
+    assert(strcmp(deneb_material_workflow_state_name(DENEB_MATERIAL_WORKFLOW_STATE_IDLE),
+                  "idle") == 0);
+    assert(strcmp(deneb_material_workflow_state_name(DENEB_MATERIAL_WORKFLOW_STATE_PREPARED),
+                  "prepared") == 0);
+    assert(strcmp(deneb_material_workflow_state_name(DENEB_MATERIAL_WORKFLOW_STATE_BUSY),
+                  "busy") == 0);
+    assert(strcmp(deneb_material_workflow_state_name(DENEB_MATERIAL_WORKFLOW_STATE_FINALIZING),
+                  "finalizing") == 0);
+    assert(strcmp(deneb_material_workflow_state_name(DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED),
+                  "cancelled") == 0);
+    assert(strcmp(deneb_material_workflow_state_name(DENEB_MATERIAL_WORKFLOW_STATE_FINAL),
+                  "final") == 0);
+}
+
+static void test_buildplate_level_workflow(void)
+{
+    deneb_buildplate_level_workflow_t wf;
+    deneb_buildplate_level_step_t next;
+
+    deneb_buildplate_level_workflow_init(&wf);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_NONE);
+
+    assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_PREPARED);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, &next) == 0);
+    assert(next == DENEB_BUILDPLATE_LEVEL_STEP_1);
+
+    assert(deneb_buildplate_level_workflow_start(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING);
+    assert(wf.moving);
+
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+            DENEB_BUILDPLATE_LEVEL_STEP_2) == 0);
+    assert(wf.current_step == DENEB_BUILDPLATE_LEVEL_STEP_2);
+
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+            DENEB_BUILDPLATE_LEVEL_STEP_FINISH) == 0);
+    assert(wf.current_step == DENEB_BUILDPLATE_LEVEL_STEP_FINISH);
+
+    assert(deneb_buildplate_level_workflow_advance(&wf,
+            (deneb_buildplate_level_step_t)99) != 0);
+
+    assert(deneb_buildplate_level_workflow_cancel(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED);
+    assert(!wf.moving);
+
+    deneb_buildplate_level_workflow_init(&wf);
+    assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
+    assert(deneb_buildplate_level_workflow_cancel(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED);
+
+    assert(deneb_buildplate_level_workflow_prepare(&wf) == 0);
+    assert(wf.state == DENEB_BUILDPLATE_LEVEL_STATE_PREPARED);
+
+    assert(deneb_buildplate_level_workflow_start(NULL) != 0);
+    assert(deneb_buildplate_level_workflow_cancel(NULL) != 0);
+    assert(deneb_buildplate_level_workflow_next_step(NULL, &next) != 0);
+    assert(deneb_buildplate_level_workflow_next_step(&wf, NULL) != 0);
+
+    assert(strcmp(deneb_buildplate_level_state_name(
+               DENEB_BUILDPLATE_LEVEL_STATE_NONE), "none") == 0);
+    assert(strcmp(deneb_buildplate_level_state_name(
+               DENEB_BUILDPLATE_LEVEL_STATE_PREPARED), "prepared") == 0);
+    assert(strcmp(deneb_buildplate_level_state_name(
+               DENEB_BUILDPLATE_LEVEL_STATE_MOVING), "moving") == 0);
+    assert(strcmp(deneb_buildplate_level_state_name(
+               DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET), "at_target") == 0);
+    assert(strcmp(deneb_buildplate_level_state_name(
+               DENEB_BUILDPLATE_LEVEL_STATE_FINAL), "final") == 0);
+    assert(strcmp(deneb_buildplate_level_state_name(
+               DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED), "cancelled") == 0);
+}
+
+static void test_fault_auto_abort_policy(void)
+{
+    deneb_print_service_t svc;
+    char reply[128];
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_THERMAL, "thermal runaway");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(!svc.job_active);
+    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_ENDSTOP, "homing failed");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(!svc.job_active);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_MARLIN_FAULT, "halted");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(!svc.job_active);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_STORAGE, "file error");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(!svc.job_active);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_SERIAL, "resend line 42");
+    (void)reply;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(svc.job_active);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_COMMAND, "unknown command");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(svc.job_active);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 0;
+    svc.serial_ready = 0;
+    svc.status.state = DENEB_PRINT_STATE_ERROR;
+    svc.status.fault = true;
+    svc.status.error = deneb_error_make(DENEB_ERROR_THERMAL, "thermal runaway");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(!svc.job_active);
+}
+
 int main(void)
 {
     test_command_parse();
@@ -5880,6 +6286,10 @@ int main(void)
     test_motion_firmware_cache();
     test_pending_job_file_contract();
     test_print_history_array_reader();
+    test_build_volume_validation();
+    test_material_workflow_state_machine();
+    test_buildplate_level_workflow();
+    test_fault_auto_abort_policy();
     puts("deneb-printsvc tests passed");
     return 0;
 }

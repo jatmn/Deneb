@@ -145,6 +145,47 @@ extract_printserver_shim() {
         }
     ' "$installer" > "$out"
 }
+extract_coordinator_shim() {
+    installer="$1"
+    out="$2"
+
+    awk '
+        /cat > "\$\{coordinator_init\}" <<'\''EOF'\''/ {
+            in_shim = 1;
+            next;
+        }
+        in_shim && /^EOF$/ {
+            found = 1;
+            exit;
+        }
+        in_shim {
+            print;
+        }
+        END {
+            exit found ? 0 : 1;
+        }
+    ' "$installer" > "$out"
+}
+
+check_coordinator_disabled_shim() {
+    file="$1"
+    prefix="$2"
+
+    require_pattern "$file" 'DENEB_COORDINATOR_DISABLED' \
+        "$prefix marks stock coordinator disabled"
+    require_pattern "$file" 'EXTRA_COMMANDS="restore_stock enable_manual_stock"' \
+        "$prefix exposes restore command"
+    require_pattern "$file" 'start\(\)' \
+        "$prefix defines start command"
+    require_pattern "$file" 'stock coordinator disabled by Deneb' \
+        "$prefix start does not launch stock coordinator"
+    require_pattern "$file" 'restore_stock\(\)' \
+        "$prefix defines stock restore command"
+    require_pattern "$file" 'cp "\$\{STOCK_COORDINATOR_INIT\}" /etc/init\.d/coordinator' \
+        "$prefix restores backed-up stock init"
+    require_pattern "$file" '/etc/init\.d/coordinator start' \
+        "$prefix starts restored stock init"
+}
 
 check_printserver_shim() {
     file="$1"
@@ -237,6 +278,14 @@ if [ "$failures" -eq 0 ]; then
             check_printserver_shim "$generated_shim" "installer-generated printserver shim"
         else
             fail "installer printserver shim heredoc extracted"
+        fi
+        generated_coordinator_shim="${TMP_DIR}/coordinator.generated"
+        if extract_coordinator_shim "$INSTALLER" "$generated_coordinator_shim"; then
+            pass "installer coordinator shim heredoc extracted"
+            check_coordinator_disabled_shim "$generated_coordinator_shim" \
+                "installer-generated coordinator shim"
+        else
+            fail "installer coordinator shim heredoc extracted"
         fi
     fi
 

@@ -31,6 +31,7 @@ int deneb_pending_job_registration_prepare(
     char target_nozzle[24];
     char loaded_name[64];
     char target_name[64];
+    char bv_error[256];
     deneb_print_job_file_metadata_t meta;
 
     if (!path || !*path || !registration)
@@ -54,6 +55,17 @@ int deneb_pending_job_registration_prepare(
         if (meta.nozzle_size[0])
             snprintf(target_nozzle_raw, sizeof(target_nozzle_raw), "%s",
                      meta.nozzle_size);
+        bv_error[0] = '\0';
+        if (deneb_print_job_file_check_build_volume(&meta, bv_error,
+                                                     sizeof(bv_error)) < 0) {
+            fprintf(stderr, "deneb-printsvc: build volume validation failed: %s\n",
+                    bv_error);
+            registration->failure_status_code = 422;
+            snprintf(registration->failure_message,
+                     sizeof(registration->failure_message), "%s",
+                     bv_error[0] ? bv_error : "Invalid print job metadata");
+            return -1;
+        }
     }
 
     deneb_print_profile_normalize_nozzle_id(loaded_nozzle, loaded_nozzle,

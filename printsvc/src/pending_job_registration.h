@@ -9,6 +9,8 @@ typedef struct {
     deneb_pending_job_t job;
     int change_count;
     int should_start_immediately;
+    int failure_status_code;
+    char failure_message[256];
 } deneb_pending_job_registration_t;
 
 typedef struct {

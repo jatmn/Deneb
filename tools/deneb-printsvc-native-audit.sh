@@ -115,6 +115,48 @@ reject_df_standalone_bridge_artifact() {
     pass "$label"
 }
 
+reject_source_coordinator_ports() {
+    root=$1
+    for pattern in \
+        'tcp://127\.0\.0\.1:5565' \
+        'tcp://127\.0\.0\.1:5566' \
+        'PRINTER_PUBSUB' \
+        'PRINTER_RPC' \
+        'coordinator::print::handling' \
+        'coordinator::file::handling' \
+        'coordinator::material::handling' \
+        'coordinator::bed::leveling' \
+        'coordinator::bed::heating' \
+        'coordinator::nozzle::heater' \
+        'coordinator::error::handler'; do
+        for dir in ui/src web/src common/print printsvc/src dfsvc/src ui/installer; do
+            search_dir="${root}/${dir}"
+            if [ -d "$search_dir" ]; then
+                if find "$search_dir" \( -name '*.c' -o -name '*.h' -o -name '*.sh' \) \
+                    -exec grep -Eq "$pattern" {} + 2>/dev/null; then
+                    fail "coordinator dependency found: $pattern in $dir"
+                fi
+            fi
+        done
+    done
+    pass "no stock coordinator dependencies in Deneb-owned source"
+}
+
+# Informational-only: confirms the allowed DF coordinator labels are present
+# in the expected files. Does not fail if absent — the labels are optional
+# compatibility labels, not a hard requirement.
+require_coordinator_df_labels() {
+    root=$1
+    for file in web/src/df_bridge.c dfsvc/src/main.c; do
+        full="${root}/${file}"
+        if [ -f "$full" ]; then
+            if grep -Eq 'coordinator::digitalfactory::(status|handling)' "$full"; then
+                pass "coordinator::digitalfactory label used in $file (allowed DF contract)"
+            fi
+        fi
+    done
+}
+
 audit_source() {
     repo=$1
 
@@ -481,6 +523,11 @@ audit_source() {
         '^[[:space:]]*configure_digitalfactory_boot$' \
         "installer configures Digital Factory boot after native init replacement"
     require_pattern "${repo}/ui/installer/update.sh" \
+        'DENEB_COORDINATOR_DISABLED' \
+        "installer marks stock coordinator disabled by default"
+    require_file "${repo}/tools/deneb-python-runtime-inventory.sh" "runtime inventory helper exists"
+    require_pattern "${repo}/tools/deneb-python-runtime-inventory.sh" 'DENEB_COORDINATOR_DISABLED' "runtime inventory detects coordinator disabled shim"
+    require_pattern "${repo}/ui/installer/update.sh" \
         'cp /tmp/update/deneb-dfsvc /usr/bin/deneb-dfsvc' \
         "installer installs native Digital Factory connector"
     require_pattern "${repo}/ui/installer/update.sh" \
@@ -528,6 +575,20 @@ audit_source() {
     require_pattern "${repo}/ui/installer/update.sh" \
         "native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction" \
         "installer checks native printsvc release gate"
+
+    reject_source_coordinator_ports "$repo"
+    require_coordinator_df_labels "$repo"
+
+    if grep -rE 'print_on_buildplate' \
+        "${repo}/common/print" "${repo}/ui/src" "${repo}/web/src" "${repo}/printsvc/src" \
+        "${repo}/dfsvc/src" "${repo}/ui/installer" \
+        >/dev/null 2>&1; then
+        grep -rE 'print_on_buildplate' \
+            "${repo}/common/print" "${repo}/ui/src" "${repo}/web/src" "${repo}/printsvc/src" \
+            "${repo}/dfsvc/src" "${repo}/ui/installer" >&2 || true
+        fail "Deneb-owned code references retired stock print_on_buildplate state"
+    fi
+    pass "no Deneb-owned code references print_on_buildplate"
 }
 
 audit_package_dir() {
@@ -551,7 +612,9 @@ audit_package_dir() {
     require_file "${root}/deneb-printsvc-native-audit-selftest" "package includes de-Python audit selftest"
     require_file "${root}/deneb-printsvc-integration-audit" "package includes integration audit"
     require_file "${root}/deneb-printsvc-integration-audit-selftest" "package includes integration audit selftest"
+    require_file "${root}/deneb-runtime-inventory" "package includes runtime inventory helper"
     require_dir "${root}/deneb-printsvc-macros" "package includes Deneb macro directory"
+    require_pattern "${root}/deneb-runtime-inventory" 'DENEB_COORDINATOR_DISABLED' "packaged runtime inventory detects coordinator disabled shim"
     require_file "${root}/LVGL_LICENSE_TLSF.txt" "package includes declared TLSF notice"
     reject_name_artifacts "$root" "package has no Python driver artifact names"
     reject_df_python_bridge_artifacts "$root" "package has no Python Digital Factory bridge artifact"
@@ -674,6 +737,7 @@ audit_archive() {
         "archive includes integration audit"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit-selftest$' \
         "archive includes integration audit selftest"
+    require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-runtime-inventory$' "archive includes runtime inventory helper"
     require_pattern "${tmp_dir}/files.txt" '(^|/)manifest.txt$' \
         "archive includes manifest"
     tar xf "$archive" -C "$tmp_dir"

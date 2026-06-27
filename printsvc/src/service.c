@@ -80,9 +80,29 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
         return -1;
 
     rc = deneb_motion_runtime_poll(&runtime);
-    if (rc < 0 && svc->job_active &&
-        svc->status.state == DENEB_PRINT_STATE_ERROR) {
-        (void)deneb_job_control_abort(svc, abort_reply, sizeof(abort_reply));
+
+    if (svc->job_active &&
+        svc->status.state == DENEB_PRINT_STATE_ERROR &&
+        svc->status.fault &&
+        svc->status.error.code != DENEB_ERROR_NONE) {
+        int auto_abort = 0;
+        switch (svc->status.error.code) {
+            case DENEB_ERROR_THERMAL:
+            case DENEB_ERROR_ENDSTOP:
+            case DENEB_ERROR_MARLIN_FAULT:
+            case DENEB_ERROR_STORAGE:
+                auto_abort = 1;
+                break;
+            case DENEB_ERROR_SERIAL:
+            case DENEB_ERROR_COMMAND:
+            case DENEB_ERROR_UNKNOWN:
+            default:
+                break;
+        }
+        if (auto_abort) {
+            (void)deneb_job_control_abort(svc, abort_reply,
+                                           sizeof(abort_reply));
+        }
     }
     deneb_pause_resume_control_poll(svc);
     deneb_job_control_poll_abort_cleanup(svc);

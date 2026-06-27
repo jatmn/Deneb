@@ -98,7 +98,10 @@ static int registration_send_job(void *ctx,
 static int register_native_print(const char *path,
                                  const char *source,
                                  const char *uuid,
-                                 const char *cloud_job_id)
+                                 const char *cloud_job_id,
+                                 char *failure_message,
+                                 size_t failure_message_sz,
+                                 int *failure_status_code)
 {
     deneb_pending_job_registration_t registration;
     deneb_pending_job_registration_dispatch_ops_t ops = {
@@ -111,8 +114,24 @@ static int register_native_print(const char *path,
 
     if (deneb_pending_job_registration_prepare(
             path, source, uuid, cloud_job_id, (long long)time(NULL),
-            &registration) < 0 ||
-        deneb_pending_job_registration_write_default(&registration) < 0) {
+            &registration) < 0) {
+        if (failure_message && failure_message_sz > 0) {
+            snprintf(failure_message, failure_message_sz, "%s",
+                     registration.failure_message[0] ?
+                     registration.failure_message :
+                     "Failed to validate print job");
+        }
+        if (failure_status_code) {
+            *failure_status_code = registration.failure_status_code > 0 ?
+                registration.failure_status_code : 400;
+        }
+        fprintf(stderr, "deneb-api: failed to validate print metadata for %s: %s\n",
+                path, registration.failure_message[0] ?
+                registration.failure_message : "unknown validation error");
+        return -1;
+    }
+
+    if (deneb_pending_job_registration_write_default(&registration) < 0) {
         fprintf(stderr, "deneb-api: failed to write pending print metadata for %s\n", path);
         return -1;
     }
@@ -344,6 +363,8 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     char cloud_job_id[96] = "";
     char owner[32] = "";
     int ufp_normalized = 0;
+    char validation_message[256] = "";
+    int validation_status_code = 0;
     char ufp_thumbnail_path[] = "/tmp/deneb-ufp-thumb-upload-XXXXXX";
     int ufp_thumbnail_ready = 0;
     deneb_print_job_upload_storage_plan_t storage;
@@ -476,15 +497,21 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     if (register_native_print(storage.dest_path,
                               owner[0] ? owner : NULL,
                               job_instance_uuid[0] ? job_instance_uuid : NULL,
-                              cloud_job_id[0] ? cloud_job_id : NULL) < 0) {
+                              cloud_job_id[0] ? cloud_job_id : NULL,
+                              validation_message,
+                              sizeof(validation_message),
+                              &validation_status_code) < 0) {
         fprintf(stderr, "deneb-api: failed to register print natively for %s\n",
                 storage.dest_path);
         deneb_pending_job_file_clear_default();
         if (ufp_thumbnail_ready)
             unlink(ufp_thumbnail_path);
         unlink(storage.dest_path);
-        resp->status_code = 503;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to start print\"}");
+        set_message_response(resp,
+                             validation_status_code > 0 ?
+                             validation_status_code : 503,
+                             validation_message[0] ?
+                             validation_message : "Failed to start print");
         return;
     }
     if (ufp_thumbnail_ready &&
