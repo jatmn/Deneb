@@ -120,6 +120,8 @@ void deneb_motion_policy_resume(deneb_motion_policy_t *policy,
                                 float x, float y, float z, float e,
                                 float r0, float nozzle_setpoint)
 {
+    int heated_resume;
+
     policy_clear(policy);
     x = clamp_position('X', x);
     y = clamp_position('Y', y);
@@ -128,18 +130,23 @@ void deneb_motion_policy_resume(deneb_motion_policy_t *policy,
         nozzle_setpoint = 0.0f;
     if (nozzle_setpoint > DENEB_GCODE_MAX_NOZZLE_TEMP_C)
         nozzle_setpoint = DENEB_GCODE_MAX_NOZZLE_TEMP_C;
+    heated_resume = nozzle_setpoint > 0.0f;
 
-    policy_addf(policy, "M104 S%.3g", nozzle_setpoint);
-    policy_addf(policy, "M109 S%.3g", nozzle_setpoint);
-    policy_add(policy, "M83");
-    policy_add(policy, "G0 E10 F1500");
+    if (heated_resume) {
+        policy_addf(policy, "M104 S%.3g", nozzle_setpoint);
+        policy_addf(policy, "M109 S%.3g", nozzle_setpoint);
+        policy_add(policy, "M83");
+        policy_add(policy, "G0 E10 F1500");
+    }
     policy_add(policy, "G0 F9000");
     policy_addff(policy, "G0 X%.3g Y%.3g", x, y);
     policy_addf(policy, "G0 Z%.3g", z);
-    policy_add(policy, "G0 E6.5 F1500");
-    policy_add(policy, "M82");
-    policy_addf(policy, "G10 S%.3g", r0);
-    policy_addf(policy, "G92 E%.3g", e);
+    if (heated_resume) {
+        policy_add(policy, "G0 E6.5 F1500");
+        policy_add(policy, "M82");
+        policy_addf(policy, "G10 S%.3g", r0);
+        policy_addf(policy, "G92 E%.3g", e);
+    }
     policy_add(policy, "M105");
 }
 

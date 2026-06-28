@@ -80,7 +80,7 @@ static void stop_btn_cb(lv_event_t *e)
     stop_inflight = 1;
     set_btn_enabled(stop_btn, 0);
     if (backend_stop_print() == 0)
-        lv_label_set_text(state_label, locale_get("status.cooling"));
+        lv_label_set_text(state_label, locale_get("print.stopping"));
     else {
         stop_inflight = 0;
         set_btn_enabled(stop_btn, 1);
@@ -97,7 +97,7 @@ static void pause_resume_btn_cb(lv_event_t *e)
 
     if (s->is_paused) {
         if (backend_resume_print() == 0)
-            lv_label_set_text(state_label, locale_get("print.resumed"));
+            lv_label_set_text(state_label, locale_get("print.resuming"));
         return;
     }
 
@@ -105,7 +105,7 @@ static void pause_resume_btn_cb(lv_event_t *e)
         return;
 
     if (backend_pause_print() == 0)
-        lv_label_set_text(state_label, locale_get("status.paused"));
+        lv_label_set_text(state_label, locale_get("print.pausing"));
 }
 
 static void set_temp_label(lv_obj_t *label, float cur, float target)

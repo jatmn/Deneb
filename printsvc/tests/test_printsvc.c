@@ -471,8 +471,22 @@ static void test_pause_resume_control_policy(void)
     svc.paused_x = 120.0f;
     svc.paused_y = 80.0f;
     svc.paused_z = 12.0f;
-    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) < 0);
-    assert(strstr(reply, "missing pause nozzle target") != NULL);
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "resume accepted") != NULL);
+    assert(svc.resume_policy_pending);
+    assert(!svc.heater_wait.active);
+    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+    assert(strcmp(svc.resume_policy.commands[0], "G0 F9000") == 0);
+    assert(strcmp(svc.resume_policy.commands[1], "G0 X120 Y80") == 0);
+    assert(strcmp(svc.resume_policy.commands[2], "G0 Z12") == 0);
+    assert(strcmp(svc.resume_policy.commands[3], "M105") == 0);
+    assert(svc.resume_policy.count == 4);
+    for (int i = 0; i < 10 && deneb_pause_resume_control_busy(&svc); i++) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!deneb_pause_resume_control_busy(&svc));
+    assert(!svc.paused_position_valid);
 }
 
 static int command_audit_fake_handler(void *ctx, const deneb_command_t *cmd,
@@ -5707,6 +5721,14 @@ static void test_motion_policy(void)
     assert(strcmp(policy.commands[6], "G0 Z12") == 0);
     assert(strcmp(policy.commands[9], "G10 S-3") == 0);
     assert(strcmp(policy.commands[10], "G92 E4.2") == 0);
+
+    deneb_motion_policy_resume(&policy, 120.0f, 80.0f, 12.0f, 4.2f,
+                               -3.0f, 0.0f);
+    assert(policy.count == 4);
+    assert(strcmp(policy.commands[0], "G0 F9000") == 0);
+    assert(strcmp(policy.commands[1], "G0 X120 Y80") == 0);
+    assert(strcmp(policy.commands[2], "G0 Z12") == 0);
+    assert(strcmp(policy.commands[3], "M105") == 0);
 }
 
 static void test_motion_firmware_cache(void)

@@ -216,19 +216,14 @@ int deneb_pause_resume_control_resume(deneb_print_service_t *svc,
         return -1;
     }
 
-    if (svc->paused_nozzle_setpoint <= 0.0f) {
-        deneb_command_reply_error(reply, reply_sz,
-                                  "missing pause nozzle target");
-        return -1;
-    }
-
     deneb_motion_policy_resume(&svc->resume_policy, svc->paused_x,
                                svc->paused_y, svc->paused_z, svc->paused_e,
                                svc->paused_r0, svc->paused_nozzle_setpoint);
     svc->resume_policy_index = 0;
     svc->resume_policy_pending = 1;
     svc->status.head_t_set = svc->paused_nozzle_setpoint;
-    if (deneb_pause_resume_resume(&svc->status, 1) < 0) {
+    if (deneb_pause_resume_resume(&svc->status,
+                                  svc->paused_nozzle_setpoint > 0.0f) < 0) {
         svc->resume_policy_pending = 0;
         svc->heater_wait.active = 0;
         deneb_command_reply_error(reply, reply_sz, "print is not paused");
@@ -260,7 +255,8 @@ int deneb_pause_resume_control_poll(deneb_print_service_t *svc)
         return rc;
 
     if (svc->resume_policy_pending && !svc->heater_wait.active &&
-        svc->resume_policy_index == 0) {
+        svc->resume_policy_index == 0 &&
+        svc->paused_nozzle_setpoint > 0.0f) {
         rc = send_resume_heat_command(svc);
         if (rc <= 0)
             return rc;

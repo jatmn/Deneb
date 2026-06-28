@@ -116,6 +116,8 @@
   "print.select_first": "Select a file first",
   "print.starting_fmt": "Starting: %s",
   "print.send_failed": "Error: send failed",
+  "print.pausing": "Pausing...",
+  "print.resuming": "Resuming...",
   "print.resumed": "Resumed",
   "print.cancelled": "Cancelled",
   "print.select_usb_file": "Select a USB print file",

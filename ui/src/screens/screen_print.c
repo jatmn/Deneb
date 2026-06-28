@@ -157,14 +157,14 @@ static void pause_btn_cb(lv_event_t *e)
 {
     (void)e;
     if (backend_pause_print() == 0)
-        lv_label_set_text(status_msg, locale_get("status.paused"));
+        lv_label_set_text(status_msg, locale_get("print.pausing"));
 }
 
 static void resume_btn_cb(lv_event_t *e)
 {
     (void)e;
     if (backend_resume_print() == 0)
-        lv_label_set_text(status_msg, locale_get("print.resumed"));
+        lv_label_set_text(status_msg, locale_get("print.resuming"));
 }
 
 static void stop_btn_cb(lv_event_t *e)

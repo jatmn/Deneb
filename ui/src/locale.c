@@ -64,6 +64,8 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"print.select_first", "Select a file first"},
     {"print.starting_fmt", "Starting: %s"},
     {"print.send_failed", "Error: send failed"},
+    {"print.pausing", "Pausing..."},
+    {"print.resuming", "Resuming..."},
     {"print.resumed", "Resumed"},
     {"print.stopping", "Stopping and cooling"},
     {"print.cancelled", "Cancelled"},
