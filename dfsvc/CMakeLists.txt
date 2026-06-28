@@ -37,9 +37,31 @@ set(MBEDTLS_ROOT "" CACHE PATH "Path to static mbedTLS install")
 set(ZMQ_STATIC_PATH "" CACHE PATH "Path to static libzmq.a")
 set(ZMQ_INCLUDE_DIR "" CACHE PATH "Path to directory containing zmq.h")
 
-add_executable(deneb-dfsvc src/main.c)
-target_compile_definitions(deneb-dfsvc PRIVATE DENEB_VERSION="${GIT_VERSION}")
-target_include_directories(deneb-dfsvc PRIVATE src)
+add_executable(deneb-dfsvc
+    src/main.c
+    ../common/print/print_job_file.c
+    ../common/print/print_state_rules.c
+    ../common/print/lodepng_standalone_alloc.c
+    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c)
+
+set_source_files_properties(
+    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
+    PROPERTIES
+    COMPILE_DEFINITIONS "LODEPNG_NO_COMPILE_PNG;LODEPNG_NO_COMPILE_ENCODER;LODEPNG_NO_COMPILE_DISK;LODEPNG_NO_COMPILE_ERROR_TEXT"
+)
+
+target_compile_definitions(deneb-dfsvc PRIVATE
+    DENEB_VERSION="${GIT_VERSION}"
+    LV_CONF_INCLUDE_SIMPLE
+    LV_DISABLE_API_MAPPING)
+target_include_directories(deneb-dfsvc PRIVATE
+    src
+    ../common/print
+    ../ui/config
+    ../ui/lib/lvgl
+    ../ui/lib/lvgl/include
+    ../ui/lib/lvgl/src
+    ../ui/lib/lvgl/src/libs/lodepng)
 
 if(ZMQ_INCLUDE_DIR)
     target_include_directories(deneb-dfsvc PRIVATE ${ZMQ_INCLUDE_DIR})

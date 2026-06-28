@@ -38,6 +38,8 @@
 #include <mbedtls/x509_crt.h>
 #include <zmq.h>
 
+#include "print_job_file.h"
+
 #define IPC_BASE "tcp://127.0.0.1:"
 #define GERSHWIN_PUB_BASE 5546
 #define DF_PUB_PORT 5549
@@ -2022,6 +2024,7 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     char api_body[1024] = "";
     char response[512];
     char safe_job_id[192];
+    char validation_error[256] = "";
     const char *status = "failed";
     const char *reason = "unknown";
     int code = -1;
@@ -2077,6 +2080,10 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
             } else if (prepend_file_metadata(upload_path, material_guid,
                                              print_core_id) != 0) {
                 reason = "metadata_prepend_failed";
+            } else if (deneb_print_job_file_validate_build_volume_path(
+                           upload_path, validation_error,
+                           sizeof(validation_error)) != 0) {
+                reason = "build_volume_validation_failed";
             } else {
                 code = local_api_upload_file(upload_path, upload_name,
                                              job_instance_uuid, job_id,
@@ -2095,13 +2102,14 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
               "api_code=%d download_rc=%d extract_rc=%d job_id=%d job_name=%d "
               "job_instance_uuid=%d download_url=%d download_url_len=%zu "
               "material_guid=%d print_core_id=%d file=%s upload_file=%s "
-              "api_body=%.180s",
+              "validation=%.160s api_body=%.180s",
               status, reason, code, download_rc, extract_rc,
               job_id[0] ? 1 : 0,
               job_name[0] ? 1 : 0, job_instance_uuid[0] ? 1 : 0,
               has_download_url && download_url[0] ? 1 : 0,
               strlen(download_url), material_guid[0] ? 1 : 0,
               print_core_id[0] ? 1 : 0, file_name, upload_name,
+              validation_error[0] ? validation_error : "-",
               api_body[0] ? api_body : "-");
     unlink(path);
     if (strcmp(upload_path, path) != 0)
