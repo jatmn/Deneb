@@ -101,7 +101,9 @@ int deneb_status_state_transition_from_pair(
     deneb_status_transition_init(transition);
     transition->req_changed =
         strcmp(prev->current_req, curr->current_req) != 0;
-    transition->print_resumed = prev->is_paused && !curr->is_paused;
+    transition->print_resumed = prev->is_paused && !curr->is_paused &&
+                                (deneb_print_req_is_print(curr->current_req) ||
+                                 deneb_print_req_is_lifecycle(curr->current_req));
     transition->print_paused = !prev->is_paused && curr->is_paused;
     transition->print_ended = prev->is_printing && !curr->is_printing;
     transition->print_started = !prev->is_printing && curr->is_printing;

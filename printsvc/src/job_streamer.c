@@ -63,6 +63,7 @@ static void update_job_timing(deneb_job_streamer_t *streamer)
 
     now = time(NULL);
     if (streamer->status->state == DENEB_PRINT_STATE_PAUSED ||
+        streamer->status->state == DENEB_PRINT_STATE_PAUSING ||
         streamer->status->state == DENEB_PRINT_STATE_ABORTING ||
         streamer->status->state == DENEB_PRINT_STATE_COMPLETE ||
         streamer->status->state == DENEB_PRINT_STATE_ERROR ||
@@ -347,7 +348,8 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
         return -1;
     }
 
-    if (streamer->status->state == DENEB_PRINT_STATE_PAUSED)
+    if (streamer->status->state == DENEB_PRINT_STATE_PAUSED ||
+        streamer->status->state == DENEB_PRINT_STATE_PAUSING)
     {
         update_job_timing(streamer);
         return 0;

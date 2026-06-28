@@ -19,6 +19,7 @@ int deneb_pause_resume_pause(deneb_status_t *status)
     switch (status->state) {
         case DENEB_PRINT_STATE_PREPARING:
         case DENEB_PRINT_STATE_PRINTING:
+        case DENEB_PRINT_STATE_PAUSING:
             set_phase(status, DENEB_PRINT_PHASE_PAUSED);
             return 1;
         case DENEB_PRINT_STATE_PAUSED:

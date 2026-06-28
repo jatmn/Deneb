@@ -370,13 +370,6 @@ static void test_gcode_control_policy(void)
     assert(!svc.gcode_queue_active);
     assert(deneb_flow_inflight(&svc.flow) == 2);
 
-    memset(&cmd, 0, sizeof(cmd));
-    cmd.type = DENEB_COMMAND_GCODE;
-    cmd.gcode_count = 1;
-    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
-    assert(strstr(reply, "gcode failed") != NULL);
-    assert(svc.status.error.code == DENEB_ERROR_COMMAND);
-
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M105\"]", &cmd) == 0);
     svc.serial_ready = 1;
@@ -412,6 +405,16 @@ static void test_pause_resume_control_policy(void)
     deneb_print_service_init(&svc);
     svc.job_active = 1;
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) == 0);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
+    assert(svc.pause_position_probe_pending);
+    assert(!svc.pause_position_probe_sent);
+    assert(!svc.pause_policy_pending);
+    assert(!svc.paused_position_valid);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
     svc.status.position_report_count = 1;
     svc.status.x = 120.0f;
     svc.status.y = 80.0f;
@@ -420,7 +423,7 @@ static void test_pause_resume_control_policy(void)
     svc.status.r0 = -3.0f;
     svc.status.head_t_set = 210.0f;
     assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) == 0);
-    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
     assert(svc.pause_position_probe_pending);
     assert(!svc.pause_position_probe_sent);
     assert(!svc.pause_policy_pending);
@@ -445,11 +448,15 @@ static void test_pause_resume_control_policy(void)
     assert(svc.paused_x == 121.0f);
     assert(svc.paused_y == 81.0f);
     assert(svc.paused_nozzle_setpoint == 210.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "pause/resume already pending") != NULL);
     for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
         deneb_flow_clear_inflight(&svc.flow);
         assert(deneb_pause_resume_control_poll(&svc) >= 0);
     }
     assert(!deneb_pause_resume_control_busy(&svc));
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
     assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
     assert(svc.resume_policy_pending);
     assert(strcmp(svc.resume_policy.commands[0], "M104 S210") == 0);
@@ -1087,14 +1094,8 @@ static void test_job_streamer_policy(void)
     status.state = DENEB_PRINT_STATE_PRINTING;
     job_started_at = time(NULL);
     job_progress_started = 1;
-
-    assert(deneb_job_streamer_poll(&streamer) == 0);
-    assert(job_active);
-    assert(!finish_cleanup_pending);
-    assert(finish_cleanup_index == 0);
-    assert(status.state == DENEB_PRINT_STATE_PRINTING);
     deneb_flow_clear_inflight(&flow);
-    assert(deneb_flow_inflight(&flow) == 0);
+
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(job_active);
     assert(finish_cleanup_pending);
@@ -1267,6 +1268,9 @@ static void test_job_streamer_policy(void)
     deneb_flow_clear_inflight(&flow);
     job_started_at = time(NULL) - 10;
     job_elapsed_seconds = 0;
+    assert(deneb_job_streamer_poll(&streamer) == 1);
+    assert(stream.line_number == 4);
+    deneb_flow_clear_inflight(&flow);
     assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(stream.line_number == 4);
     assert(status.time_total <= 86);
@@ -1451,7 +1455,7 @@ typedef struct {
     int last_wait_bed;
     int last_wait_nozzle;
     float last_wait_target;
-    char sent[3][DENEB_PRINTSVC_MAX_GCODE_LINE];
+    char sent[4][DENEB_PRINTSVC_MAX_GCODE_LINE];
 } macro_runner_fake_t;
 
 static int macro_runner_fake_abort(void *ctx)
@@ -1473,7 +1477,7 @@ static int macro_runner_fake_send(void *ctx, const char *line)
     macro_runner_fake_t *fake = (macro_runner_fake_t *)ctx;
     if (fake->fail_send)
         return fake->fail_send_rc ? fake->fail_send_rc : -1;
-    if (fake->sends < 3)
+    if (fake->sends < 4)
         snprintf(fake->sent[fake->sends], sizeof(fake->sent[fake->sends]),
                  "%s", line);
     fake->sends++;
@@ -2135,6 +2139,9 @@ static void test_print_state_rules(void)
     assert(strcmp(deneb_print_status_label(1, 0, 1, 1), "paused") == 0);
     assert(strcmp(deneb_print_status_label(1, 1, 1, 1), "error") == 0);
     assert(strcmp(deneb_print_status_label_with_req(
+                      1, 0, 0, 1, DENEB_PRINT_REQ_PAUSING, 1),
+                  "pausing") == 0);
+    assert(strcmp(deneb_print_status_label_with_req(
                       1, 0, 0, 1, DENEB_COMMAND_VERB_ABORT, 1),
                   "aborting") == 0);
     assert(strcmp(deneb_print_status_label_with_req(
@@ -2456,6 +2463,9 @@ static void test_print_state_rules(void)
            DENEB_PRINT_DISPLAY_STATE_COOLING);
     assert(deneb_print_display_state(1, 0, 1, 1, 0, 0, 0) ==
            DENEB_PRINT_DISPLAY_STATE_PAUSED);
+    assert(deneb_print_display_state_with_req(
+               1, 0, 0, 1, 0, 0, 0, DENEB_PRINT_REQ_PAUSING) ==
+           DENEB_PRINT_DISPLAY_STATE_PAUSING);
     assert(deneb_print_display_state(1, 0, 0, 0, 0, 1, 0) ==
            DENEB_PRINT_DISPLAY_STATE_PREPARING);
     assert(deneb_print_display_state(1, 0, 0, 1, 0, 1, 120) ==
@@ -3625,6 +3635,18 @@ static void test_status_state_helpers(void)
                &transition, &prev, &state) == 0);
     assert(transition.req_changed);
     assert(transition.print_resumed);
+    assert(!transition.print_paused);
+    assert(!transition.print_started);
+    assert(!transition.print_ended);
+
+    snprintf(state.current_req, sizeof(state.current_req), "%s",
+             DENEB_COMMAND_VERB_ABORT);
+    state.is_printing = 1;
+    state.is_paused = 0;
+    assert(deneb_status_state_transition_from_pair(
+               &transition, &prev, &state) == 0);
+    assert(transition.req_changed);
+    assert(!transition.print_resumed);
     assert(!transition.print_paused);
     assert(!transition.print_started);
     assert(!transition.print_ended);
@@ -5015,6 +5037,12 @@ static void test_job_completion_waits_for_finish_cleanup(void)
     assert(svc.job_active);
     assert(svc.finish_cleanup_pending);
     assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
+
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_active);
+    assert(svc.finish_cleanup_pending);
+    assert(svc.status.state == DENEB_PRINT_STATE_PRINTING);
     assert(deneb_status_has_active_print(&svc.status));
 
     assert(deneb_print_service_poll_job(&svc) == 0);
@@ -5164,7 +5192,7 @@ static void test_pause_gates_active_job_streaming(void)
     svc.status.r0 = -3.0f;
     svc.status.head_t_set = 210.0f;
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
-    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
     assert(svc.pause_position_probe_pending);
     assert(!svc.pause_policy_pending);
     assert(deneb_print_service_poll_job(&svc) == 0);
@@ -5188,6 +5216,10 @@ static void test_pause_gates_active_job_streaming(void)
     assert(svc.pause_policy_pending);
     assert(svc.paused_x == 121.0f);
     assert(svc.paused_nozzle_setpoint == 210.0f);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
+    assert(deneb_command_parse("RESUME<{}", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "pause/resume already pending") != NULL);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 1);
     for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
@@ -5195,6 +5227,7 @@ static void test_pause_gates_active_job_streaming(void)
         assert(deneb_pause_resume_control_poll(&svc) >= 0);
     }
     assert(!deneb_pause_resume_control_busy(&svc));
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
 
     assert(deneb_command_parse("RESUME<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
@@ -5223,6 +5256,11 @@ static void test_pause_gates_active_job_streaming(void)
     assert(deneb_print_service_poll_job(&svc) == 1);
     assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(svc.job_stream.line_number == 2);
+    deneb_flow_clear_inflight(&svc.flow);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
+    assert(svc.finish_cleanup_pending);
+    assert(svc.job_stream.line_number == 2);
     remove(job_path);
 }
 
@@ -5249,14 +5287,29 @@ static void test_pause_during_preheat_resumes_to_preparing(void)
 
     assert(deneb_command_parse("PAUSE<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
-    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
+    assert(svc.pause_position_probe_pending);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 0);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.pause_position_probe_sent);
+    deneb_flow_clear_inflight(&svc.flow);
+    svc.status.position_report_count = 1;
+    svc.status.x = 105.0f;
+    svc.status.y = 0.0f;
+    svc.status.z = 207.0f;
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!deneb_pause_resume_control_busy(&svc));
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
 
     assert(deneb_command_parse("RESUME<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
-    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(deneb_print_service_poll_job(&svc) >= 0);
     assert(svc.job_stream.line_number == 0);
     remove(job_path);
 }

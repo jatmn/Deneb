@@ -18,6 +18,7 @@
 #define DENEB_PRINT_REQ_PREHEAT "PREHEAT"
 #define DENEB_PRINT_REQ_PREHEATING "PREHEATING"
 #define DENEB_PRINT_REQ_PRINTING "Printing"
+#define DENEB_PRINT_REQ_PAUSING "Pausing"
 #define DENEB_PRINT_REQ_PAUSED "Paused"
 #define DENEB_PRINT_REQ_ABORTING "Aborting"
 #define DENEB_PRINT_REQ_COMPLETE "Complete"
@@ -85,6 +86,7 @@ typedef enum {
     DENEB_PRINT_DISPLAY_STATE_IDLE = 0,
     DENEB_PRINT_DISPLAY_STATE_PRINTING,
     DENEB_PRINT_DISPLAY_STATE_PAUSED,
+    DENEB_PRINT_DISPLAY_STATE_PAUSING,
     DENEB_PRINT_DISPLAY_STATE_PREPARING,
     DENEB_PRINT_DISPLAY_STATE_COOLING,
     DENEB_PRINT_DISPLAY_STATE_ERROR
@@ -189,6 +191,15 @@ deneb_print_display_state_t deneb_print_display_state(
     int has_abort_context,
     int has_preparing_context,
     int time_total);
+deneb_print_display_state_t deneb_print_display_state_with_req(
+    int connected,
+    int has_error,
+    int is_paused,
+    int is_printing,
+    int has_abort_context,
+    int has_preparing_context,
+    int time_total,
+    const char *req);
 void deneb_print_stop_guard_init(deneb_print_stop_guard_t *guard,
                                  int cooldown_ms);
 int deneb_print_stop_guard_begin(deneb_print_stop_guard_t *guard,

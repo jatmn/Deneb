@@ -7,6 +7,16 @@
 #include "motion_send_error.h"
 #include "motion_sender.h"
 #include "pause_resume.h"
+#include "print_control.h"
+
+#include <stdio.h>
+
+static void set_phase(deneb_status_t *status, deneb_print_phase_t phase)
+{
+    status->state = deneb_print_control_state_for_phase(phase);
+    snprintf(status->req, sizeof(status->req), "%s",
+             deneb_print_control_req_for_phase(phase));
+}
 
 static int position_is_valid(const deneb_status_t *status)
 {
@@ -163,10 +173,25 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
     if (!svc || !reply || reply_sz == 0)
         return -1;
 
-    if (svc->resume_policy_pending) {
+    if (svc->pause_position_probe_pending || svc->pause_policy_pending ||
+        svc->resume_policy_pending) {
         deneb_command_reply_error(reply, reply_sz,
                                   "pause/resume already pending");
         return -1;
+    }
+
+    if (svc->job_active &&
+        (svc->status.state == DENEB_PRINT_STATE_PREPARING ||
+         svc->status.state == DENEB_PRINT_STATE_PRINTING)) {
+        svc->paused_position_valid = 0;
+        if (svc->status.head_t_set > 0.0f)
+            svc->job_nozzle_resume_setpoint = svc->status.head_t_set;
+        set_phase(&svc->status, DENEB_PRINT_PHASE_PAUSING);
+        svc->pause_position_probe_pending = 1;
+        svc->pause_position_probe_sent = 0;
+        svc->pause_position_report_start = svc->status.position_report_count;
+        deneb_command_reply_ok(reply, reply_sz, "pause accepted");
+        return 0;
     }
 
     if (deneb_pause_resume_pause(&svc->status) < 0) {
@@ -195,7 +220,8 @@ int deneb_pause_resume_control_resume(deneb_print_service_t *svc,
     if (!svc || !reply || reply_sz == 0)
         return -1;
 
-    if (svc->resume_policy_pending) {
+    if (svc->pause_position_probe_pending || svc->pause_policy_pending ||
+        svc->resume_policy_pending) {
         deneb_command_reply_error(reply, reply_sz,
                                   "pause/resume already pending");
         return -1;
@@ -253,6 +279,10 @@ int deneb_pause_resume_control_poll(deneb_print_service_t *svc)
                      &svc->pause_policy_pending, "pause cleanup failed");
     if (rc < 0 || (had_pause && rc == 0))
         return rc;
+    if (had_pause && rc > 0) {
+        (void)deneb_pause_resume_pause(&svc->status);
+        return rc;
+    }
 
     if (svc->resume_policy_pending && !svc->heater_wait.active &&
         svc->resume_policy_index == 0 &&

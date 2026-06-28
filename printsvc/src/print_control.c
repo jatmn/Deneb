@@ -10,6 +10,8 @@ deneb_print_phase_t deneb_print_control_phase_from_state(deneb_print_state_t sta
             return DENEB_PRINT_PHASE_PREPARING;
         case DENEB_PRINT_STATE_PRINTING:
             return DENEB_PRINT_PHASE_PRINTING;
+        case DENEB_PRINT_STATE_PAUSING:
+            return DENEB_PRINT_PHASE_PAUSING;
         case DENEB_PRINT_STATE_PAUSED:
             return DENEB_PRINT_PHASE_PAUSED;
         case DENEB_PRINT_STATE_ABORTING:
@@ -31,6 +33,8 @@ deneb_print_state_t deneb_print_control_state_for_phase(deneb_print_phase_t phas
             return DENEB_PRINT_STATE_PREPARING;
         case DENEB_PRINT_PHASE_PRINTING:
             return DENEB_PRINT_STATE_PRINTING;
+        case DENEB_PRINT_PHASE_PAUSING:
+            return DENEB_PRINT_STATE_PAUSING;
         case DENEB_PRINT_PHASE_PAUSED:
             return DENEB_PRINT_STATE_PAUSED;
         case DENEB_PRINT_PHASE_ABORTING:
@@ -52,6 +56,8 @@ const char *deneb_print_control_phase_name(deneb_print_phase_t phase)
             return DENEB_PRINT_PHASE_NAME_PRE_PRINT;
         case DENEB_PRINT_PHASE_PRINTING:
             return "printing";
+        case DENEB_PRINT_PHASE_PAUSING:
+            return "pausing";
         case DENEB_PRINT_PHASE_PAUSED:
             return "paused";
         case DENEB_PRINT_PHASE_ABORTING:
@@ -73,6 +79,8 @@ const char *deneb_print_control_req_for_phase(deneb_print_phase_t phase)
             return DENEB_PRINT_REQ_PREPARE;
         case DENEB_PRINT_PHASE_PRINTING:
             return DENEB_COMMAND_VERB_JOB;
+        case DENEB_PRINT_PHASE_PAUSING:
+            return DENEB_PRINT_REQ_PAUSING;
         case DENEB_PRINT_PHASE_PAUSED:
             return DENEB_PRINT_REQ_PAUSED;
         case DENEB_PRINT_PHASE_ABORTING:
@@ -91,6 +99,7 @@ int deneb_print_control_phase_active(deneb_print_phase_t phase)
 {
     return phase == DENEB_PRINT_PHASE_PREPARING ||
            phase == DENEB_PRINT_PHASE_PRINTING ||
+           phase == DENEB_PRINT_PHASE_PAUSING ||
            phase == DENEB_PRINT_PHASE_PAUSED ||
            phase == DENEB_PRINT_PHASE_ABORTING;
 }
@@ -99,6 +108,7 @@ int deneb_print_control_phase_stop_allowed(deneb_print_phase_t phase)
 {
     return phase == DENEB_PRINT_PHASE_PREPARING ||
            phase == DENEB_PRINT_PHASE_PRINTING ||
+           phase == DENEB_PRINT_PHASE_PAUSING ||
            phase == DENEB_PRINT_PHASE_PAUSED;
 }
 

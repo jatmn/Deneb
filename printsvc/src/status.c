@@ -21,6 +21,7 @@ const char *deneb_status_state_name(deneb_print_state_t state)
     switch (state) {
         case DENEB_PRINT_STATE_PREPARING: return DENEB_PRINT_REQ_PREPARE;
         case DENEB_PRINT_STATE_PRINTING: return DENEB_PRINT_REQ_PRINTING;
+        case DENEB_PRINT_STATE_PAUSING: return DENEB_PRINT_REQ_PAUSING;
         case DENEB_PRINT_STATE_PAUSED: return DENEB_PRINT_REQ_PAUSED;
         case DENEB_PRINT_STATE_ABORTING: return DENEB_PRINT_REQ_ABORTING;
         case DENEB_PRINT_STATE_COMPLETE: return DENEB_PRINT_REQ_COMPLETE;

@@ -10,7 +10,9 @@ int deneb_print_req_is_print(const char *req)
 {
     static const char *const print_reqs[] = {
         DENEB_COMMAND_VERB_JOB, "Print", DENEB_PRINT_REQ_PRINTING,
-        DENEB_COMMAND_VERB_PAUSE, "Pause", DENEB_PRINT_REQ_PAUSED,
+        DENEB_PRINT_REQ_PAUSING,
+        DENEB_COMMAND_VERB_PAUSE, "Pause", DENEB_PRINT_REQ_PAUSING,
+        DENEB_PRINT_REQ_PAUSED,
         NULL
     };
 
@@ -302,6 +304,9 @@ const char *deneb_print_status_label_with_req(int connected, int has_error,
         return "paused";
     if (!connected)
         return "offline";
+    if (deneb_str_eq_ci(req, DENEB_PRINT_REQ_PAUSING) &&
+        (native_active || is_active))
+        return "pausing";
     if (deneb_print_req_is_abort(req) && (native_active || is_active))
         return "aborting";
     if (is_active)
@@ -450,14 +455,15 @@ int deneb_print_manual_action_allowed(int connected, int has_error,
                                      is_active);
 }
 
-deneb_print_display_state_t deneb_print_display_state(
+deneb_print_display_state_t deneb_print_display_state_with_req(
     int connected,
     int has_error,
     int is_paused,
     int is_printing,
     int has_abort_context,
     int has_preparing_context,
-    int time_total)
+    int time_total,
+    const char *req)
 {
     if (!connected)
         return DENEB_PRINT_DISPLAY_STATE_PREPARING;
@@ -467,11 +473,27 @@ deneb_print_display_state_t deneb_print_display_state(
         return DENEB_PRINT_DISPLAY_STATE_COOLING;
     if (is_paused)
         return DENEB_PRINT_DISPLAY_STATE_PAUSED;
+    if (deneb_str_eq_ci(req, DENEB_PRINT_REQ_PAUSING))
+        return DENEB_PRINT_DISPLAY_STATE_PAUSING;
     if (has_preparing_context && time_total <= 0)
         return DENEB_PRINT_DISPLAY_STATE_PREPARING;
     if (is_printing)
         return DENEB_PRINT_DISPLAY_STATE_PRINTING;
     return DENEB_PRINT_DISPLAY_STATE_IDLE;
+}
+
+deneb_print_display_state_t deneb_print_display_state(
+    int connected,
+    int has_error,
+    int is_paused,
+    int is_printing,
+    int has_abort_context,
+    int has_preparing_context,
+    int time_total)
+{
+    return deneb_print_display_state_with_req(
+        connected, has_error, is_paused, is_printing, has_abort_context,
+        has_preparing_context, time_total, NULL);
 }
 
 void deneb_print_stop_guard_init(deneb_print_stop_guard_t *guard,

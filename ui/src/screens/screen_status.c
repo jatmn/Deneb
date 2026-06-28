@@ -153,6 +153,8 @@ static const char *display_state_locale_key(deneb_print_display_state_t state)
             return "status.cooling";
         case DENEB_PRINT_DISPLAY_STATE_PAUSED:
             return "status.paused";
+        case DENEB_PRINT_DISPLAY_STATE_PAUSING:
+            return "status.pausing";
         case DENEB_PRINT_DISPLAY_STATE_PREPARING:
             return "status.preparing";
         case DENEB_PRINT_DISPLAY_STATE_PRINTING:
@@ -243,10 +245,11 @@ static void update_timer_cb(lv_timer_t *timer)
     /* Printer state */
     lv_label_set_text(
         state_label,
-        locale_get(display_state_locale_key(deneb_print_display_state(
+        locale_get(display_state_locale_key(deneb_print_display_state_with_req(
             s->connected, s->has_error, s->is_paused, s->is_printing,
             backend_has_abort_print_context(),
-            backend_has_preparing_print_context(), s->time_total))));
+            backend_has_preparing_print_context(), s->time_total,
+            s->current_req))));
 
     /* Temperatures */
     set_temp_label(nozzle_temp_label, s->nozzle_temp_cur, s->nozzle_temp_set);
@@ -276,13 +279,17 @@ static void update_timer_cb(lv_timer_t *timer)
         backend_clear_print_display_context_if_idle();
 
     int aborting = backend_has_abort_print_context();
+    int pausing = deneb_print_display_state_with_req(
+        s->connected, s->has_error, s->is_paused, s->is_printing,
+        aborting, backend_has_preparing_print_context(), s->time_total,
+        s->current_req) == DENEB_PRINT_DISPLAY_STATE_PAUSING;
     if (pause_resume_label)
         lv_label_set_text(pause_resume_label,
                           locale_get(s->is_paused ? "print.resume" :
                                                    "print.pause"));
     set_btn_enabled(pause_resume_btn,
                     ((job_active && s->is_printing) || s->is_paused) &&
-                    !aborting);
+                    !aborting && !pausing);
     set_btn_enabled(stop_btn, backend_has_stoppable_print_context() &&
                                   !stop_inflight &&
                                   !backend_is_stop_print_inflight());

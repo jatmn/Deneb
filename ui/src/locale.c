@@ -45,6 +45,7 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"status.idle", "Idle"},
     {"status.printing", "Printing"},
     {"status.paused", "Paused"},
+    {"status.pausing", "Pausing"},
     {"status.heating", "Heating"},
     {"status.cooling", "Cooling"},
     {"status.error", "Error"},
