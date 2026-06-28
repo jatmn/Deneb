@@ -70,8 +70,9 @@ instead of buffering whole jobs in RAM. A pending-job metadata file at
 metadata, waits for conflict confirmation, prepares, and preheats.
 
 Current Cura sends UM2+ Connect jobs as `.ufp` archives. Deneb extracts
-`3D/model.gcode` before native registration so the material/nozzle header is
-validated before any motion starts. A 2026-06-14 Cura 5.13 local-network test on
+`3D/model.gcode` before native registration so material/nozzle headers and
+model build-volume bounds are validated before the upload is copied into
+Deneb spool storage, written as pending metadata, or allowed to start motion. A 2026-06-14 Cura 5.13 local-network test on
 package `ff49e86b` proved this path for material-mismatch prompt, Cancel,
 Continue/start, completion, pause/resume, cancel/abort back to idle, and pending
 mismatch recovery after UI/API/print-service restarts. The first pre-fix

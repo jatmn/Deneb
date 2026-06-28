@@ -86,5 +86,7 @@ int deneb_print_job_file_store_upload(const char *src_path,
 int deneb_print_job_file_check_build_volume(
     const deneb_print_job_file_metadata_t *meta,
     char *out_error, size_t out_error_sz);
+int deneb_print_job_file_validate_build_volume_path(
+    const char *path, char *out_error, size_t out_error_sz);
 
 #endif

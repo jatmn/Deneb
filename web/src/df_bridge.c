@@ -9,6 +9,29 @@
 
 #include "df_bridge.h"
 
+#ifdef BACKEND_ZMQ_STUB
+
+#include <stdio.h>
+#include <string.h>
+
+int deneb_df_bridge_run(const char *action, int timeout_seconds,
+                        char *out, size_t out_size)
+{
+    (void)timeout_seconds;
+
+    if (!action || (strcmp(action, "connect") != 0 &&
+                    strcmp(action, "disconnect") != 0 &&
+                    strcmp(action, "status") != 0)) {
+        snprintf(out, out_size, "status=error reason=bad-action");
+        return -1;
+    }
+
+    snprintf(out, out_size, "status=stub action=%s", action);
+    return 0;
+}
+
+#else
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -686,3 +709,5 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
     zmq_ctx_destroy(ctx);
     return 0;
 }
+
+#endif /* BACKEND_ZMQ_STUB */

@@ -149,7 +149,10 @@ Cura/UM API responses.
 `common/print/print_job_file.*` owns the Deneb upload spool path
 `/home/3D/deneb-uploads` and the lightweight metadata hints read from uploaded
 G-code/UFP-expanded files, including `material_guid`, `nozzle_size`, and
-`print_core_id`.
+`print_core_id`. The same helper validates uploaded model bounds before the
+web/API path spools a file or registers a pending native job; invalid,
+incomplete, or out-of-volume bounds produce a non-overridable validation
+failure instead of falling back to stock coordinator file handling.
 `common/print/printer_identity.*` owns the fallback hostname and system GUID
 reads shared by Cura cluster printer/job responses and UM system endpoints.
 `common/print/material_catalog.*` owns Cura/touchscreen material XML

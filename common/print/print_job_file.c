@@ -1188,6 +1188,31 @@ int deneb_print_job_file_store_upload(const char *src_path,
     return 0;
 }
 
+int deneb_print_job_file_validate_build_volume_path(
+    const char *path, char *out_error, size_t out_error_sz)
+{
+    deneb_print_job_file_metadata_t meta;
+
+    if (!path || !*path) {
+        if (out_error && out_error_sz > 0)
+            snprintf(out_error, out_error_sz, "missing print job file");
+        return -1;
+    }
+
+    if (access(path, R_OK) != 0) {
+        if (out_error && out_error_sz > 0)
+            snprintf(out_error, out_error_sz, "failed to read print job file");
+        return -1;
+    }
+
+    deneb_print_job_file_metadata_init(&meta);
+    if (deneb_print_job_file_metadata_load(path, &meta) != 0)
+        return 0;
+
+    return deneb_print_job_file_check_build_volume(&meta, out_error,
+                                                   out_error_sz);
+}
+
 int deneb_print_job_file_check_build_volume(
     const deneb_print_job_file_metadata_t *meta,
     char *out_error, size_t out_error_sz)

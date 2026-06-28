@@ -4173,6 +4173,7 @@ static void test_print_job_file_metadata(void)
     char value[64];
     char safe[128];
     char spool_path[256];
+    char bv_error[256];
     FILE *f;
 
     assert(strcmp(DENEB_PRINT_JOB_USB_SCAN_DIR, "/mnt/sda1") == 0);
@@ -4266,7 +4267,42 @@ static void test_print_job_file_metadata(void)
     fclose(f);
     deneb_print_job_file_metadata_init(&meta);
     assert(deneb_print_job_file_metadata_load(path, &meta) != 0);
+
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fputs("G28\n", f);
+    fclose(f);
+    bv_error[0] = '\0';
+    assert(deneb_print_job_file_validate_build_volume_path(
+               path, bv_error, sizeof(bv_error)) == 0);
+    assert(bv_error[0] == '\0');
+
+    write_build_volume_fixture(
+        path,
+        ";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+        ";PRINT.MAX.X:200\n;PRINT.MAX.Y:180\n;PRINT.MAX.Z:100\n");
+    assert(deneb_print_job_file_validate_build_volume_path(
+               path, bv_error, sizeof(bv_error)) == 0);
+
+    write_build_volume_fixture(
+        path,
+        ";PRINT.MIN.X:0\n;PRINT.MIN.Y:0\n;PRINT.MIN.Z:0\n"
+        ";PRINT.MAX.X:224\n;PRINT.MAX.Y:180\n;PRINT.MAX.Z:100\n");
+    assert(deneb_print_job_file_validate_build_volume_path(
+               path, bv_error, sizeof(bv_error)) != 0);
+    assert(strstr(bv_error, "build volume") != NULL);
+
+    write_build_volume_fixture(
+        path,
+        ";PRINT.MIN.X:0\n;PRINT.MAX.X:200\n;PRINT.MAX.Y:180\n");
+    assert(deneb_print_job_file_validate_build_volume_path(
+               path, bv_error, sizeof(bv_error)) != 0);
+    assert(strstr(bv_error, "incomplete") != NULL);
+
     remove(path);
+    assert(deneb_print_job_file_validate_build_volume_path(
+               path, bv_error, sizeof(bv_error)) != 0);
+    assert(strstr(bv_error, "read print job file") != NULL);
 }
 
 static void test_crc_and_packet(void)

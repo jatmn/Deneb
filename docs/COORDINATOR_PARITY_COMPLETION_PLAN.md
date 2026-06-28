@@ -189,6 +189,26 @@ Stock file handling provides:
    - `docs/WEB_UI.md`
    - this plan if scope changes
 
+### 2026-06-27 Upload Validation Non-Physical Checkpoint
+
+The web/API Cura upload path now calls the shared native build-volume path
+validator before spool storage, pending-job dedupe, or native registration.
+That keeps invalid model bounds from becoming pending metadata and returns a
+native validation failure without falling back to stock coordinator file
+handling.
+
+Non-physical validation completed:
+
+- Host helper coverage accepts plain G-code with no slicer bounds metadata.
+- Host helper coverage accepts complete in-volume bounds.
+- Host helper coverage rejects out-of-volume bounds.
+- Host helper coverage rejects incomplete bounds metadata.
+- Host helper coverage rejects unreadable or missing upload paths.
+
+Remaining gate: target proof for Web/Cura/API and Digital Factory upload paths,
+including one valid job, one build-volume rejection, and one material/nozzle
+conflict job while runtime inventory shows no live `coordinator.py` dependency.
+
 ### Expected Result
 
 Deneb upload/start paths have native file validation at least as strict as the
@@ -655,7 +675,7 @@ Current status as of 2026-06-22 after the coordinator-parity source audit:
 | # | Workstream | Status | Key Changes / Remaining Gate |
 |---|-----------|--------|------------------------------|
 | 1 | Coordinator Dependency Audit Gate | **COMPLETE** | `tools/deneb-printsvc-native-audit.sh` rejects stock coordinator print ports, non-DF coordinator services, and new `print_on_buildplate` references. Selftest fixtures cover the negative cases. |
-| 2 | File Validation And Upload Parity | **PARTIAL** | Native build-volume metadata parsing and validation are wired into `pending_job_registration_prepare()` and `job_control_accept()`. Host tests now cover complete-bounds acceptance, out-of-bounds rejection, partial-bounds rejection, and clean `JOB` rejection without stale active state. Remaining gate: prove Web/Cura/API/DF upload paths on target. |
+| 2 | File Validation And Upload Parity | **PARTIAL** | Native build-volume metadata parsing and validation are wired into `pending_job_registration_prepare()`, `job_control_accept()`, and the Web/API upload path before spool storage. Host tests cover complete-bounds acceptance, out-of-bounds rejection, partial-bounds rejection, missing upload path rejection, and clean `JOB` rejection without stale active state. Remaining gate: prove Web/Cura/API/DF upload paths on target. |
 | 3 | Material Workflow Parity | **PARTIAL - PHYSICAL PROOF PENDING** | Native workflow state is now wired into the touchscreen material load/change path through `deneb_material_workflow_t`; host tests and MIPS UI build passed. Remaining gate: user-supervised target proof for unload/load/cancel/cooldown with clean runtime inventory. |
 | 4 | Bed Leveling Workflow Parity | **PARTIAL - PHYSICAL PROOF PENDING** | Native workflow state is now wired into the touchscreen build-plate leveling path through `deneb_buildplate_level_workflow_t`; host tests and MIPS UI build passed. Remaining gate: user-supervised target proof for full sequence/cancel/retry with clean runtime inventory. |
 | 5 | Fault Handling And Auto-Abort Policy | **COMPLETE FOR ACTIVE PRINTS** | `docs/FAULT_POLICY.md` defines active-print auto-abort policy. `printsvc/src/service.c` aborts active jobs for thermal, endstop, Marlin, and storage faults while leaving serial/command faults recoverable. Idle faults display errors and do not auto-abort. |
@@ -665,7 +685,7 @@ Current status as of 2026-06-22 after the coordinator-parity source audit:
 ## Recommended Order
 
 1. Add the coordinator dependency audit gate. **(DONE)**
-2. Finish file validation/build-volume parity. **(PARTIAL — host ingress proof added; target upload-path proof still required)**
+2. Finish file validation/build-volume parity. **(PARTIAL — host ingress and Web/API pre-spool validation proof added; target upload-path proof still required)**
 3. Finish fault policy because it affects print safety and all workflows. **(DONE for active-print policy)**
 4. Finish material workflow parity. **(PARTIAL — runtime wiring complete; target material workflow proof still required)**
 5. Finish bed-leveling parity. **(PARTIAL — runtime wiring complete; target bed-leveling workflow proof still required)**

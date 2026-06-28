@@ -439,6 +439,22 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
                 filename);
     }
 
+    validation_message[0] = '\0';
+    if (deneb_print_job_file_validate_build_volume_path(
+            gcode_path, validation_message, sizeof(validation_message)) < 0) {
+        fprintf(stderr,
+                "deneb-api: print upload build-volume validation failed for %s: %s\n",
+                filename,
+                validation_message[0] ? validation_message :
+                "Invalid print job metadata");
+        if (ufp_thumbnail_ready)
+            unlink(ufp_thumbnail_path);
+        unlink(gcode_path);
+        set_message_response(resp, 422,
+                             validation_message[0] ? validation_message :
+                             "Invalid print job metadata");
+        return;
+    }
     if (deneb_print_job_file_upload_storage_plan(filename, &storage) < 0) {
         fprintf(stderr, "deneb-api: failed to prepare print spool path for %s: %s\n",
                 filename, strerror(errno));

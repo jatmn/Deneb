@@ -131,8 +131,9 @@ on real hardware remains open.
   native print-control helpers instead of being hard-coded/parsing JSON in this
   layer.
   Cura upload storage preparation uses the shared native print-file helper for
-  sanitized filenames and Deneb spool destinations before web/API pending-job
-  dedupe, native registration, and response formatting.
+  sanitized filenames and Deneb spool destinations. Web/API print uploads also
+  run shared build-volume validation before spool writes, pending-job dedupe,
+  native registration, and response formatting.
   Multipart upload extraction is also isolated in `web/src/api_multipart.c`,
   shared by Cura print uploads and material uploads instead of living in the
   HTTP server main loop.
