@@ -20,6 +20,8 @@ enum {
     DENEB_JOB_PREPARE_STARTUP_DRAIN = 5
 };
 
+#define DENEB_JOB_STREAM_WINDOW 1
+
 static const char *const DENEB_JOB_PREPARE_HOME_COMMANDS[] = {
     "G28",
     "G0 X105 Y0 F9000",
@@ -388,7 +390,7 @@ int deneb_job_streamer_poll(deneb_job_streamer_t *streamer)
 
     if (deneb_flow_has_pending_barrier(streamer->flow) ||
         !deneb_flow_can_send(streamer->flow) ||
-        deneb_flow_inflight(streamer->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
+        deneb_flow_inflight(streamer->flow) >= DENEB_JOB_STREAM_WINDOW)
         return 0;
 
     rc = deneb_gcode_stream_next(streamer->stream, line, sizeof(line));

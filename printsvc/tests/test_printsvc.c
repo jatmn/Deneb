@@ -1226,8 +1226,11 @@ static void test_job_streamer_policy(void)
     assert(status.time_left == 100);
     assert(job_started_at == 0);
     status.bed_t_cur = 55.0f;
-    assert(deneb_job_streamer_poll(&streamer) == 1);
+    assert(deneb_job_streamer_poll(&streamer) == 0);
     assert(!wait.active);
+    assert(stream.line_number == 1);
+    deneb_flow_clear_inflight(&flow);
+    assert(deneb_job_streamer_poll(&streamer) == 1);
     assert(status.state == DENEB_PRINT_STATE_PRINTING);
     assert(stream.line_number == 3);
     assert(status.time_left == 100);
