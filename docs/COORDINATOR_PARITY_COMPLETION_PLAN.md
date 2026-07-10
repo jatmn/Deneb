@@ -1,6 +1,12 @@
 # Coordinator Parity Completion Plan
 
-Date: 2026-06-22
+Date: 2026-06-22; project status reconciliation: 2026-07-09
+
+The latest code change is `afbea8c`, which limits active job streaming to one
+in-flight command. Host tests passed in that commit, but the mitigation has not
+been physically retested. The last physical result therefore remains
+**FAILED** for Pause. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the
+project-level summary.
 
 This plan scopes the remaining coordinator-related work after the source audit
 of `rootfs/home/cygnus/coordinator/coordinator.py` and all handler nodes. It is
@@ -690,7 +696,7 @@ true:
 
 ## Completion Log
 
-Current status as of 2026-06-22 after the coordinator-parity source audit:
+Current status as of the 2026-06-28 physical matrix, reconciled 2026-07-09:
 
 | # | Workstream | Status | Key Changes / Remaining Gate |
 |---|-----------|--------|------------------------------|

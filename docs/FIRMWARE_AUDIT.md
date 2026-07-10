@@ -1,10 +1,34 @@
 # Deneb Firmware Audit
 
 Date: 2026-05-31, updated 2026-06-01 after WiFi web asset cleanup and live resource sampling.
-Status reconciliation: 2026-06-13 against commits through `caa1490`.
+Status reconciliation: 2026-07-09 against `main` at `afbea8c`.
 Source: Live device SSH (10.10.10.244) + unpacked firmware recovery in `rootfs/`
 Hardware: UltiMaker 2+ Connect (Onion Omega2+, MediaTek MT7688)
 Printer hostname: Ultimaker-2C-9CF8
+
+> **Historical-audit warning:** hardware/process tables below are dated
+> snapshots, not current runtime truth. The development printer did not answer
+> SSH during the 2026-07-09 reconciliation. Use
+> [PROJECT_STATUS.md](PROJECT_STATUS.md) for current project status and
+> [COORDINATOR_PARITY_COMPLETION_PLAN.md](COORDINATOR_PARITY_COMPLETION_PLAN.md)
+> for the newer 2026-06-28 no-coordinator physical matrix.
+
+## 2026-07-09 Reconciliation
+
+- Deneb update archives are Python-free by package policy, but the base firmware
+  is not removable-Python-ready. The legacy bootstrap executes Python, the AVR
+  controller programmer is Python, stock rollback can restore Python services,
+  and the read-only squashfs contains the Python runtime.
+- The coordinator-disabled package has target proof for selected no-Python
+  workflows, including safe upload rejection, LAN/API completion, and active
+  abort. It also has failed/incomplete target results for Pause, material, and
+  leveling workflows.
+- The current strategic base is OpenWrt 25.12.5, not an in-place package update.
+  Upstream still supports Omega2+, but Deneb has not yet built or booted a
+  printer-specific current image.
+- UltiMaker's public Marlin repository contains an `Ultimaker2+Connect` branch,
+  but current upstream Marlin does not contain E2/2+ Connect board/protocol
+  support. See [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 
 ## Hardware Profile
 
@@ -142,8 +166,8 @@ with static C binaries:
 | Component | Current status | Evidence boundary |
 |-----------|----------------|-------------------|
 | `print_service.py` | Native implementation/package path exists as experimental `deneb-printsvc` | Strong bounded hardware, host test, package, and no-Python route evidence exists in `docs/PRINTSVC_EVIDENCE_LEDGER.md`. Promotion is still blocked by LCD/Web/Cura/Digital Factory client workflows, representative slicer output, and long active-soak memory behavior. |
-| `connector.py` | Native implementation/package path exists as `deneb-dfsvc` | Commit `1415245` adds the native connector, init replacement, package staging, and native audit gates. `docs/DF_LIFECYCLE_CLASSIFICATION.md` records 2026-06-13 hardware proof for pairing PIN, connected steady-state, reconnect after controlled cloud interruption, touchscreen disconnect, printer rename, and remote print material-mismatch wait-user-action/Cancel handling without stock `connector.py`. Safe Continue/start remains blocked by native `G280`/homing parity, and print-job action proof remains open. |
-| `coordinator.py` | Deneb client routes source-obsoleted; stock fallback still bootable | Source audit shows Deneb LCD, Web/API, Cura/UM print-job, temperature, material, leveling, and proven Digital Factory routes no longer select the stock coordinator proxy. The remaining work is to retire or gate the installer/runtime coordinator fallback handoff, with rollback and workflow proof, rather than treating this as an undefined whole-coordinator rewrite. |
+| `connector.py` | Native implementation/package path exists as `deneb-dfsvc`; representative target routes proven | Later June evidence supersedes the old G280 blocker: pairing, reconnect, disconnect, rename, conflict Continue/Cancel, completion, and representative remote abort ran without stock `connector.py`. Broader soak/current-live verification remains open. |
+| `coordinator.py` | Disabled by default in the current installer shim; partial no-Python target matrix | The 2026-06-28 package proved selected workflows with no live Python, but Pause failed physically, leveling Cancel failed, material load/unload remained incomplete, and several matrix rows remain untested. The coordinator-removal objective is not complete. |
 | `wificonnect/server.py` | Avoided for Deneb setup | Deneb uses USB `wifi.txt` import and disables/hides stock AP/captive-portal paths where applicable. This is containment/avoidance, not deletion from read-only firmware. |
 
 ### Phase 3: Longer term
@@ -190,9 +214,11 @@ de-Python service-replacement work, not a feature-removal task.
   experimental `deneb-printsvc`; promotion remains blocked by the proof gates in
   `docs/PRINTSVC_EVIDENCE_LEDGER.md`.
 - [x] Digital Factory connector C rewrite implementation/package track exists
-  as `deneb-dfsvc`; live cloud validation remains open in
-  `docs/DF_LIFECYCLE_CLASSIFICATION.md`.
-- [ ] Coordinator C rewrite
+  as `deneb-dfsvc`; representative live cloud workflows are proven in
+  `docs/DF_LIFECYCLE_CLASSIFICATION.md`, while broader soak/current-live
+  verification remains open.
+- [ ] Finish coordinator removal/parity gates. A whole-process C rewrite is no
+  longer the design, but the no-coordinator target matrix is incomplete.
 - [ ] OS/service modernization
 
 ## Live Device Snapshot (2026-05-31, uptime ~1 hour)

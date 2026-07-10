@@ -6,38 +6,51 @@ This repository is private while the project is being organized.
 
 ## Current Status
 
+The authoritative evidence-reconciled status is
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). The latest accepted hardware
+matrix is dated 2026-06-28; live-current verification was unavailable during
+the 2026-07-09 audit. A checked item below means the implementation exists, not
+that its entire user workflow is release-ready.
+
 ### Completed
 - [x] SSH bootstrap package (enables SSH access for development)
 - [x] Branding assets (splash screen, icons)
 - [x] Early-boot framebuffer splash (S11, raw RGB565 to /dev/fb0)
-- [x] Touchscreen UI replacement (LVGL v9 C, replaces Python/Cygnus menu)
+- [x] Touchscreen UI replacement implementation (LVGL v9 C, replaces the active Python/Cygnus menu)
 - [x] Backend IPC integration (ZeroMQ client for coordinator)
 - [x] Client-only network setup via USB `wifi.txt` / `eth.txt`
 - [x] Stock WiFi AP/captive-portal web setup disabled and hidden from the live filesystem view
 - [x] AP-side DHCP/DNS/IPv6 server services disabled for Deneb installs
 - [x] Lightweight local web UI and `deneb-api` runtime bundled into `.deneb` update releases
-- [x] Web status, pause/resume/cancel, manual heat, cooldown, and X/Y/Z jog controls
+- [x] Web status, pause/resume/cancel, manual heat, cooldown, and X/Y/Z jog controls implemented
 - [x] Cura mDNS advertisement (`deneb-mdns`) and local cluster API compatibility surface
 - [x] Deneb Cura network discovery plugin package for mapping `deneb_um2c` to Cura's stock UM2+ Connect profile
 - [x] Cura/cluster upload-start path with pending-job metadata and conflict continue/cancel bridges
-- [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop availability, mismatch continue flow, and abort cleanup/status handling
+- [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop availability, mismatch continue flow, and abort cleanup/status handling in source
 - [x] Experimental native `deneb-printsvc` replacement for the stock Python `marlindriver` print service, packaged with native-only route and no-Python archive gates
 - [x] Live device inspection (process list, memory, IPC ports, macros)
 - [x] Baseline measurements documented
 - [x] Initial on-device Deneb UI resource measurements
 
 ### In Progress
-- [ ] Broader release testing of the new UI on hardware
-- [ ] Web/API validation on hardware, including resource behavior while serving status and controls
+- [ ] Re-test the one-in-flight Pause/Stop mitigation on hardware; the latest physical Pause test failed because motion continued
+- [ ] Fix and prove material load/unload and build-plate-leveling Cancel without the stock Python coordinator
+- [ ] Broader release testing of the new UI on hardware, including update/recovery UX
+- [ ] Web/API hands-on lifecycle and resource validation while serving status, controls, uploads, SSE, and Cura polling
 - [ ] RAM/CPU benchmark comparisons while printing, uploading, updating, and exporting diagnostics
 - [ ] `.deneb` package manifest, rollback, signing, and release-channel hardening
-- [ ] Cura discovery/upload/start compatibility validation against current Cura builds and real printer behavior
-- [ ] Native `deneb-printsvc` promotion gates: LCD/Web hands-on flows, desktop Cura, Digital Factory lifecycle, representative slicer output, and long active-soak memory behavior
+- [ ] Cura failure cleanup and broader compatibility validation beyond the proven 2026-06-14 Cura 5.13 workflow
+- [ ] Native `deneb-printsvc` promotion gates: failed/open LCD and Web flows, broader client coverage, representative slicer output, and long active-soak memory behavior
 
 ### Planned
-- [ ] Generic slicer G-code support
-- [ ] OS/service modernization
-- [ ] Marlin firmware work
+- [ ] Complete Python-free runtime, install, recovery, and AVR-controller flashing paths
+- [ ] Consolidate the web stack by testing direct static serving from `deneb-api`
+- [ ] Build a reproducible current OpenWrt image and safe recovery lane
+- [ ] Produce a fully Deneb-owned firmware image without UltiMaker application files
+- [ ] Port the UltiMaker E2/2+ Connect controller support to a maintained Marlin base
+
+See [docs/PLATFORM_MODERNIZATION_ROADMAP.md](docs/PLATFORM_MODERNIZATION_ROADMAP.md)
+for the staged plan and acceptance gates.
 
 ## Priorities
 
@@ -52,7 +65,7 @@ The stock Python/LVGL menu (33.7 MB VSZ in the stock baseline) has been replaced
 
 ## Web UI
 
-Deneb now includes a lightweight local web runtime: static HTML/CSS/JS served by lighttpd, with `deneb-api` proxying status and controls to the stock coordinator over ZeroMQ. A small `deneb-mdns` service advertises `_ultimaker._tcp.local.` for Cura's local discovery browser. The implemented web surface covers status, current print job, temperatures, pause/resume/cancel/stop, manual heat/cooldown, and guarded X/Y/Z motion controls.
+Deneb now includes a lightweight local web runtime: static HTML/CSS/JS served by lighttpd, with lighttpd proxying API requests to `deneb-api`; `deneb-api` talks directly to native `deneb-printsvc` over ZeroMQ in the native route. A small `deneb-mdns` service advertises `_ultimaker._tcp.local.` for Cura's local discovery browser. The implemented web surface covers status, current print job, temperatures, pause/resume/cancel/stop, manual heat/cooldown, and guarded X/Y/Z motion controls. Implementation does not imply that every Web workflow is hardware-proven.
 
 The API includes UltiMaker REST API v1-shaped print/status/material endpoints and the single-printer `/cluster-api/v1/` endpoints Cura polls for discovery, monitor, upload, and basic print-job actions. Cura support currently requires the Deneb Cura plugin so the advertised `deneb_um2c` machine maps back to Cura's stock `ultimaker2_plus_connect` profile. A 2026-06-14 Cura 5.13 local-network run on package `ff49e86b` proved discovery, upload, material-mismatch Cancel, Continue/start, completion, pause/resume, cancel/abort back to idle, and pending mismatch recovery after UI/API/print-service restarts; package `9cdb5d6f` then proved S5-style progress/time reporting started at 0% with reasonable timer behavior. Broader failure-mode coverage and local-storage safety remain release blockers. See [docs/WEB_UI.md](docs/WEB_UI.md) and [docs/CURA_INTEGRATION.md](docs/CURA_INTEGRATION.md).
 

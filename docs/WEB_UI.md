@@ -2,6 +2,12 @@
 
 A lightweight web interface for the UltiMaker 2+ Connect running Deneb firmware. It provides local status and controls plus UltiMaker REST API v1-shaped and Cura local cluster API compatibility surfaces.
 
+Status reconciliation: 2026-07-09. The implementation is an MVP, not yet a
+first-class or release-complete experience. Dated target proof exists for live
+status/progress and Cura 5.13 workflows, while Web pause/resume/cancel,
+stale-state recovery, resource behavior, upload/storage failure UX, and the
+latest native Pause mitigation remain open.
+
 ## Architecture
 
 ```
@@ -30,6 +36,26 @@ For the Cura-specific discovery, plugin, and upload/start behavior, see
 | lighttpd RSS | < 1 MB |
 | Static assets | < 50 KB |
 | **Total** | **< 4 MB** |
+
+The table above is a target budget. It is not a measured total RSS result. The
+June snapshot recorded BusyBox `ps` process sizes of about 2,080 KB for
+`deneb-api`, 664 KB for lighttpd, and 252 KB for `deneb-mdns`; a current
+RSS/private-memory load matrix is still required.
+
+## First-Class Experience And Lower-Memory Direction
+
+Do not replace the vanilla frontend with a framework. Product work should focus
+on reliable lifecycle state, upload/storage management, errors and recovery,
+authentication/session UX, remote-control audit, diagnostics/update/rollback,
+accessibility, and hardware-backed browser workflows.
+
+The preferred resource experiment is to add bounded static GET/HEAD serving to
+`deneb-api` on TCP port 80, keep streaming upload/SSE behavior, and A/B compare
+it with the current lighttpd proxy. If it passes malformed-request, slow-client,
+concurrency, restart, resource, and workflow tests, remove lighttpd from the
+package. Integrating mDNS into the API event loop is a later optional step and
+must be measurement-driven. See [PROJECT_STATUS.md](PROJECT_STATUS.md) and
+[PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 
 ## Installation
 
@@ -98,8 +124,9 @@ Cura 5.13 polls for monitor, upload, materials, and basic print-job actions.
 Stock Cura does not send Deneb session credentials on these cluster write
 requests, so Deneb accepts cluster upload/control without Deneb auth to preserve
 stock Cura LAN behavior. The UM API v1 write endpoints and Deneb web UI remain
-protected by Open Access or Deneb auth. Validation against current Cura behavior
-on real hardware remains open.
+protected by Open Access or Deneb auth. Cura 5.13 discovery, upload, conflict,
+print, monitor, pause/resume, cancel, and restart-recovery slices have target
+proof; broader versions and failure cleanup remain open.
 
 ## Current Limits
 
@@ -112,8 +139,9 @@ on real hardware remains open.
   need hands-on proof.
 - Upload/start behavior exists in `deneb-api` for both UM API v1 and Cura's
   local cluster API, but local storage behavior, free-space checks,
-  USB-removal-safe printing, and real Cura upload/start testing remain release
-  blockers.
+  USB-removal-safe printing, cleanup on failed/aborted upload, and user-facing
+  upload progress remain release blockers. The basic Cura 5.13 upload/start
+  route itself is proven.
 - Conflict continue/cancel and pending preheat visibility now use native Deneb
   pending-job and print-state helpers instead of embedded Python coordinator
   launchers. Web motion macros, Cura upload start, and pending-job continue now

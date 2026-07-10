@@ -4,6 +4,14 @@ Deneb assumes the stock firmware is already constrained by RAM, CPU, boot time,
 storage, and UI latency. Matching stock is useful during migration, but the
 target state is measurably lighter and easier to reason about.
 
+Status reconciliation: 2026-07-09. The process numbers below are dated
+measurements, not verified-current state. The June 22 idle snapshot still had
+`coordinator.py`; the newer June 28 coordinator-disabled package demonstrated
+selected zero-Python workflows but did not include a replacement full resource
+matrix and exposed failed/incomplete Pause, material, and leveling workflows.
+The printer did not answer SSH during this reconciliation. See
+[PROJECT_STATUS.md](PROJECT_STATUS.md).
+
 ## Current Baseline
 
 Evidence accepted so far:
@@ -13,17 +21,17 @@ Evidence accepted so far:
   size on 2026-06-22, with earlier RSS samples around 1.5-2 MB.
 - Current Deneb whole-system idle sample on 2026-06-22: `-/+ buffers/cache`
   used/free improved from stock 74,712/49,872 KB to 31,816/92,768 KB.
-- Current live Python inventory on 2026-06-22 showed only stock
+- The 2026-06-22 live Python inventory showed only stock
   `coordinator.py` remaining: 27,352 KB VSZ, 22,424 KB RSS. Stock
   `executor.py`, `connector.py`, `print_service.py`, and `compile_all` were
   absent from the live Python process set. Source audit shows this remaining
   coordinator process is a startup/fallback policy issue, not the selected Deneb
   LCD/Web/API/Cura print-status route.
-- Current relevant long-running idle stack sample was 35,472 KB across
+- The 2026-06-22 relevant long-running idle stack sample was 35,472 KB across
   `deneb-printsvc`, `coordinator.py`, `deneb-ui`, `deneb-api`, `lighttpd`, and
   `deneb-mdns`, compared with 115,964 KB VSZ for the original stock Python set.
-  The next resource-reduction target is removing/gating the stock coordinator
-  fallback from this stack after package and workflow proof.
+  The June 28 package disabled the coordinator and proved selected zero-Python
+  routes, but a new complete idle/load resource capture is still required.
 - Deneb UI package lane bundles LVGL, generated i18n fonts, web/API runtime,
   mDNS, native print-service, smoke/audit tools, macros, notices, and manifest
   data.
@@ -78,14 +86,19 @@ Current accepted proof, indexed in
 
 Open promotion gates:
 
-- LCD hands-on workflow.
+- LCD hands-on workflow, including the physically failed Pause path.
 - Web UI hands-on workflow.
-- Desktop Cura client workflow.
-- Digital Factory job lifecycle.
+- Broader desktop Cura failure paths beyond the proven Cura 5.13 workflow.
+- Broader Digital Factory client/soak coverage beyond the proven representative lifecycle.
 - Representative real slicer output.
 - Multi-hour active heat/motion/job stability.
 - Explanation or elimination of the remaining active-soak RSS/private-memory
   staircase.
+
+The next web resource experiment should compare the current
+`lighttpd` + `deneb-api` + `deneb-mdns` stack against direct static serving from
+`deneb-api`, then consider merging mDNS only if the measured saving justifies
+the reduced failure isolation.
 
 ## Current Measurements To Collect Next
 

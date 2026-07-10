@@ -4,6 +4,13 @@ Date: 2026-05-30 baseline, updated 2026-06-22 with current Deneb idle resource m
 Source: Live UltiMaker 2+ Connect (10.10.10.244)
 Firmware: Stock Cygnus baseline plus Deneb UI test builds
 
+Status note (2026-07-09): these are historical dated measurements, not a
+verified-current runtime snapshot. A newer 2026-06-28 package disabled the stock
+coordinator and proved selected zero-Python workflows, but no complete
+replacement resource matrix was captured and that physical run exposed failed
+Pause plus incomplete material/leveling behavior. See
+[PROJECT_STATUS.md](PROJECT_STATUS.md).
+
 ## Hardware
 
 - SoC: MediaTek MT7688 ver:1 eco:2
@@ -23,7 +30,7 @@ Mem:        124584     102556      22028         76       9292      18552
 Swap:            0          0          0
 ```
 
-## Memory (current Deneb idle, no active print)
+## Memory (Deneb idle on 2026-06-22, no active print)
 
 Measured on the same live printer on 2026-06-22 after Deneb native UI/API,
 native print service, lighttpd, mDNS, and remaining stock coordinator had
@@ -56,7 +63,7 @@ Swap:            0          0          0
 | 1124 | Print Service (print_service.py) | 19,120 | 18.7 |
 | **Total** | **All Python** | **115,964** | **113.2** |
 
-## Process Memory (current Deneb idle)
+## Process Memory (Deneb idle on 2026-06-22)
 
 Measured on the same live printer on 2026-06-22. The process size column below
 comes from BusyBox `ps`; use it as a VSZ-style live process-size comparison, not
@@ -143,12 +150,12 @@ samples before release gates should rely on the numbers.
 | Metric | Stock (measured) | Deneb | Reduction |
 |--------|-----------------|-------|-----------|
 | Menu binary/package | N/A (Python app tree) | ~1.8 MiB package | N/A |
-| Menu RAM (VSZ) | 33.7 MB | 2.9 MB current live sample | ~91% |
+| Menu RAM (VSZ) | 33.7 MB | 2.9 MB on 2026-06-22 | ~91% |
 | Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
-| All Python service VSZ | 113.2 MB | 26.7 MB current live Python inventory | 76.4% |
-| Relevant long-running service size | 113.2 MB stock Python set | 34.6 MB current Deneb idle stack | 69.4% |
-| Whole-system used excluding buffers/cache | 74,712 KB | 31,816 KB current live sample | 57.4% |
-| Whole-system free excluding buffers/cache | 49,872 KB | 92,768 KB current live sample | 86.0% more available |
+| All Python service VSZ | 113.2 MB | 26.7 MB on 2026-06-22 | 76.4% |
+| Relevant long-running service size | 113.2 MB stock Python set | 34.6 MB on 2026-06-22 | 69.4% |
+| Whole-system used excluding buffers/cache | 74,712 KB | 31,816 KB on 2026-06-22 | 57.4% |
+| Whole-system free excluding buffers/cache | 49,872 KB | 92,768 KB on 2026-06-22 | 86.0% more available |
 | ZMQ ports | Same | Same | Compatible |
 
 The current Deneb sample is a stronger live idle result than the older

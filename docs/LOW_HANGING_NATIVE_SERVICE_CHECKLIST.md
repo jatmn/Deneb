@@ -367,18 +367,19 @@ proof.
   connector grounded in observed contracts and measurements; do not copy stock
   Python implementation into Deneb native code or guess at cloud protocol
   behavior.
-- Do not mark Digital Factory fully de-Pythoned until on-target remote print and
-  print-job action states are validated with `deneb-dfsvc` and no stock
-  `connector.py` fallback.
+- Representative on-target remote print and print-job action states are now
+  validated with `deneb-dfsvc` and no stock `connector.py` fallback. Do not
+  promote the connector as release-complete until broader client coverage,
+  local-first behavior while stopped, current-live verification, and soak gates
+  pass.
   Disabled/unpaired, pairing-PIN, and connected steady-state are now covered by
   2026-06-13 hardware evidence. Reconnect after controlled cloud interruption
   and touchscreen disconnect are covered by the same run. Printer rename is
   also covered by that run. Remote print download/UFP extraction, material
-  mismatch wait-user-action gating, and Cancel cleanup are covered by the
-  2026-06-13 hardware run. Continue/start after the prompt is reopened as a
-  target-validation blocker: native `deneb-printsvc` now has host-tested
-  stock-derived prepare/startup/`G280` handling. A later package started
-  safely, but exposed a separate active-print UI/Stop parity blocker: the
+  mismatch wait-user-action gating, Cancel/Continue, completion, and abort are
+  covered by later June target runs. Earlier Continue/start and Stop failures
+  remain useful rejected evidence: a later package started safely but exposed
+  a separate active-print UI/Stop parity blocker, where the
   Status screen had no Pause button, and Stop returned idle without the
   expected stock park/home routine. Package `68af57c` added active-print
   Pause/Resume controls and stock-derived Stop cleanup; supervised target

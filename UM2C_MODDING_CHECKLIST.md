@@ -1,13 +1,21 @@
 # Deneb UM2C Modding Checklist
 
-Date: 2026-06-11
+Date: 2026-06-11; evidence reconciliation: 2026-07-09
 
 This checklist tracks current engineering status, release blockers, and
 publication-risk guardrails. It is not legal advice. Completed items should stay
 checked only when there is repo evidence or accepted hardware evidence.
 
+Project-level truth is maintained in
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). A checked item here means only
+that the exact scoped statement is supported. It does not mean the feature is
+release-ready. Use the evidence labels **SOURCE**, **HOST**, **TARGET**,
+**FAILED**, **STALE**, and **UNVERIFIED-CURRENT** from that document when adding
+or reconciling status.
+
 Authoritative status companions:
 
+- Project status: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
 - Current resource gates: [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md)
 - Native print-service evidence: [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md)
 - Native print-service integration audit: [docs/PRINTSVC_INTEGRATION_AUDIT.md](docs/PRINTSVC_INTEGRATION_AUDIT.md)
@@ -17,18 +25,22 @@ Authoritative status companions:
 
 ## Current Open Focus
 
-1. Prove LCD and Web UI hands-on workflows against the native print service:
-   queued print, start, pause/resume, abort, completion, stale-state recovery.
-2. Close broader Cura failure-mode cleanup after the proven Cura 5.13
+1. Re-test the current one-in-flight native stream mitigation on hardware. The
+   2026-06-28 physical Pause test failed because motion continued after the UI
+   changed state; host tests for commit `afbea8c` do not close that failure.
+2. Fix and target-prove material load/unload and build-plate-leveling Cancel
+   with the stock coordinator disabled.
+3. Prove Web UI hands-on pause/resume/abort/completion and stale-state recovery.
+4. Close broader Cura failure-mode cleanup after the proven Cura 5.13
    local-network workflow and proven S5-style progress/time estimator.
-3. Resolve or explain the native print-service active-soak RSS/private-memory
+5. Resolve or explain the native print-service active-soak RSS/private-memory
    staircase with longer heat/motion/job loops.
-4. Finish `.deneb` manifest, rollback, signing, release-channel, and restore
+6. Replace the Python AVR/mainboard programmer before claiming Python can be
+   uninstalled from the firmware image.
+7. Finish `.deneb` manifest, rollback, signing, release-channel, and restore
    UX before calling any package stable.
-5. Keep reducing stock Python backend dependency without copying vendor code or
-   overclaiming parity. Current biggest remaining stock Python runtime is
-   `coordinator.py`; native print-service and Digital Factory connector
-   implementation/package tracks exist but still need promotion proof.
+8. Build the reproducible current-OpenWrt and independent-image lane described
+   in `docs/PLATFORM_MODERNIZATION_ROADMAP.md`.
 
 ## 1. Project Boundary And Legal Guardrails
 
@@ -188,14 +200,19 @@ long-soak proof.
   upload/start/abort, completion flow drain, native driver RSS reduction,
   diagnostics-log mitigation, short repeated-job stability, and strict
   stock/native resource comparison for the current bounded evidence set.
-- [ ] Prove LCD hands-on workflow against native service.
+- [ ] Prove LCD hands-on workflow against native service. Some start/abort and
+  completion slices pass, but the latest physical Pause test failed and
+  material/leveling flows remain incomplete.
 - [ ] Prove Web UI hands-on workflow against native service. Live status,
   progress, and time-left display are proven on package `9cdb5d6f`; controls
   and stale-state recovery remain open.
 - [ ] Close remaining desktop Cura client gaps after the proven Cura 5.13
   local-network workflow: broader failure modes.
-- [ ] Prove Digital Factory lifecycle behavior with the native `deneb-dfsvc`
-  connector, not just bridge status or package audits.
+- [x] Prove the scoped Digital Factory lifecycle and representative remote-print
+  behavior with native `deneb-dfsvc` for pairing, reconnect, disconnect,
+  rename, conflict Continue/Cancel, completion, and abort without stock
+  `connector.py`. Broader client and soak proof remains open; this is not a
+  full release-readiness claim.
 - [ ] Prove broader real slicer output for completion, pause/resume, and abort.
 - [ ] Complete multi-hour active heat/motion/job soak with acceptable memory and
   log behavior.
