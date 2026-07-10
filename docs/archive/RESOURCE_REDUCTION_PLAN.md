@@ -1,5 +1,8 @@
 # Resource Reduction Plan
 
+> **Archived:** This is retained for historical traceability. It is not the
+> current project status or work queue. See [../PROJECT_STATUS.md](../PROJECT_STATUS.md).
+
 Deneb assumes the stock firmware is already constrained by RAM, CPU, boot time,
 storage, and UI latency. Matching stock is useful during migration, but the
 target state is measurably lighter and easier to reason about.
@@ -10,7 +13,7 @@ measurements, not verified-current state. The June 22 idle snapshot still had
 selected zero-Python workflows but did not include a replacement full resource
 matrix and exposed failed/incomplete Pause, material, and leveling workflows.
 The printer did not answer SSH during this reconciliation. See
-[PROJECT_STATUS.md](PROJECT_STATUS.md).
+[PROJECT_STATUS.md](../PROJECT_STATUS.md).
 
 ## Current Baseline
 
@@ -71,7 +74,7 @@ It replaces the stock Python `print_service.py` path in experimental packages
 while preserving the stock ZMQ command/status contract for clients.
 
 Current accepted proof, indexed in
-[PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md):
+[PRINTSVC_EVIDENCE_LEDGER.md](../PRINTSVC_EVIDENCE_LEDGER.md):
 
 - Native route ownership and no stock Python driver process in native packages.
 - Package and installer audits that reject Python driver artifacts.
@@ -110,7 +113,7 @@ when the workflows it touches have current inventory/resource evidence.
 | --- | --- |
 | Boot to ready | Time to UI/API readiness, service order, failures/restarts |
 | Idle | Process RSS/private memory, CPU, fd count, thread count, sockets, logs |
-| Web/API polling | API/lighttpd CPU, socket churn, log growth, memory stability |
+| Web/API polling | 2026-07-10: three SSE clients plus 120 requests passed with flat API RSS; four SSE clients starved REST and retained seven descriptors until reboot. Fix connection isolation/cleanup, then collect CPU and longer-duration evidence. |
 | Cura discovery and monitor | mDNS cost, cluster polling behavior, pending-job state |
 | Upload/start | RAM while receiving multipart data, spool writes, cleanup on failure |
 | Active print | Driver RSS/private memory, throughput, flow-control debt, CPU interval |

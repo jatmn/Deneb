@@ -9,8 +9,8 @@ Printer hostname: Ultimaker-2C-9CF8
 > **Historical-audit warning:** hardware/process tables below are dated
 > snapshots, not current runtime truth. The development printer did not answer
 > SSH during the 2026-07-09 reconciliation. Use
-> [PROJECT_STATUS.md](PROJECT_STATUS.md) for current project status and
-> [COORDINATOR_PARITY_COMPLETION_PLAN.md](COORDINATOR_PARITY_COMPLETION_PLAN.md)
+> [PROJECT_STATUS.md](../PROJECT_STATUS.md) for current project status and
+> [COORDINATOR_PARITY_COMPLETION_PLAN.md](../archive/COORDINATOR_PARITY_COMPLETION_PLAN.md)
 > for the newer 2026-06-28 no-coordinator physical matrix.
 
 ## 2026-07-09 Reconciliation
@@ -28,7 +28,7 @@ Printer hostname: Ultimaker-2C-9CF8
   printer-specific current image.
 - UltiMaker's public Marlin repository contains an `Ultimaker2+Connect` branch,
   but current upstream Marlin does not contain E2/2+ Connect board/protocol
-  support. See [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
+  support. See [PLATFORM_MODERNIZATION_ROADMAP.md](../PLATFORM_MODERNIZATION_ROADMAP.md).
 
 ## Hardware Profile
 
@@ -215,7 +215,7 @@ de-Python service-replacement work, not a feature-removal task.
   `docs/PRINTSVC_EVIDENCE_LEDGER.md`.
 - [x] Digital Factory connector C rewrite implementation/package track exists
   as `deneb-dfsvc`; representative live cloud workflows are proven in
-  `docs/DF_LIFECYCLE_CLASSIFICATION.md`, while broader soak/current-live
+  `docs/evidence/DF_LIFECYCLE_CLASSIFICATION.md`, while broader soak/current-live
   verification remains open.
 - [ ] Finish coordinator removal/parity gates. A whole-process C rewrite is no
   longer the design, but the no-coordinator target matrix is incomplete.
@@ -226,7 +226,7 @@ de-Python service-replacement work, not a feature-removal task.
 The live snapshots below are historical baseline evidence. They predate the
 native print-service and native Digital Factory connector package paths, so they
 must not be read as current Deneb process ownership. Use
-`docs/PRINTSVC_EVIDENCE_LEDGER.md`, `docs/DF_LIFECYCLE_CLASSIFICATION.md`, and
+`docs/PRINTSVC_EVIDENCE_LEDGER.md`, `docs/evidence/DF_LIFECYCLE_CLASSIFICATION.md`, and
 fresh target samples for current runtime claims.
 
 Access via: `tools/deneb-ssh.py '<command>'` (uses paramiko, handles ssh-rsa)
@@ -257,7 +257,7 @@ installer because Deneb networking is client-only. IPv4 client networking is
 handled by `netifd` and `udhcpc`; the stale `dhcp.wlan` AP DHCP scope is
 removed. The `dnsmasq` and `odhcpd` binaries remain in the read-only base image.
 WiFi setup is handled by USB `wifi.txt` import; see
-[WiFi setup via USB](WIFI_SETUP.md).
+[WiFi setup via USB](../WIFI_SETUP.md).
 
 Total remaining Python RSS: ~37.9 MB. The stock-service table above uses VSZ,
 so compare VSZ-to-VSZ or RSS-to-RSS only.
@@ -349,8 +349,8 @@ All `__pycache__` directories are also removed.
 The prune boundary is verified at build time by
 `deneb-stock-menu-prune-selftest` (host fixture) and the retained constant
 dependency map is checked by `deneb-stock-menu-import-check`. See
-[`tools/deneb-stock-menu-prune-selftest.sh`](../tools/deneb-stock-menu-prune-selftest.sh) and
-[`tools/deneb-stock-menu-import-check.sh`](../tools/deneb-stock-menu-import-check.sh).
+[`tools/deneb-stock-menu-prune-selftest.sh`](../../tools/deneb-stock-menu-prune-selftest.sh) and
+[`tools/deneb-stock-menu-import-check.sh`](../../tools/deneb-stock-menu-import-check.sh).
 
 ### SSH Access Helper
 

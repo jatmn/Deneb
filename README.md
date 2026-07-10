@@ -6,58 +6,22 @@ This repository is private while the project is being organized.
 
 ## Current Status
 
-The authoritative evidence-reconciled status is
-[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). The latest accepted hardware
-matrix is dated 2026-06-28; live-current verification was unavailable during
-the 2026-07-09 audit. A checked item below means the implementation exists, not
-that its entire user workflow is release-ready.
+Deneb is an experimental firmware modification, not yet a stable replacement
+firmware or independent image.
 
-### Completed
-- [x] SSH bootstrap package (enables SSH access for development)
-- [x] Branding assets (splash screen, icons)
-- [x] Early-boot framebuffer splash (S11, raw RGB565 to /dev/fb0)
-- [x] Touchscreen UI replacement implementation (LVGL v9 C, replaces the active Python/Cygnus menu)
-- [x] Backend IPC integration (ZeroMQ client for coordinator)
-- [x] Client-only network setup via USB `wifi.txt` / `eth.txt`
-- [x] Stock WiFi AP/captive-portal web setup disabled and hidden from the live filesystem view
-- [x] AP-side DHCP/DNS/IPv6 server services disabled for Deneb installs
-- [x] Lightweight local web UI and `deneb-api` runtime bundled into `.deneb` update releases
-- [x] Web status, pause/resume/cancel, manual heat, cooldown, and X/Y/Z jog controls implemented
-- [x] Cura mDNS advertisement (`deneb-mdns`) and local cluster API compatibility surface
-- [x] Deneb Cura network discovery plugin package for mapping `deneb_um2c` to Cura's stock UM2+ Connect profile
-- [x] Cura/cluster upload-start path with pending-job metadata and conflict continue/cancel bridges
-- [x] Touchscreen print-state fixes for boot idle Stop state, preheat Stop availability, mismatch continue flow, and abort cleanup/status handling in source
-- [x] Experimental native `deneb-printsvc` replacement for the stock Python `marlindriver` print service, packaged with native-only route and no-Python archive gates
-- [x] Live device inspection (process list, memory, IPC ports, macros)
-- [x] Baseline measurements documented
-- [x] Initial on-device Deneb UI resource measurements
+- Native touchscreen, print-service, Digital Factory, and Web/API implementations
+  exist and have partial target proof.
+- The printer currently runs older package `1a4a4afe-dirty`; later source changes
+  are not target-proven because the local WSL build environment is unavailable.
+- Pause safety, material and leveling workflows, diagnostics, Web connection
+  cleanup, long-soak behavior, and complete Python removal remain open.
+- A current OpenWrt base, independent Deneb image, and modern Marlin port are
+  planned work, not completed features.
 
-### In Progress
-- [ ] Re-test the one-in-flight Pause/Stop mitigation on hardware; the latest physical Pause test failed because motion continued
-- [ ] Fix and prove material load/unload and build-plate-leveling Cancel without the stock Python coordinator
-- [ ] Broader release testing of the new UI on hardware, including update/recovery UX
-- [ ] Web/API hands-on lifecycle and resource validation while serving status, controls, uploads, SSE, and Cura polling
-- [ ] RAM/CPU benchmark comparisons while printing, uploading, updating, and exporting diagnostics
-- [ ] `.deneb` package manifest, rollback, signing, and release-channel hardening
-- [ ] Cura failure cleanup and broader compatibility validation beyond the proven 2026-06-14 Cura 5.13 workflow
-- [ ] Native `deneb-printsvc` promotion gates: failed/open LCD and Web flows, broader client coverage, representative slicer output, and long active-soak memory behavior
-
-### Planned
-- [ ] Complete Python-free runtime, install, recovery, and AVR-controller flashing paths
-- [ ] Consolidate the web stack by testing direct static serving from `deneb-api`
-- [ ] Build a reproducible current OpenWrt image and safe recovery lane
-- [ ] Produce a fully Deneb-owned firmware image without UltiMaker application files
-- [ ] Port the UltiMaker E2/2+ Connect controller support to a maintained Marlin base
-
-See [docs/PLATFORM_MODERNIZATION_ROADMAP.md](docs/PLATFORM_MODERNIZATION_ROADMAP.md)
-for the staged plan and acceptance gates.
-
-## Priorities
-
-1. Keep the public/project repo legally clean.
-2. Keep the touchscreen and web UI replacements hardware-tested and resource-measured.
-3. Close package rollback/signing gaps before calling `.deneb` releases stable.
-4. Expand Cura, local-storage printing, and slicer compatibility only when the hardware behavior can be tested safely.
+Read [the documentation index](docs/README.md) first, then use
+[the project dashboard](docs/PROJECT_STATUS.md) for the current done / in
+progress / planned / blocked / broken view. Do not infer completion from an old
+checklist, audit, or dated evidence file.
 
 ## Touchscreen UI
 
@@ -71,31 +35,44 @@ The API includes UltiMaker REST API v1-shaped print/status/material endpoints an
 
 ## Optimization Notes
 
-Deneb's current optimization work is focused on removing dormant stock UI and setup paths while moving print control onto original native services. The `printsvc/` tree now provides the experimental native `deneb-printsvc` path for the stock Python `marlindriver` service. Bounded hardware evidence now covers native route ownership, generated heat/preheat and abort slices, pause/resume, completion, short repeated-job stability, and a strict bounded stock/native resource comparison. Remaining release blockers are the user-facing LCD/Web/Cura/Digital Factory workflows, representative slicer-output proof, and long active-soak memory behavior.
+Deneb's native services substantially reduce the active Python footprint, but
+this does not mean Python can be removed from the base image. The legacy
+squashfs, bootstrap/rollback paths, and AVR programming/recovery still contain
+or require Python. Resource and de-Python work must be judged by current target
+proof and full recovery coverage, not package contents alone.
 
-- The stock touchscreen UI no longer runs; Deneb starts the native LVGL UI instead.
-- The installer prunes the dormant stock Python touchscreen files after a successful Deneb UI smoke test.
-- WiFi setup is client-only through USB import. The old AP/captive-portal flow, Tornado `wificonnect` server, nodogsplash htdocs, and stock React WiFi setup assets are hidden from the live filesystem view.
-- AP-side DHCP/DNS/IPv6 server services (`dnsmasq` and `odhcpd`) are stopped and disabled; the stock binaries remain in the read-only base image, but they no longer run.
-- `.deneb` packages do not rebuild the vendor squashfs/rootfs. Cleanup hides stock base-image files with overlayfs whiteouts where needed, but reclaiming read-only base-image flash is intentionally outside the clean repository boundary.
+The next Web resource experiment is direct static serving from `deneb-api`, but
+lighttpd must remain available for comparison and rollback until concurrency,
+upload, SSE, malformed-client, restart, and memory tests pass. See the
+[project dashboard](docs/PROJECT_STATUS.md) and
+[modernization roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md).
 
-## Device Setup Docs
+## Documentation
 
-- [WiFi setup via USB](docs/WIFI_SETUP.md): configure WiFi by placing `wifi.txt` on a USB drive and importing it from Settings > Network.
-- [Ethernet setup via USB](docs/ETH_SETUP.md): configure static Ethernet or reset Ethernet to DHCP with `eth.txt`.
-- [Web UI](docs/WEB_UI.md): local web status and controls plus the current API compatibility surface.
-- [Cura integration](docs/CURA_INTEGRATION.md): mDNS, Cura plugin, cluster API, upload/start behavior, and remaining validation blockers.
-- [Backend IPC protocol](docs/BACKEND_IPC_PROTOCOL.md): coordinator command/status protocol used by the native UI.
-- [Stock UI coverage](docs/STOCK_UI_COVERAGE.md): current stock-vs-Deneb touchscreen feature parity.
-- [Resource reduction plan](docs/RESOURCE_REDUCTION_PLAN.md): RAM, CPU, and release guardrails.
-- [Native print service](printsvc/README.md): build, Valgrind, package, and hardware smoke validation.
+Start with [docs/README.md](docs/README.md). Common entry points are:
 
+- [Current project status](docs/PROJECT_STATUS.md)
+- [Modernization roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md)
+- [WSL build environment](docs/WSL_BUILD_ENVIRONMENT.md)
+- [WiFi setup via USB](docs/WIFI_SETUP.md)
+- [Ethernet setup via USB](docs/ETH_SETUP.md)
+- [Web UI and API](docs/WEB_UI.md)
+- [Cura integration](docs/CURA_INTEGRATION.md)
+- [Backend IPC protocol](docs/BACKEND_IPC_PROTOCOL.md)
+
+Historical investigations and completed plans are indexed under `docs/evidence/`
+and `docs/archive/`; they are not current status pages.
 ## Build And Verification
 
 Deneb C targets are Linux/POSIX-oriented. Do not use Visual Studio/MSVC CMake
 generators for `ui` or `web`; they are intentionally unsupported. From Windows,
 run host verification through WSL so the same POSIX headers and toolchain shape
 are used as the target-side code expects.
+
+Fresh workstations must complete the root-default Debian, MIPS musl toolchain,
+mbedTLS, ZeroMQ, and lighttpd bootstrap documented in
+[docs/WSL_BUILD_ENVIRONMENT.md](docs/WSL_BUILD_ENVIRONMENT.md). A registered
+Debian distribution by itself is not a complete Deneb build environment.
 
 ```powershell
 # Web/API host-stub verification

@@ -1,178 +1,131 @@
 # Deneb Project Status
 
-Last reconciled: 2026-07-09
+Last reconciled: 2026-07-10
 
-Repository: `main` at `afbea8c`
+This is the only human-maintained dashboard for current project state. For
+navigation and documentation rules, see [README.md](README.md). Detailed test
+history belongs in [evidence/](evidence/README.md), and future sequencing belongs
+in [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 
-Live-current verification: **unavailable**; the development printer at the
-documented address did not answer SSH on 2026-07-09. The newest accepted target
-evidence in this repository is dated 2026-06-28.
+## Current source and target boundary
 
-This is the authoritative project-level status summary. Detailed evidence stays
-in the component audits, but a component must not be called complete here merely
-because source exists, a host test passes, or an installer contains it.
+- Local branch: `main`, one documentation commit ahead of `origin/main`, with
+  additional uncommitted documentation cleanup.
+- Source baseline reviewed: `afbea8c`; local documentation commit: `f76b8e5`.
+- Printer package observed on 2026-07-10: `1a4a4afe-dirty`.
+- Current source was not deployed because this workstation's WSL service fails
+  with `Wsl/EnumerateDistros/Service/E_ACCESSDENIED`.
+- The 2026-07-10 automation results therefore prove only the older installed
+  package. The 2026-06-28 hands-on run remains the newest UI workflow evidence.
 
-## Evidence Vocabulary
+## Status vocabulary
 
 | Status | Meaning |
-|---|---|
-| **SOURCE** | Code or packaging exists. No runtime claim is implied. |
-| **HOST** | Host tests/static/package gates passed. Hardware behavior is not implied. |
-| **TARGET** | A dated, named workflow was observed on the printer with supporting state/process/log evidence. |
-| **FAILED** | Target evidence demonstrated a defect or unsafe/incomplete behavior. |
-| **STALE** | The statement was once supported but has been superseded by newer evidence. |
-| **UNVERIFIED-CURRENT** | No live check was possible during the latest reconciliation. |
+| --- | --- |
+| **SOURCE** | Implementation or packaging exists; no runtime claim. |
+| **HOST** | Host tests or static/package audits passed; no hardware claim. |
+| **TARGET** | The named workflow passed on the printer on a recorded package/date. |
+| **FAILED** | Target evidence demonstrated incorrect or unsafe behavior. |
+| **BLOCKED** | Work cannot proceed safely until a stated prerequisite is resolved. |
+| **PLANNED** | Accepted future work with no completion claim. |
 
-Checkboxes elsewhere in the repository apply only to the exact sentence beside
-the checkbox. They are not release-readiness indicators.
+## Objectives at a glance
 
-## Executive Status
+| Objective | Current state | What prevents completion |
+| --- | --- | --- |
+| Native touchscreen | **SOURCE + partial TARGET** | Material workflow, leveling Cancel, update UX, diagnostics, and Pause behavior are not release-ready. |
+| Native print service | **SOURCE + HOST + partial TARGET; experimental** | Completion and abort have bounded proof. Latest hands-on Pause failed; the source mitigation is not deployed or target-proven. Long active-soak memory behavior remains open. |
+| Remove stock coordinator | **SOURCE + partial TARGET** | Selected workflows ran without Python, but material, leveling, Pause/Resume, diagnostics, and broader recovery paths remain incomplete. |
+| Fully remove Python from the firmware | **NOT COMPLETE** | The read-only base image still contains Python; bootstrap patching, rollback, and AVR programming/recovery still depend on it. |
+| First-class Web UI | **MVP + partial TARGET** | Control recovery, storage/upload UX, security, diagnostics/update UX, accessibility, and connection cleanup remain incomplete. Four SSE clients currently starve REST and leak descriptors until reboot. |
+| Current distro and dependencies | **PLANNED** | No reproducible printer-specific current OpenWrt image, device-tree/kernel port, safe test boot, or rollback lane exists yet. |
+| Fully Deneb-owned firmware image | **EARLY / PLANNED** | Display/touch, MCU control and recovery, storage, factory data, update, and recovery must be owned and proven on a clean image build. |
+| Modern Marlin controller firmware | **RESEARCHED; PORT NOT STARTED** | UltiMaker's old Connect branch is available, but modern Marlin lacks the Connect board/protocol port and no recoverable test build exists. |
 
-| Objective | Honest status | Evidence and blocker |
-|---|---|---|
-| Native touchscreen | **SOURCE + TARGET, not release-complete** | Native LVGL UI runs with a much smaller measured footprint. The 2026-06-28 no-coordinator matrix still found update-screen UX bugs, incomplete material workflow, failed leveling cancel, and failed pause behavior. |
-| Native print service | **SOURCE + HOST + partial TARGET; experimental** | Native route, completion, abort, Cura, and Digital Factory slices have target evidence. The latest physical pause test failed because motion continued after Pause; commit `afbea8c` bounds job streaming to one in-flight command but has host proof only. |
-| Native Digital Factory | **SOURCE + partial TARGET** | Pairing, connected state, reconnect, disconnect, rename, remote print, conflict handling, completion, and abort have dated no-`connector.py` evidence. Broader soak and current-live verification remain open. |
-| Stock coordinator removal | **SOURCE + partial TARGET; not closed** | The installer now uses a disabled shim and selected 2026-06-28 workflows ran with no live Python. Material, leveling, pause/resume, diagnostics, reboot-after-job, and broader client paths remain incomplete or failed. |
-| Fully de-Python firmware | **NOT COMPLETE** | Deneb release archives reject Python, but the stock base image still contains Python, rollback can restore Python coordinator services, the bootstrap installer executes Python to patch stock files, and the AVR/mainboard flasher is Python. Python cannot yet be uninstalled safely. |
-| Web UI first-class experience | **MVP / partial TARGET** | Status/progress and Cura-facing APIs have useful target proof. Web pause/resume/cancel recovery, upload failure UX, storage management, diagnostics/update UX, accessibility, authorization/audit, and load/resource measurements remain open. |
-| Current distro/dependencies | **NOT STARTED AS A PRODUCT IMAGE** | Stock base is OpenWrt 18.06 snapshot with Linux 4.14.81 and 2018-era packages. Current OpenWrt supports Omega2+, but Deneb has no reproducible OpenWrt image definition, printer-specific device tree/kernel port, or safe boot/recovery lane yet. |
-| Independent Deneb firmware image | **FEASIBLE, EARLY** | Most application services now have original native implementations, but the repository has no clean base-image build. Printer display/touch, MCU UART/reset/flashing, storage layout, update/recovery, and factory-data preservation must be ported and proven. |
-| Modern Marlin on controller | **RESEARCH COMPLETE ENOUGH TO START A PORT; no build yet** | UltiMaker published an `Ultimaker2+Connect` branch with a 2021 head based on old UltiMaker Marlin. Current Marlin has UM2/UM2+ examples but no E2/2+ Connect board support or UltiMaker host serial protocol. |
+## Done and currently supported
 
-## Checklist Accuracy Audit
+These claims are intentionally narrow:
 
-The checklists are useful implementation inventories, but they have not been a
-reliable project status dashboard. The main failure modes were:
+- Deneb update archives have static gates rejecting Python source/runtime
+  artifacts in the package.
+- Native implementations exist for the touchscreen, print service, Digital
+  Factory connector, Web/API path, and selected coordinator-owned print logic.
+- A clean 2026-07-10 reboot reached idle with one API process, an empty queue,
+  zero heater targets, and no Python executable process.
+- Bounded homing, completion, active abort, low-temperature heat, and cluster
+  upload/start/abort passed on installed package `1a4a4afe-dirty` without limit,
+  endstop, thermal, or controller alerts.
+- All five installed native fixture/static self-test suites passed.
+- Cura 5.13 discovery and representative local lifecycle paths have older dated
+  target evidence; broader failure handling remains open.
+- WiFi and Ethernet USB configuration, the native UI, and the lightweight
+  vanilla Web frontend are implemented.
 
-1. **Implementation was reported as completion.** Examples include the
-   touchscreen replacement and native print service. Both exist and run, but the
-   newest physical matrix still contains failed safety/UX workflows.
-2. **Older open items were not closed after later evidence.** Digital Factory
-   and Cura gained substantial June target evidence while several top-level
-   documents still described them as unproven.
-3. **Older success text was not reopened after newer failures.** The latest
-   touchscreen Pause test supersedes earlier bounded pause/resume proof for the
-   broader release claim.
-4. **Historical process snapshots were described as current.** The June 22
-   snapshot had `coordinator.py` running; the June 28 package deliberately used
-   a disabled coordinator shim and demonstrated zero-Python slices. Neither is a
-   verified 2026-07-09 live state.
-5. **The de-Python scope meant “no Python in a Deneb update archive,” not “Python
-   can be removed from the firmware.”** Those are different acceptance gates.
+These successes do not make the complete firmware, UI, or print service stable.
 
-The authoritative ordering is now:
+## In progress
 
-1. This file for project-level truth.
-2. `COORDINATOR_PARITY_COMPLETION_PLAN.md` for the latest no-coordinator
-   physical matrix.
-3. `PRINTSVC_EVIDENCE_LEDGER.md` and `DF_LIFECYCLE_CLASSIFICATION.md` for dated
-   component evidence.
-4. `UM2C_MODDING_CHECKLIST.md` for task inventory.
-5. `FIRMWARE_AUDIT.md` and `BASELINE_MEASUREMENTS.md` for historical platform
-   facts and dated measurements.
+| Priority | Work | Current position | Exit condition |
+| ---: | --- | --- | --- |
+| 1 | Restore a reproducible WSL build lane | Setup requirements are documented; local WSL enumeration is broken | Fresh environment builds and audits a current MIPS package reproducibly |
+| 2 | Make Pause/Resume safe and bounded | 2026-06-28 Pause allowed motion to continue; installed policy also commands Z205, outside the authorized test envelope; `afbea8c` mitigation has host proof only | Current package passes hands-on Pause/Resume/Stop with bounded motion and zero new alerts |
+| 3 | Finish no-coordinator workflow parity | Core route works; material, leveling Cancel, diagnostics, and recovery gaps remain | Full workflow matrix passes with strict no-Python runtime inventory |
+| 4 | Fix Web/API concurrency and lifecycle ownership | Three SSE clients plus polling passed; four SSE clients starved REST and retained seven descriptors; service restart can create two API processes | Multiple clients, reconnects, service restarts, uploads, and long polling return to baseline without starvation or leaked descriptors |
+| 5 | Explain print-service soak memory behavior | Short repeated jobs pass; longer runs showed a resident/private-memory staircase | Multi-hour representative run plateaus or the growth source is fixed |
 
-## De-Python Gap
+## Known defects and safety blocks
 
-### What is genuinely complete
+| Severity | Defect | Current evidence / required response |
+| --- | --- | --- |
+| **Safety blocker** | Pause can change software state while motion continues | Failed 2026-06-28 hands-on run; do not promote until a current build passes physical proof |
+| **Safety blocker** | Installed Pause policy commands Z205 | Outside the authorized 0..190 mm automation envelope; revise policy before automated retest |
+| **Release blocker** | Material load/change does not prove a complete load/unload workflow | Fix state, heat presentation, extrusion sequencing, and hands-on completion |
+| **Release blocker** | Leveling Cancel did not rehome/reset the wizard | Implement deterministic cancel cleanup and target-test it |
+| **Release blocker** | Four SSE clients can starve REST and retain descriptors/sockets | Isolate capacity, close abandoned proxy/API sockets, and add regression coverage |
+| **Release blocker** | API init ownership can create duplicate processes | Establish one service owner and test restart/fallback behavior |
+| **Incorrect state** | Manual heat reports the printer as printing | Separate heater activity from job activity in shared status classification |
+| **Missing product function** | Diagnostics export is not installed | Implement bounded, redacted diagnostics generation/download and resource-test it |
+| **Incorrect identity** | Printer API reports missing/invalid firmware, machine, and PCB identity | Populate identity from authoritative device/config sources |
+| **Test tooling defect** | Runtime inventory can false-positive on shell command text containing `python` | Classify by `/proc/<pid>/exe` and structured argv instead of substring alone |
+| **UX blocker** | Update screen overflowed, appeared stuck, and lacked a dedicated updating state | Redesign and prove update/reboot/rollback presentation |
 
-- The production `.deneb` package builder rejects `.py`, Python-named files,
-  the stock Python Marlin driver, and Python Digital Factory fallback artifacts.
-- Native replacements exist for the touchscreen, print service, Digital Factory
-  connector, web/API path, and the selected coordinator-owned print workflows.
-- Dated target samples show some complete print and cloud workflows with no live
-  Python process.
+No unattended physical test may exceed the documented safety contract: home
+before motion, stop on any limit/endstop alert, keep commanded X/Y/Z within the
+approved test envelope, and obey heater caps.
 
-### Why Python cannot be removed yet
+## Planned sequence after current blockers
 
-| Dependency | Current role | Required replacement/decision |
-|---|---|---|
-| `packages/ssh-bootstrap/update.sh` embedded Python | Patches stock Cygnus update/menu files during bootstrap | Retire this stock-patching bootstrap for a Deneb image, or replace it with deterministic shell/native transforms for the legacy install lane. |
-| `/home/atmel_programmer` Python package | Programs and recovers the AVR motion controller via `/dev/ttyS1`, GPIO reset, bootloader, and software SPI | Build a small native AVR/STK500v2/ISP utility and prove bootloader and application recovery before deleting Python. |
-| Stock coordinator rollback | Development recovery path can restore `coordinator.py` | Finish the no-coordinator matrix and replace Python rollback with image/slot rollback or explicitly retain Python in legacy-mod images. |
-| Stock Cygnus files and Python runtime in squashfs | Present even when inactive | Rebuild a Deneb-owned OpenWrt image without those packages; overlay whiteouts cannot reclaim or remove the read-only lower layer. |
-| Unfinished native workflows | Material load/unload, leveling cancel, bounded Pause/Stop, diagnostics and reboot cases | Fix and target-prove each workflow with runtime inventory showing no Python. |
+1. Build and deploy current source through the documented WSL environment.
+2. Close Pause/Stop, material, leveling Cancel, diagnostics, and Web connection
+   cleanup on the legacy image.
+3. Replace the Python AVR/mainboard programming and recovery utility with a
+   native, recoverable implementation.
+4. Prototype direct static serving from `deneb-api`; remove lighttpd only after
+   resource, malformed-client, upload, SSE, restart, and rollback comparisons.
+5. Build a reproducible current OpenWrt image and prove non-destructive boot and
+   recovery on spare hardware.
+6. Produce a Deneb-owned image without UltiMaker application files while
+   preserving required factory data and controller recovery.
+7. Port Connect controller support and host protocol behavior onto maintained
+   Marlin, with a known-good hex and bootloader recovery available first.
 
-The extracted stock image contains at least about **43.2 MiB uncompressed** of
-Python runtime/library and Python application source by the current local
-inventory: 42,116,772 bytes under `/usr/lib/python3.6`, 2,438,855 bytes for
-`libpython3.6.so.1.0`, 727,634 bytes of Cygnus `.py`, and 52,626 bytes of AVR
-programmer `.py`. This is a lower-bound inventory, not the expected compressed
-flash saving.
+Detailed phase gates are in
+[PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 
-### De-Python acceptance gate
+## Evidence pointers
 
-Do not state that Deneb is fully de-Pythoned until all are true:
+- Latest bounded target run:
+  [evidence/TARGET_AUTOMATION_2026-07-10.md](evidence/TARGET_AUTOMATION_2026-07-10.md)
+- Current print-service acceptance ledger:
+  [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md)
+- Current shared-ownership audit:
+  [PRINTSVC_INTEGRATION_AUDIT.md](PRINTSVC_INTEGRATION_AUDIT.md)
+- Historical stock/platform investigation:
+  [evidence/FIRMWARE_AUDIT.md](evidence/FIRMWARE_AUDIT.md)
+- Historical resource measurements:
+  [evidence/BASELINE_MEASUREMENTS.md](evidence/BASELINE_MEASUREMENTS.md)
+- Archived no-coordinator execution journal:
+  [archive/COORDINATOR_PARITY_COMPLETION_PLAN.md](archive/COORDINATOR_PARITY_COMPLETION_PLAN.md)
 
-- No Python process appears across the full physical workflow matrix.
-- No Deneb install, update, recovery, factory-reset, or controller-flash path
-  invokes Python.
-- A Python-free image boots, prints, updates, rolls back, and recovers the AVR
-  controller on spare hardware.
-- Image/package audits fail on the interpreter, `libpython`, site-packages,
-  `.py`, and `.pyc` outside explicitly desktop-only Cura tooling.
-- Removing the Python packages is part of a reproducible image build, not an
-  overlay deletion experiment.
-
-## Known Target Failures That Must Stay Visible
-
-From the 2026-06-28 no-coordinator physical matrix:
-
-- Touchscreen Pause changed software state but physical motion continued. The
-  newest one-in-flight mitigation is not target-proven.
-- Build-plate leveling Cancel did not rehome or reset the wizard.
-- Material load/change only reached a heat screen, was presented as a print,
-  and did not prove load/unload motion completion.
-- The update screen exceeded the display, appeared stuck, returned home before
-  reboot, and lacked a dedicated updating state.
-- Active abort completed safely in the tested slice, but state/UX and request
-  parsing problems were observed.
-
-These findings are release blockers, not cosmetic backlog.
-
-## Web UI Product Gap
-
-The existing static HTML/CSS/JS is appropriately small and does not need a
-framework rewrite. The main product gaps are behavior and validation:
-
-- Complete hands-on print lifecycle with stale-state and reconnect recovery.
-- Upload progress, validation detail, cancellation, cleanup, storage/free-space
-  reporting, history, and local/USB file management.
-- Clear safety gating and confirmation for heat, motion, remote control, and
-  concurrent operators.
-- Authentication lifecycle, logout/session expiry UX, rate limiting, request
-  audit, CSRF/origin policy, and a deliberate trusted-LAN posture for Cura
-  compatibility routes.
-- First-class errors, diagnostics download, update/rollback status, network
-  setup/status, printer identity, and actionable degraded/offline states.
-- Accessibility, responsive desktop/mobile polish, keyboard use, and browser
-  compatibility tests.
-- Measured CPU/RSS/socket/log behavior under SSE, polling, upload, print, and
-  multiple clients.
-
-### Lighter server direction
-
-The current split is `lighttpd` + `deneb-api` + `deneb-mdns`. The accepted June
-snapshot reported process sizes of about 664 KiB for lighttpd, 2,080 KiB for
-`deneb-api`, and 252 KiB for `deneb-mdns` (BusyBox `ps` size, not RSS).
-
-The best next experiment is to let `deneb-api` serve the static files directly
-on TCP port 80 and remove lighttpd and its Unix-socket proxy. This should save
-one process, one packaged dependency, and proxy/socket overhead without adding a
-new runtime. Integrating mDNS into the API event loop is a second, smaller
-optimization and should be attempted only after measuring the simpler
-lighttpd-removal change. Replacing the vanilla frontend with another UI
-framework would move in the wrong resource direction.
-
-## Immediate Priority Order
-
-1. Target-prove or revise the one-in-flight Pause/Stop mitigation.
-2. Fix material workflow and leveling cancel, then finish the no-coordinator
-   matrix with zero-Python inventory evidence.
-3. Implement a native AVR programming/recovery utility.
-4. Prototype direct static serving in `deneb-api` and measure against the
-   current three-process web stack.
-5. Establish a reproducible OpenWrt 25.12 image build and non-destructive boot
-   laboratory before changing the installed base image.
-6. Create and test a modern-Marlin compatibility branch only after preserving a
-   known-good controller hex, bootloader recovery, and protocol trace suite.
+Evidence files prove only their recorded version, date, and workflow. They do
+not override this dashboard's current classification without reconciliation.

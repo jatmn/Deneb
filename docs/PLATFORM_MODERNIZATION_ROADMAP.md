@@ -1,7 +1,11 @@
 # Deneb Platform Modernization Roadmap
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
+This is the active sequencing and acceptance-gate document. Current completion,
+blockers, and defects belong in [PROJECT_STATUS.md](PROJECT_STATUS.md); dated
+execution logs belong in [evidence/](evidence/README.md). Do not append
+trial-by-trial completion history here.
 This plan covers four related outcomes: remove Python completely, modernize the
 Linux distribution and dependencies, produce a Deneb-owned firmware image, and
 modernize the AVR Marlin controller firmware. It deliberately avoids in-place

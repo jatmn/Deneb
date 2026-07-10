@@ -1,5 +1,8 @@
 # Deneb Get Started Installer
 
+> **Archived:** This is retained for historical traceability. It is not the
+> current project status or work queue. See [../PROJECT_STATUS.md](../PROJECT_STATUS.md).
+
 The first implementation target is `Deneb_get_started.img`, a minimal USB update package that prepares a stock Ultimaker 2+ Connect for Deneb work.
 
 It unlocks SSH/root access and installs the Deneb package lane. After it runs, future Deneb packages use `.deneb` files instead of masquerading as official UltiMaker firmware images.

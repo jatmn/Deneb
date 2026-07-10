@@ -1,5 +1,8 @@
 # Low-Hanging De-Python Checklist
 
+> **Archived:** This is retained for historical traceability. It is not the
+> current project status or work queue. See [../PROJECT_STATUS.md](../PROJECT_STATUS.md).
+
 Date: 2026-06-22
 
 This checklist captures small tasks that reduce Deneb's active dependency on
@@ -18,10 +21,10 @@ change guarded.
 Related status docs:
 
 - [RESOURCE_REDUCTION_PLAN.md](RESOURCE_REDUCTION_PLAN.md)
-- [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md)
-- [FIRMWARE_AUDIT.md](FIRMWARE_AUDIT.md)
-- [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md)
-- [UM2C_MODDING_CHECKLIST.md](../UM2C_MODDING_CHECKLIST.md)
+- [BASELINE_MEASUREMENTS.md](../evidence/BASELINE_MEASUREMENTS.md)
+- [FIRMWARE_AUDIT.md](../evidence/FIRMWARE_AUDIT.md)
+- [PRINTSVC_EVIDENCE_LEDGER.md](../PRINTSVC_EVIDENCE_LEDGER.md)
+- [UM2C_MODDING_CHECKLIST.md](../../UM2C_MODDING_CHECKLIST.md)
 
 ## Ground Rules
 
@@ -90,7 +93,7 @@ the stock cloud connector and does not add a new web/cloud endpoint.
 Completed locally on 2026-06-11. The release package contains no Deneb-owned
 Python Digital Factory bridge and no standalone `deneb-df-bridge` binary.
 `deneb-api digital-factory` is the only Deneb bridge command path. Resource
-measurements are recorded in [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md).
+measurements are recorded in [BASELINE_MEASUREMENTS.md](../evidence/BASELINE_MEASUREMENTS.md).
 
 ### Suggested Validation
 
@@ -102,7 +105,7 @@ measurements are recorded in [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md
 - [x] Capture process list evidence showing no one-shot Python or standalone
   bridge process is left running after the action.
 - [x] Record transient RSS/VSZ for `deneb-api digital-factory` in
-  [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md).
+  [BASELINE_MEASUREMENTS.md](../evidence/BASELINE_MEASUREMENTS.md).
 
 ### Risks And Guardrails
 
@@ -222,7 +225,7 @@ proof.
 - [x] Create a repeatable measurement checklist or helper for Digital Factory
   disabled, idle-not-running, pairing, connected/reconnecting, and disconnect
   states.
-  → `tools/deneb-df-measure.sh --checklist` (see `docs/DF_LIFECYCLE_CLASSIFICATION.md`)
+  → `tools/deneb-df-measure.sh --checklist` (see `docs/evidence/DF_LIFECYCLE_CLASSIFICATION.md`)
 - [ ] Record process memory, CPU, fd count, thread count, sockets, log bytes,
   and service status for each state.
   → Helper supports all state labels and now samples `deneb-dfsvc` as the
@@ -237,7 +240,7 @@ proof.
   → Helper is pure shell script (no native code). Memory-tooling not applicable.
 - [x] Confirm which Deneb UI and web/API workflows require the stock connector
   versus only the native bridge.
-  → Full workflow table in `docs/DF_LIFECYCLE_CLASSIFICATION.md`.
+  → Full workflow table in `docs/evidence/DF_LIFECYCLE_CLASSIFICATION.md`.
     Key finding: status display needs bridge only; connect/disconnect and all
     cloud connectivity require a long-running connector service. In current
     packages that service is `deneb-dfsvc`, not stock `connector.py`.
@@ -257,7 +260,7 @@ proof.
   pairing request/response behavior, credentials/config files, cloud endpoints,
   TLS behavior, reconnect/backoff, coordinator IPC, logs, and failure states.
   → Implemented in the `deneb-dfsvc` C port and documented in
-    `docs/DF_LIFECYCLE_CLASSIFICATION.md`. Live behavior still needs capture
+    `docs/evidence/DF_LIFECYCLE_CLASSIFICATION.md`. Live behavior still needs capture
     before claiming cloud lifecycle parity.
 - [x] Inventory the existing Deneb Digital Factory C/API surface and reuse it
   where relevant:
@@ -300,7 +303,7 @@ proof.
     RSS `3032 KB`, 14 FDs, 3 threads, 4 TCP sockets, and `connector.py pid=0`.
 - [x] Logs and process samples are saved or summarized in the relevant evidence
   doc.
-  → `docs/DF_LIFECYCLE_CLASSIFICATION.md` summarizes the disabled and pairing
+  → `docs/evidence/DF_LIFECYCLE_CLASSIFICATION.md` summarizes the disabled and pairing
     samples, including the native syslog evidence for connection request,
     connection response, pairing PIN receipt, cloud account confirmation, and
     connected status responses, controlled cloud interruption, reconnect
@@ -580,7 +583,7 @@ those are no longer the same claim.
      coordinator ports `5565/5566` for normal print/status/control routes; the
      remaining coordinator surface is the installer-created
      `/etc/init.d/coordinator` recovery handoff shim plus stock rootfs reference
-     code. The handoff plan is `docs/COORDINATOR_PARITY_COMPLETION_PLAN.md`.
+     code. The handoff plan is `docs/archive/COORDINATOR_PARITY_COMPLETION_PLAN.md`.
      It requires all remaining parity work to be Deneb-owned native code, not
      Python, then a source/package audit gate and supervised installer/runtime
      change that stops delegating to stock coordinator by default while

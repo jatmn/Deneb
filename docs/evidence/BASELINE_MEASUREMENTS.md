@@ -9,7 +9,7 @@ verified-current runtime snapshot. A newer 2026-06-28 package disabled the stock
 coordinator and proved selected zero-Python workflows, but no complete
 replacement resource matrix was captured and that physical run exposed failed
 Pause plus incomplete material/leveling behavior. See
-[PROJECT_STATUS.md](PROJECT_STATUS.md).
+[PROJECT_STATUS.md](../PROJECT_STATUS.md).
 
 ## Hardware
 
@@ -190,9 +190,9 @@ unreplaced stock services.
 The prune boundary is verified at build time by
 `deneb-stock-menu-prune-selftest` and the retained constant dependency map is
 checked by `deneb-stock-menu-import-check`. See
-[`tools/deneb-stock-menu-prune-selftest.sh`](../tools/deneb-stock-menu-prune-selftest.sh)
+[`tools/deneb-stock-menu-prune-selftest.sh`](../../tools/deneb-stock-menu-prune-selftest.sh)
 and
-[`tools/deneb-stock-menu-import-check.sh`](../tools/deneb-stock-menu-import-check.sh).
+[`tools/deneb-stock-menu-import-check.sh`](../../tools/deneb-stock-menu-import-check.sh).
 
 ## IPC (from live device)
 

@@ -94,7 +94,11 @@ ui/
 
 ### Production build (MIPS musl)
 
-Requires WSL with Debian:
+Requires the complete Debian/WSL 2 environment in
+[../docs/WSL_BUILD_ENVIRONMENT.md](../docs/WSL_BUILD_ENVIRONMENT.md), including
+the current root-default-user constraint and the manually bootstrapped static
+mbedTLS tree. The abbreviated commands below are not sufficient on a fresh
+machine by themselves.
 
 ```bash
 # First run only: download musl cross-compiler

@@ -1,47 +1,26 @@
 # Deneb UM2C Modding Checklist
 
-Date: 2026-06-11; evidence reconciliation: 2026-07-09
+Reconciled: 2026-07-10
 
-This checklist tracks current engineering status, release blockers, and
-publication-risk guardrails. It is not legal advice. Completed items should stay
-checked only when there is repo evidence or accepted hardware evidence.
+> **Machine-audited acceptance inventory:** release scripts validate portions
+> of this file at its current path. It is not the current project dashboard or
+> priority queue. Use [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for done,
+> in-progress, planned, blocked, and broken work, and use
+> [docs/PLATFORM_MODERNIZATION_ROADMAP.md](docs/PLATFORM_MODERNIZATION_ROADMAP.md)
+> for future sequencing.
 
-Project-level truth is maintained in
-[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). A checked item here means only
-that the exact scoped statement is supported. It does not mean the feature is
-release-ready. Use the evidence labels **SOURCE**, **HOST**, **TARGET**,
-**FAILED**, **STALE**, and **UNVERIFIED-CURRENT** from that document when adding
-or reconciling status.
+A checked item means only that its exact scoped statement is supported by source,
+host, package, or dated target evidence. It does not make its section, feature,
+or release complete. Preserve explicit `SOURCE`, `HOST`, `TARGET`, `FAILED`, and
+`BLOCKED` boundaries when editing acceptance items.
 
-Authoritative status companions:
+Related machine-audited specifications:
 
-- Project status: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
-- Current resource gates: [docs/RESOURCE_REDUCTION_PLAN.md](docs/RESOURCE_REDUCTION_PLAN.md)
-- Native print-service evidence: [docs/PRINTSVC_EVIDENCE_LEDGER.md](docs/PRINTSVC_EVIDENCE_LEDGER.md)
-- Native print-service integration audit: [docs/PRINTSVC_INTEGRATION_AUDIT.md](docs/PRINTSVC_INTEGRATION_AUDIT.md)
-- Stock/native parity notes: [docs/PRINTSVC_LEGACY_PARITY_AUDIT.md](docs/PRINTSVC_LEGACY_PARITY_AUDIT.md)
-- Web and Cura status: [docs/WEB_UI.md](docs/WEB_UI.md), [docs/CURA_INTEGRATION.md](docs/CURA_INTEGRATION.md)
-- Touchscreen parity status: [docs/STOCK_UI_COVERAGE.md](docs/STOCK_UI_COVERAGE.md)
+- [Native print-service evidence](docs/PRINTSVC_EVIDENCE_LEDGER.md)
+- [Native print-service integration ownership](docs/PRINTSVC_INTEGRATION_AUDIT.md)
 
-## Current Open Focus
-
-1. Re-test the current one-in-flight native stream mitigation on hardware. The
-   2026-06-28 physical Pause test failed because motion continued after the UI
-   changed state; host tests for commit `afbea8c` do not close that failure.
-2. Fix and target-prove material load/unload and build-plate-leveling Cancel
-   with the stock coordinator disabled.
-3. Prove Web UI hands-on pause/resume/abort/completion and stale-state recovery.
-4. Close broader Cura failure-mode cleanup after the proven Cura 5.13
-   local-network workflow and proven S5-style progress/time estimator.
-5. Resolve or explain the native print-service active-soak RSS/private-memory
-   staircase with longer heat/motion/job loops.
-6. Replace the Python AVR/mainboard programmer before claiming Python can be
-   uninstalled from the firmware image.
-7. Finish `.deneb` manifest, rollback, signing, release-channel, and restore
-   UX before calling any package stable.
-8. Build the reproducible current-OpenWrt and independent-image lane described
-   in `docs/PLATFORM_MODERNIZATION_ROADMAP.md`.
-
+Documentation navigation and historical evidence are indexed in
+[docs/README.md](docs/README.md).
 ## 1. Project Boundary And Legal Guardrails
 
 - [x] Project name is `Deneb`, documented as an independent community mod and

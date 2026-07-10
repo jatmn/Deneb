@@ -8,7 +8,7 @@ audit, or a host test alone.
 Detailed source comparison lives in
 [PRINTSVC_STOCK_PARITY_REVIEW.md](PRINTSVC_STOCK_PARITY_REVIEW.md). Current
 promotion evidence lives in
-[PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md).
+[PRINTSVC_EVIDENCE_LEDGER.md](../PRINTSVC_EVIDENCE_LEDGER.md).
 
 ## Source Anchors
 
@@ -38,7 +38,7 @@ promotion evidence lives in
 
 ## Current Accepted Evidence
 
-Use [PRINTSVC_EVIDENCE_LEDGER.md](PRINTSVC_EVIDENCE_LEDGER.md) as the
+Use [PRINTSVC_EVIDENCE_LEDGER.md](../PRINTSVC_EVIDENCE_LEDGER.md) as the
 authoritative index. As of this cleanup, accepted bounded evidence covers:
 
 - Native route ownership and no stock Python driver process for native packages.
@@ -69,7 +69,7 @@ representative slicer, Digital Factory lifecycle, or multi-hour soak gates.
 - Prove multi-hour active heat/motion/job stability and resolve or explain the
   current RSS/private-memory staircase.
 - Keep integration ownership/removal conditions in
-  [PRINTSVC_INTEGRATION_AUDIT.md](PRINTSVC_INTEGRATION_AUDIT.md) aligned with
+  [PRINTSVC_INTEGRATION_AUDIT.md](../PRINTSVC_INTEGRATION_AUDIT.md) aligned with
   any client-path changes.
 
 Keep Section 8 open until every checked live claim points to current hardware

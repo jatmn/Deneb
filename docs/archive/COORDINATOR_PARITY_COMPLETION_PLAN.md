@@ -1,11 +1,14 @@
 # Coordinator Parity Completion Plan
 
+> **Archived:** This is retained for historical traceability. It is not the
+> current project status or work queue. See [../PROJECT_STATUS.md](../PROJECT_STATUS.md).
+
 Date: 2026-06-22; project status reconciliation: 2026-07-09
 
 The latest code change is `afbea8c`, which limits active job streaming to one
 in-flight command. Host tests passed in that commit, but the mitigation has not
 been physically retested. The last physical result therefore remains
-**FAILED** for Pause. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the
+**FAILED** for Pause. See [PROJECT_STATUS.md](../PROJECT_STATUS.md) for the
 project-level summary.
 
 This plan scopes the remaining coordinator-related work after the source audit

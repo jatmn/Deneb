@@ -2,11 +2,12 @@
 
 A lightweight web interface for the UltiMaker 2+ Connect running Deneb firmware. It provides local status and controls plus UltiMaker REST API v1-shaped and Cura local cluster API compatibility surfaces.
 
-Status reconciliation: 2026-07-09. The implementation is an MVP, not yet a
+Status reconciliation: 2026-07-10. The implementation is an MVP, not yet a
 first-class or release-complete experience. Dated target proof exists for live
 status/progress and Cura 5.13 workflows, while Web pause/resume/cancel,
-stale-state recovery, resource behavior, upload/storage failure UX, and the
-latest native Pause mitigation remain open.
+stale-state recovery, upload/storage failure UX, and the latest native Pause
+mitigation remain open. The 2026-07-10 resource run also confirmed SSE
+connection starvation and post-disconnect descriptor retention.
 
 ## Architecture
 
@@ -37,10 +38,13 @@ For the Cura-specific discovery, plugin, and upload/start behavior, see
 | Static assets | < 50 KB |
 | **Total** | **< 4 MB** |
 
-The table above is a target budget. It is not a measured total RSS result. The
-June snapshot recorded BusyBox `ps` process sizes of about 2,080 KB for
-`deneb-api`, 664 KB for lighttpd, and 252 KB for `deneb-mdns`; a current
-RSS/private-memory load matrix is still required.
+The table above remains a target budget. On 2026-07-10, direct `/proc` RSS
+samples after clean boot were approximately 0.9-1.0 MiB for `deneb-api`, 0.44
+MiB for lighttpd, and 0.12 MiB for `deneb-mdns`. Three SSE clients plus 120 REST
+requests completed with flat 1,032 KiB API RSS. Four SSE clients starved REST
+past a 90-second bound and left seven extra API/proxy descriptors until reboot.
+See [the dated target report](evidence/TARGET_AUTOMATION_2026-07-10.md). CPU, upload,
+slow-client, and longer-duration matrices remain required.
 
 ## First-Class Experience And Lower-Memory Direction
 
@@ -130,88 +134,21 @@ proof; broader versions and failure cleanup remain open.
 
 ## Current Limits
 
-- Web/API resource numbers still need hardware measurement while idle, polling,
-  uploading, printing, and updating.
-- Live status display has target proof for package `9cdb5d6f`: during a
-  user-supervised print, the Web UI showed printing progress and, after a
-  static asset update, an explicit `Left <time>` timer line matching the native
-  `time_left` field. Web UI pause/resume/cancel and stale-state recovery still
-  need hands-on proof.
-- Upload/start behavior exists in `deneb-api` for both UM API v1 and Cura's
-  local cluster API, but local storage behavior, free-space checks,
-  USB-removal-safe printing, cleanup on failed/aborted upload, and user-facing
-  upload progress remain release blockers. The basic Cura 5.13 upload/start
-  route itself is proven.
-- Conflict continue/cancel and pending preheat visibility now use native Deneb
-  pending-job and print-state helpers instead of embedded Python coordinator
-  launchers. Web motion macros, Cura upload start, and pending-job continue now
-  route through native backend macro/job helpers instead of local command JSON.
-  Cura upload registration also delegates pending-vs-immediate-start dispatch
-  sequencing to the native pending-job registration helper, leaving the web
-  layer responsible only for backend transport callbacks.
-  `deneb-api` selects native `deneb-printsvc` status/command ports directly.
-  The cached Deneb status JSON
-  exposes `print_backend`, `print_backend_status_url`, and
-  `print_backend_command_url` from the shared native route helper so lab checks
-  can confirm which backend the API selected. The dedicated
-  `/api/v1/deneb/print_backend` response also exposes `native_only_route`.
-  Web motion macro names and pending-job display reads are shared with the
-  native print-control helpers instead of being hard-coded/parsing JSON in this
-  layer.
-  Cura upload storage preparation uses the shared native print-file helper for
-  sanitized filenames and Deneb spool destinations. Web/API print uploads also
-  run shared build-volume validation before spool writes, pending-job dedupe,
-  native registration, and response formatting.
-  Multipart upload extraction is also isolated in `web/src/api_multipart.c`,
-  shared by Cura print uploads and material uploads instead of living in the
-  HTTP server main loop.
-  Cura material uploads then hand the extracted file to the shared native
-  material catalog helper, which owns default catalog persistence and temp-file
-  cleanup.
-  UM API and Deneb API current-job responses now use shared native print-job
-  summary formatters, keeping active-job escaping, elapsed time, state, and
-  progress semantics out of endpoint-local JSON assembly. UM API current-job
-  scalar endpoints use the same native formatter owner for string escaping and
-  numeric response bodies.
-  UM printer root/status responses now delegate their top-level status fields,
-  temperature/position shape, bed preheat activity, and pending filename
-  fallback to `common/print/printer_status_response.*`. UM printer
-  bed/head/extruder, hotend, position, feeder, and bed preheat subresources use
-  the same shared formatter instead of endpoint-local JSON fragments. Material,
-  LED, ambient, and Air Manager compatibility responses now use the same native
-  printer response owner, including LED scalar defaults. `backend_zmq` now exposes a printer
-  status response snapshot for these endpoints so `api_printer` no longer maps
-  cached backend fields itself. Native firmware/version and topcap telemetry
-  pass through that same backend/status formatter path when `deneb-printsvc`
-  supplies them, so the web/API layer does not discard fields parsed from
-  old-Marlin M105/M115-style reports. Native startup sends a bounded M115 probe
-  as a Deneb diagnostic extension, but stock Python defaults `firmware` to
-  `none` unless version output is observed, so web/API parity is preserving and
-  forwarding the stock-compatible field/default rather than requiring every
-  old-Marlin run to report a non-`none` version.
-  Web temperature writes also delegate bounded target parsing and `M104`/`M140`
-  command planning to the shared native G-code helper instead of clamping and
-  formatting heater commands inside the REST endpoint.
-  Web position writes now delegate jog/absolute-position JSON parsing,
-  build-volume checks, speed checks, and raw move-command planning to that same
-  helper before the endpoint sends the planned command sequence.
-  Web motion action writes also delegate action JSON parsing, legacy home
-  fallback, and macro-vs-G-code selection to the shared manual-motion helper.
-  Cura cluster action writes use the shared print-state action parser for the
-  pending-job `print` default, keeping that compatibility behavior out of the
-  endpoint.
-  Cura cluster active-job responses use the shared native print-job summary
-  formatter for job metadata, printer assignment, build plate, configuration,
-  and compatible-machine-family fields.
-  UM API and cluster API status labels also share the native print-state helper
-  instead of each REST surface owning its own active-job mapping.
-  Remaining native-service work should keep collapsing web/API and touchscreen
-  behavior toward shared print-control helpers instead of adding new per-client
-  state rules.
-- Cura discovery requires installing the Deneb Cura plugin until Cura exposes a
-  BOM-backed UM2+ Connect local network definition.
-- Motion controls are intentionally limited to guarded X/Y/Z movement; extruder
-  jogging is not exposed until safe-temperature gating is designed and tested.
+| Area | Current state | Required before first-class status |
+| --- | --- | --- |
+| Connection handling | Three SSE clients plus polling passed; four SSE clients starved REST and retained seven descriptors until reboot | Isolate SSE capacity, close abandoned proxy/API sockets, and pass reconnect/slow-client/long-duration tests |
+| Print controls | Status/progress has target proof; Web pause/resume/cancel and stale-state recovery are not fully proven | Hands-on current-package lifecycle, reconnect, concurrent-client, and failure recovery tests |
+| Upload and storage | UM API and Cura multipart upload/start exist | Upload progress/cancel, free-space checks, failed-upload cleanup, history, local/USB file management, and removal-safe behavior |
+| Security | Web/API supports Open Access or Deneb auth; stock Cura cluster writes are intentionally unauthenticated for compatibility | Deliberate trusted-LAN policy, session/logout UX, expiry, rate limits, origin/CSRF policy, and request audit |
+| Diagnostics and updates | Basic log retrieval exists | Redacted diagnostics export plus update, reboot, rollback, and degraded-state UX |
+| Identity | Some firmware, machine, and PCB fields are missing or invalid on the current target | Populate identity from authoritative device/config sources and test Cura/Web presentation |
+| Motion | Guarded X/Y/Z controls exist | Keep home/limit/volume interlocks; do not expose extruder jogging until safe-temperature and material-context gates are proven |
+| Accessibility | Functional MVP only | Responsive layout, keyboard use, readable errors, accessibility review, and browser compatibility matrix |
+
+Shared state, pending-job, formatting, macro, and command ownership is tracked in
+[PRINTSVC_INTEGRATION_AUDIT.md](PRINTSVC_INTEGRATION_AUDIT.md). Do not repeat
+implementation-by-implementation migration logs here; this file should describe
+the current external behavior and remaining product gaps.
 
 ## Deneb Extensions
 
