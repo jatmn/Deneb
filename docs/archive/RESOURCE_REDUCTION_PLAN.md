@@ -2,6 +2,10 @@
 
 > **Archived:** This is retained for historical traceability. It is not the
 > current project status or work queue. See [../PROJECT_STATUS.md](../PROJECT_STATUS.md).
+>
+> **Superseded architecture idea:** direct static serving and lighttpd removal
+> below are historical proposals, not active goals. Current direction retains
+> lighttpd and investigates moving more generic HTTP transport work into it.
 
 Deneb assumes the stock firmware is already constrained by RAM, CPU, boot time,
 storage, and UI latency. Matching stock is useful during migration, but the

@@ -234,6 +234,30 @@ long-soak proof.
 
 - [ ] Defer Marlin firmware changes until Deneb's Linux-side UI, web/API, Cura,
   installer, rollback, and native print-service behavior are proven.
+- [x] Audit public Connect source for added/removed G/M codes, modified
+  responses, framing, and modern-Marlin command conflicts. This is source
+  evidence only; see `docs/evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md`.
+- [ ] Freeze versioned command, parameter, response, stop-reason, and transport
+  fixtures from source plus safe controller traces.
+- [ ] Implement a bounded host preflight/controller adapter for deterministic
+  rewrites, protocol-version selection, planner backpressure, and response
+  normalization; do not build a general arbitrary G-code interpreter.
+- [ ] Keep thermal, endstop, power, stepper, flow, watchdog, emergency-stop, and
+  controller-attached fan/light authority inside the MCU.
+- [ ] Compare standard numbered/checksummed modern-Marlin transport with the
+  Connect CRC16 protocol using corruption, lost/duplicate line, resend,
+  controller-reset, queue-full, and sequence-resynchronization tests.
+- [ ] Prototype modern `ADVANCED_OK` plus `EMERGENCY_PARSER`; measure planner
+  and command-buffer reporting, M410 interruption latency, AVR flash/RAM cost,
+  and recovery before retaining any custom transport code.
+- [ ] Resolve `M290`, `M401`, and `M405`-`M407` collisions without
+  silently changing behavior expected by Deneb.
+- [ ] Publish tested Cura, PrusaSlicer, OrcaSlicer, and other supported profiles
+  with reviewed start/end G-code and representative generated-job fixtures.
+- [ ] Add preflight classification for pass-through, rewritten, Deneb-only,
+  controller-private, unsupported, and unsafe/conflicting commands.
+- [ ] Port and prove Connect board detection, ADC/thermal, power, TMC2130,
+  flow-sensor, fan/light, watchdog, endstop, and fault behavior.
 - [ ] If Marlin work starts, keep it legally separate and GPL-compatible.
 - [ ] Treat motion-controller flashing/recovery as a high-risk workflow with
   dedicated hardware proof and restore documentation.

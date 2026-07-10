@@ -14,7 +14,7 @@ preserving hardware safety and a path back to official firmware.
 | Print service | **Experimental** | Native completion and abort are proven in bounded tests; Pause/Resume and long-soak stability are not release-ready. |
 | Web/API/Cura | **MVP** | Local control, upload, and Cura discovery exist; connection cleanup, storage UX, security, and failure recovery need work. |
 | Python removal | **In progress** | Native services replace the active stack, but the base image, rollback, and AVR recovery still require Python. |
-| Resource optimization | **In progress** | Test direct static serving from `deneb-api`; retain lighttpd until concurrency, upload, resource, and rollback tests pass. |
+| Resource optimization | **In progress** | Retain lighttpd as the HTTP front end and move more generic HTTP work into it where that improves reliability without exceeding resource limits. |
 | Independent image and modern Marlin | **Planned** | Current OpenWrt hardware support, safe recovery, and the controller port are not complete. |
 
 See [Project Status](docs/PROJECT_STATUS.md) for the detailed work board and
@@ -42,6 +42,7 @@ Implementation does not imply that every workflow is hardware-proven.
 | De-Python, Web, OpenWrt, image, and Marlin plan | [Modernization Roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md) |
 | Windows/WSL cross-build setup | [WSL Build Environment](docs/WSL_BUILD_ENVIRONMENT.md) |
 | Web/API and Cura | [Web UI](docs/WEB_UI.md) / [Cura](docs/CURA_INTEGRATION.md) |
+| Third-party slicer command/profile rules | [Slicer Compatibility](docs/SLICER_COMPATIBILITY.md) |
 | Touchscreen and backend | [UI](ui/README.md) / [IPC](docs/BACKEND_IPC_PROTOCOL.md) |
 
 Dated investigations are under `docs/evidence/`; superseded plans are under

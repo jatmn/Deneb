@@ -40,7 +40,7 @@ in [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 | First-class Web UI | **MVP + partial TARGET** | Control recovery, storage/upload UX, security, diagnostics/update UX, accessibility, and connection cleanup remain incomplete. Four SSE clients currently starve REST and leak descriptors until reboot. |
 | Current distro and dependencies | **PLANNED** | No reproducible printer-specific current OpenWrt image, device-tree/kernel port, safe test boot, or rollback lane exists yet. |
 | Fully Deneb-owned firmware image | **EARLY / PLANNED** | Display/touch, MCU control and recovery, storage, factory data, update, and recovery must be owned and proven on a clean image build. |
-| Modern Marlin controller firmware | **RESEARCHED; PORT NOT STARTED** | UltiMaker's old Connect branch is available, but modern Marlin lacks the Connect board/protocol port and no recoverable test build exists. |
+| Modern Marlin controller firmware | **SOURCE AUDIT; PORT NOT STARTED** | The command/protocol and slicer boundary is inventoried. Modern Marlin has conflicting command meanings and lacks the Connect board, hardware, safety, and serial-protocol port; no recoverable test build exists. |
 
 ## Done and currently supported
 
@@ -72,6 +72,7 @@ These successes do not make the complete firmware, UI, or print service stable.
 | 3 | Finish no-coordinator workflow parity | Core route works; material, leveling Cancel, diagnostics, and recovery gaps remain | Full workflow matrix passes with strict no-Python runtime inventory |
 | 4 | Fix Web/API concurrency and lifecycle ownership | Three SSE clients plus polling passed; four SSE clients starved REST and retained seven descriptors; service restart can create two API processes | Multiple clients, reconnects, service restarts, uploads, and long polling return to baseline without starvation or leaked descriptors |
 | 5 | Explain print-service soak memory behavior | Short repeated jobs pass; longer runs showed a resident/private-memory staircase | Multi-hour representative run plateaus or the growth source is fixed |
+| 6 | Freeze Marlin and slicer compatibility contracts | Source audit found 19 Connect-added M-code numbers, modified standard commands, collisions, and custom transport; no build/profile/target proof exists | Versioned command/response fixtures, safe traces, profiles, generated jobs, and preflight validation cover every dependency |
 
 ## Known defects and safety blocks
 
@@ -87,6 +88,7 @@ These successes do not make the complete firmware, UI, or print service stable.
 | **Missing product function** | Diagnostics export is not installed | Implement bounded, redacted diagnostics generation/download and resource-test it |
 | **Incorrect identity** | Printer API reports missing/invalid firmware, machine, and PCB identity | Populate identity from authoritative device/config sources |
 | **Test tooling defect** | Runtime inventory can false-positive on shell command text containing `python` | Classify by `/proc/<pid>/exe` and structured argv instead of substring alone |
+| **Source/behavior mismatch** | Frame-light macros send `M142 R...` although Connect accepts lowercase `w`; native startup/prime paths emit removed `G10` | Correct and host-test both paths, then verify physical behavior under the safety contract |
 | **UX blocker** | Update screen overflowed, appeared stuck, and lacked a dedicated updating state | Redesign and prove update/reboot/rollback presentation |
 
 No unattended physical test may exceed the documented safety contract: home
@@ -100,8 +102,9 @@ approved test envelope, and obey heater caps.
    cleanup on the legacy image.
 3. Replace the Python AVR/mainboard programming and recovery utility with a
    native, recoverable implementation.
-4. Prototype direct static serving from `deneb-api`; remove lighttpd only after
-   resource, malformed-client, upload, SSE, restart, and rollback comparisons.
+4. Retain lighttpd as the HTTP front end, expand its generic HTTP protections,
+   and evaluate FastCGI/SCGI transport offload only if it improves connection
+   cleanup, uploads, SSE, recovery, and total resource use.
 5. Build a reproducible current OpenWrt image and prove non-destructive boot and
    recovery on spare hardware.
 6. Produce a Deneb-owned image without UltiMaker application files while
@@ -124,6 +127,8 @@ Detailed phase gates are in
   [evidence/FIRMWARE_AUDIT.md](evidence/FIRMWARE_AUDIT.md)
 - Historical resource measurements:
   [evidence/BASELINE_MEASUREMENTS.md](evidence/BASELINE_MEASUREMENTS.md)
+- Connect controller and third-party slicer command audit:
+  [evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md](evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md)
 - Archived no-coordinator execution journal:
   [archive/COORDINATOR_PARITY_COMPLETION_PLAN.md](archive/COORDINATOR_PARITY_COMPLETION_PLAN.md)
 

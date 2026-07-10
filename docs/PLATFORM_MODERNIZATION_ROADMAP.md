@@ -90,42 +90,68 @@ Status: **PARTIAL; target failures remain**
 Exit gate: the full target workflow matrix and controller update/recovery run
 without Python, and the only Python files in Git are desktop Cura/build tools.
 
-## Phase 2 - Web/API Consolidation And Productization
+## Phase 2 - Web/API Hardening And Productization
 
 Status: **PLANNED**
+
+Architecture decision: retain lighttpd as Deneb's supported HTTP front end.
+The stock firmware did not provide this Web UI; lighttpd was deliberately added
+with it and is not legacy stock bloat. The boundary is strict: lighttpd owns
+HTTP transport and edge concerns; `deneb-api` owns all printer and application
+behavior. No printer state, safety policy, Cura semantics, or command execution
+moves into lighttpd.
 
 Increment A: instrument the current stack.
 
 - Measure lighttpd, `deneb-api`, and `deneb-mdns` independently at idle, with
   one and multiple SSE clients, Cura polling, multipart upload, and print
   actions.
-- Record RSS/private memory rather than using VSZ alone.
+- Record RSS/private memory, CPU, descriptors, connection states, and recovery
+  behavior rather than using VSZ alone.
 
-Increment B: remove the proxy process.
+Increment B: make lighttpd a deliberate edge service.
 
-- Add bounded static-file GET/HEAD serving to `deneb-api` on TCP port 80.
-- Preserve streaming uploads and SSE without buffering whole files/responses.
-- Use precomputed ETag/content length and immutable caching for versioned assets;
-  keep API responses no-store.
-- Retain an experimental package switch that can restore lighttpd for A/B and
-  rollback testing.
-- Remove lighttpd only after resource, concurrency, malformed-request, slow
-  client, and restart tests pass.
+- Keep static-file GET/HEAD, index handling, and API reverse proxying in
+  lighttpd instead of adding general-purpose HTTP serving to `deneb-api`.
+- Add cache validators and immutable caching for versioned assets; keep API and
+  live status responses no-store.
+- Evaluate security headers, request/body limits, per-route timeouts, slow-client
+  protection, bounded access logging, and a static maintenance/recovery page.
+- Preserve streaming uploads and SSE without buffering entire request or
+  response bodies.
+- Evaluate TLS termination in lighttpd only if the selected TLS library,
+  certificate lifecycle, CPU/RAM cost, and recovery behavior fit the target.
+- Keep printer authorization, session decisions, validation, and control-state
+  logic in `deneb-api`; do not move safety policy into Web-server configuration.
 
-Increment C: consider merging mDNS.
+Increment C: harden the lighttpd/API boundary.
 
-- Move the small mDNS state machine into the API event loop only if measurement
-  shows a worthwhile saving and failure isolation remains acceptable.
+- Fix the observed four-SSE-client REST starvation and post-disconnect
+  descriptor/socket retention.
+- Establish one authoritative `deneb-api` service owner so restarting the Web
+  stack cannot create duplicate API processes.
+- Test malformed requests, interrupted uploads, slow readers/writers, reconnects,
+  API restarts, maintenance mode, and browser/Cura concurrency.
+- Require connection and descriptor counts to return to baseline without a
+  reboot.
+- After the current boundary is correct, prototype `mod_fastcgi` or `mod_scgi`
+  with a reduced API transport adapter. Compare total binary size, module cost,
+  RSS, CPU, upload/SSE behavior, disconnect cleanup, and recovery against the
+  existing raw-HTTP Unix-socket proxy before choosing a migration.
 
 Increment D: first-class UX.
 
 - Implement the product gaps in `PROJECT_STATUS.md` with browser-level tests and
   hardware-backed workflow tests.
-- Keep vanilla web assets; do not introduce Node, Python, a database, or a
+- Keep vanilla Web assets; do not introduce Node, Python, a database, or a
   client framework into the target image.
 
-Exit gate: documented behavior coverage, no known safety-state lies, and a
-measured resource regression budget of zero unless explicitly approved.
+`deneb-mdns` remains a separate service by default. Merge it only if measurement
+shows a meaningful saving and the reduced failure isolation is acceptable.
+
+Exit gate: documented behavior coverage, no known safety-state lies, stable
+connection cleanup, and a measured resource regression budget of zero unless
+explicitly approved.
 
 ## Phase 3 - Reproducible Current OpenWrt Image
 
@@ -183,7 +209,7 @@ image without any UltiMaker firmware image or extracted rootfs.
 
 ## Phase 5 - Marlin Modernization
 
-Status: **RESEARCHED; implementation not started**
+Status: **SOURCE PROTOCOL INVENTORY STARTED; implementation not started**
 
 ### What is known
 
@@ -194,6 +220,13 @@ Status: **RESEARCHED; implementation not started**
   card. The Linux SBC owns the UI and print file.
 - The branch documents a modified host serial protocol and points to a Griffin
   protocol document that is not present in this Deneb repository.
+- Direct source comparison found 19 Connect-added M-code numbers, no added
+  G-code numbers, modified standard commands, and a mandatory
+  sequence/CRC/planner-window transport. `M290`, `M401`, and
+  `M405`-`M407` conflict with different modern-Marlin meanings. Generic
+  modern-Marlin slicer profiles are unsafe without a Deneb compatibility
+  profile. See
+  [MARLIN_COMMAND_PROTOCOL_AUDIT.md](evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md).
 - Current upstream Marlin release `2.1.2.8` was published 2026-06-24. Current
   configurations include legacy Ultimaker 2 and Ultimaker 2+, but GitHub source
   search found no `BOARD_E2`, ADS101X, or 2+ Connect configuration in current
@@ -202,6 +235,21 @@ Status: **RESEARCHED; implementation not started**
   implementation answer. A current community thread confirms deployed 2+
   Connect machines still report firmware 1.5.3 and says official support ends
   2027-04-20, with further firmware updates unlikely except critical fixes.
+
+### Compatibility-layer boundary
+
+Minimize the Marlin fork. Add a versioned preflight/translation layer to
+`deneb-printsvc` for slicer validation, deterministic rewrites, legacy versus
+modern serial transport, wait orchestration, and response normalization.
+Prefer modern Marlin's native commands and `ADVANCED_OK` planner/buffer reports.
+
+Do not move hardware authority to Linux. Thermal regulation, endstop and motion
+limits, power budgeting, TMC2130 access, flow sensing, watchdogs, emergency
+stops, and controller-attached fans/lights remain MCU responsibilities.
+Provisioning-only private commands should become compile-time configuration or
+bounded controller settings where practical. Any unavoidable Marlin additions
+must live in one small Deneb compatibility module rather than changes scattered
+through the planner, parser, and safety core.
 
 ### Recommended engineering approach
 
@@ -212,26 +260,34 @@ and protocol port:
 2. Build `acb22046c69a` reproducibly with a modern pinned AVR toolchain, compare
    the generated behavior/size, and run it in the existing simulator before any
    flash.
-3. Create a protocol conformance suite from Deneb `printsvc` traces: startup,
+3. Freeze the Connect compatibility contract before writing the modern
+   dispatch layer. Cover every command ID, case-sensitive parameter, response,
+   stop reason, and removed host-owned command. Resolve number collisions
+   explicitly; a compiling same-number handler is not compatibility proof.
+4. Create a protocol conformance suite from Deneb `printsvc` traces: startup,
    M105/M114/M115, sequence/CRC framing, resend/reject, flow control, error
    strings, homing reports, temperature/topcap fields, power faults, and all
    custom G/M codes Deneb uses.
-4. Inventory every E2-specific hardware behavior from the UltiMaker branch:
+5. Publish versioned profiles and start/end templates for each supported slicer.
+   Add representative generated-G-code fixtures and a preflight validator that
+   classifies commands as pass-through, rewritten, Deneb-only,
+   controller-private, unsupported, or unsafe/conflicting.
+6. Inventory every E2-specific hardware behavior from the UltiMaker branch:
    pins, ADC/ADS101X, PWM, steppers/current, power FET sequencing, board ID,
    watchdog, thermals, endstops, fan/light behavior, bootloader and flash size.
-5. Choose between:
+7. Choose between:
    - forward-porting security/reliability fixes into the UltiMaker E2 branch
      first; or
    - adding an E2 board and compatibility protocol layer to Marlin 2.1.
    The first is the lower-risk first increment; the second is the strategic end
    state.
-6. Prove a no-motion serial-only build, then cold sensors/endstops, fans/lights,
+8. Prove a no-motion serial-only build, then cold sensors/endstops, fans/lights,
    one-axis low-speed motion, homing, controlled heat, and finally prints.
-7. Require thermal runaway, sensor disconnect, stuck heater, endstop, watchdog,
+9. Require thermal runaway, sensor disconnect, stuck heater, endstop, watchdog,
    power-fail, serial corruption, pause, abort, and recovery tests before normal
    use.
-8. Keep Marlin GPLv3 source/build artifacts in a clearly licensed component and
-   publish corresponding source with distributed binaries.
+10. Keep Marlin GPLv3 source/build artifacts in a clearly licensed component and
+    publish corresponding source with distributed binaries.
 
 Exit gate: protocol-compatible modern controller firmware passes the full
 fault/print matrix and can be restored through the native AVR recovery tool.

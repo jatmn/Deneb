@@ -46,19 +46,70 @@ past a 90-second bound and left seven extra API/proxy descriptors until reboot.
 See [the dated target report](evidence/TARGET_AUTOMATION_2026-07-10.md). CPU, upload,
 slow-client, and longer-duration matrices remain required.
 
-## First-Class Experience And Lower-Memory Direction
+## First-Class Experience And HTTP/Application Boundary
 
-Do not replace the vanilla frontend with a framework. Product work should focus
-on reliable lifecycle state, upload/storage management, errors and recovery,
-authentication/session UX, remote-control audit, diagnostics/update/rollback,
-accessibility, and hardware-backed browser workflows.
+lighttpd is part of Deneb's added Web stack; the original firmware did not have
+this Web UI. It remains the supported HTTP front end because it is small,
+mature, and isolates network-facing HTTP behavior from printer-control logic.
+Direct static serving from `deneb-api` and removal of lighttpd are not project
+goals.
 
-The preferred resource experiment is to add bounded static GET/HEAD serving to
-`deneb-api` on TCP port 80, keep streaming upload/SSE behavior, and A/B compare
-it with the current lighttpd proxy. If it passes malformed-request, slow-client,
-concurrency, restart, resource, and workflow tests, remove lighttpd from the
-package. Integrating mDNS into the API event loop is a later optional step and
-must be measurement-driven. See [PROJECT_STATUS.md](PROJECT_STATUS.md) and
+> **Boundary:** lighttpd owns HTTP transport and edge behavior. `deneb-api` owns
+> printer/application behavior. Printer state, safety policy, Cura semantics,
+> job decisions, and command execution must never move into lighttpd.
+
+The current `deneb-api` is both a small custom HTTP application server and the
+printer API implementation. Its route table contains about 80 UM API, Deneb,
+and Cura endpoints. It also owns printer-state translation, safety validation,
+print actions, ZMQ communication, upload registration, session/auth behavior,
+SSE event generation, system data, and Digital Factory commands. lighttpd
+cannot replace those application responsibilities without another dynamic
+backend.
+
+### Responsibility decision
+
+| Responsibility | Direction |
+| --- | --- |
+| Static files, MIME types, index handling | **lighttpd**; add cache validators and immutable caching for versioned assets |
+| HTTP connection handling, keep-alive, headers, limits, timeouts, slow clients | **lighttpd** wherever supported and measured |
+| Security headers and sensitive-path denial | **lighttpd** |
+| Maintenance/degraded page while the API restarts | **lighttpd** |
+| TLS termination and bounded access logging | **Evaluate in lighttpd**; current static build excludes TLS and access-log modules, so flash/RAM/CPU and SD-write cost must be measured |
+| Static locale/version assets | **Candidate for lighttpd** when responses can be generated at install/build time without becoming stale |
+| Raw HTTP parsing and response framing inside `deneb-api` | **Evaluate FastCGI/SCGI-style offload** so lighttpd owns transport lifecycle; current build includes only the proxy path |
+| SSE transport | **Shared boundary**: lighttpd owns the client/proxy connection; `deneb-api` generates printer events and must close disconnected backend sockets correctly |
+| Upload ingress | **Shared boundary**: lighttpd enforces HTTP limits/timeouts and streams; `deneb-api` validates multipart content, storage, job conflicts, and print registration |
+| Authentication | **Application-owned by default** because setup, bearer sessions, Digest compatibility, Open Access, and intentionally unauthenticated Cura routes are policy-sensitive; optional edge authentication can only be defense in depth |
+| Printer/Cura JSON, safety rules, print actions, ZMQ, pending jobs | **Keep in `deneb-api` or shared native print libraries** |
+
+The packaged lighttpd 1.4.76 build currently includes only `mod_access`,
+`mod_alias`, `mod_indexfile`, `mod_staticfile`, `mod_setenv`, and `mod_proxy`.
+Adding authentication, access logging, TLS, FastCGI/SCGI, compression, or other
+modules is an explicit resource and security decision, not a free capability.
+
+The largest plausible offload is replacing the custom raw-HTTP Unix-socket
+transport in `deneb-api` with a lighttpd application protocol such as FastCGI or
+SCGI. This could remove custom accept/keep-alive/body/response lifecycle code,
+but it would not remove the API application process. Adopt it only if a focused
+prototype shows lower total complexity and stable RSS while preserving
+streaming uploads, SSE, Cura compatibility, and recovery behavior.
+
+### Current transport findings
+
+| Finding | Implication |
+| --- | --- |
+| lighttpd `server.max-connections` is 8 and the API `MAX_SSE_CLIENTS` is 4 | The limits and proxy/backend connection accounting must be tested together; do not merely raise limits without resource and denial-of-service bounds. |
+| SSE sockets are registered for `EPOLLHUP | EPOLLERR`, but the main loop only handles ordinary client `EPOLLIN` | This is a likely cause of retained backend descriptors after disconnect and should be fixed before any protocol migration. |
+| Multipart upload reads synchronously in the single API event loop and may poll for up to 30 seconds | A slow/interrupted upload can delay unrelated API work; lighttpd transport limits plus a nonblocking or FastCGI/SCGI body path are worth prototyping. |
+| `deneb-api` carries its own HTTP parser/serializer, header/body limits, keep-alive handling, and 64 KiB response buffer | These are transport responsibilities that could move behind a proven lighttpd application protocol if the total resource cost improves. |
+| Approximately 80 routes still perform dynamic printer/Cura work | The application service remains necessary even if all generic HTTP transport moves to lighttpd. |
+
+The immediate priority is fixing the observed four-SSE-client starvation,
+retained descriptors, and duplicate-API-process behavior across the existing
+proxy/API boundary. The frontend should remain framework-free; product work
+should focus on lifecycle accuracy, storage/upload UX, security, diagnostics,
+updates/rollback, accessibility, and hardware-backed browser workflows. See
+[PROJECT_STATUS.md](PROJECT_STATUS.md) and
 [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 
 ## Installation

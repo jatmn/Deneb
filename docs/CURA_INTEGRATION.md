@@ -5,6 +5,9 @@ Connect. It is implemented as a small Deneb web/API runtime on the printer plus
 a Cura plugin that teaches Cura how to map Deneb's advertised network machine
 id back to Cura's stock UM2+ Connect profile.
 
+For controller-command differences and non-Cura profile requirements, see
+[SLICER_COMPATIBILITY.md](SLICER_COMPATIBILITY.md).
+
 ## Components
 
 - `deneb-mdns` advertises `_ultimaker._tcp.local.` with Cura-compatible TXT

@@ -12,6 +12,7 @@ separate from current status and planning.
 | [SD_CARD_STORAGE_FINDINGS.md](SD_CARD_STORAGE_FINDINGS.md) | Storage layout, filesystem finding, repair, and verification |
 | [PRINTSVC_LEGACY_PARITY_AUDIT.md](PRINTSVC_LEGACY_PARITY_AUDIT.md) | Legacy native-print-service parity investigation |
 | [PRINTSVC_STOCK_PARITY_REVIEW.md](PRINTSVC_STOCK_PARITY_REVIEW.md) | Stock/native behavior comparison |
+| [MARLIN_COMMAND_PROTOCOL_AUDIT.md](MARLIN_COMMAND_PROTOCOL_AUDIT.md) | Connect command, response, serial-protocol, modern-Marlin conflict, and slicer-profile audit |
 
 Evidence files may retain chronological detail when it is necessary to
 understand a conclusion. They must not describe themselves as the current
