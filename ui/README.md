@@ -10,6 +10,25 @@ Replaces the stock Python/Cygnus menu with a lightweight native LVGL C implement
 - FTS resistive touchscreen (evdev /dev/input/event0)
 - 124 MB RAM
 
+## Touch Interaction
+
+The stock touchscreen firmware accepted discrete taps only. Deneb adds direct
+drag interaction in both axes:
+
+- Vertical swipe-to-scroll for menus, file lists, and content extending beyond
+  the 320x240 viewport.
+- Horizontal drag sliders for nozzle and bed temperature, material-workflow
+  temperature, and frame-light brightness.
+
+The target evdev driver samples touch input every 8 ms, begins a scroll after
+6 pixels of movement, and uses a small bounded throw suited to the resistive
+panel. Scrollable views show an automatic scrollbar with elastic overscroll and
+momentum disabled.
+
+These gestures manipulate content and controls. They do not provide global
+left/right screen navigation; changing screens still uses visible buttons and
+the Back control.
+
 ## Resource Comparison
 
 | Metric | Stock (Python) | Deneb (LVGL C) | Reduction |

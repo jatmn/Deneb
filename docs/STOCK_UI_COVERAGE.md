@@ -25,6 +25,8 @@ Deneb now exposes:
 - Manual Control
 - Temperature
 - Settings
+- Drag interaction absent from the tap-only stock UI: vertical swipe scrolling
+  for long content and horizontal sliders for temperature and lighting controls
 
 ## Coverage Matrix
 
@@ -52,7 +54,15 @@ Deneb now exposes:
    starting it and handles mismatch continue/abort state transitions, but it
    still does not reproduce those richer stock flows.
 
-## Implemented Native Replacements
+## Implemented Native Replacements And Improvements
+
+### Drag interaction
+
+The stock touchscreen was limited to discrete taps. Scrollable Deneb screens
+support controlled vertical swiping, while Temperature, active material
+workflows, and Frame Lighting provide horizontal drag sliders. These gestures
+manipulate content or a visible control; they do not replace explicit screen
+navigation or safety-related actions.
 
 1. Deneb update / install from USB
 

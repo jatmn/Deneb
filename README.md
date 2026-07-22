@@ -1,8 +1,16 @@
 # Deneb
 
-Deneb is a local-first, resource-conscious firmware mod for the UltiMaker 2+
-Connect. It replaces key Python services with small native components while
+Deneb transforms the UltiMaker 2+ Connect with a rebuilt native touchscreen,
+enhanced swipe and drag interaction, local-network printing that the stock
+firmware did not provide, and a basic browser Web UI. Local Cura/Web/API jobs
+and Digital Factory cloud jobs converge on the same native print backend while
 preserving hardware safety and a path back to official firmware.
+
+Deneb is working toward a fully native printer stack so Python can eventually
+be removed from the firmware image altogether. The accepted idle comparison
+has already removed 76.4% of the measured stock Python-service footprint
+(113.2 MB to 26.7 MB VSZ). Major remaining dependencies include coordinator
+workflow parity, bootstrap and rollback, and AVR programming and recovery.
 
 > Experimental: not yet a stable replacement firmware or independent image.
 
@@ -10,10 +18,10 @@ preserving hardware safety and a path back to official firmware.
 
 | Area | Status | Key gap |
 | --- | --- | --- |
-| Touchscreen | **Experimental** | Native LVGL UI works; Pause safety, material, leveling Cancel, update UX, and diagnostics remain open. |
-| Print service | **Experimental** | Native completion and abort are proven in bounded tests; Pause/Resume and long-soak stability are not release-ready. |
-| Web/API/Cura | **MVP** | Local control, upload, and Cura discovery exist; connection cleanup, storage UX, security, and failure recovery need work. |
-| Python removal | **In progress** | Native services replace the active stack, but the base image, rollback, and AVR recovery still require Python. |
+| Touchscreen | **Experimental** | Native LVGL UI adds vertical swipe scrolling and horizontal drag sliders; Pause safety, material, leveling Cancel, update UX, and diagnostics remain open. |
+| Print service | **Experimental** | One native backend executes USB, local-network Cura/Web/API, and Digital Factory jobs; Pause/Resume and long-soak stability are not release-ready. |
+| Web/API/Cura | **MVP** | Adds the stock-missing local-network discovery, upload, monitoring, control, and basic Web UI; connection cleanup, storage UX, security, and failure recovery need work. |
+| Python elimination | **In progress** | 76.4% of measured stock Python-service VSZ is removed from the idle stack; full uninstall still requires coordinator parity, native rollback/bootstrap, and native AVR recovery. |
 | Resource optimization | **In progress** | Retain lighttpd as the HTTP front end and move more generic HTTP work into it where that improves reliability without exceeding resource limits. |
 | Independent image and modern Marlin | **Planned** | Current OpenWrt hardware support, safe recovery, and the controller port are not complete. |
 
@@ -24,14 +32,18 @@ See [Project Status](docs/PROJECT_STATUS.md) for the detailed work board and
 
 | Component | Role |
 | --- | --- |
-| `deneb-ui` | Native LVGL touchscreen interface |
-| `deneb-printsvc` | Native print backend |
-| `deneb-api` and static Web UI | Local REST, print control, status, and browser interface |
-| `deneb-mdns` and Cura plugin | Cura discovery and UM2+ Connect profile mapping |
+| `deneb-ui` | Native LVGL touchscreen UI with swipe scrolling and drag sliders |
+| `deneb-printsvc` | Native backend for USB, local-network Cura/Web/API, and Digital Factory print jobs |
+| `deneb-api` and static Web UI | Local-network REST, upload/control, status, and basic browser interface |
+| `deneb-mdns` and Cura plugin | Local-network Cura discovery and UM2+ Connect profile mapping |
+| `deneb-dfsvc` | Native Digital Factory cloud connector and remote-job bridge |
 | USB network setup | Client-only WiFi and Ethernet configuration |
 | `.deneb` update package | Installs and audits the native stack |
 
-Implementation does not imply that every workflow is hardware-proven.
+Implementation does not imply that every workflow is hardware-proven. The
+76.4% figure is a measured idle runtime footprint reduction, not a claim that
+76.4% of functional de-Pythonization gates are complete; see
+[baseline measurements](docs/evidence/BASELINE_MEASUREMENTS.md).
 
 ## Documentation
 
