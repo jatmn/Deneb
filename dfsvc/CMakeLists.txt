@@ -41,6 +41,7 @@ add_executable(deneb-dfsvc
     src/main.c
     ../common/print/print_job_file.c
     ../common/print/print_state_rules.c
+    ../common/print/print_string.c
     ../common/print/lodepng_standalone_alloc.c
     ../ui/lib/lvgl/src/libs/lodepng/lodepng.c)
 
