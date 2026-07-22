@@ -176,7 +176,7 @@ run_selftest() {
     DENEB_PRINTSVC_STABILITY_ITERATIONS=2 \
     DENEB_PRINTSVC_STABILITY_SLEEP_SECONDS=0 \
     DENEB_PRINTSVC_STABILITY_MAX_RSS_DELTA_KB=4096 \
-    "$0" --iterations 2 --sleep 0 --summary "$tmp_dir/observe.summary" --log "$tmp_dir/observe.log" >/dev/null 2>&1 || {
+    sh "$0" --iterations 2 --sleep 0 --summary "$tmp_dir/observe.summary" --log "$tmp_dir/observe.log" >/dev/null 2>&1 || {
         echo "FAIL: observe-only stability selftest run failed" >&2
         cat "$tmp_dir/observe.log" >&2 2>/dev/null || true
         exit 1
@@ -186,7 +186,7 @@ run_selftest() {
         cat "$tmp_dir/observe.summary" >&2
         exit 1
     }
-    if "$0" --iterations 1 --complete-job "$tmp_dir/missing.gcode" \
+    if sh "$0" --iterations 1 --complete-job "$tmp_dir/missing.gcode" \
         --summary "$tmp_dir/reject.summary" --log "$tmp_dir/reject.log" >/dev/null 2>&1; then
         echo "FAIL: completion stability accepted missing --physical-ok" >&2
         exit 1
