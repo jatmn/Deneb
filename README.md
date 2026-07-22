@@ -6,15 +6,13 @@ firmware did not provide, and a basic browser Web UI. Local Cura/Web/API jobs
 and Digital Factory cloud jobs converge on the same native print backend while
 preserving hardware safety and a path back to official firmware.
 
-Deneb is working toward a fully native printer stack so Python can eventually
-be removed from the firmware image altogether. The accepted idle comparison
-has already removed 76.4% of the measured stock Python-service footprint
-(113.2 MB to 26.7 MB VSZ). Coordinator replacement is substantially
-implemented: all seven scoped workstreams have native implementation or an
-explicit retirement decision, three are closed, and four have remaining target
-proof or UX/safety gates. Full Python removal still requires those bounded
-hardware gates, a Python-free bootstrap/rollback path, and native AVR
-programming and recovery.
+Deneb is rewriting the firmware's Python application layer in C so Python can
+be removed from the final image entirely. The completed C replacements have
+reduced the measured idle Python-service footprint by 76.4%, from 113.2 MB to
+26.7 MB VSZ. All seven coordinator-replacement workstreams are covered: three
+are closed and four need final target proof or fixes. The documented remaining
+work is those hardware gates, a Python-free bootstrap/rollback path, and a
+replacement for the Python AVR programming and recovery tooling.
 
 > Experimental: not yet a stable replacement firmware or independent image.
 
