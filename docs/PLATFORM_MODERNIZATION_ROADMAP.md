@@ -1,6 +1,6 @@
 # Deneb Platform Modernization Roadmap
 
-Last updated: 2026-07-10
+Last updated: 2026-07-22
 
 This is the active sequencing and acceptance-gate document. Current completion,
 blockers, and defects belong in [PROJECT_STATUS.md](PROJECT_STATUS.md); dated
@@ -13,21 +13,16 @@ major-version package upgrades on the production printer.
 
 ## Starting Point
 
-The inspected stock image is OpenWrt `18.06-SNAPSHOT r7499-44c7d0a524` with
-Linux `4.14.81`, musl `1.1.19`, BusyBox `1.28.3`, Dropbear `2017.75`, OpenSSL
-`1.0.2p`, CA bundle `20180409`, GCC runtime `7.3.0`, and Python `3.6.15`.
+The stock image is an OpenWrt 18.06 snapshot. The selected initial replacement
+baseline is pinned OpenWrt `v25.12.5`, which supports the Onion Omega2+ base
+hardware but is not a printer-specific image. Detailed versions, support
+findings, and source links are preserved in
+[the dated upstream research](evidence/UPSTREAM_PLATFORM_RESEARCH_2026-07-22.md)
+and [the stock firmware audit](evidence/FIRMWARE_AUDIT.md).
 
-As of 2026-07-09, upstream OpenWrt tag `v25.12.5` is available. Its ramips
-target uses Linux `6.12`, retains explicit Onion Omega2+ support, assigns the
-Omega2+ a `32448k` firmware image limit, and includes USB, MMC, and U-Boot
-environment packages. This makes a current base technically practical, but the
-generic Omega2+ target is not a printer firmware: Deneb must supply and validate
-the printer-specific hardware description and userspace.
-
-Do not use `opkg upgrade` to bridge 18.06 to 25.12. The kernel module ABI,
-libc/toolchain ABI, init/config behavior, package feed, firewall stack, network
-stack, and device-tree expectations have changed too much. Build and boot a
-complete replacement image.
+Do not use `opkg upgrade` to bridge the stock image to the selected baseline.
+The kernel, libc/toolchain, package, network, and device-tree boundaries require
+a complete replacement image with an independently tested recovery path.
 
 ## Release Gates Used By Every Phase
 
@@ -47,11 +42,9 @@ complete replacement image.
 
 ## Phase 0 - Truth And Recovery Baseline
 
-Status: **IN PROGRESS / BLOCKED ON LIVE ACCESS**
-
-1. Reconnect the development printer and capture `/proc/mtd`, U-Boot environment,
-   kernel command line, loaded modules, device tree, GPIO mappings, UARTs,
-   framebuffer/input identity, and full package/process inventory.
+1. Capture and periodically refresh `/proc/mtd`, U-Boot environment, kernel
+   command line, loaded modules, device tree, GPIO mappings, UARTs,
+   framebuffer/input identity, and the full package/process inventory.
 2. Save full read-only dumps of U-Boot, environment, factory/calibration,
    firmware, and controller application/bootloader where legally and
    technically permitted.
@@ -66,19 +59,19 @@ inventory committed without vendor binaries or device secrets.
 
 ## Phase 1 - Finish Runtime De-Pythonization On The Legacy Base
 
-Status: **SUBSTANTIALLY IMPLEMENTED; target failures remain**. All seven scoped
-coordinator-replacement workstreams have native implementation or an explicit
-retirement decision; three are closed and four are partial. The remaining work
-is bounded target acceptance and repair, not a wholesale coordinator rewrite.
+Scope: close the remaining legacy-base workflow and recovery gates recorded in
+[PROJECT_STATUS.md](PROJECT_STATUS.md), then remove the target Python runtime.
 
 1. Prove the bounded one-command print stream stops/pauses physical motion in an
    acceptable interval; revise the protocol if the controller planner still
    defeats the bound.
 2. Complete material load/unload/change state and physical motion.
 3. Fix leveling Cancel to return to a known physical and UI state.
-4. Prove diagnostics, update, reboot-after-complete, reboot-after-abort, USB,
+4. Expand material selection to the required stock-compatible brand/type/color
+   depth and complete richer thumbnail, material, and nozzle preparation flows.
+5. Prove diagnostics, update, reboot-after-complete, reboot-after-abort, USB,
    Cura, Web, and Digital Factory paths with the coordinator disabled.
-5. Replace the Python AVR programmer:
+6. Replace the Python AVR programmer:
    - implement Intel HEX parsing;
    - implement the known UART/STK500v2 and GPIO reset route;
    - implement or deliberately omit software-ISP recovery only after a recovery
@@ -87,15 +80,13 @@ is bounded target acceptance and repair, not a wholesale coordinator rewrite.
      restore, and application restore;
    - keep the stock Python tool available only in the laboratory until parity is
      proven.
-6. Remove embedded target-side Python from the legacy bootstrap or freeze that
+7. Remove embedded target-side Python from the legacy bootstrap or freeze that
    installer as a legacy-only migration tool that runs before Python removal.
 
 Exit gate: the full target workflow matrix and controller update/recovery run
 without Python, and the only Python files in Git are desktop Cura/build tools.
 
 ## Phase 2 - Web/API Hardening And Productization
-
-Status: **PLANNED**
 
 Architecture decision: retain lighttpd as Deneb's supported HTTP front end.
 The stock firmware did not provide this Web UI; lighttpd was deliberately added
@@ -158,8 +149,6 @@ explicitly approved.
 
 ## Phase 3 - Reproducible Current OpenWrt Image
 
-Status: **NOT STARTED**
-
 1. Pin OpenWrt `v25.12.5` initially. Do not develop against moving `main`.
 2. Add a Deneb image-builder configuration/package feed with:
    - Omega2+ ramips/mt76x8 base;
@@ -191,8 +180,6 @@ matrix, and resource results no worse than the legacy Deneb base.
 
 ## Phase 4 - Independent Firmware Product
 
-Status: **EARLY / dependent on Phase 3**
-
 1. Replace stock-patching `.deneb` installation with Deneb-owned signed image
    and package/update metadata.
 2. Implement A/B or recovery-partition strategy if the flash layout permits;
@@ -212,32 +199,13 @@ image without any UltiMaker firmware image or extracted rootfs.
 
 ## Phase 5 - Marlin Modernization
 
-Status: **SOURCE PROTOCOL INVENTORY STARTED; implementation not started**
-
-### What is known
-
-- UltiMaker's public `Ultimaker/UltimakerMarlin` repository has an
-  `Ultimaker2+Connect` branch at commit `acb22046c69a` dated 2021-02-19.
-- That branch targets the AVR Mega 2560, one extruder, 250000 baud, an E2 board,
-  ADS101X temperature inputs, custom power/board detection, no LCD, and no SD
-  card. The Linux SBC owns the UI and print file.
-- The branch documents a modified host serial protocol and points to a Griffin
-  protocol document that is not present in this Deneb repository.
-- Direct source comparison found 19 Connect-added M-code numbers, no added
-  G-code numbers, modified standard commands, and a mandatory
-  sequence/CRC/planner-window transport. `M290`, `M401`, and
-  `M405`-`M407` conflict with different modern-Marlin meanings. Generic
-  modern-Marlin slicer profiles are unsafe without a Deneb compatibility
-  profile. See
-  [MARLIN_COMMAND_PROTOCOL_AUDIT.md](evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md).
-- Current upstream Marlin release `2.1.2.8` was published 2026-06-24. Current
-  configurations include legacy Ultimaker 2 and Ultimaker 2+, but GitHub source
-  search found no `BOARD_E2`, ADS101X, or 2+ Connect configuration in current
-  upstream Marlin.
-- Community evidence is thin. A 2022 source-code question received no useful
-  implementation answer. A current community thread confirms deployed 2+
-  Connect machines still report firmware 1.5.3 and says official support ends
-  2027-04-20, with further firmware updates unlikely except critical fixes.
+The command, response, transport, and slicer boundary is inventoried in
+[the Marlin protocol audit](evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md).
+Upstream versions, Connect hardware findings, and community context are
+preserved in
+[dated upstream research](evidence/UPSTREAM_PLATFORM_RESEARCH_2026-07-22.md).
+This phase starts only after native AVR recovery exists and the Linux-side
+workflow matrix is stable enough to distinguish controller regressions.
 
 ### Compatibility-layer boundary
 
@@ -294,16 +262,3 @@ and protocol port:
 
 Exit gate: protocol-compatible modern controller firmware passes the full
 fault/print matrix and can be restored through the native AVR recovery tool.
-
-## Upstream Research References
-
-- OpenWrt source/tag: https://github.com/openwrt/openwrt/tree/v25.12.5
-- OpenWrt Omega2+ image definition: https://github.com/openwrt/openwrt/blob/v25.12.5/target/linux/ramips/image/mt76x8.mk
-- OpenWrt Omega2+ device tree: https://github.com/openwrt/openwrt/blob/v25.12.5/target/linux/ramips/dts/mt7628an_onion_omega2.dtsi
-- UltiMaker Marlin repository: https://github.com/Ultimaker/UltimakerMarlin
-- UltiMaker 2+ Connect branch: https://github.com/Ultimaker/UltimakerMarlin/tree/Ultimaker2%2BConnect
-- UltiMaker 2+ Connect branch commit: https://github.com/Ultimaker/UltimakerMarlin/commit/acb22046c69a50b8266d9cb047b0bdde217ec7a2
-- Current Marlin release: https://github.com/MarlinFirmware/Marlin/releases/tag/2.1.2.8
-- Current Marlin configurations: https://github.com/MarlinFirmware/Configurations
-- Community firmware-source question: https://community.ultimaker.com/topic/42403-ultimaker-2-connect-where-is-the-firmware-sourcecode/
-- Current community LAN/support discussion: https://community.ultimaker.com/topic/47523-local-area-network-lan-printing-with-ultimaker-2-connect/

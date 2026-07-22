@@ -21,7 +21,7 @@ explain how the project works now, not preserve a running diary.
 | Area | Document |
 | --- | --- |
 | Third-party slicer profiles and command rules | [SLICER_COMPATIBILITY.md](SLICER_COMPATIBILITY.md) |
-| Web/API architecture and current product gaps | [WEB_UI.md](WEB_UI.md) |
+| Web/API architecture and first-class product requirements | [WEB_UI.md](WEB_UI.md) |
 | Cura discovery and local printing | [CURA_INTEGRATION.md](CURA_INTEGRATION.md) |
 | Touchscreen parity | [STOCK_UI_COVERAGE.md](STOCK_UI_COVERAGE.md) |
 | Touchscreen screen reference | [TOUCHSCREEN_SCREEN_CATALOG.md](TOUCHSCREEN_SCREEN_CATALOG.md) |

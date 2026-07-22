@@ -2,12 +2,10 @@
 
 A lightweight web interface for the UltiMaker 2+ Connect running Deneb firmware. It provides local status and controls plus UltiMaker REST API v1-shaped and Cura local cluster API compatibility surfaces.
 
-Status reconciliation: 2026-07-10. The implementation is an MVP, not yet a
-first-class or release-complete experience. Dated target proof exists for live
-status/progress and Cura 5.13 workflows, while Web pause/resume/cancel,
-stale-state recovery, upload/storage failure UX, and the latest native Pause
-mitigation remain open. The 2026-07-10 resource run also confirmed SSE
-connection starvation and post-disconnect descriptor retention.
+Current completion, target proof, and blockers are authoritative in
+[PROJECT_STATUS.md](PROJECT_STATUS.md). This document describes the supported
+HTTP/application boundary, external behavior, configuration, and capabilities
+required for a first-class Web experience.
 
 ## Architecture
 
@@ -28,22 +26,15 @@ Browser/Cura  --->  lighttpd (:80)  --->  deneb-api (Unix socket)
 For the Cura-specific discovery, plugin, and upload/start behavior, see
 [Cura integration](CURA_INTEGRATION.md).
 
-## Current Resource Baseline
+## Resource Evidence
 
-| Resource | Current observation |
-| --- | --- |
-| deneb-api RSS | 0.9-1.0 MiB on target, 2026-07-10 |
-| deneb-mdns RSS | 0.12 MiB on target, 2026-07-10 |
-| lighttpd RSS | 0.44 MiB on target, 2026-07-10 |
-| Static assets | 115.7 KiB tracked in web/www, 2026-07-22 |
-
-The table above records current measurements and working thresholds; it is not a release limiter or a promise that every component must remain under a fixed cap. Changes still require total memory, CPU, storage, and connection measurements because the target is severely constrained. On 2026-07-10, direct `/proc` RSS
-samples after clean boot were approximately 0.9-1.0 MiB for `deneb-api`, 0.44
-MiB for lighttpd, and 0.12 MiB for `deneb-mdns`. Three SSE clients plus 120 REST
-requests completed with flat 1,032 KiB API RSS. Four SSE clients starved REST
-past a 90-second bound and left seven extra API/proxy descriptors until reboot.
-See [the dated target report](evidence/TARGET_AUTOMATION_2026-07-10.md). CPU, upload,
-slow-client, and longer-duration matrices remain required.
+The current static frontend is framework-free and totals 115.7 KiB in
+`web/www` as of 2026-07-22. Dated target RSS, concurrency, and descriptor
+measurements live in
+[TARGET_AUTOMATION_2026-07-10.md](evidence/TARGET_AUTOMATION_2026-07-10.md).
+They are observations, not fixed per-component budgets. Every Web-stack change
+still requires total memory, CPU, storage, socket, descriptor, and recovery
+comparison because the target is severely constrained.
 
 ## First-Class Experience And HTTP/Application Boundary
 
@@ -182,18 +173,20 @@ protected by Open Access or Deneb auth. Cura 5.13 discovery, upload, conflict,
 print, monitor, pause/resume, cancel, and restart-recovery slices have target
 proof; broader versions and failure cleanup remain open.
 
-## Current Limits
+## First-Class Product Requirements
 
-| Area | Current state | Required before first-class status |
-| --- | --- | --- |
-| Connection handling | Three SSE clients plus polling passed; four SSE clients starved REST and retained seven descriptors until reboot | Isolate SSE capacity, close abandoned proxy/API sockets, and pass reconnect/slow-client/long-duration tests |
-| Print controls | Status/progress has target proof; Web pause/resume/cancel and stale-state recovery are not fully proven | Hands-on current-package lifecycle, reconnect, concurrent-client, and failure recovery tests |
-| Upload and storage | UM API and Cura multipart upload/start exist | Upload progress/cancel, free-space checks, failed-upload cleanup, history, local/USB file management, and removal-safe behavior |
-| Security | Web/API supports Open Access or Deneb auth; stock Cura cluster writes are intentionally unauthenticated for compatibility | Deliberate trusted-LAN policy, session/logout UX, expiry, rate limits, origin/CSRF policy, and request audit |
-| Diagnostics and updates | Basic log retrieval exists | Redacted diagnostics export plus update, reboot, rollback, and degraded-state UX |
-| Identity | Some firmware, machine, and PCB fields are missing or invalid on the current target | Populate identity from authoritative device/config sources and test Cura/Web presentation |
-| Motion | Guarded X/Y/Z controls exist | Keep home/limit/volume interlocks; do not expose extruder jogging until safe-temperature and material-context gates are proven |
-| Accessibility | Functional MVP only | Responsive layout, keyboard use, readable errors, accessibility review, and browser compatibility matrix |
+Before the Web UI is first-class, it must provide:
+
+- bounded concurrent SSE, polling, upload, reconnect, and restart behavior;
+- accurate print controls and stale-state recovery across failure paths;
+- upload progress/cancel, free-space handling, cleanup, history, and local/USB
+  file management;
+- an explicit trusted-LAN security model with complete session, origin, rate,
+  and audit behavior;
+- redacted diagnostics plus update, reboot, rollback, and degraded-state UX;
+- authoritative printer identity and safe motion controls;
+- responsive, keyboard-usable, accessible presentation with readable errors
+  across the supported browser matrix.
 
 Shared state, pending-job, formatting, macro, and command ownership is tracked in
 [PRINTSVC_INTEGRATION_AUDIT.md](PRINTSVC_INTEGRATION_AUDIT.md). Do not repeat

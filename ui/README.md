@@ -29,22 +29,14 @@ These gestures manipulate content and controls. They do not provide global
 left/right screen navigation; changing screens still uses visible buttons and
 the Back control.
 
-## Resource Comparison
+## Resource Evidence
 
-| Metric | Stock (Python) | Deneb (LVGL C) | Reduction |
-|--------|---------------|-----------------|-----------|
-| Runtime package | N/A (Python app tree) | ~1.8 MiB stripped `.deneb` | N/A |
-| Menu RAM (VSZ) | 33.7 MB | 2.7 MB measured | ~92% |
-| Menu RAM (RSS) | ~21 MB measured | ~2 MB measured | ~90% |
-| All Python service VSZ | 113.2 MB | ~79.5 MB after stock menu disable | ~30% |
-| Settled idle CPU | Stock baseline still being normalized | ~90% idle system sample | In progress |
-| IPC backend | ZMQ + Python | ZMQ + C | Same protocol |
-
-The Deneb measurements are from live idle printer samples after the stock menu
-was disabled and `deneb-ui --lang en` was running. The earlier 8.6 MiB package
-number included unstripped debug data; release packages are stripped. CPU
-numbers are snapshots, not yet a full benchmark across printing, update, and
-diagnostic workflows.
+UI-specific and whole-stack measurements are retained in
+[baseline evidence](../docs/evidence/BASELINE_MEASUREMENTS.md). In particular,
+the older post-menu-disable Python total is an intermediate UI-replacement
+snapshot, not the current whole-stack result. Keep new UI work bounded and
+remeasure the complete system across every affected workflow rather than
+treating an old component snapshot as a permanent budget.
 
 ## Architecture
 
@@ -199,9 +191,10 @@ already links the coordinator ZeroMQ stack. No Deneb-owned Python Digital
 Factory bridge and no standalone `deneb-df-bridge` binary are packaged or kept
 as runtime fallbacks.
 
-This is not a new web or cloud API endpoint. The command talks to the existing
-stock Gershwin coordinator/Digital Factory IPC path used by the previous Python
-helper.
+This is not a new Web or cloud API endpoint. The command uses the retained
+coordinator-compatible Digital Factory IPC contract while the native
+`deneb-dfsvc` owns active connector behavior. It does not require a live stock
+Python coordinator or helper.
 
 Active Digital Factory cloud connectivity is handled by the native
 `deneb-dfsvc` service installed as `/etc/init.d/digitalfactory`. The touchscreen
@@ -213,10 +206,11 @@ cluster state is cleared.
 
 The installer replaces the stock Python `digitalfactory` init path with the
 native service and disables it when no `ultimaker.option.cluster_id` is
-configured. Package/native audits reject Python Digital Factory bridge artifacts
-and stock connector fallback launches, but live cloud validation still has to
-prove pairing PIN, connected, reconnecting, disconnect, remote print, print-job
-action, and rename behavior on target hardware.
+configured. Package/native audits reject Python Digital Factory bridge
+artifacts and stock connector fallback launches. Pairing, reconnect,
+disconnect, rename, representative remote printing, and print actions have
+bounded target evidence for named packages; broader client and soak coverage
+remains open in [PROJECT_STATUS.md](../docs/PROJECT_STATUS.md).
 
 ## Screen Navigation
 

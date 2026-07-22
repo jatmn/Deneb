@@ -104,13 +104,10 @@ navigation or safety-related actions.
    native connector service. The current native Digital Factory screen exposes a
    `Connect` action that starts the service and requests pairing, plus a guarded
    two-tap `Disconnect` action when the status says a disconnectable cloud state
-   is active. Live cloud pairing PIN, connected/reconnecting, rename, and
-   disconnect are now covered by 2026-06-13 hardware evidence. Remote print
-   material mismatch now reaches the touchscreen user-action prompt through the
-   native connector and Cancel clears the pending job while the printer remains
-   idle. Continue/start after the prompt is **not** covered as safe: the
-   attempted run exposed a native `G280`/homing parity blocker. Print-job action
-   proof remains open.
+   is active. Pairing, reconnect, disconnect, rename, representative remote
+   printing, and print actions have bounded target evidence for their named
+   packages. Broader client and soak coverage remains open; current blockers
+   are maintained in [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 7. Print-state controls
 
@@ -119,18 +116,10 @@ navigation or safety-related actions.
    and cleared after abort completion. Status returns from mismatch/continue
    and abort paths instead of staying stuck on stale Idle or Printing labels.
 
-## Suggested Implementation Order
+## Resource Evidence
 
-1. Expand the material selector from Generic shortcuts to the full stock
-   brand/type/color database browser.
-2. Add richer print preparation pages for thumbnails and material/nozzle
-   conflicts.
-
-## Resource Guardrail
-
-Each added screen should stay within the current resource target. Recent live
-measurements for the current safe build were about 2.7 MB VSZ / about 2 MB RSS
-for `deneb-ui --lang en`, with a settled system CPU sample around 90% idle.
-The stock menu baseline was about 33.7 MB VSZ / about 21 MB RSS. Treat these as
-idle guardrail numbers until printing, update, diagnostics, and Digital Factory
-flows have their own samples.
+Touchscreen measurements are retained in
+[BASELINE_MEASUREMENTS.md](evidence/BASELINE_MEASUREMENTS.md). They are dated
+idle observations, not a fixed screen budget. New screens still require
+whole-system memory, CPU, storage, and responsiveness comparison across the
+workflows they affect.

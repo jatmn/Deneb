@@ -3,11 +3,10 @@
 `deneb-printsvc` is the native C replacement track for the stock
 `/home/cygnus/marlindriver/print_service.py` service.
 
-Current status: packaged and tested as an experimental native print backend.
-It has bounded hardware proof, static package gates, host tests, and stock/native
-resource evidence, but it is not stable until the open client and long-soak
-gates in [docs/PRINTSVC_EVIDENCE_LEDGER.md](../docs/PRINTSVC_EVIDENCE_LEDGER.md)
-are closed.
+Current promotion state and target blockers are authoritative in
+[PROJECT_STATUS.md](../docs/PROJECT_STATUS.md); qualifying print-service proof
+is indexed in
+[PRINTSVC_EVIDENCE_LEDGER.md](../docs/PRINTSVC_EVIDENCE_LEDGER.md).
 
 ## Compatibility Boundary
 
@@ -187,34 +186,16 @@ deneb-printsvc-integration-audit-selftest
 deneb-active-physical-soak-runner --duration 7200 --fixture /tmp/deneb-active-physical-soak-xyz.gcode
 ```
 
-## Evidence Rules
+## Acceptance And Status
 
-- Static audits prove source/package guardrails, not physical behavior.
-- Host tests prove the host-native C surface, not live MIPS behavior.
-- Generated fixtures, cluster API smoke, desktop Cura behavior, and arbitrary
-  slicer output are separate proof classes.
-- Observe-only runs are baseline context, not active print-service stability.
-- Completion and abort evidence must settle to `idle` with
-  `native_active:false`, `native_stop_allowed:false`, and no resend debt where
-  required by the verifier.
-- Long-soak promotion requires active heat/motion/job cycles, not only idle
-  sampling.
+The commands above generate evidence; they do not promote the service by
+themselves. In particular:
 
-## Open Promotion Work
+- static audits and host tests do not prove live MIPS or physical behavior;
+- generated, Cura, Web, LCD, Digital Factory, and arbitrary-slicer workflows
+  remain separate evidence classes;
+- accepted completion and abort summaries must settle to `idle` with
+  `native_active:false`, `native_stop_allowed:false`, and no verifier debt;
+- long-soak acceptance requires active heat/motion/job cycles.
 
-Track current status in
-[docs/PRINTSVC_EVIDENCE_LEDGER.md](../docs/PRINTSVC_EVIDENCE_LEDGER.md). The
-native service remains experimental until these pass:
-
-- LCD hands-on queued/start/pause/resume/abort/completion/stale-state workflow,
-  including fixed-package proof that Resume reheats after Pause cooldown.
-- Web UI hands-on control workflow and stale-state recovery. Live status,
-  progress, temperature, filename, and explicit time-left display are proven on
-  package `9cdb5d6f`.
-- Desktop Cura target proof for broader failure-mode behavior after the
-  2026-06-14 Cura-local discovery/upload/start/pause/resume/cancel,
-  progress/time, and pending recovery-after-restart proof.
-- Digital Factory job lifecycle.
-- Representative real slicer output.
-- Multi-hour active heat/motion/job stability with acceptable memory, tmpfs, and
-  diagnostics-log behavior.
+Use the evidence ledger for print-service gates and the project dashboard for

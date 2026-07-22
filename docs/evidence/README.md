@@ -13,6 +13,8 @@ separate from current status and planning.
 | [PRINTSVC_LEGACY_PARITY_AUDIT.md](PRINTSVC_LEGACY_PARITY_AUDIT.md) | Legacy native-print-service parity investigation |
 | [PRINTSVC_STOCK_PARITY_REVIEW.md](PRINTSVC_STOCK_PARITY_REVIEW.md) | Stock/native behavior comparison |
 | [MARLIN_COMMAND_PROTOCOL_AUDIT.md](MARLIN_COMMAND_PROTOCOL_AUDIT.md) | Connect command, response, serial-protocol, modern-Marlin conflict, and slicer-profile audit |
+| [UPSTREAM_PLATFORM_RESEARCH_2026-07-22.md](UPSTREAM_PLATFORM_RESEARCH_2026-07-22.md) | Dated OpenWrt and Marlin version, hardware-support, and community research used by the modernization roadmap |
+| [PRINTSVC_TARGET_EVIDENCE_HISTORY.md](PRINTSVC_TARGET_EVIDENCE_HISTORY.md) | Package-specific native print-service results, superseded successes, and active-soak investigation history |
 
 Evidence files may retain chronological detail when it is necessary to
 understand a conclusion. They must not describe themselves as the current

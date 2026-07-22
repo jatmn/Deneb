@@ -1,6 +1,6 @@
 # Deneb UM2C Modding Checklist
 
-Reconciled: 2026-07-10
+Reconciled: 2026-07-22
 
 > **Machine-audited acceptance inventory:** release scripts validate portions
 > of this file at its current path. It is not the current project dashboard or
@@ -175,12 +175,15 @@ long-soak proof.
   surface and should be part of validation where host execution is possible.
 - [x] Accepted bounded hardware evidence covers native route ownership,
   observe-only firmware/temperature telemetry, low-temperature heat/preheat
-  abort, active abort cleanup, bounded pause/resume, generated cluster API
-  upload/start/abort, completion flow drain, native driver RSS reduction,
-  diagnostics-log mitigation, short repeated-job stability, and strict
-  stock/native resource comparison for the current bounded evidence set.
+  abort, active abort cleanup, generated cluster API upload/start/abort,
+  completion flow drain, native driver RSS reduction, diagnostics-log
+  mitigation, short repeated-job stability, strict stock/native resource
+  comparison, and historical bounded pause/resume for the named packages.
+  Historical Pause evidence does not satisfy the current promotion gate: the
+  newest hands-on Pause matrix failed and the source mitigation has host proof
+  only.
 - [ ] Prove LCD hands-on workflow against native service. Some start/abort and
-  completion slices pass, but the latest physical Pause test failed and
+  completion slices pass, but the newest physical Pause test failed and
   material/leveling flows remain incomplete.
 - [ ] Prove Web UI hands-on workflow against native service. Live status,
   progress, and time-left display are proven on package `9cdb5d6f`; controls
