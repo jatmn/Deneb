@@ -84,8 +84,19 @@ if(MBEDTLS_ROOT)
         "${MBEDTLS_ROOT}/lib/libmbedx509.a"
         "${MBEDTLS_ROOT}/lib/libmbedcrypto.a")
 else()
-    find_package(MbedTLS REQUIRED)
-    target_link_libraries(deneb-dfsvc PRIVATE mbedtls mbedx509 mbedcrypto)
+    find_path(MBEDTLS_INCLUDE_DIR mbedtls/ssl.h)
+    find_library(MBEDTLS_LIBRARY NAMES mbedtls)
+    find_library(MBEDX509_LIBRARY NAMES mbedx509)
+    find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
+    if(NOT MBEDTLS_INCLUDE_DIR OR
+       NOT MBEDTLS_LIBRARY OR
+       NOT MBEDX509_LIBRARY OR
+       NOT MBEDCRYPTO_LIBRARY)
+        message(FATAL_ERROR "mbedTLS headers or libraries not found. Set MBEDTLS_ROOT.")
+    endif()
+    target_include_directories(deneb-dfsvc PRIVATE ${MBEDTLS_INCLUDE_DIR})
+    target_link_libraries(deneb-dfsvc PRIVATE
+        ${MBEDTLS_LIBRARY} ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
 endif()
 
 target_link_libraries(deneb-dfsvc PRIVATE m pthread)
