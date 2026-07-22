@@ -35,7 +35,9 @@ $repo = '/mnt/' + $PWD.Drive.Name.ToLower() + $PWD.Path.Substring(2).Replace('\'
 wsl -d Debian -u root -- sh "$repo/tools/setup-wsl-build.sh" "$repo"
 ```
 
-The setup script installs Debian host tools, refuses to overwrite incomplete dependency directories, and verifies archives before extracting them.
+The setup script installs Debian host tools (including Python 3 for host UI
+screenshot conversion), refuses to overwrite incomplete dependency directories,
+and verifies archives before extracting them.
 
 | Input | Version | SHA-256 |
 | --- | --- | --- |

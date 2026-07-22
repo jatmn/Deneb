@@ -125,6 +125,7 @@ rc=`$?
 rm -rf $(Quote-Bash $tempWsl)
 exit `$rc
 "@
+$command = $command -replace "`r`n", "`n"
 
 & wsl -d $Distro -- bash -lc $command
 if ($LASTEXITCODE -ne 0) {

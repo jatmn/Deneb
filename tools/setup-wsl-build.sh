@@ -20,7 +20,7 @@ if [ -z "$repo" ] || [ ! -f "$repo/ui/cmake/mipsel-musl-toolchain.cmake" ]; then
 fi
 
 apt-get update
-apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config tar xz-utils
+apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM

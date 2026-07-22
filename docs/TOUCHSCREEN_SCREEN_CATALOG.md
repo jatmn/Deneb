@@ -1,31 +1,33 @@
 # Touchscreen Screen Catalog
 
-Reference catalog for the current Deneb touchscreen UI. Screenshots are
-host-rendered from the LVGL UI at the target 320x240 resolution using the
-stub backend, so live device values such as temperatures, network addresses,
-USB files, Digital Factory state, and error details are representative rather
-than captured from a specific printer session.
+Reference catalog for the current Deneb touchscreen UI. These screenshots are
+host-rendered from the LVGL UI at the target 320x240 resolution with
+`BACKEND_COMM_STUB=ON`. They are deterministic layout references, not captures
+from a particular printer: temperatures, network values, USB files, Digital
+Factory status, and error details use stub data.
 
-Screenshot set last regenerated from commit `caa1490` on 2026-06-13. The
-Digital Factory image shows the host-stub default state only; pairing PIN,
-connected/reconnecting, cloud error, and authenticated disconnect states still
-need target/cloud captures before those workflows are documented as proven.
+Screenshot set regenerated from commit `ab2741a` on 2026-07-22. The host
+renderer proves the current screen layouts and default states. It cannot prove
+hardware- or cloud-backed workflows; those remain explicitly listed below for
+target capture.
 
-Regenerate the screenshots from a WSL host build:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/capture-ui-screens.ps1 -OutputDirectory docs/touchscreen-screens
-```
-
-Regenerate one screen by slug:
+Regenerate the complete host catalog from PowerShell at the repository root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/capture-ui-screens.ps1 -Screen status -OutputDirectory docs/touchscreen-screens
+powershell -ExecutionPolicy Bypass -File tools/capture-ui-screens.ps1 `
+  -OutputDirectory docs/touchscreen-screens
 ```
 
-The wrapper uses temporary PPM files from the host renderer, converts them to
-PNG, and removes the temporary files before exiting.
+The wrapper builds the host UI with stub drivers, writes temporary PPM files,
+converts them to PNG with Python 3, and removes the temporary PPM directory.
+Python 3 is installed by `tools/setup-wsl-build.sh`.
 
+Regenerate one screen by slug after a host build:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/capture-ui-screens.ps1 `
+  -NoBuild -Screen status -OutputDirectory docs/touchscreen-screens
+```
 ## Top-Level Flow
 
 Home is the root menu. Most screens show a 32 px title bar and a back button
@@ -41,38 +43,40 @@ control to change screens.
 
 ## Screen Catalog
 
-| Screen | Screenshot | Current Role | Primary Actions | Direction Notes |
+| Screen | Screenshot | Current Role | Primary Actions | Capture Scope |
 |---|---|---|---|---|
-| Home | <img src="touchscreen-screens/home.png" width="160" alt="Home screen"> | Root launcher for the major UI areas. | Open Status, Print from USB, Material, Maintenance, Manual Control, Temperature, and Settings. | Keep this as a fast operational hub. The final item can scroll below the viewport, so menu density and discoverability matter. |
-| Status | <img src="touchscreen-screens/status.png" width="160" alt="Status screen"> | Live printer overview from the coordinator status stream. | Review printer state, nozzle and bed temperatures, print progress, active file, and X/Y/Z position. | Status and Stop controls now track idle, preheating, printing, and aborted states more closely. Host screenshot uses empty stub telemetry. |
-| Print from USB | <img src="touchscreen-screens/print-from-usb.png" width="160" alt="Print from USB screen"> | USB file browser and print job entry point. | Select a G-code file from USB, review readiness, start print, pause/resume, or cancel. | Needs real-device captures for USB-populated, mismatch-continue, preheat, active-print, and aborted states if we want complete workflow docs. |
-| Print Conflict | <img src="touchscreen-screens/print-conflict.png" width="160" alt="Print conflict screen"> | Conflict/confirmation view for a pending print when the printer state requires user action. | Continue the pending job or cancel it. | Host screenshot proves the screen renders, not the full hardware mismatch/preheat/continue workflow. |
-| Material | <img src="touchscreen-screens/material.png" width="160" alt="Material screen"> | Material workflow menu. | Load, unload, set, move, finish movement, import profiles, and drag the active-workflow temperature slider. | Good candidate for clearer state gating around busy/printer unavailable conditions. |
-| Set Material | <img src="touchscreen-screens/set-material.png" width="160" alt="Set Material screen"> | Material selection screen used from material workflows. | Choose one of the supported material profiles. | Current screen is intentionally simple; future direction may include active material feedback or custom profiles. |
-| Maintenance | <img src="touchscreen-screens/maintenance.png" width="160" alt="Maintenance screen"> | Maintenance submenu. | Open Temperature, Update Firmware, Move Build Plate, Level Build Plate, and Diagnostics. | This screen is the gateway for hardware-affecting tools, so action labels should stay plain and conservative. |
-| Temperature | <img src="touchscreen-screens/temperature.png" width="160" alt="Temperature screen"> | Nozzle and bed temperature control. | Drag horizontal nozzle and bed sliders, apply the targets, or start cooldown. | Slider ergonomics are worth revisiting on resistive touch; current design favors compactness. |
-| Update Firmware | <img src="touchscreen-screens/update-firmware.png" width="160" alt="Update Firmware screen"> | Deneb-only update package installer. | Select a `.deneb` package from USB and start installation. | The copy should keep distinguishing Deneb packages from stock UltiMaker firmware updates. |
-| Manual Control | <img src="touchscreen-screens/manual-control.png" width="160" alt="Manual Control screen"> | Motion and build plate controls. | Jog X/Y/Z, home XY, home Z, change jog step, move build plate up/down. | Hardware direction labels are especially important here. Recent changes align the Z controls with build plate motion expectations. |
-| Level Build Plate | <img src="touchscreen-screens/level-build-plate.png" width="160" alt="Level Build Plate screen"> | Build plate leveling macro sequence. | Run leveling steps 1-4 and finish leveling. | This flow may benefit from a wizard-like progression later, but the current screen exposes all stock macro steps directly. |
-| Diagnostics | <img src="touchscreen-screens/diagnostics.png" width="160" alt="Diagnostics screen"> | Device diagnostics and log export. | Review Air Manager/build volume fields and export logs to USB. | Good place to add more actionable hardware/network checks as troubleshooting needs become clearer. |
-| Settings | <img src="touchscreen-screens/settings.png" width="160" alt="Settings screen"> | System configuration submenu. | Open Language, Nozzle Size, Network, Digital Factory, Frame Lighting, Factory Reset, and About Deneb. | This menu is dense; grouping or ordering may become important as settings expand. |
-| Language | <img src="touchscreen-screens/language.png" width="160" alt="Language screen"> | Runtime language selector. | Switch between English, Dutch, German, French, Simplified Chinese, Pirate English, and L33T English. | Generated font subsets must be refreshed when locale strings add new non-ASCII glyphs. |
-| Nozzle Size | <img src="touchscreen-screens/nozzle-size.png" width="160" alt="Nozzle Size screen"> | Installed nozzle size selection. | Choose the configured nozzle diameter. | Future work can connect this more visibly to print compatibility checks. |
-| Network | <img src="touchscreen-screens/network.png" width="160" alt="Network screen"> | Network status and USB-based configuration. | Toggle WiFi, import WiFi settings from USB, import Ethernet settings from USB, reset Ethernet to DHCP. | Host screenshot uses deterministic placeholder network values; real-device docs should include WiFi and Ethernet variants. |
-| Digital Factory | <img src="touchscreen-screens/digital-factory.png" width="160" alt="Digital Factory screen"> | Digital Factory connection controls backed by `deneb-api digital-factory` and native `deneb-dfsvc`. | Start setup with Connect, show native bridge/service status when available, and expose guarded Disconnect only for disconnectable states. | Host screenshot shows the stub default Connect/disabled Disconnect state and is outdated for the live pairing/connected/reconnecting/disconnect flows. Hardware evidence now covers those flows plus printer rename; fresh screenshots are still needed for pairing PIN, connected, reconnecting, disconnecting, service-error, material-mismatch/cloud-print, and print-job-action screens. |
-| Frame Lighting | <img src="touchscreen-screens/frame-lighting.png" width="160" alt="Frame Lighting screen"> | Frame light control. | Turn lighting on or off and drag the horizontal brightness slider. | Brightness is applied through a drag control rather than repeated single-tap steps. |
-| Factory Reset | <img src="touchscreen-screens/factory-reset.png" width="160" alt="Factory Reset screen"> | Local settings reset confirmation. | Tap once, then tap again to erase local printer settings and reboot. | Keep the two-step confirmation; this is intentionally destructive. |
-| About Deneb | <img src="touchscreen-screens/about.png" width="160" alt="About Deneb screen"> | Version, license, repository, and printer identity reference. | Review Deneb version, stock base, project URL, printer ID, and certifications. | Useful for support screenshots. The host-rendered version includes `-dirty` when local changes are present. |
-| Error | <img src="touchscreen-screens/error.png" width="160" alt="Error screen"> | Blocking ER-code display. | Read error code, description, recommended action, and dismiss with OK. | Host screenshot uses synthetic `ER999` content; real error captures should be added when specific recovery flows are documented. |
-
+| Home | <img src="touchscreen-screens/home.png" width="160" alt="Home screen"> | Scrollable root menu for all operational areas. | Open Status, Print from USB, Material, Maintenance, Manual Control, Temperature, and Settings. | Layout and navigation only; the final menu item may be below the viewport. |
+| Status | <img src="touchscreen-screens/status.png" width="160" alt="Status screen"> | Live print overview. | Show state, nozzle/bed readings, progress, remaining time, active file, XY/Z position, Pause/Resume, and Stop. | Host capture uses idle/default telemetry; capture active, pausing, resuming, and stopping states on target. |
+| Print from USB | <img src="touchscreen-screens/print-from-usb.png" width="160" alt="Print from USB screen"> | USB-file selection and print control surface. | Refresh files; select a G-code file; start, open Material, pause, resume, or stop a job. | Host capture proves empty/default layout, not a populated USB or an active job. |
+| Print Conflict | <img src="touchscreen-screens/print-conflict.png" width="160" alt="Print conflict screen"> | Confirmation view for a pending job that needs operator choice. | Continue the pending job or cancel it. | Capture real material-mismatch and preheat/continue paths on target. |
+| Material | <img src="touchscreen-screens/material.png" width="160" alt="Material screen"> | Material workflow hub. | Load, unload, choose a material, move filament, finish movement, import profiles, and set workflow temperature. | Host state is idle; busy, movement, and error gating require target captures. |
+| Set Material | <img src="touchscreen-screens/set-material.png" width="160" alt="Set Material screen"> | Material catalog selection. | Select the installed material profile. | Capture any imported/custom profiles on target if they become supported. |
+| Maintenance | <img src="touchscreen-screens/maintenance.png" width="160" alt="Maintenance screen"> | Hardware-maintenance navigation. | Open Temperature, Update Firmware, Move Build Plate, Level Build Plate, and Diagnostics. | Layout reference. |
+| Temperature | <img src="touchscreen-screens/temperature.png" width="160" alt="Temperature screen"> | Nozzle and bed target controls. | Drag nozzle/bed targets, apply them, or cool down both heaters. | Host values are placeholders; heating/cooldown outcomes require target evidence. |
+| Update Firmware | <img src="touchscreen-screens/update-firmware.png" width="160" alt="Update Firmware screen"> | Deneb package update chooser. | List USB `.deneb` packages, select a package, check pending releases, and confirm installation with a second tap. | Capture USB-populated and confirmation/progress states on target. |
+| Manual Control | <img src="touchscreen-screens/manual-control.png" width="160" alt="Manual Control screen"> | Motion and build-plate control. | Jog X/Y, home XY, choose step size, home Z, and move the build plate up or down. | Position values and hardware responses require target capture. |
+| Level Build Plate | <img src="touchscreen-screens/level-build-plate.png" width="160" alt="Level Build Plate screen"> | Guided leveling sequence. | Advance the current leveling step with the single contextual action button. | Capture each target-confirmed stage if documenting the complete procedure. |
+| Diagnostics | <img src="touchscreen-screens/diagnostics.png" width="160" alt="Diagnostics screen"> | Hardware summary and log-export surface. | Display Air Manager/build-volume/fan information and export diagnostics to USB. | Stub reports unknown/default data; capture a real device and export result. |
+| Settings | <img src="touchscreen-screens/settings.png" width="160" alt="Settings screen"> | Scrollable system-settings navigation. | Open Language, Nozzle Size, Network, Digital Factory, Frame Lighting, Factory Reset, and About Deneb. | Layout reference. |
+| Language | <img src="touchscreen-screens/language.png" width="160" alt="Language screen"> | Runtime locale selector. | Choose English, Dutch, German, French, Simplified Chinese, Pirate English, or L33T English. | Refresh fonts and this capture when locale strings or glyph coverage change. |
+| Nozzle Size | <img src="touchscreen-screens/nozzle-size.png" width="160" alt="Nozzle Size screen"> | Installed-nozzle configuration. | Select the configured nozzle diameter. | Capture selected-state persistence on target when needed. |
+| Network | <img src="touchscreen-screens/network.png" width="160" alt="Network screen"> | Network status and USB configuration. | Show hostname/WiFi/Ethernet status; toggle WiFi; import WiFi or Ethernet settings; reset Ethernet to DHCP. | Host capture uses deterministic `Deneb-Printer` and placeholder status values. |
+| Digital Factory | <img src="touchscreen-screens/digital-factory.png" width="160" alt="Digital Factory screen"> | Native Digital Factory connection control. | Pair/show PIN, display bridge status, and enable Disconnect only in a disconnectable state. | Host capture is the default unpaired state; pairing, connected, reconnecting, disconnecting, service-error, material-mismatch, cloud-print, and print-job-action states require target/cloud capture. |
+| Frame Lighting | <img src="touchscreen-screens/frame-lighting.png" width="160" alt="Frame Lighting screen"> | Frame-light control. | Turn the frame light on or off and drag brightness. | Verify actual brightness hardware response on target. |
+| Factory Reset | <img src="touchscreen-screens/factory-reset.png" width="160" alt="Factory Reset screen"> | Local-settings reset confirmation. | Tap Reset, then tap again to reset local settings and reboot. | Keep this host-only reference; do not invoke solely for documentation. |
+| About Deneb | <img src="touchscreen-screens/about.png" width="160" alt="About Deneb screen"> | Version and device identity reference. | Show Deneb version, stock base, repository, printer ID, and certifications. | Host version reflects the local build and may carry `-dirty`; capture a released target build for support docs. |
+| Error | <img src="touchscreen-screens/error.png" width="160" alt="Error screen"> | Blocking recovery prompt. | Show an ER code, description, recommended action, and dismiss with OK. | Host capture uses synthetic `ER999`; add real ER-code examples only with their verified recovery guidance. |
 ## Coverage Gaps To Capture Later
 
-- Active print state with non-zero progress and remaining time.
-- USB file browser populated with real print files.
-- Material workflow while the printer is busy or actively moving material.
-- Network screen with WiFi connected, WiFi disabled, and static Ethernet.
-- Digital Factory screenshot refresh for pairing PIN, paired, reconnecting,
-  disconnecting, service-error, material-mismatch/cloud-print, and
-  print-job-action states. Printer rename has behavior evidence but no distinct
-  touchscreen state.
-- Real ER-code examples tied to known recovery instructions.
+The host catalog is current for static layout and default state. Add target or
+cloud-backed captures for these stateful workflows:
+
+- Active print with non-zero progress, remaining time, pause/resume, and stop.
+- USB file browser with real files, selection preview, material mismatch,
+  preheat/continue, active-print, and abort states.
+- Material load/unload/move workflows while busy, moving, or faulted.
+- Network with WiFi connected/disabled and static Ethernet applied.
+- Digital Factory pairing PIN, paired, reconnecting, disconnecting,
+  service-error, material-mismatch/cloud-print, and print-job-action states.
+- Firmware-package listing, confirmation, and target-side installation status.
+- Real diagnostics/log-export feedback and ER-code recovery examples.
