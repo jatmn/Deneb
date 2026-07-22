@@ -78,7 +78,7 @@ if ($printsvcNativeEvidenceSummaryWsl.Count -gt 0) {
 }
 
 $toolchainCheck = "/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version >/dev/null"
-& wsl -d $Distro -- bash -lc $toolchainCheck
+& wsl -d $Distro -u root -- bash -lc $toolchainCheck
 if ($LASTEXITCODE -ne 0) {
     throw "Missing musl cross-compiler. Follow ui/README.md production build prerequisites first."
 }
@@ -87,6 +87,8 @@ $zmqLib = "$ZmqRoot/build-musl/lib/libzmq.a"
 $zmqInclude = "$ZmqRoot/include"
 $lighttpdBinary = "$LighttpdRoot/build-musl-static/build/lighttpd"
 $lighttpdVersion = "1.4.76"
+$zmqSha256 = "6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43"
+$lighttpdSha256 = "8cbf4296e373cfd0cedfe9d978760b5b05c58fdc4048b4e2bcaf0a61ac8f5011"
 
 if ($RebuildZmq) {
     if ($ZmqRoot -notmatch '/zeromq-4\.3\.5/?$') {
@@ -96,7 +98,8 @@ if ($RebuildZmq) {
     $buildZmq = "set -euo pipefail; " +
                 "mkdir -p '$ZmqRoot'; " +
                 "rm -rf '$ZmqRoot'/*; " +
-                "curl -L -o '$ZmqRoot.tar.gz' https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz; " +
+                "curl --fail --location -o '$ZmqRoot.tar.gz' https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz; " +
+                "printf '%s  %s\n' '$zmqSha256' '$ZmqRoot.tar.gz' | sha256sum -c -; " +
                 "tar xzf '$ZmqRoot.tar.gz' -C '$ZmqRoot' --strip-components=1; " +
                 "rm -f '$ZmqRoot.tar.gz'; " +
                 "cd '$ZmqRoot'; mkdir build-musl; cd build-musl; " +
@@ -104,14 +107,14 @@ if ($RebuildZmq) {
                 "-DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF " +
                 "-DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON; " +
                 "make -j`$(nproc)"
-    & wsl -d $Distro -- bash -lc $buildZmq
+    & wsl -d $Distro -u root -- bash -lc $buildZmq
     if ($LASTEXITCODE -ne 0) {
         throw "libzmq musl build failed with exit code $LASTEXITCODE"
     }
 }
 
 $zmqCheck = "test -f '$zmqLib' && test -d '$zmqInclude'"
-& wsl -d $Distro -- bash -lc $zmqCheck
+& wsl -d $Distro -u root -- bash -lc $zmqCheck
 if ($LASTEXITCODE -ne 0) {
     throw "Missing musl libzmq at $zmqLib. Re-run with -RebuildZmq."
 }
@@ -124,10 +127,11 @@ if ($RebuildLighttpd) {
     $buildLighttpdSource = "set -euo pipefail; " +
                            "mkdir -p '$LighttpdRoot'; " +
                            "rm -rf '$LighttpdRoot'/*; " +
-                           "curl -L -o '$LighttpdRoot.tar.xz' https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$lighttpdVersion.tar.xz; " +
+                           "curl --fail --location -o '$LighttpdRoot.tar.xz' https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$lighttpdVersion.tar.xz; " +
+                           "printf '%s  %s\n' '$lighttpdSha256' '$LighttpdRoot.tar.xz' | sha256sum -c -; " +
                            "tar xf '$LighttpdRoot.tar.xz' -C '$LighttpdRoot' --strip-components=1; " +
                            "rm -f '$LighttpdRoot.tar.xz'"
-    & wsl -d $Distro -- bash -lc $buildLighttpdSource
+    & wsl -d $Distro -u root -- bash -lc $buildLighttpdSource
     if ($LASTEXITCODE -ne 0) {
         throw "lighttpd source fetch failed with exit code $LASTEXITCODE"
     }
@@ -147,7 +151,7 @@ $buildApi = "set -euo pipefail; " +
             "fi; " +
             "make -j`$(nproc)"
 
-& wsl -d $Distro -- bash -lc $buildApi
+& wsl -d $Distro -u root -- bash -lc $buildApi
 if ($LASTEXITCODE -ne 0) {
     throw "release API build failed with exit code $LASTEXITCODE"
 }
@@ -167,7 +171,7 @@ $buildPrintsvc = "set -euo pipefail; " +
                  "make -j`$(nproc); " +
                  "test -x deneb-printsvc"
 
-& wsl -d $Distro -- bash -lc $buildPrintsvc
+& wsl -d $Distro -u root -- bash -lc $buildPrintsvc
 if ($LASTEXITCODE -ne 0) {
     throw "release print service build failed with exit code $LASTEXITCODE"
 }
@@ -194,7 +198,7 @@ $buildLighttpd = "set -euo pipefail; " +
                  "make -j`$(nproc) lighttpd; " +
                  "test -x '$lighttpdBinary'"
 
-& wsl -d $Distro -- bash -lc $buildLighttpd
+& wsl -d $Distro -u root -- bash -lc $buildLighttpd
 if ($LASTEXITCODE -ne 0) {
     throw "release lighttpd build failed with exit code $LASTEXITCODE"
 }
@@ -227,7 +231,7 @@ $buildUi = "set -euo pipefail; " +
            "cd '$repoWsl'; " +
            "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc"
 
-& wsl -d $Distro -- bash -lc $buildUi
+& wsl -d $Distro -u root -- bash -lc $buildUi
 if ($LASTEXITCODE -ne 0) {
     throw "update release build failed with exit code $LASTEXITCODE"
 }
@@ -282,7 +286,7 @@ $verifyPackage = "set -euo pipefail; " +
                  "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log; " +
                  "printf 'Verified native-only print service package: %s\n' '$packageWsl'"
 
-& wsl -d $Distro -- bash -lc $verifyPackage
+& wsl -d $Distro -u root -- bash -lc $verifyPackage
 if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }

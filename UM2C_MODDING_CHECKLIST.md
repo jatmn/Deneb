@@ -215,14 +215,13 @@ long-soak proof.
 - [x] Client-only WiFi/Ethernet setup exists via USB import.
 - [x] Stock AP/captive-portal setup and AP-side DHCP/DNS/IPv6 services are
   disabled/hidden for Deneb installs where applicable.
-- [x] Diagnostics export and Deneb-specific print-service diagnostics exist.
+- [x] SOURCE: diagnostics export formatting and Deneb-specific print-service diagnostics exist.
+- [ ] TARGET: package, install, and prove bounded redacted diagnostics export/download.
 - [ ] Add remote-control authorization/audit story for web/API/Cura actions.
 - [ ] Provide touchscreen-visible indication when remote control is active.
 - [x] Disable stock `compile_all` for Deneb installs and clear
   `/home/cygnus/__pycache__` after backing up the stock init script.
-- [x] Replace active Digital Factory connector package/init path with native
-  `deneb-dfsvc`; live cloud pairing, connected, reconnecting, disconnect, cloud
-  print, action, and rename proof remains open.
+- [x] Replace the active Digital Factory connector/init path with native `deneb-dfsvc`. Scoped pairing, reconnect, disconnect, representative cloud print/actions, and rename are target-proven; broader client and soak coverage remains open.
 - [ ] Keep `onion-helper`, remaining stock Python services, and backend service
   dependencies under review before disabling or replacing more services.
 - [ ] Measure print-quality regressions and correlate them with CPU, memory,

@@ -1,6 +1,6 @@
 # Repository Setup
 
-This repository should stay private until the legal boundary, installer shape, and first hardware validation path are clear.
+This repository is intentionally private. Publication-readiness checks are maintained so a future visibility decision can be made from evidence, but passing them does not authorize changing repository visibility.
 
 ## GitHub Settings
 
@@ -9,6 +9,7 @@ This repository should stay private until the legal boundary, installer shape, a
 - Require review before Stable release workflows can sign artifacts.
 - Do not allow release signing secrets to run on arbitrary pull requests.
 - Keep private keys only in GitHub Actions Secrets or another protected secret store.
+- Keep Actions read-only by default and require CI before release-intended merges.
 
 ## Files That Must Stay Out Of Git
 

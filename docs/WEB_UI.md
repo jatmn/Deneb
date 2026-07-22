@@ -23,22 +23,21 @@ Browser/Cura  --->  lighttpd (:80)  --->  deneb-api (Unix socket)
 - **lighttpd** serves static files and reverse-proxies `/api/v1/*` and `/cluster-api/v1/*` to deneb-api
 - **deneb-api** implements the UltiMaker REST API v1, connecting to native `deneb-printsvc` via ZeroMQ by default
 - **deneb-mdns** advertises the printer on `_ultimaker._tcp.local.` for Cura's local discovery browser
-- **Static web UI** is vanilla HTML/CSS/JS (~25 KB), no frameworks
+- **Static web UI** is vanilla HTML/CSS/JS (115.7 KiB tracked on 2026-07-22), no frameworks
 
 For the Cura-specific discovery, plugin, and upload/start behavior, see
 [Cura integration](CURA_INTEGRATION.md).
 
-## Resource Budget
+## Current Resource Baseline
 
-| Resource | Target |
-|----------|--------|
-| deneb-api RSS | < 1.5 MB |
-| deneb-mdns RSS | < 512 KB |
-| lighttpd RSS | < 1 MB |
-| Static assets | < 50 KB |
-| **Total** | **< 4 MB** |
+| Resource | Current observation |
+| --- | --- |
+| deneb-api RSS | 0.9-1.0 MiB on target, 2026-07-10 |
+| deneb-mdns RSS | 0.12 MiB on target, 2026-07-10 |
+| lighttpd RSS | 0.44 MiB on target, 2026-07-10 |
+| Static assets | 115.7 KiB tracked in web/www, 2026-07-22 |
 
-The table above remains a target budget. On 2026-07-10, direct `/proc` RSS
+The table above records current measurements and working thresholds; it is not a release limiter or a promise that every component must remain under a fixed cap. Changes still require total memory, CPU, storage, and connection measurements because the target is severely constrained. On 2026-07-10, direct `/proc` RSS
 samples after clean boot were approximately 0.9-1.0 MiB for `deneb-api`, 0.44
 MiB for lighttpd, and 0.12 MiB for `deneb-mdns`. Three SSE clients plus 120 REST
 requests completed with flat 1,032 KiB API RSS. Four SSE clients starved REST

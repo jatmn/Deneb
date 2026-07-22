@@ -44,6 +44,7 @@ Implementation does not imply that every workflow is hardware-proven.
 | Web/API and Cura | [Web UI](docs/WEB_UI.md) / [Cura](docs/CURA_INTEGRATION.md) |
 | Third-party slicer command/profile rules | [Slicer Compatibility](docs/SLICER_COMPATIBILITY.md) |
 | Touchscreen and backend | [UI](ui/README.md) / [IPC](docs/BACKEND_IPC_PROTOCOL.md) |
+| Contribution and source provenance | [CONTRIBUTING.md](CONTRIBUTING.md) / [Provenance](docs/SOURCE_PROVENANCE.md) |
 
 Dated investigations are under `docs/evidence/`; superseded plans are under
 `docs/archive/`. Neither is a current work queue.
@@ -78,5 +79,5 @@ modified firmware images.
 
 Deneb is an independent community project and is not endorsed by UltiMaker.
 Original Deneb files are intended to use MPL-2.0 unless stated otherwise. See
-[LICENSE](LICENSE), [COMPLIANCE.md](COMPLIANCE.md), and
+[LICENSE](LICENSE), [COMPLIANCE.md](COMPLIANCE.md), [source provenance](docs/SOURCE_PROVENANCE.md), and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

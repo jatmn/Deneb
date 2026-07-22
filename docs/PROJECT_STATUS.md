@@ -1,6 +1,6 @@
 # Deneb Project Status
 
-Last reconciled: 2026-07-10
+Last reconciled: 2026-07-22
 
 This is the only human-maintained dashboard for current project state. For
 navigation and documentation rules, see [README.md](README.md). Detailed test
@@ -9,14 +9,11 @@ in [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 
 ## Current source and target boundary
 
-- Local branch: `main`, one documentation commit ahead of `origin/main`, with
-  additional uncommitted documentation cleanup.
-- Source baseline reviewed: `afbea8c`; local documentation commit: `f76b8e5`.
+- SOURCE claims refer to the repository tree containing this document.
 - Printer package observed on 2026-07-10: `1a4a4afe-dirty`.
-- Current source was not deployed because this workstation's WSL service fails
-  with `Wsl/EnumerateDistros/Service/E_ACCESSDENIED`.
-- The 2026-07-10 automation results therefore prove only the older installed
-  package. The 2026-06-28 hands-on run remains the newest UI workflow evidence.
+- The 2026-07-10 automation results prove only the named installed package, not
+  later source changes. The 2026-06-28 hands-on run remains the newest UI
+  workflow evidence.
 
 ## Status vocabulary
 
@@ -67,8 +64,8 @@ These successes do not make the complete firmware, UI, or print service stable.
 
 | Priority | Work | Current position | Exit condition |
 | ---: | --- | --- | --- |
-| 1 | Restore a reproducible WSL build lane | Setup requirements are documented; local WSL enumeration is broken | Fresh environment builds and audits a current MIPS package reproducibly |
-| 2 | Make Pause/Resume safe and bounded | 2026-06-28 Pause allowed motion to continue; installed policy also commands Z205, outside the authorized test envelope; `afbea8c` mitigation has host proof only | Current package passes hands-on Pause/Resume/Stop with bounded motion and zero new alerts |
+| 1 | Prove the reproducible WSL build lane | Dependency versions and hashes are pinned, setup is scripted, and the release wrapper is deterministic; a fresh-environment end-to-end MIPS package build is not yet recorded | Fresh environment builds and audits a current MIPS package reproducibly |
+| 2 | Make Pause/Resume safe and bounded | 2026-06-28 Pause allowed motion to continue; installed policy also commands Z205, outside the authorized test envelope; current source mitigation has **HOST** proof only | Current package passes hands-on Pause/Resume/Stop with bounded motion and zero new alerts |
 | 3 | Finish no-coordinator workflow parity | Core route works; material, leveling Cancel, diagnostics, and recovery gaps remain | Full workflow matrix passes with strict no-Python runtime inventory |
 | 4 | Fix Web/API concurrency and lifecycle ownership | Three SSE clients plus polling passed; four SSE clients starved REST and retained seven descriptors; service restart can create two API processes | Multiple clients, reconnects, service restarts, uploads, and long polling return to baseline without starvation or leaked descriptors |
 | 5 | Explain print-service soak memory behavior | Short repeated jobs pass; longer runs showed a resident/private-memory staircase | Multi-hour representative run plateaus or the growth source is fixed |
@@ -85,10 +82,10 @@ These successes do not make the complete firmware, UI, or print service stable.
 | **Release blocker** | Four SSE clients can starve REST and retain descriptors/sockets | Isolate capacity, close abandoned proxy/API sockets, and add regression coverage |
 | **Release blocker** | API init ownership can create duplicate processes | Establish one service owner and test restart/fallback behavior |
 | **Incorrect state** | Manual heat reports the printer as printing | Separate heater activity from job activity in shared status classification |
-| **Missing product function** | Diagnostics export is not installed | Implement bounded, redacted diagnostics generation/download and resource-test it |
+| **Missing target function** | Diagnostics export source/formatter exists but is not installed on the tested target | Package, install, and target-test bounded redacted export/download behavior |
 | **Incorrect identity** | Printer API reports missing/invalid firmware, machine, and PCB identity | Populate identity from authoritative device/config sources |
 | **Test tooling defect** | Runtime inventory can false-positive on shell command text containing `python` | Classify by `/proc/<pid>/exe` and structured argv instead of substring alone |
-| **Source/behavior mismatch** | Frame-light macros send `M142 R...` although Connect accepts lowercase `w`; native startup/prime paths emit removed `G10` | Correct and host-test both paths, then verify physical behavior under the safety contract |
+| **Source/behavior mismatch** | Frame-light source now sends the Connect-required lowercase `M142 w...` form, but native startup/prime paths still emit removed `G10` | Remove or translate the remaining G10 path, host-test it, then verify physical behavior under the safety contract |
 | **UX blocker** | Update screen overflowed, appeared stuck, and lacked a dedicated updating state | Redesign and prove update/reboot/rollback presentation |
 
 No unattended physical test may exceed the documented safety contract: home

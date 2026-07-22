@@ -1,249 +1,88 @@
 # Deneb WSL Build Environment
 
-Deneb's Windows build lane requires WSL 2 with a Debian distribution. This is
-not an optional convenience layer: the C targets use Linux/POSIX headers, shell
-packaging tools, and a MIPS little-endian musl cross-compiler. Visual
-Studio/MSVC is not a supported substitute.
+Deneb's Windows release lane requires WSL 2 with Debian. The target uses Linux/POSIX APIs and a MIPS little-endian musl cross-compiler; MSVC is not a release-build substitute.
 
-The release wrapper currently also assumes that Debian's default WSL user is
-`root`. It invokes `wsl -d Debian` without `-u root` and hard-codes build
-dependencies below `/root`. Until the wrapper is made user-independent, a WSL
-installation that defaults to an unprivileged user is not a compatible release
-environment.
+The PowerShell release wrapper always invokes `wsl -d <distro> -u root`. Debian's default user therefore does not need to be root. Build dependencies are intentionally isolated below `/root` inside the WSL distribution.
 
-## 1. Windows prerequisites
+## Windows and WSL prerequisites
 
-- Windows 10 version 2004 or later, or Windows 11, with hardware virtualization
-  enabled.
-- Administrator access for installing or repairing WSL.
-- Git and PowerShell on Windows.
-- Internet access from Debian for the first dependency build.
-
-Microsoft's current installation reference is
-[Install WSL](https://learn.microsoft.com/windows/wsl/install), and the command
-reference is [Basic commands for WSL](https://learn.microsoft.com/windows/wsl/basic-commands).
-
-From an elevated PowerShell prompt:
+Use Windows 10 2004 or later or Windows 11 with virtualization enabled, Git, PowerShell, administrator access for WSL installation/repair, and internet access for the initial dependency setup.
 
 ```powershell
 wsl --install -d Debian
 wsl --update
 wsl --status
 wsl --list --verbose
+wsl -d Debian -u root -- whoami
 ```
 
-Reboot Windows if the installer requests it. Confirm that Debian reports WSL
-version 2 in `wsl --list --verbose`. Convert it if necessary:
+Reboot if requested and ensure Debian reports WSL version 2. The final command must print `root`; no `/etc/wsl.conf` default-user change is required.
 
-```powershell
-wsl --set-version Debian 2
-```
-
-## 2. Configure the required default user
-
-Check the current default:
-
-```powershell
-wsl -d Debian -- whoami
-```
-
-The current release wrapper requires this to print `root`. If it does not,
-configure Debian's `/etc/wsl.conf` with the following content, then terminate
-and restart the distribution:
-
-```ini
-[user]
-default=root
-```
-
-```powershell
-wsl --terminate Debian
-wsl -d Debian -- whoami
-```
-
-The configuration format is documented in Microsoft's
-[Advanced settings configuration in WSL](https://learn.microsoft.com/windows/wsl/wsl-config).
-Requiring a root default user is build-script debt, not a desirable general WSL
-policy. A future wrapper should pass an explicit user or use configurable paths.
-
-## 3. Install Debian host tools
-
-Run in Debian as root:
-
-```bash
-apt-get update
-apt-get install --no-install-recommends \
-  build-essential ca-certificates cmake curl file git make pkg-config \
-  tar xz-utils
-git --version
-cmake --version
-curl --version
-```
-
-Initialize the repository's pinned submodules from Windows PowerShell:
+Initialize the pinned repository submodules from Windows:
 
 ```powershell
 git submodule update --init --recursive
 ```
 
-Keep the repository on the Windows filesystem, such as `C:\temp\Deneb`. The
-wrapper converts drive-letter paths to `/mnt/<drive>/...`; UNC-only paths are
-not supported.
+Keep the checkout on a drive-letter path such as `C:\temp\Deneb`. The wrapper supports paths exposed to WSL as `/mnt/<drive>/...`; UNC-only paths are not supported.
 
-## 4. Install the MIPS musl toolchain
+## One-time deterministic setup
 
-The production toolchain file expects this exact location:
+From PowerShell at the repository root:
 
-```text
-/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc
+```powershell
+$repo = '/mnt/' + $PWD.Drive.Name.ToLower() + $PWD.Path.Substring(2).Replace('\', '/')
+wsl -d Debian -u root -- sh "$repo/tools/setup-wsl-build.sh" "$repo"
 ```
 
-Install the `mipsel-linux-musl-cross` archive from
-[musl.cc](https://musl.cc/) in Debian:
+The setup script installs Debian host tools, refuses to overwrite incomplete dependency directories, and verifies archives before extracting them.
 
-```bash
-cd /tmp
-curl --fail --location --output mipsel-linux-musl-cross.tgz \
-  https://musl.cc/mipsel-linux-musl-cross.tgz
-test ! -e /root/mipsel-linux-musl-cross || {
-  echo "Refusing to overwrite /root/mipsel-linux-musl-cross" >&2
-  exit 1
-}
-tar xzf mipsel-linux-musl-cross.tgz
-mv mipsel-linux-musl-cross /root/mipsel-linux-musl-cross
-/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version
-```
+| Input | Version | SHA-256 |
+| --- | --- | --- |
+| musl.cc MIPS little-endian cross-toolchain | pinned archive | `82626533bf7e677c225e7cbedf1d5b0d6bc60c3daaf28249e54f0eb805d89b13` |
+| mbedTLS | 2.28.8 | `4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213` |
+| ZeroMQ | 4.3.5 | `6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43` |
+| lighttpd | 1.4.76 | `8cbf4296e373cfd0cedfe9d978760b5b05c58fdc4048b4e2bcaf0a61ac8f5011` |
 
-For a reproducible release environment, record the downloaded archive's
-SHA-256 and retain the archive or mirror it in an approved dependency cache.
-The project currently pins the target tuple and path but not an archive digest.
+The setup script prepares the toolchain and mbedTLS. The release wrapper downloads and hash-verifies ZeroMQ and lighttpd when their rebuild switches are used.
 
-## 5. Build the missing mbedTLS prerequisite
+## Build and audit a release package
 
-`tools/build-update-release.ps1` expects a static mbedTLS 2.28.8 installation
-at `/root/deneb-build/mbedtls-2.28.8-mipsel`, but it does not create it. This is
-a real bootstrap gap; a fresh WSL environment must prepare it manually.
-
-From the repository root in Debian, where `$PWD` is the WSL path to Deneb:
-
-```bash
-set -eu
-repo="$PWD"
-mkdir -p /root/deneb-build
-cd /root/deneb-build
-curl --fail --location --output mbedtls-2.28.8.tar.gz \
-  https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v2.28.8.tar.gz
-for path in mbedtls-2.28.8 mbedtls-2.28.8-build mbedtls-2.28.8-mipsel; do
-  test ! -e "$path" || {
-    echo "Refusing to overwrite /root/deneb-build/$path" >&2
-    exit 1
-  }
-done
-tar xzf mbedtls-2.28.8.tar.gz
-cmake -S mbedtls-2.28.8 -B mbedtls-2.28.8-build \
-  -DCMAKE_TOOLCHAIN_FILE="$repo/ui/cmake/mipsel-musl-toolchain.cmake" \
-  -DCMAKE_BUILD_TYPE=MinSizeRel \
-  -DCMAKE_INSTALL_PREFIX=/root/deneb-build/mbedtls-2.28.8-mipsel \
-  -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF \
-  -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON
-cmake --build mbedtls-2.28.8-build --parallel
-cmake --install mbedtls-2.28.8-build
-test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedtls.a
-test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedx509.a
-test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedcrypto.a
-```
-
-The source release is maintained by
-[Mbed TLS](https://github.com/Mbed-TLS/mbedtls/releases/tag/v2.28.8). As with
-the musl toolchain, retain and hash the exact source archive used for releases.
-
-## 6. First release build
-
-From Windows PowerShell in the repository root:
+The first build creates the pinned ZeroMQ and lighttpd dependency trees:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1 `
   -RebuildZmq -RebuildLighttpd
 ```
 
-This first run downloads and builds the wrapper's pinned ZeroMQ 4.3.5 and
-lighttpd 1.4.76 sources under `/root/deneb-build`, then cross-builds
-`deneb-api`, `deneb-mdns`, `deneb-printsvc`, `deneb-dfsvc`, and `deneb-ui`.
-It packages and audits:
-
-```text
-dist/Deneb_Update_<git-short-sha>.deneb
-```
-
-The rebuild switches clear only the wrapper's exact versioned dependency leaf
-directories. Do not point `-ZmqRoot` or `-LighttpdRoot` at a directory containing
-unrelated data.
-
-Later experimental builds reuse the dependency trees:
+Later experimental builds reuse those trees:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 
-Nightly and stable packages additionally require verified stock/native evidence
-summaries through `-PrintsvcStockSummary`, `-PrintsvcNativeSummary`, and, where
-needed, `-PrintsvcNativeEvidenceSummary`. Do not bypass those release gates.
+Nightly and stable packages additionally require verified stock/native evidence summaries through `-PrintsvcStockSummary`, `-PrintsvcNativeSummary`, and, when applicable, `-PrintsvcNativeEvidenceSummary`. Do not bypass those gates.
 
-## 7. Verification checklist
+The wrapper cross-builds all native services, packages `dist/Deneb_Update_<git-short-sha>.deneb`, and audits the archive. A package exists before all checks finish, so the file alone is not proof of success. Trust it only after the wrapper prints `Verified native-only print service package` and exits zero.
 
-Before trusting a build environment:
+## Verification
 
 ```powershell
-wsl -d Debian -- whoami
-wsl -d Debian -- bash -lc '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version'
-wsl -d Debian -- bash -lc 'test -f /root/deneb-build/zeromq-4.3.5/build-musl/lib/libzmq.a'
-wsl -d Debian -- bash -lc 'test -x /root/deneb-build/lighttpd-1.4.76/build-musl-static/build/lighttpd'
-wsl -d Debian -- bash -lc 'test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedtls.a'
+wsl -d Debian -u root -- bash -lc '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version'
+wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedtls.a'
+wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/zeromq-4.3.5/build-musl/lib/libzmq.a'
+wsl -d Debian -u root -- bash -lc 'test -x /root/deneb-build/lighttpd-1.4.76/build-musl-static/build/lighttpd'
 git submodule status --recursive
 git status --short
 ```
 
-The release wrapper must finish its archive audit and print
-`Verified native-only print service package`. A generated package alone is not
-proof that verification completed.
+## Backup and recovery
 
-## 8. Backup and recovery
-
-Once the environment works, export it before major Windows, WSL, or dependency
-changes:
+After the environment works, export it before major WSL or dependency changes:
 
 ```powershell
 wsl --shutdown
 wsl --export Debian C:\Backups\deneb-debian-wsl.tar
 ```
 
-Do not run `wsl --unregister Debian` unless a verified export exists; unregister
-deletes that distribution and all `/root/deneb-build` dependencies.
-
-Useful non-destructive recovery commands are:
-
-```powershell
-wsl --status
-wsl --list --verbose
-wsl --shutdown
-wsl --update
-```
-
-If the WSL service is unhealthy, restart Windows first. An elevated service
-restart may also be appropriate, but do not reinstall or unregister Debian as a
-first response.
-
-## Current workstation note (2026-07-10)
-
-On the workstation used for the 2026-07-10 hardware audit, both `wsl --status`
-and `wsl --list --verbose` failed at distribution enumeration with:
-
-```text
-Wsl/EnumerateDistros/Service/E_ACCESSDENIED
-```
-
-`WslService` was running, but the current session did not have permission to
-repair it. Therefore current-source MIPS binaries could not be built or deployed
-from that workstation. This is an environment failure, not evidence that the
-source builds successfully, and it must remain visible until a clean WSL build
-passes the verification checklist above.
+Never run `wsl --unregister Debian` without a verified export. If startup fails, try `wsl --shutdown`, `wsl --update`, a Windows reboot, and an elevated WSL service repair before replacing the distribution.

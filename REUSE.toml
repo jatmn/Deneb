@@ -1,0 +1,31 @@
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Deneb contributors"
+SPDX-License-Identifier = "MPL-2.0"
+
+[[annotations]]
+path = "cura/plugins/DenebUM2CNetworkPrinting/**"
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Deneb contributors", "UltiMaker Cura contributors"]
+SPDX-License-Identifier = "LGPL-3.0-or-later"
+
+[[annotations]]
+path = "web/src/api_cluster_materials.h"
+precedence = "override"
+SPDX-FileCopyrightText = "UltiMaker fdm_materials contributors"
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = "notices/MBEDTLS-2.28.8-LICENSE.txt"
+precedence = "override"
+SPDX-FileCopyrightText = "Mbed TLS contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "notices/LIGHTTPD-1.4.76-LICENSE.txt"
+precedence = "override"
+SPDX-FileCopyrightText = "2004 Jan Kneschke, incremental"
+SPDX-License-Identifier = "BSD-3-Clause"

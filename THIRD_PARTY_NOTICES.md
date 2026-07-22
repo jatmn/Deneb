@@ -5,6 +5,18 @@ Deneb releases. This is not legal advice.
 
 ## Runtime Components
 
+### Cura plugin and material identifiers
+
+- The optional Cura plugin is LGPL-3.0-or-later and integrates with Cura without copying Cura source.
+- web/src/api_cluster_materials.h contains 280 GUID/version records derived from Ultimaker/fdm_materials commit 886e7ad927463493cc9c64f427b1ae2cf4ce12c1 under CC0-1.0. One malformed upstream GUID is omitted.
+
+See docs/SOURCE_PROVENANCE.md for the audited source boundary.
+
+### mbedTLS and lighttpd
+
+- mbedTLS 2.28.8 is statically linked into deneb-dfsvc under its Apache-2.0 OR GPL-2.0-or-later choice. The upstream LICENSE is packaged as MBEDTLS_LICENSE.txt.
+- lighttpd 1.4.76 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
+
 ### LVGL
 
 - Component: LVGL runtime subset
@@ -34,6 +46,11 @@ currently use the cached `zeromq-4.3.5` source noted in the release build
 script. The release package notice tells recipients where to obtain the
 corresponding libzmq source.
 
+### mbedTLS and lighttpd
+
+- mbedTLS 2.28.8 is statically linked into deneb-dfsvc under its Apache-2.0 OR GPL-2.0-or-later choice. The upstream LICENSE is packaged as MBEDTLS_LICENSE.txt.
+- lighttpd 1.4.76 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
+
 ### LVGL bundled helpers used by the selected runtime subset
 
 LVGL's selected runtime subset includes small bundled helper implementations
@@ -47,9 +64,9 @@ under `ui/lib/lvgl/src/stdlib/builtin`:
 These notices are retained in the LVGL submodule and included in release
 packages.
 
-## Required Before Release
+## Ongoing Release Checks
 
-- Inventory dependencies used by the Deneb installer, touchscreen UI, web UI, LAN API shim, update checker, and diagnostics tooling.
+- Re-run the dependency and provenance inventory when a dependency or generated dataset changes.
 - Preserve notices for any open-source components we redistribute.
 - Include the project license, this notice file, and any required third-party
   license files in release artifacts that redistribute binary or source forms.

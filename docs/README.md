@@ -30,6 +30,7 @@ explain how the project works now, not preserve a running diary.
 | WiFi USB setup | [WIFI_SETUP.md](WIFI_SETUP.md) |
 | Ethernet USB setup | [ETH_SETUP.md](ETH_SETUP.md) |
 | Repository configuration | [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md) |
+| Source, license, and generated-data provenance | [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md) |
 
 Component-specific build and implementation documentation also lives beside
 the code, including `ui/README.md` and `printsvc/README.md`.

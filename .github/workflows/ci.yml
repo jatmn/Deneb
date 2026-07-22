@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-validation:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends build-essential cmake file libmbedtls-dev libzmq3-dev pipx shellcheck
+
+      - name: Check shell syntax and style
+        run: |
+          find . -path ./.git -prune -o -path './ui/lib/lvgl' -prune -o -type f -name '*.sh' -print0 | xargs -0 -r sh -n
+          shellcheck tools/setup-wsl-build.sh
+
+      - name: Run repository fixture and audit self-tests
+        timeout-minutes: 10
+        run: |
+          bash tools/deneb-compile-all-selftest.sh
+          bash tools/deneb-stock-menu-prune-selftest.sh
+          bash tools/deneb-printsvc-smoke-selftest.sh
+          bash tools/deneb-printsvc-stability.sh --selftest
+          bash tools/deneb-printsvc-init-selftest.sh
+          bash tools/deneb-printsvc-release-gate-selftest.sh
+          bash tools/deneb-printsvc-native-audit-selftest.sh
+          bash tools/deneb-printsvc-integration-audit-selftest.sh
+      - name: Build and test native print service
+        run: |
+          cmake -S printsvc -B build/ci-printsvc -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-printsvc --parallel
+          ctest --test-dir build/ci-printsvc --output-on-failure
+
+      - name: Build host API and UI stubs
+        run: |
+          cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-web --parallel
+          cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-ui --parallel
+
+      - name: Build native Digital Factory service
+        run: |
+          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-dfsvc --parallel
+
+      - name: Check documentation and publication boundary
+        shell: pwsh
+        run: tools/check-publication-boundary.ps1
+
+      - name: Check license declarations
+        run: pipx run --spec reuse==6.2.0 reuse lint
+
+      - name: Scan full Git history for secrets
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --location --output "$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          printf '%s  %s\n' "$GITLEAKS_SHA256" "$archive" | sha256sum -c -
+          tar xzf "$archive" gitleaks
+          ./gitleaks git --redact --no-banner --verbose .
