@@ -9,8 +9,12 @@ preserving hardware safety and a path back to official firmware.
 Deneb is working toward a fully native printer stack so Python can eventually
 be removed from the firmware image altogether. The accepted idle comparison
 has already removed 76.4% of the measured stock Python-service footprint
-(113.2 MB to 26.7 MB VSZ). Major remaining dependencies include coordinator
-workflow parity, bootstrap and rollback, and AVR programming and recovery.
+(113.2 MB to 26.7 MB VSZ). Coordinator replacement is substantially
+implemented: all seven scoped workstreams have native implementation or an
+explicit retirement decision, three are closed, and four have remaining target
+proof or UX/safety gates. Full Python removal still requires those bounded
+hardware gates, a Python-free bootstrap/rollback path, and native AVR
+programming and recovery.
 
 > Experimental: not yet a stable replacement firmware or independent image.
 
@@ -21,7 +25,7 @@ workflow parity, bootstrap and rollback, and AVR programming and recovery.
 | Touchscreen | **Experimental** | Native LVGL UI adds vertical swipe scrolling and horizontal drag sliders; Pause safety, material, leveling Cancel, update UX, and diagnostics remain open. |
 | Print service | **Experimental** | One native backend executes USB, local-network Cura/Web/API, and Digital Factory jobs; Pause/Resume and long-soak stability are not release-ready. |
 | Web/API/Cura | **MVP** | Adds the stock-missing local-network discovery, upload, monitoring, control, and basic Web UI; connection cleanup, storage UX, security, and failure recovery need work. |
-| Python elimination | **In progress** | 76.4% of measured stock Python-service VSZ is removed from the idle stack; full uninstall still requires coordinator parity, native rollback/bootstrap, and native AVR recovery. |
+| Python elimination | **In progress** | 76.4% of measured stock Python-service VSZ is removed from the idle stack. All 7 coordinator workstreams have implementation/decision coverage: 3 are closed and 4 await bounded target proof or fixes for material, leveling Cancel, Pause/Resume, diagnostics, and recovery. Native rollback/bootstrap and AVR recovery also remain. |
 | Resource optimization | **In progress** | Retain lighttpd as the HTTP front end and move more generic HTTP work into it where that improves reliability without exceeding resource limits. |
 | Independent image and modern Marlin | **Planned** | Current OpenWrt hardware support, safe recovery, and the controller port are not complete. |
 
@@ -42,8 +46,11 @@ See [Project Status](docs/PROJECT_STATUS.md) for the detailed work board and
 
 Implementation does not imply that every workflow is hardware-proven. The
 76.4% figure is a measured idle runtime footprint reduction, not a claim that
-76.4% of functional de-Pythonization gates are complete; see
-[baseline measurements](docs/evidence/BASELINE_MEASUREMENTS.md).
+76.4% of functional de-Pythonization gates are complete; see the
+[baseline measurements](docs/evidence/BASELINE_MEASUREMENTS.md). Likewise, the
+coordinator count distinguishes implemented replacement coverage from final
+target acceptance. Its per-workstream status is recorded in the
+[coordinator completion ledger](docs/archive/COORDINATOR_PARITY_COMPLETION_PLAN.md).
 
 ## Documentation
 

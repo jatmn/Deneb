@@ -66,7 +66,10 @@ inventory committed without vendor binaries or device secrets.
 
 ## Phase 1 - Finish Runtime De-Pythonization On The Legacy Base
 
-Status: **PARTIAL; target failures remain**
+Status: **SUBSTANTIALLY IMPLEMENTED; target failures remain**. All seven scoped
+coordinator-replacement workstreams have native implementation or an explicit
+retirement decision; three are closed and four are partial. The remaining work
+is bounded target acceptance and repair, not a wholesale coordinator rewrite.
 
 1. Prove the bounded one-command print stream stops/pauses physical motion in an
    acceptable interval; revise the protocol if the controller planner still
