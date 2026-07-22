@@ -28,7 +28,7 @@ mkdir -p "$TMP_DIR"
 expect_failure() {
     label="$1"
     shift
-    if "$@" > "$TMP_DIR/$label.out" 2>&1; then
+    if sh "$@" > "$TMP_DIR/$label.out" 2>&1; then
         cat "$TMP_DIR/$label.out"
         echo "FAIL: expected native audit failure: $label" >&2
         exit 1
@@ -431,12 +431,12 @@ EOF
 
 VALID="$TMP_DIR/valid"
 write_valid_package "$VALID"
-"$AUDIT" --package-dir "$VALID" >/tmp/deneb-native-audit-selftest-valid.log
+sh "$AUDIT" --package-dir "$VALID" >/tmp/deneb-native-audit-selftest-valid.log
 echo "PASS: valid package fixture accepted"
 
 VALID_SOURCE="$TMP_DIR/source-valid"
 write_valid_source "$VALID_SOURCE"
-"$AUDIT" --source "$VALID_SOURCE" >/tmp/deneb-native-audit-selftest-source-valid.log
+sh "$AUDIT" --source "$VALID_SOURCE" >/tmp/deneb-native-audit-selftest-source-valid.log
 echo "PASS: valid source fixture accepted"
 
 SOURCE_STOCK_SELECTOR="$TMP_DIR/source-stock-selector"

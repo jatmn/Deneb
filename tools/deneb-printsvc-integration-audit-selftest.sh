@@ -23,7 +23,7 @@ mkdir -p "$TMP_DIR"
 expect_failure() {
     label="$1"
     shift
-    if "$@" > "$TMP_DIR/$label.out" 2>&1; then
+    if sh "$@" > "$TMP_DIR/$label.out" 2>&1; then
         cat "$TMP_DIR/$label.out"
         echo "FAIL: expected integration audit failure: $label" >&2
         exit 1
@@ -115,7 +115,7 @@ write_valid_package() {
 
 VALID_SOURCE="$TMP_DIR/source-valid"
 write_valid_source "$VALID_SOURCE"
-"$AUDIT" --source "$VALID_SOURCE" >/tmp/deneb-integration-audit-selftest-source-valid.log
+sh "$AUDIT" --source "$VALID_SOURCE" >/tmp/deneb-integration-audit-selftest-source-valid.log
 echo "PASS: valid source fixture accepted"
 
 MISSING_ROW="$TMP_DIR/source-missing-row"
@@ -226,7 +226,7 @@ expect_failure rejects_python_driver_launch "$AUDIT" --source "$PYTHON_LAUNCH"
 
 VALID_PACKAGE="$TMP_DIR/package-valid"
 write_valid_package "$VALID_PACKAGE"
-"$AUDIT" --package-dir "$VALID_PACKAGE" >/tmp/deneb-integration-audit-selftest-package-valid.log
+sh "$AUDIT" --package-dir "$VALID_PACKAGE" >/tmp/deneb-integration-audit-selftest-package-valid.log
 echo "PASS: valid package fixture accepted"
 
 MISSING_PACKAGE_TOOL="$TMP_DIR/package-missing-tool"
@@ -236,7 +236,7 @@ expect_failure rejects_missing_package_tool "$AUDIT" --package-dir "$MISSING_PAC
 ARCHIVE_DIR="$TMP_DIR/archive-valid"
 write_valid_package "$ARCHIVE_DIR"
 (cd "$ARCHIVE_DIR" && tar cf "$TMP_DIR/archive-valid.deneb" .)
-"$AUDIT" --archive "$TMP_DIR/archive-valid.deneb" >/tmp/deneb-integration-audit-selftest-archive-valid.log
+sh "$AUDIT" --archive "$TMP_DIR/archive-valid.deneb" >/tmp/deneb-integration-audit-selftest-archive-valid.log
 echo "PASS: valid archive fixture accepted"
 
 echo "deneb-printsvc integration audit selftest passed"
