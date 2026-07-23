@@ -81,6 +81,6 @@ code can compile.
    captures in `docs/evidence/` and superseded plans in
    `docs/archive/`.
 
-The WSL release environment is documented in
+The Debian/Linux release environment (including the optional WSL workflow) is documented in
 [`docs/WSL_BUILD_ENVIRONMENT.md`](docs/WSL_BUILD_ENVIRONMENT.md). A generated
 package is not valid unless the release wrapper completes all package audits.
