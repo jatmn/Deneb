@@ -104,7 +104,9 @@ updates/rollback, accessibility, and hardware-backed browser workflows. See
 
 ## Installation
 
-1. Build the update package: `tools/build-update-release.ps1`
+1. Build the update package with the native `tools/build-update-release.sh` or
+   Windows/WSL `tools/build-update-release.ps1` lane documented in
+   [WSL_BUILD_ENVIRONMENT.md](WSL_BUILD_ENVIRONMENT.md).
 2. Copy `dist/Deneb_Update_<version>.deneb` to a USB drive
 3. On the printer: Settings > Update Firmware > Select the .deneb file
 4. The web UI is available at `http://<printer-ip>/`

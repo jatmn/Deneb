@@ -25,8 +25,9 @@ unsafe motion, heating, flashing, update, and recovery behavior.
 - `docs/README.md` defines documentation placement and status vocabulary.
 - `UM2C_MODDING_CHECKLIST.md` and the print-service ledgers are
   machine-audited acceptance inventories, not general status summaries.
-- `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported release build
-  environment.
+- `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
+  and Windows/WSL release build lanes. Do not mix their dependency paths or
+  wrappers.
 - `COMPLIANCE.md`, `SECURITY.md`, and
   `docs/SOURCE_PROVENANCE.md` define publication, credential, and source
   boundaries.
@@ -126,12 +127,12 @@ pipx run --spec "reuse[charset-normalizer]==6.2.0" reuse lint
 git diff --check
 ```
 
-Shell and fixture checks run in the documented WSL environment:
+Shell and fixture checks run in the documented Debian/Linux environment:
 
 ```sh
 find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
   -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-shellcheck tools/setup-wsl-build.sh
+shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh
 bash tools/deneb-compile-all-selftest.sh
 bash tools/deneb-stock-menu-prune-selftest.sh
 bash tools/deneb-printsvc-smoke-selftest.sh

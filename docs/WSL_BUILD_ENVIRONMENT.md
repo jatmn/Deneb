@@ -1,10 +1,59 @@
-# Deneb WSL Build Environment
+# Deneb Debian/Linux Build Environment
 
-Deneb's Windows release lane requires WSL 2 with Debian. The target uses Linux/POSIX APIs and a MIPS little-endian musl cross-compiler; MSVC is not a release-build substitute.
+Deneb release builds run on Debian or another Debian-compatible Linux host. The target uses Linux/POSIX APIs and a MIPS little-endian musl cross-compiler; MSVC is not a release-build substitute. Windows users may use the same Debian environment through WSL 2, but WSL is not required.
 
-The PowerShell release wrapper always invokes `wsl -d <distro> -u root`. Debian's default user therefore does not need to be root. Build dependencies are intentionally isolated below `/root` inside the WSL distribution.
+Native build dependencies are stored under the checkout's ignored `build/deneb-cross/` directory and all setup and package builds run as the checkout user. Only installing missing Debian host packages requires `sudo`. The Windows/WSL wrapper retains its isolated `/root` dependency layout.
 
-## Windows and WSL prerequisites
+## Choose a build lane
+
+| Host checkout | Setup command | Release command |
+| --- | --- | --- |
+| Native Debian/Linux | `bash tools/setup-linux-build.sh "$PWD"` | `bash tools/build-update-release.sh` |
+| Windows checkout with Debian WSL 2 | PowerShell invoking `tools/setup-wsl-build.sh` in WSL | `tools/build-update-release.ps1` |
+
+Do not mix the lanes: the native scripts keep dependencies in the checkout's
+`build/deneb-cross/` directory, while the PowerShell wrapper uses `/root`
+inside the WSL distribution.
+
+## Lane 1: native Debian/Linux
+
+Install Git, clone the repository, and initialize its pinned submodules:
+
+```sh
+sudo apt-get update
+sudo apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils
+git clone --recurse-submodules https://github.com/jatmn/Deneb.git
+cd Deneb
+```
+
+Prepare the pinned cross-toolchain and mbedTLS dependency, then create and audit an experimental package:
+
+```sh
+bash tools/setup-linux-build.sh "$PWD"
+bash tools/build-update-release.sh --rebuild-zmq --rebuild-lighttpd
+```
+
+Later experimental builds reuse those dependency trees:
+
+```sh
+bash tools/build-update-release.sh
+```
+
+The script cross-builds all native services, packages `dist/Deneb_Update_<git-describe>.deneb`, and audits the archive. Trust a package only after it prints `Verified native-only print service package` and exits zero.
+
+Nightly and stable packages require verified stock/native evidence summaries:
+
+```sh
+bash tools/build-update-release.sh \
+  --release-channel nightly \
+  --printsvc-stock-summary /absolute/path/to/stock-summary \
+  --printsvc-native-summary /absolute/path/to/native-summary \
+  --printsvc-native-evidence-summary /absolute/path/to/evidence-summary
+```
+
+## Lane 2: Windows checkout with Debian WSL 2
+
+### Prerequisites
 
 Use Windows 10 2004 or later or Windows 11 with virtualization enabled, Git, PowerShell, administrator access for WSL installation/repair, and internet access for the initial dependency setup.
 
@@ -26,9 +75,9 @@ git submodule update --init --recursive
 
 Keep the checkout on a drive-letter path such as `C:\temp\Deneb`. The wrapper supports paths exposed to WSL as `/mnt/<drive>/...`; UNC-only paths are not supported.
 
-## One-time deterministic setup
+### Setup
 
-From PowerShell at the repository root:
+From PowerShell at the repository root, run the WSL setup command inside Debian:
 
 ```powershell
 $repo = '/mnt/' + $PWD.Drive.Name.ToLower() + $PWD.Path.Substring(2).Replace('\', '/')
@@ -48,7 +97,7 @@ and verifies archives before extracting them.
 
 The setup script prepares the toolchain and mbedTLS. The release wrapper downloads and hash-verifies ZeroMQ and lighttpd when their rebuild switches are used.
 
-## Build and audit a release package
+### Build and audit
 
 The first build creates the pinned ZeroMQ and lighttpd dependency trees:
 
@@ -63,11 +112,32 @@ Later experimental builds reuse those trees:
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 
-Nightly and stable packages additionally require verified stock/native evidence summaries through `-PrintsvcStockSummary`, `-PrintsvcNativeSummary`, and, when applicable, `-PrintsvcNativeEvidenceSummary`. Do not bypass those gates.
+Nightly and stable packages additionally require verified stock/native evidence summaries through `-PrintsvcStockSummary`, `-PrintsvcNativeSummary`, and, when applicable, `-PrintsvcNativeEvidenceSummary`. The native Linux equivalents are `--printsvc-stock-summary`, `--printsvc-native-summary`, and `--printsvc-native-evidence-summary`. Do not bypass those gates.
 
-The wrapper cross-builds all native services, packages `dist/Deneb_Update_<git-short-sha>.deneb`, and audits the archive. A package exists before all checks finish, so the file alone is not proof of success. Trust it only after the wrapper prints `Verified native-only print service package` and exits zero.
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1 `
+  -ReleaseChannel nightly `
+  -PrintsvcStockSummary C:\evidence\stock-summary `
+  -PrintsvcNativeSummary C:\evidence\native-summary `
+  -PrintsvcNativeEvidenceSummary C:\evidence\native-evidence-summary
+```
 
-## Verification
+The PowerShell wrapper remains available for Windows worktrees. A package exists before all checks finish, so the file alone is not proof of success.
+
+## Verify either lane
+
+For native Debian/Linux:
+
+```sh
+test -x build/deneb-cross/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc
+test -f build/deneb-cross/mbedtls-2.28.8-mipsel/lib/libmbedtls.a
+test -f build/deneb-cross/zeromq-4.3.5/build-musl/lib/libzmq.a
+test -x build/deneb-cross/lighttpd-1.4.76/build-musl-static/build/lighttpd
+git submodule status --recursive
+git status --short
+```
+
+For Windows/WSL:
 
 ```powershell
 wsl -d Debian -u root -- bash -lc '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version'
@@ -78,7 +148,7 @@ git submodule status --recursive
 git status --short
 ```
 
-## Backup and recovery
+## Windows/WSL backup and recovery
 
 After the environment works, export it before major WSL or dependency changes:
 

@@ -69,7 +69,7 @@ target acceptance. Its per-workstream status is recorded in the
 | Documentation map | [docs/README.md](docs/README.md) |
 | Current work, defects, and priorities | [Project Status](docs/PROJECT_STATUS.md) |
 | De-Python, Web, OpenWrt, image, and Marlin plan | [Modernization Roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md) |
-| Windows/WSL cross-build setup | [WSL Build Environment](docs/WSL_BUILD_ENVIRONMENT.md) |
+| Debian/Linux and Windows/WSL cross-build setup | [Debian/Linux Build Environment](docs/WSL_BUILD_ENVIRONMENT.md) |
 | Web/API and Cura | [Web UI](docs/WEB_UI.md) / [Cura](docs/CURA_INTEGRATION.md) |
 | Third-party slicer command/profile rules | [Slicer Compatibility](docs/SLICER_COMPATIBILITY.md) |
 | Touchscreen and backend | [UI](ui/README.md) / [IPC](docs/BACKEND_IPC_PROTOCOL.md) |
@@ -80,13 +80,23 @@ Dated investigations are under `docs/evidence/`; superseded plans are under
 
 ## Build
 
-Target binaries require Debian under WSL 2 and the documented MIPS musl
-toolchain. Complete the [WSL setup](docs/WSL_BUILD_ENVIRONMENT.md) first.
+Target binaries require Debian (native or under WSL 2) and the documented MIPS
+musl toolchain. Use one complete lane from the [Debian/Linux build guide](docs/WSL_BUILD_ENVIRONMENT.md): native Debian/Linux or a Windows checkout with Debian WSL 2.
+
+### Native Debian/Linux
+
+```sh
+# Experimental MIPS update package
+bash tools/build-update-release.sh
+```
+
+### Windows with Debian WSL 2
 
 ```powershell
-# Experimental MIPS update package
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
+```
 
+```powershell
 # Touchscreen host-stub build
 powershell -ExecutionPolicy Bypass -File tools/build-ui-host.ps1
 ```

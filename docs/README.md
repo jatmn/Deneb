@@ -10,7 +10,7 @@ current project status.
 2. [Platform modernization roadmap](PLATFORM_MODERNIZATION_ROADMAP.md) — the
    ordered plan for de-Pythonization, Web/API productization, a current OpenWrt
    base, an independent image, and modern Marlin work.
-3. [WSL build environment](WSL_BUILD_ENVIRONMENT.md) — required workstation and
+3. [Debian/Linux build environment](WSL_BUILD_ENVIRONMENT.md) — required workstation and
    cross-build setup.
 
 ## Active technical documentation

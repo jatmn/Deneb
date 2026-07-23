@@ -105,23 +105,35 @@ ui/
 
 ### Production build (MIPS musl)
 
-Requires the complete Debian/WSL 2 environment in
+Requires the complete Debian/Linux environment (native Debian or Debian under WSL 2) in
 [../docs/WSL_BUILD_ENVIRONMENT.md](../docs/WSL_BUILD_ENVIRONMENT.md), including
-the current root-default-user constraint and the manually bootstrapped static
-mbedTLS tree. The abbreviated commands below are not sufficient on a fresh
-machine by themselves.
+the manually bootstrapped static mbedTLS tree. The abbreviated commands below
+are not sufficient on a fresh machine by themselves.
+
+#### Native Debian/Linux
 
 ```bash
-# First run only: download musl cross-compiler
-wsl -d Debian -- bash -c 'cd /tmp && curl -sL -o musl-cross.tar.gz \
-  "https://musl.cc/mipsel-linux-musl-cross.tgz" && \
-  tar xzf musl-cross.tar.gz && \
-  cp -r mipsel-linux-musl-cross ~/mipsel-linux-musl-cross'
+# First run only: install the pinned toolchain and mbedTLS
+bash tools/setup-linux-build.sh "$PWD"
 
 # First run only: fetch/build release dependencies
-powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1 -RebuildZmq -RebuildLighttpd
+bash tools/build-update-release.sh --rebuild-zmq --rebuild-lighttpd
 
 # Later builds
+bash tools/build-update-release.sh
+```
+
+#### Windows checkout with Debian WSL 2
+
+From PowerShell at the repository root, use the WSL release wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1 -RebuildZmq -RebuildLighttpd
+```
+
+Later builds reuse the WSL dependency tree:
+
+```powershell
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 
@@ -130,8 +142,9 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 Host builds are WSL/Linux builds with stub drivers. Visual Studio/MSVC is not a
 supported toolchain for Deneb C targets.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/build-ui-host.ps1
+```bash
+cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/ci-ui --parallel
 ```
 
 ## Installation
