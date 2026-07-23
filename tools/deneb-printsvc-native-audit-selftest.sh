@@ -55,7 +55,8 @@ write_valid_package() {
         "$root/deneb-printsvc-native-audit-selftest" \
         "$root/deneb-printsvc-integration-audit" \
         "$root/deneb-printsvc-integration-audit-selftest" \
-        "$root/LVGL_LICENSE_TLSF.txt"
+        "$root/LVGL_LICENSE_TLSF.txt" \
+        "$root/LODEPNG_LICENSE.txt"
     cat > "$root/deneb-printsvc-smoke" <<'EOF'
 #!/bin/sh
 PHYSICAL_OK="${DENEB_PRINTSVC_SMOKE_PHYSICAL_OK:-0}"
@@ -726,6 +727,11 @@ MISSING_TLSF_NOTICE="$TMP_DIR/missing-tlsf-notice"
 write_valid_package "$MISSING_TLSF_NOTICE"
 rm -f "$MISSING_TLSF_NOTICE/LVGL_LICENSE_TLSF.txt"
 expect_failure rejects_missing_tlsf_notice "$AUDIT" --package-dir "$MISSING_TLSF_NOTICE"
+
+MISSING_LODEPNG_NOTICE="$TMP_DIR/missing-lodepng-notice"
+write_valid_package "$MISSING_LODEPNG_NOTICE"
+rm -f "$MISSING_LODEPNG_NOTICE/LODEPNG_LICENSE.txt"
+expect_failure rejects_missing_lodepng_notice "$AUDIT" --package-dir "$MISSING_LODEPNG_NOTICE"
 
 DRIVER_ARTIFACT="$TMP_DIR/driver-artifact"
 write_valid_package "$DRIVER_ARTIFACT"

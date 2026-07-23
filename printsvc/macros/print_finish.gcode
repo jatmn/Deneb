@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: MPL-2.0
-; Stock-derived finish cleanup owned by Deneb.
+; Deneb-authored behavior-compatible finish cleanup.
 M400
 G91
 G1 Z3

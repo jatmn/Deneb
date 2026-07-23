@@ -205,6 +205,7 @@ cp "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" "${STAGING_DIR}/THIRD_PARTY_NOTICES.md"
 cp "${SCRIPT_DIR}/lib/lvgl/LICENCE.txt" "${STAGING_DIR}/LVGL_LICENCE.txt"
 cp "${SCRIPT_DIR}/lib/lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt" "${STAGING_DIR}/LVGL_LICENSE_SPRINTF.txt"
 cp "${SCRIPT_DIR}/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt" "${STAGING_DIR}/LVGL_LICENSE_TLSF.txt"
+sed -n '1,/^\*\/$/p' "${SCRIPT_DIR}/lib/lvgl/src/libs/lodepng/lodepng.c" > "${STAGING_DIR}/LODEPNG_LICENSE.txt"
 cp "${REPO_ROOT}/notices/libzmq-4.3.5-NOTICE.txt" "${STAGING_DIR}/LIBZMQ_NOTICE.txt"
 cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
 cp "${REPO_ROOT}/notices/MBEDTLS-2.28.8-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
@@ -259,6 +260,7 @@ contents:
   LVGL_LICENCE.txt  - LVGL MIT license notice
   LVGL_LICENSE_SPRINTF.txt - LVGL bundled printf helper MIT license notice
   LVGL_LICENSE_TLSF.txt - LVGL bundled TLSF helper BSD-style license notice
+  LODEPNG_LICENSE.txt - LodePNG zlib-style license notice
   LIBZMQ_NOTICE.txt - libzmq MPL-2.0 notice and source location
   MPL-2.0.txt       - Mozilla Public License 2.0 text for libzmq
   MBEDTLS_LICENSE.txt - mbedTLS 2.28.8 dual-license text
@@ -297,7 +299,7 @@ DENEB_REPO_ROOT="$REPO_ROOT" "${STAGING_DIR}/deneb-stock-menu-import-check"
 
 # Create tar-backed .deneb package for the Deneb USB update lane
 cd "$STAGING_DIR"
-tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
+tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
     deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest \
     deneb-stock-menu-prune-selftest deneb-stock-menu-import-check deneb-runtime-inventory \
     deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf www

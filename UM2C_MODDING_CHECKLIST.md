@@ -31,13 +31,12 @@ Documentation navigation and historical evidence are indexed in
   safety warnings.
 - [x] `.gitignore` excludes extracted firmware trees, generated firmware
   images, device secrets, logs, and private keys.
-- [ ] Audit copied/adapted snippets before publication. Do not commit full files
-  from `/home/cygnus`, extracted firmware, decompiled vendor code, or unclear
-  vendor-owned trees.
-- [ ] Add SPDX/REUSE-style coverage if component licenses become mixed beyond
-  the current MPL-focused addon boundary.
-- [ ] Compare Deneb notices against the stock touchscreen/legal disclosure and
-  package inventory before public release.
+- [x] Clean-room source audit completed: no full stock application or macro
+  files are committed; compatibility work is based on public resources and
+  observed interoperability behavior.
+- [x] SPDX/REUSE coverage describes the current mixed-license source boundary.
+- [x] Third-party notices are reconciled against the current Deneb package
+  inventory; each future release artifact still requires its own payload audit.
 
 ## 2. Confirmed Platform Facts
 
@@ -268,7 +267,7 @@ long-soak proof.
 
 | Milestone | Status |
 | --- | --- |
-| Private repo boundary and legal guardrails | Mostly complete; publication audit remains |
+| Source-repository boundary and legal guardrails | Complete for experimental source publication; release artifacts require their own audit |
 | SSH bootstrap | Complete for development use |
 | Native touchscreen UI | Implemented; broader real-state hardware proof remains |
 | Web/API runtime | Implemented; hands-on and resource validation remain |

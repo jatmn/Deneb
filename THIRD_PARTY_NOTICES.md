@@ -46,11 +46,6 @@ currently use the cached `zeromq-4.3.5` source noted in the release build
 script. The release package notice tells recipients where to obtain the
 corresponding libzmq source.
 
-### mbedTLS and lighttpd
-
-- mbedTLS 2.28.8 is statically linked into deneb-dfsvc under its Apache-2.0 OR GPL-2.0-or-later choice. The upstream LICENSE is packaged as MBEDTLS_LICENSE.txt.
-- lighttpd 1.4.76 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
-
 ### LVGL bundled helpers used by the selected runtime subset
 
 LVGL's selected runtime subset includes small bundled helper implementations
@@ -60,9 +55,22 @@ under `ui/lib/lvgl/src/stdlib/builtin`:
   `ui/lib/lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt`
 - `tlsf`, BSD-style license, notice in
   `ui/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt`
+- `LodePNG` 20230410, copyright 2005-2023 Lode Vandevenne, zlib-style
+  license, notice retained in `ui/lib/lvgl/src/libs/lodepng/lodepng.c` and
+  `lodepng.h`
 
 These notices are retained in the LVGL submodule and included in release
 packages.
+
+## Package Inventory Reconciliation
+
+Audited 2026-07-22. Current `.deneb` packages redistribute Deneb's MPL-2.0
+components, LVGL and its selected bundled helpers (including LodePNG), libzmq
+4.3.5, mbedTLS 2.28.8, and lighttpd 1.4.76. The Cura plugin is distributed
+separately under LGPL-3.0-or-later; the material identifier dataset is retained
+in source form under CC0-1.0. The stock legal screen was used only as a
+comparison point: this notice inventory is derived from the actual Deneb
+payload, not copied from stock notices.
 
 ## Ongoing Release Checks
 
@@ -70,5 +78,5 @@ packages.
 - Preserve notices for any open-source components we redistribute.
 - Include the project license, this notice file, and any required third-party
   license files in release artifacts that redistribute binary or source forms.
-- Compare this file against the stock printer touchscreen/about/legal disclosure before publishing release artifacts.
+- Reconcile this file against each actual release payload before publishing it.
 - Update touchscreen and web UI about/legal screens when dependencies are added, removed, or replaced.

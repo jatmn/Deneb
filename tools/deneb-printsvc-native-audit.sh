@@ -616,6 +616,7 @@ audit_package_dir() {
     require_dir "${root}/deneb-printsvc-macros" "package includes Deneb macro directory"
     require_pattern "${root}/deneb-runtime-inventory" 'DENEB_COORDINATOR_DISABLED' "packaged runtime inventory detects coordinator disabled shim"
     require_file "${root}/LVGL_LICENSE_TLSF.txt" "package includes declared TLSF notice"
+    require_file "${root}/LODEPNG_LICENSE.txt" "package includes declared LodePNG notice"
     reject_name_artifacts "$root" "package has no Python driver artifact names"
     reject_df_python_bridge_artifacts "$root" "package has no Python Digital Factory bridge artifact"
     reject_df_standalone_bridge_artifact "$root" "package has no standalone Digital Factory bridge artifact"

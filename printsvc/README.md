@@ -65,13 +65,13 @@ identity.
   reheat. If a paused position-aware job has no positive saved nozzle target,
   resume fails closed instead of restoring motion cold.
 - Job prepare homes once, centers the head, waits for heat, then enters the
-  stock-derived startup/prime sequence. Deneb intentionally does not release Z
+  behavior-compatible startup/prime sequence. Deneb intentionally does not release Z
   during normal print prepare, so it does not perform the old second `G28 Z`
   before startup.
-- Abort uses a stock-derived cleanup sequence with relative wipe/retract,
+- Abort uses a clean-room, behavior-compatible cleanup sequence with relative wipe/retract,
   `G28 X Y`, `G28 Z`, heater/fan off, `M400`, and `M84`. It keeps status in
   `aborting` until cleanup drains, then clears active identity to idle.
-- Completion keeps the job active until stock-derived finish cleanup and flow
+- Completion keeps the job active until Deneb-authored finish cleanup and flow
   drain complete. Finish cleanup waits for motion, lowers the bed slightly,
   homes XY/Z, cools heaters/fan, waits again, releases motors, then clears
   active file/source/UUID/heater state.

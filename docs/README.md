@@ -29,7 +29,6 @@ explain how the project works now, not preserve a running diary.
 | Fault handling policy | [FAULT_POLICY.md](FAULT_POLICY.md) |
 | WiFi USB setup | [WIFI_SETUP.md](WIFI_SETUP.md) |
 | Ethernet USB setup | [ETH_SETUP.md](ETH_SETUP.md) |
-| Repository configuration | [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md) |
 | Source, license, and generated-data provenance | [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md) |
 
 Component-specific build and implementation documentation also lives beside
