@@ -20,4 +20,8 @@ Generated variants:
   - PNG, 48x48
   - Cropped mark variant sized like the existing LVGL icon/loading assets.
 
+- `deneb-readme-banner.jpg`
+  - JPEG, 640x430
+  - Scaled full-artwork variant for the repository README.
+
 These assets are not wired into the extracted `rootfs` yet. The extracted firmware tree is intentionally ignored by git, so replacement should happen from packaging or source overlays once the boot/loading path is selected.

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/deneb-readme-banner.jpg" width="640" alt="Deneb: Tail of Cygnus artwork">
+</p>
+
 # Deneb
 
 Deneb transforms the UltiMaker 2+ Connect with a rebuilt native touchscreen,
@@ -15,6 +19,14 @@ work is those hardware gates, a Python-free bootstrap/rollback path, and a
 replacement for the Python AVR programming and recovery tooling.
 
 > Experimental: not yet a stable replacement firmware or independent image.
+
+## Name
+
+The stock firmware/application layer appears to use the codename `Cygnus`.
+Cygnus is both a mythological swan and a northern constellation, which fits a
+cloud-first printer identity. Deneb is the brightest star in Cygnus. The name
+keeps a respectful relationship to that lineage while making clear this is a
+separate community mod, not official UltiMaker firmware.
 
 ## Current Status
 
