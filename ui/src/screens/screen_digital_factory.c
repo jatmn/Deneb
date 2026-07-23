@@ -148,8 +148,7 @@ static void format_status_text(const char *status, char *out, size_t out_size)
                  locale_get("digital_factory.status_reconnecting"));
     } else if (strcmp(state, "enter_pin") == 0 &&
                status_value(status, "pin", pin, sizeof(pin))) {
-        snprintf(out, out_size, locale_get("digital_factory.status_pin_fmt"),
-                 pin);
+        locale_format_s(out, out_size, "digital_factory.status_pin_fmt", pin);
     } else {
         snprintf(out, out_size, "%s", status);
     }

@@ -505,6 +505,65 @@ const char *locale_get(const char *key)
     return key;
 }
 
+static void locale_append_text(char *out, size_t out_size, size_t *used,
+                               const char *text)
+{
+    const char *value = text ? text : "";
+
+    while (*value && *used + 1 < out_size)
+        out[(*used)++] = *value++;
+}
+
+static int locale_format_string_values(char *out, size_t out_size,
+                                       const char *key,
+                                       const char *const *values,
+                                       size_t value_count)
+{
+    const char *format;
+    size_t used = 0;
+    size_t value_index = 0;
+    bool placeholder_mismatch = false;
+
+    if (!out || out_size == 0 || !key || (!values && value_count != 0))
+        return -1;
+
+    out[0] = '\0';
+    format = locale_get(key);
+    while (*format && used + 1 < out_size) {
+        if (format[0] == '%' && format[1] == 's') {
+            if (value_index < value_count)
+                locale_append_text(out, out_size, &used,
+                                   values[value_index++]);
+            else {
+                locale_append_text(out, out_size, &used, "%s");
+                placeholder_mismatch = true;
+            }
+            format += 2;
+            continue;
+        }
+        out[used++] = *format++;
+    }
+    out[used] = '\0';
+
+    return !placeholder_mismatch && value_index == value_count ? 0 : -1;
+}
+
+int locale_format_s(char *out, size_t out_size, const char *key,
+                    const char *value)
+{
+    const char *values[] = {value};
+
+    return locale_format_string_values(out, out_size, key, values, 1);
+}
+
+int locale_format_ss(char *out, size_t out_size, const char *key,
+                     const char *first, const char *second)
+{
+    const char *values[] = {first, second};
+
+    return locale_format_string_values(out, out_size, key, values, 2);
+}
+
 int locale_set(const char *lang)
 {
     return locale_init(lang);

@@ -389,8 +389,11 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
     if (!out || out_size == 0)
         return -1;
     out[0] = '\0';
-    if (stat(file_path, &st) < 0 || st.st_size <= 0)
+    fp = fopen(file_path, "rb");
+    if (!fp)
         return -1;
+    if (fstat(fileno(fp), &st) < 0 || st.st_size <= 0)
+        goto out;
     snprintf(boundary, sizeof(boundary), "deneb-dfsvc-%lld",
              (long long)time(NULL));
     snprintf(meta, sizeof(meta),
@@ -417,7 +420,7 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
 
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0)
-        return -1;
+        goto out;
     struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -441,9 +444,6 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
         fd_write_all(fd, head, strlen(head)) < 0)
         goto out;
 
-    fp = fopen(file_path, "rb");
-    if (!fp)
-        goto out;
     while (!feof(fp)) {
         size_t r = fread(chunk, 1, sizeof(chunk), fp);
         if (r > 0 && fd_write_all(fd, chunk, r) < 0)
@@ -996,7 +996,8 @@ static int read_key_parts(zmq_msg_t *key_msg, char *action, size_t action_size,
     uint8_t tag;
     if (mp_read_u8(&r, &tag) < 0 || (tag & 0xf0) != 0x80)
         return -1;
-    for (uint8_t i = 0; i < (tag & 0x0f); i++) {
+    size_t pair_count = (size_t)(tag & 0x0f);
+    for (size_t i = 0; i < pair_count; i++) {
         char name[32];
         if (mp_read_str(&r, name, sizeof(name)) < 0)
             return -1;
@@ -1716,9 +1717,19 @@ static void json_collect_payload_keys(const char *json, char *out, size_t out_si
                 key[k++] = *q++;
             }
             key[k] = '\0';
-            if (key[0] && used + strlen(key) + 2 < out_size) {
-                used += (size_t)snprintf(out + used, out_size - used,
-                                         "%s%s", used ? "," : "", key);
+            if (key[0] && used < out_size) {
+                size_t key_len = strlen(key);
+                size_t separator_len = used ? 1U : 0U;
+                size_t available = out_size - used - 1U;
+
+                if (separator_len <= available &&
+                    key_len <= available - separator_len) {
+                    if (separator_len)
+                        out[used++] = ',';
+                    memcpy(out + used, key, key_len);
+                    used += key_len;
+                    out[used] = '\0';
+                }
             }
             expect_key = false;
         } else if (*p == '"') {

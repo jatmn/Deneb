@@ -388,8 +388,8 @@ wifi_result_t wifi_setup_import(char *status_msg, int msg_size)
     if (status_msg) {
         switch (res) {
         case WIFI_OK:
-            snprintf(status_msg, msg_size,
-                     locale_get("network.wifi_configured_fmt"), cfg.ssid);
+            locale_format_s(status_msg, msg_size,
+                            "network.wifi_configured_fmt", cfg.ssid);
             break;
         case WIFI_ERR_UCI_FAIL:
             snprintf(status_msg, msg_size, "%s",
@@ -464,7 +464,7 @@ void wifi_setup_get_status(char *buf, int size)
 
     if (!wifi_setup_is_enabled()) {
         if (ssid[0] != '\0')
-            snprintf(buf, size, locale_get("network.wifi_off_fmt"), ssid);
+            locale_format_s(buf, size, "network.wifi_off_fmt", ssid);
         else
             snprintf(buf, size, "%s", locale_get("network.wifi_disabled"));
         return;
@@ -477,11 +477,10 @@ void wifi_setup_get_status(char *buf, int size)
                      "grep -o 'inet [^ ]*' | cut -d' ' -f2 | cut -d/ -f1");
 
     if (ip[0] != '\0')
-        snprintf(buf, size, locale_get("network.wifi_connected_fmt"),
-                 ssid, ip);
+        locale_format_ss(buf, size, "network.wifi_connected_fmt",
+                         ssid, ip);
     else if (ssid[0] != '\0')
-        snprintf(buf, size, locale_get("network.wifi_connecting_fmt"),
-                 ssid);
+        locale_format_s(buf, size, "network.wifi_connecting_fmt", ssid);
     else
         snprintf(buf, size, "%s", locale_get("network.wifi_configured"));
 }

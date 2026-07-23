@@ -11,6 +11,7 @@ Deneb.ui = {
     showPage: function(name) {
         var content = document.getElementById('content');
         var navBtns = document.querySelectorAll('.nav-btn');
+        var html;
 
         /* Update nav */
         for (var i = 0; i < navBtns.length; i++) {
@@ -18,12 +19,32 @@ Deneb.ui = {
         }
 
         /* Render page */
-        if (this.pages[name]) {
-            content.innerHTML = this.pages[name]();
-            Deneb.i18n.apply();
-            if (this.lastStatus) this.updateStatus(this.lastStatus);
-            else this.updateMotionState();
+        switch (name) {
+        case 'status':
+            html = this.pages.status();
+            break;
+        case 'jobs':
+            html = this.pages.jobs();
+            break;
+        case 'control':
+            html = this.pages.control();
+            break;
+        case 'settings':
+            html = this.pages.settings();
+            break;
+        case 'about':
+            html = this.pages.about();
+            break;
+        case 'setup':
+            html = this.pages.setup();
+            break;
+        default:
+            return;
         }
+        content.innerHTML = html;
+        Deneb.i18n.apply();
+        if (this.lastStatus) this.updateStatus(this.lastStatus);
+        else this.updateMotionState();
     },
 
     updateStatus: function(data) {

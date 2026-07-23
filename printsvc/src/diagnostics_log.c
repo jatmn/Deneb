@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #define DENEB_DIAG_HEARTBEAT_IDLE_MS 60000LL
 #define DENEB_DIAG_HEARTBEAT_ACTIVE_MS 60000LL
@@ -93,17 +94,28 @@ static int snapshot_changed(const deneb_diag_snapshot_t *next)
            strcmp(last_snapshot.error_detail, next->error_detail) != 0;
 }
 
-static void truncate_oversized_log(const char *path)
+static FILE *open_diagnostics_log(const char *path)
 {
     struct stat st;
-    FILE *f;
+    FILE *f = fopen(path, "a+");
 
-    if (!path || stat(path, &st) != 0 || st.st_size <= DENEB_DIAG_MAX_LOG_BYTES)
-        return;
-
-    f = fopen(path, "w");
-    if (f)
+    if (!f)
+        return NULL;
+    if (fstat(fileno(f), &st) != 0) {
         fclose(f);
+        return NULL;
+    }
+    if (st.st_size > DENEB_DIAG_MAX_LOG_BYTES &&
+        ftruncate(fileno(f), 0) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+
+    return f;
 }
 
 int deneb_diagnostics_log_open(const char *path)
@@ -113,12 +125,10 @@ int deneb_diagnostics_log_open(const char *path)
     if (diag_file)
         return 0;
 
-    truncate_oversized_log(primary_path);
-    diag_file = fopen(primary_path, "a");
+    diag_file = open_diagnostics_log(primary_path);
     if (!diag_file && (!path || strcmp(path, DENEB_PRINTSVC_DIAGNOSTIC_LOG) == 0))
     {
-        truncate_oversized_log(DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK);
-        diag_file = fopen(DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK, "a");
+        diag_file = open_diagnostics_log(DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK);
     }
     if (!diag_file)
         return -1;

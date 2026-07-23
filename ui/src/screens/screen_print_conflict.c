@@ -81,10 +81,10 @@ static void load_prompt_text(void)
     deneb_pending_job_file_conflict_prompt_default(&prompt);
     current_pending = prompt.is_pending;
 
-    snprintf(msg, sizeof(msg), locale_get("print_conflict.message_fmt"),
-             prompt.target_name, prompt.loaded_name);
-    snprintf(detail, sizeof(detail), locale_get("print_conflict.job_fmt"),
-             prompt.job_name);
+    locale_format_ss(msg, sizeof(msg), "print_conflict.message_fmt",
+                     prompt.target_name, prompt.loaded_name);
+    locale_format_s(detail, sizeof(detail), "print_conflict.job_fmt",
+                    prompt.job_name);
 
     lv_label_set_text(message_label, msg);
     lv_label_set_text(detail_label, detail);

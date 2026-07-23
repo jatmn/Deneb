@@ -242,9 +242,8 @@ eth_result_t eth_setup_import(char *status_msg, int msg_size)
         switch (res) {
         case ETH_OK:
             if (cfg.ip_address[0] != '\0')
-                snprintf(status_msg, msg_size,
-                         locale_get("network.eth_static_fmt"),
-                         cfg.ip_address);
+                locale_format_s(status_msg, msg_size,
+                                "network.eth_static_fmt", cfg.ip_address);
             else
                 snprintf(status_msg, msg_size,
                          "%s", locale_get("network.eth_dhcp_set"));
@@ -297,11 +296,9 @@ void eth_setup_get_status(char *buf, int size)
 
     if (ip[0] != '\0') {
         if (strcmp(proto, "static") == 0)
-            snprintf(buf, size, locale_get("network.eth_status_static_fmt"),
-                     ip);
+            locale_format_s(buf, size, "network.eth_status_static_fmt", ip);
         else
-            snprintf(buf, size, locale_get("network.eth_status_dhcp_fmt"),
-                     ip);
+            locale_format_s(buf, size, "network.eth_status_dhcp_fmt", ip);
     } else {
         snprintf(buf, size, "%s", locale_get("network.not_connected"));
     }
