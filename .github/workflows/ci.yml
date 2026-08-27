@@ -23,9 +23,8 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          # PR validation only needs the synthetic merge and its two parents.
-          # Push/manual runs retain full history for reliable range selection.
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
+          # Gitleaks and the publication-boundary audit both inspect Git history.
+          fetch-depth: 0
           submodules: false
 
       - name: Select validation lanes
@@ -33,55 +32,30 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -eu
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            printf '%s\n' .github/workflows/ci.yml > "$RUNNER_TEMP/changed-files"
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed-files"
-          elif [ -n "$BEFORE_SHA" ] &&
-               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
-               git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            git diff --name-only "$BEFORE_SHA" HEAD > "$RUNNER_TEMP/changed-files"
-          else
-            # If a push's base is unavailable, fail safe by running every lane.
-            printf '%s\n' .github/workflows/ci.yml > "$RUNNER_TEMP/changed-files"
-          fi
-
-          native=false
-          shell=false
-          while IFS= read -r path; do
-            case "$path" in
-              *.sh) shell=true ;;
-            esac
-            case "$path" in
-              .github/workflows/ci.yml|.gitmodules|common/*|dfsvc/*|printsvc/*|ui/*|web/*|tools/*|UM2C_MODDING_CHECKLIST.md|docs/PRINTSVC_EVIDENCE_LEDGER.md|docs/PRINTSVC_INTEGRATION_AUDIT.md)
-                native=true
-                ;;
-            esac
-          done < "$RUNNER_TEMP/changed-files"
-
-          printf 'native=%s\n' "$native" >> "$GITHUB_OUTPUT"
-          printf 'shell=%s\n' "$shell" >> "$GITHUB_OUTPUT"
-          printf '%s\n' '### Validation selection' >> "$GITHUB_STEP_SUMMARY"
-          printf '* Native lane: `%s`\n* Shell lane: `%s`\n* Changed files:\n' "$native" "$shell" >> "$GITHUB_STEP_SUMMARY"
-          sed 's/^/  * `/' "$RUNNER_TEMP/changed-files" | sed 's/$/`/' >> "$GITHUB_STEP_SUMMARY"
+        run: bash tools/select-ci-validation.sh
 
       - name: Check out native submodules
         if: steps.changes.outputs.native == 'true'
         run: git submodule update --init --recursive
 
+      - name: Install shell validation dependencies
+        if: steps.changes.outputs.shell == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends shellcheck
+
       - name: Install native host dependencies
         if: steps.changes.outputs.native == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends build-essential cmake file libmbedtls-dev libzmq3-dev shellcheck
+          sudo apt-get install --no-install-recommends build-essential cmake file libmbedtls-dev libzmq3-dev
 
       - name: Check shell syntax and style
         if: steps.changes.outputs.shell == 'true'
         run: |
           find . -path ./.git -prune -o -path './ui/lib/lvgl' -prune -o -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh
+          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+          bash tools/select-ci-validation-selftest.sh
 
       - name: Run repository fixture and audit self-tests
         if: steps.changes.outputs.native == 'true'
@@ -140,7 +114,8 @@ jobs:
             log_opts="${PR_BASE_SHA}..${PR_HEAD_SHA}"
           elif [ "$EVENT_NAME" = "push" ] &&
                [ -n "$BEFORE_SHA" ] &&
-               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
+               git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
             log_opts="${BEFORE_SHA}..HEAD"
           else
             log_opts="--all"

@@ -132,7 +132,9 @@ Shell and fixture checks run in the documented Debian/Linux environment:
 ```sh
 find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
   -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh
+shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh \
+  tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+bash tools/select-ci-validation-selftest.sh
 bash tools/deneb-compile-all-selftest.sh
 bash tools/deneb-stock-menu-prune-selftest.sh
 bash tools/deneb-printsvc-smoke-selftest.sh
