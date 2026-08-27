@@ -22,7 +22,7 @@ If Deneb is already installed and you only need a newer package, use
 | FAT32 USB drive | Used for both the bootstrap `.img` and later `.deneb` packages |
 | Build host | Native Debian/Linux, or Windows 10/11 with Debian WSL 2 |
 | Network access for the first build | Toolchain, ZeroMQ, lighttpd, and related pinned deps |
-| Trusted local network only | Bootstrap enables SSH with a known temporary password |
+| Trusted local network only | Bootstrap enables SSH with the known password `deneb` and does not force a password change on login |
 
 Optional after install:
 
@@ -34,13 +34,12 @@ Optional after install:
 - Deneb controls motion, heating, networking, and updates. Treat the first
   install as hardware-affecting work.
 - Do not flash while a print is active.
-- Keep the printer on a trusted local network until you replace the temporary
-  bootstrap SSH password(s) and understand the exposed services.
-- The bootstrap package intentionally sets a known temporary password of
-  `deneb` on `root`, and on `ultimaker` only when that Unix login already
-  exists. That shared default is for first-login recovery on a trusted LAN,
-  not a long-lived credential. Replace every account that received it right
-  after the first successful SSH login.
+- Keep the printer on a trusted local network while SSH is reachable with the
+  known bootstrap password, and understand the exposed services.
+- The bootstrap package intentionally sets the known password `deneb` on
+  `root`, and on `ultimaker` only when that Unix login already exists. SSH
+  login does **not** force a password change for either account. Changing
+  away from `deneb` is optional operator hygiene, not part of the login flow.
 - Official UltiMaker firmware remains the recovery path. Deneb is a community
   mod and is not endorsed by UltiMaker.
 - Trust only packages you built yourself, or release artifacts whose checksum
@@ -55,7 +54,7 @@ Stock UM2+ Connect firmware
         v
 Bootstrap lane
   - Dropbear SSH enabled
-  - temporary password deneb set on root (and ultimaker if present)
+  - known password deneb set on root (and ultimaker if present); login does not force a change
   - stock USB updater accepts .deneb packages
   - stock internet firmware prompts disabled
   - Deneb splash branding installed
@@ -127,9 +126,10 @@ powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 The package is intentionally narrow. It:
 
 - enables Dropbear SSH at boot with password auth and root login
-- intentionally sets the known temporary password `deneb` on `root`
-- also sets that same temporary password on `ultimaker` only if that Unix
-  login already exists
+- intentionally sets the known password `deneb` on `root`
+- also sets that same known password on `ultimaker` only if that Unix login
+  already exists
+- does **not** expire those passwords or force a change on SSH login
 - patches the stock USB firmware browser/auto-select path to accept `.deneb`
 - skips UltiMaker signature verification only for `.deneb` files and the exact
   `Deneb_get_started.img` reinstall package
@@ -171,25 +171,20 @@ Password:
 deneb
 ```
 
-That known temporary password is intentional for first login. It is not meant
-to remain configured.
+That known password is intentional. Logging in as `root` or `ultimaker` does
+**not** prompt for or require a password change. You can keep using `deneb`,
+or optionally set your own passwords later.
 
-4. Replace the temporary bootstrap password on every account the package may
-   have set. From the `root` shell:
-
-```sh
-passwd
-```
-
-If `/etc/passwd` contains an `ultimaker` login, change that account too. As
-`root`:
+4. Optional: if you want non-default SSH passwords, set them yourself from a
+   `root` shell. Change every account you care about; `passwd` alone only
+   affects the current account:
 
 ```sh
-grep -q '^ultimaker:' /etc/passwd && passwd ultimaker
+passwd                 # changes root when run as root
+passwd ultimaker       # only if that account exists and you want it changed
 ```
 
-Leaving `ultimaker` on `deneb` after changing only `root` would keep a known
-SSH credential active on printers that have that account.
+Bootstrap does not force either command.
 
 5. Confirm a later `.deneb` file would be visible by checking that the stock
    update browser now accepts `.deneb` packages, or simply continue to the next
@@ -279,7 +274,7 @@ See:
 
 | Task | Where |
 | --- | --- |
-| Replace temporary bootstrap SSH passwords | `passwd` for `root`, and `passwd ultimaker` when that account exists |
+| Optional: change SSH passwords | Manual `passwd` / `passwd ultimaker` only if you want non-default credentials; login never forces this |
 | Configure Wi-Fi | USB `wifi.txt` + Settings > Network |
 | Configure Ethernet | USB `eth.txt` + Settings > Network |
 | Install a newer Deneb build | [Updating Deneb](UPDATING.md) |
@@ -306,7 +301,7 @@ complete independent image/rollback product.
 | Symptom | Likely cause | What to try |
 | --- | --- | --- |
 | Stock UI will not show the bootstrap file | Wrong extension, nested folder, or non-FAT32 stick | Put `Deneb_get_started.img` at the USB root on FAT32 |
-| Bootstrap installs but SSH fails | Printer offline, wrong user, or password not yet applied | Confirm network, use `root` / temporary `deneb`, reboot once, reinstall bootstrap if needed |
+| Bootstrap installs but SSH fails | Printer offline, wrong user, or password not yet applied | Confirm network, use `root` / `deneb`, reboot once, reinstall bootstrap if needed |
 | `.deneb` package is not listed | Bootstrap never installed, or file extension/case/path issue | Reinstall `Deneb_get_started.img`, keep one `*.deneb` at USB root |
 | Update package build fails missing toolchain | Build lane not set up | Run the matching setup script in [WSL_BUILD_ENVIRONMENT.md](WSL_BUILD_ENVIRONMENT.md) |
 | `.deneb` install fails audit/smoke checks | Incomplete or mixed package | Rebuild with the release wrapper and only flash a verified package |

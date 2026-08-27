@@ -20,10 +20,10 @@ It is intentionally narrow:
 
 It does not add web UI changes, LAN printing, service cleanup, diagnostics collection, or optimization work. UI changes are limited to the USB update lane and Deneb splash branding.
 
-Security note: `deneb` is an intentional known temporary bootstrap password for
-`root`, and for `ultimaker` only when that login already exists. Use only on a
-trusted local network. After first login, replace the password on every account
-that received it (`passwd`, and `passwd ultimaker` when present).
+Security note: `deneb` is an intentional known bootstrap password for `root`,
+and for `ultimaker` only when that login already exists. Use only on a trusted
+local network. SSH login does not force a password change. Optionally run
+`passwd` / `passwd ultimaker` yourself if you want non-default credentials.
 
 ## Build
 
