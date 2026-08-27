@@ -38,17 +38,17 @@ jobs:
         if: steps.changes.outputs.native == 'true'
         run: git submodule update --init --recursive
 
-      - name: Install shell validation dependencies
-        if: steps.changes.outputs.shell == 'true'
+      - name: Install host validation dependencies
         run: |
+          packages=(pipx)
+          if [ "${{ steps.changes.outputs.shell }}" = "true" ]; then
+            packages+=(shellcheck)
+          fi
+          if [ "${{ steps.changes.outputs.native }}" = "true" ]; then
+            packages+=(build-essential cmake file libmbedtls-dev libzmq3-dev)
+          fi
           sudo apt-get update
-          sudo apt-get install --no-install-recommends shellcheck
-
-      - name: Install native host dependencies
-        if: steps.changes.outputs.native == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends build-essential cmake file libmbedtls-dev libzmq3-dev
+          sudo apt-get install --no-install-recommends "${packages[@]}"
 
       - name: Check shell syntax and style
         if: steps.changes.outputs.shell == 'true'
