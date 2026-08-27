@@ -8,7 +8,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Metadata-only PR edits get a separate skipped run so they cannot cancel
+  # validation for the current head. Base edits retain the normal PR group.
+  group: >-
+    ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{
+      github.event_name == 'pull_request' &&
+      github.event.action == 'edited' &&
+      github.event.changes.base == null && 'metadata' || 'validate' }}
   cancel-in-progress: true
 
 permissions:
