@@ -21,3 +21,25 @@ It is intentionally narrow:
 It does not add web UI changes, LAN printing, service cleanup, diagnostics collection, or optimization work. UI changes are limited to the USB update lane and Deneb splash branding.
 
 Security note: `deneb` is a known temporary bootstrap password. Use only on a trusted local network and change it after first login.
+
+## Build
+
+Produce `dist/Deneb_get_started.img` from the repository root:
+
+```sh
+# Native Debian/Linux
+bash tools/build-get-started.sh
+```
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
+```
+
+## Install
+
+This package is step one of the stock-firmware migration. The full operator
+sequence is documented in [Getting Started](../../docs/GETTING_STARTED.md).
+Later Deneb stack updates use `.deneb` packages and are covered by
+[Updating Deneb](../../docs/UPDATING.md).
+

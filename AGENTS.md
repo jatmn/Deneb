@@ -25,6 +25,8 @@ unsafe motion, heating, flashing, update, and recovery behavior.
 - `docs/README.md` defines documentation placement and status vocabulary.
 - `UM2C_MODDING_CHECKLIST.md` and the print-service ledgers are
   machine-audited acceptance inventories, not general status summaries.
+- `docs/GETTING_STARTED.md` and `docs/UPDATING.md` are the operator guides for
+  stock-firmware bootstrap and later `.deneb` package updates.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.
@@ -138,7 +140,7 @@ Shell and fixture checks run in the documented Debian/Linux environment:
 ```sh
 find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
   -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh \
+shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
   tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
 bash tools/select-ci-validation-selftest.sh
 bash tools/deneb-compile-all-selftest.sh

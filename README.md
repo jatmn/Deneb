@@ -66,6 +66,8 @@ target acceptance. Its per-workstream status is recorded in the
 
 | Need | Document |
 | --- | --- |
+| First install from stock firmware | [Getting Started](docs/GETTING_STARTED.md) |
+| Updating an existing Deneb install | [Updating Deneb](docs/UPDATING.md) |
 | Documentation map | [docs/README.md](docs/README.md) |
 | Current work, defects, and priorities | [Project Status](docs/PROJECT_STATUS.md) |
 | De-Python, Web, OpenWrt, image, and Marlin plan | [Modernization Roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md) |
@@ -78,6 +80,28 @@ target acceptance. Its per-workstream status is recorded in the
 Dated investigations are under `docs/evidence/`; superseded plans are under
 `docs/archive/`. Neither is a current work queue.
 
+## Install
+
+New printers still on stock UltiMaker firmware need a two-step USB migration:
+
+1. Build and install `Deneb_get_started.img` to enable SSH and the Deneb `.deneb`
+   update lane.
+2. Build and install `Deneb_Update_<version>.deneb` for the native UI, print
+   service, Web/API runtime, and related services.
+
+```sh
+# Bootstrap package for stock firmware
+bash tools/build-get-started.sh
+
+# Full experimental update package after the Debian/Linux build setup
+bash tools/build-update-release.sh
+```
+
+Windows users can use the PowerShell equivalents (`tools/build-get-started.ps1`
+and `tools/build-update-release.ps1`). The complete first-install and update
+sequences are documented in [Getting Started](docs/GETTING_STARTED.md) and
+[Updating Deneb](docs/UPDATING.md).
+
 ## Build
 
 Target binaries require Debian (native or under WSL 2) and the documented MIPS
@@ -86,6 +110,9 @@ musl toolchain. Use one complete lane from the [Debian/Linux build guide](docs/W
 ### Native Debian/Linux
 
 ```sh
+# First-install bootstrap package for stock firmware
+bash tools/build-get-started.sh
+
 # Experimental MIPS update package
 bash tools/build-update-release.sh
 ```
@@ -93,6 +120,7 @@ bash tools/build-update-release.sh
 ### Windows with Debian WSL 2
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 

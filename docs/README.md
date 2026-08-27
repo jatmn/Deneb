@@ -5,12 +5,16 @@ current project status.
 
 ## Start here
 
-1. [Project status](PROJECT_STATUS.md) — the only human-maintained source for
+1. [Getting started](GETTING_STARTED.md) — first install from stock UltiMaker
+   firmware through bootstrap and the initial `.deneb` package.
+2. [Updating Deneb](UPDATING.md) — day-2 `.deneb` package updates and when to
+   rebuild bootstrap.
+3. [Project status](PROJECT_STATUS.md) — the only human-maintained source for
    what is done, in progress, planned, blocked, or known broken.
-2. [Platform modernization roadmap](PLATFORM_MODERNIZATION_ROADMAP.md) — the
+4. [Platform modernization roadmap](PLATFORM_MODERNIZATION_ROADMAP.md) — the
    ordered plan for de-Pythonization, Web/API productization, a current OpenWrt
    base, an independent image, and modern Marlin work.
-3. [Debian/Linux build environment](WSL_BUILD_ENVIRONMENT.md) — required workstation and
+5. [Debian/Linux build environment](WSL_BUILD_ENVIRONMENT.md) — required workstation and
    cross-build setup.
 
 ## Active technical documentation
@@ -20,6 +24,8 @@ explain how the project works now, not preserve a running diary.
 
 | Area | Document |
 | --- | --- |
+| First install from stock firmware | [GETTING_STARTED.md](GETTING_STARTED.md) |
+| Package updates after bootstrap | [UPDATING.md](UPDATING.md) |
 | Third-party slicer profiles and command rules | [SLICER_COMPATIBILITY.md](SLICER_COMPATIBILITY.md) |
 | Web/API architecture and first-class product requirements | [WEB_UI.md](WEB_UI.md) |
 | Cura discovery and local printing | [CURA_INTEGRATION.md](CURA_INTEGRATION.md) |

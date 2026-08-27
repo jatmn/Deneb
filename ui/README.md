@@ -149,6 +149,12 @@ cmake --build build/ci-ui --parallel
 
 ## Installation
 
+Stock firmware cannot install `.deneb` packages directly. Complete the bootstrap
+and first-install flow in [Getting Started](../docs/GETTING_STARTED.md) once,
+then use [Updating Deneb](../docs/UPDATING.md) for later packages.
+
+After bootstrap is present:
+
 1. Copy the latest `dist/Deneb_Update_<commit>.deneb` package to a USB drive
 2. Insert USB into the UltiMaker 2+ Connect
 3. On Deneb: Maintenance > Update Firmware

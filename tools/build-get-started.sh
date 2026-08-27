@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+#
+# Build the tar-backed Deneb get-started bootstrap package on Debian/Linux.
+# Produces:
+#   dist/Deneb_get_started.img
+#   dist/Deneb_get_started.img.sha256
+
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+version=0.2.8
+output_directory=dist
+
+usage() {
+    cat <<'USAGE'
+usage: tools/build-get-started.sh [options]
+
+Build Deneb_get_started.img for first-time stock-firmware bootstrap.
+
+Options:
+  --version VERSION          Package manifest version (default: 0.2.8)
+  --output-directory DIR     Output directory relative to repo root or absolute
+  -h, --help                 Show this help
+USAGE
+}
+
+die() {
+    echo "$*" >&2
+    exit 1
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --version)
+            version=${2:?missing value}
+            shift 2
+            ;;
+        --output-directory)
+            output_directory=${2:?missing value}
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "Unknown option: $1"
+            ;;
+    esac
+done
+
+package_dir=$repo_root/packages/ssh-bootstrap
+branding_dir=$repo_root/assets/branding
+rgb565_script=$repo_root/tools/png-to-rgb565.py
+
+if [ "${output_directory#/}" = "$output_directory" ]; then
+    dist_dir=$repo_root/$output_directory
+else
+    dist_dir=$output_directory
+fi
+
+staging_root=$repo_root/build/ssh-bootstrap
+staging_dir=$staging_root/Deneb_get_started_$version
+artifact=$dist_dir/Deneb_get_started.img
+checksum=$artifact.sha256
+
+[ -d "$package_dir" ] || die "Package directory not found: $package_dir"
+[ -d "$branding_dir" ] || die "Branding directory not found: $branding_dir"
+[ -f "$rgb565_script" ] || die "Missing converter script: $rgb565_script"
+
+if ! python3 -c 'import PIL' >/dev/null 2>&1; then
+    die "Python 3 with Pillow is required. Install it with: sudo apt-get install python3-pil"
+fi
+
+rm -rf "$staging_root"
+mkdir -p "$staging_dir" "$dist_dir"
+
+cp "$package_dir/update.sh" "$staging_dir/update.sh"
+cp "$package_dir/README.md" "$staging_dir/README.md"
+cp "$package_dir/manifest.txt" "$staging_dir/manifest.txt"
+cp "$branding_dir/deneb-boot-320x240.png" "$staging_dir/deneb-boot-320x240.png"
+cp "$branding_dir/deneb-splash-128x102.jpg" "$staging_dir/deneb-splash-128x102.jpg"
+
+python3 "$rgb565_script" \
+    "$staging_dir/deneb-boot-320x240.png" \
+    "$staging_dir/deneb-splash.rgb565"
+
+rgb_size=$(wc -c < "$staging_dir/deneb-splash.rgb565")
+[ "$rgb_size" -eq 153600 ] || die "RGB565 output size mismatch: expected 153600 bytes, got $rgb_size"
+
+# Keep the packaging scripts portable across BusyBox/GNU sed.
+tmp_manifest=$(mktemp)
+sed "s/^version=.*/version=$version/" "$staging_dir/manifest.txt" > "$tmp_manifest"
+mv "$tmp_manifest" "$staging_dir/manifest.txt"
+
+# Normalize text payloads to LF for the target device.
+for text_file in update.sh README.md manifest.txt; do
+    tmp_text=$(mktemp)
+    sed 's/\r$//' "$staging_dir/$text_file" > "$tmp_text"
+    mv "$tmp_text" "$staging_dir/$text_file"
+done
+chmod 0755 "$staging_dir/update.sh"
+
+rm -f "$artifact" "$checksum"
+
+(
+    cd "$staging_dir"
+    tar -cf "$artifact" \
+        update.sh \
+        README.md \
+        manifest.txt \
+        deneb-boot-320x240.png \
+        deneb-splash-128x102.jpg \
+        deneb-splash.rgb565
+)
+
+hash=$(sha256sum "$artifact" | awk '{print $1}')
+printf '%s  %s\n' "$hash" "$(basename "$artifact")" > "$checksum"
+
+printf 'Built %s\n' "$artifact"
+printf 'SHA256 %s\n' "$hash"
