@@ -22,6 +22,11 @@ permissions:
 
 jobs:
   host-validation:
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          github.event.changes.base == null &&
+          'metadata-edit' || 'host-validation' }}
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.draft == false &&
