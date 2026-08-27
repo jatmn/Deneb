@@ -34,10 +34,13 @@ Optional after install:
 - Deneb controls motion, heating, networking, and updates. Treat the first
   install as hardware-affecting work.
 - Do not flash while a print is active.
-- Keep the printer on a trusted local network until you change the bootstrap
-  SSH password and understand the exposed services.
-- The temporary bootstrap password is `deneb`. Change it immediately after the
-  first successful SSH login.
+- Keep the printer on a trusted local network until you replace the temporary
+  bootstrap SSH password(s) and understand the exposed services.
+- The bootstrap package intentionally sets a known temporary password of
+  `deneb` on `root`, and on `ultimaker` only when that Unix login already
+  exists. That shared default is for first-login recovery on a trusted LAN,
+  not a long-lived credential. Replace every account that received it right
+  after the first successful SSH login.
 - Official UltiMaker firmware remains the recovery path. Deneb is a community
   mod and is not endorsed by UltiMaker.
 - Trust only packages you built yourself, or release artifacts whose checksum
@@ -52,7 +55,7 @@ Stock UM2+ Connect firmware
         v
 Bootstrap lane
   - Dropbear SSH enabled
-  - root password set to deneb
+  - temporary password deneb set on root (and ultimaker if present)
   - stock USB updater accepts .deneb packages
   - stock internet firmware prompts disabled
   - Deneb splash branding installed
@@ -124,8 +127,9 @@ powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 The package is intentionally narrow. It:
 
 - enables Dropbear SSH at boot with password auth and root login
-- sets the `root` password hash for the temporary password `deneb`
-- also sets `ultimaker` to `deneb` only if that Unix login already exists
+- intentionally sets the known temporary password `deneb` on `root`
+- also sets that same temporary password on `ultimaker` only if that Unix
+  login already exists
 - patches the stock USB firmware browser/auto-select path to accept `.deneb`
 - skips UltiMaker signature verification only for `.deneb` files and the exact
   `Deneb_get_started.img` reinstall package
@@ -167,11 +171,25 @@ Password:
 deneb
 ```
 
-4. Change the password immediately:
+That known temporary password is intentional for first login. It is not meant
+to remain configured.
+
+4. Replace the temporary bootstrap password on every account the package may
+   have set. From the `root` shell:
 
 ```sh
 passwd
 ```
+
+If `/etc/passwd` contains an `ultimaker` login, change that account too. As
+`root`:
+
+```sh
+grep -q '^ultimaker:' /etc/passwd && passwd ultimaker
+```
+
+Leaving `ultimaker` on `deneb` after changing only `root` would keep a known
+SSH credential active on printers that have that account.
 
 5. Confirm a later `.deneb` file would be visible by checking that the stock
    update browser now accepts `.deneb` packages, or simply continue to the next
@@ -261,7 +279,7 @@ See:
 
 | Task | Where |
 | --- | --- |
-| Change the bootstrap SSH password | `passwd` over SSH |
+| Replace temporary bootstrap SSH passwords | `passwd` for `root`, and `passwd ultimaker` when that account exists |
 | Configure Wi-Fi | USB `wifi.txt` + Settings > Network |
 | Configure Ethernet | USB `eth.txt` + Settings > Network |
 | Install a newer Deneb build | [Updating Deneb](UPDATING.md) |
@@ -288,7 +306,7 @@ complete independent image/rollback product.
 | Symptom | Likely cause | What to try |
 | --- | --- | --- |
 | Stock UI will not show the bootstrap file | Wrong extension, nested folder, or non-FAT32 stick | Put `Deneb_get_started.img` at the USB root on FAT32 |
-| Bootstrap installs but SSH fails | Printer offline, wrong user, or password not yet applied | Confirm network, use `root` / `deneb`, reboot once, reinstall bootstrap if needed |
+| Bootstrap installs but SSH fails | Printer offline, wrong user, or password not yet applied | Confirm network, use `root` / temporary `deneb`, reboot once, reinstall bootstrap if needed |
 | `.deneb` package is not listed | Bootstrap never installed, or file extension/case/path issue | Reinstall `Deneb_get_started.img`, keep one `*.deneb` at USB root |
 | Update package build fails missing toolchain | Build lane not set up | Run the matching setup script in [WSL_BUILD_ENVIRONMENT.md](WSL_BUILD_ENVIRONMENT.md) |
 | `.deneb` install fails audit/smoke checks | Incomplete or mixed package | Rebuild with the release wrapper and only flash a verified package |

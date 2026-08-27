@@ -124,8 +124,11 @@ After reboot, spot-check:
 4. A simple non-production status check works before any unattended print.
 5. SSH still works if you rely on it for recovery or logs.
 
-If you keep SSH enabled, confirm your non-default password still works. Normal
-`.deneb` updates are not the bootstrap password-reset path.
+If you keep SSH enabled, confirm your non-default password(s) still work.
+Normal `.deneb` updates are not the bootstrap password-reset path. Reinstalling
+`Deneb_get_started.img` intentionally restores the known temporary `deneb`
+password on `root` and on `ultimaker` when that account exists, so rotate those
+accounts again afterward.
 
 ## When to rebuild or reinstall bootstrap
 
