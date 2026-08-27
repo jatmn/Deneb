@@ -34,6 +34,7 @@ else
     while IFS= read -r -d '' path; do
         case "$path" in
             *.sh) shell=true ;;
+            .github/workflows/ci.yml) shell=true ;;
         esac
         case "$path" in
             .github/workflows/ci.yml|.gitmodules|common/*|dfsvc/*|printsvc/*|ui/*|web/*|tools/*|UM2C_MODDING_CHECKLIST.md|docs/PRINTSVC_EVIDENCE_LEDGER.md|docs/PRINTSVC_INTEGRATION_AUDIT.md)

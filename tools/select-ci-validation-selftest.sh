@@ -13,7 +13,7 @@ git init -q "$repo"
 git -C "$repo" config user.email ci-selftest@example.invalid
 git -C "$repo" config user.name "CI self-test"
 
-mkdir -p "$repo/common" "$repo/docs" "$repo/packages/bootstrap"
+mkdir -p "$repo/.github/workflows" "$repo/common" "$repo/docs" "$repo/packages/bootstrap"
 printf 'int original;\n' > "$repo/common/original.c"
 git -C "$repo" add .
 git -C "$repo" commit -qm base
@@ -59,6 +59,12 @@ printf '#!/bin/sh\n' > "$repo/packages/bootstrap/update.sh"
 git -C "$repo" add .
 git -C "$repo" commit -qm shell
 assert_lanes false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'name: CI\n' > "$repo/.github/workflows/ci.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm workflow
+assert_lanes true true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" mv common/original.c docs/original.md

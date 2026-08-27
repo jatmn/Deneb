@@ -6,8 +6,8 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 build_root=${DENEB_BUILD_ROOT:-$repo_root/build/deneb-cross}
-build_directory=build-musl
-web_build_directory=build-musl
+build_directory="build-musl"
+web_build_directory="build-musl"
 zmq_root="$build_root/zeromq-4.3.5"
 lighttpd_root="$build_root/lighttpd-1.4.76"
 release_channel=experimental
@@ -77,7 +77,7 @@ lighttpd_sha256=8cbf4296e373cfd0cedfe9d978760b5b05c58fdc4048b4e2bcaf0a61ac8f5011
 if "$rebuild_zmq"; then
     [[ "$zmq_root" =~ /zeromq-4\.3\.5/?$ ]] || die "Refusing to rebuild libzmq outside a zeromq-4.3.5 leaf directory: $zmq_root"
     mkdir -p "$zmq_root"
-    rm -rf "$zmq_root"/*
+    rm -rf "${zmq_root:?}"/*
     curl --fail --location -o "$zmq_root.tar.gz" https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz
     printf '%s  %s\n' "$zmq_sha256" "$zmq_root.tar.gz" | sha256sum -c -
     tar xzf "$zmq_root.tar.gz" -C "$zmq_root" --strip-components=1
@@ -85,12 +85,14 @@ if "$rebuild_zmq"; then
     cmake -S "$zmq_root" -B "$zmq_root/build-musl" -DCMAKE_TOOLCHAIN_FILE="$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF -DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON
     cmake --build "$zmq_root/build-musl" --parallel
 fi
-[ -f "$zmq_lib" ] && [ -d "$zmq_include" ] || die "Missing musl libzmq at $zmq_lib. Re-run with --rebuild-zmq."
+if [ ! -f "$zmq_lib" ] || [ ! -d "$zmq_include" ]; then
+    die "Missing musl libzmq at $zmq_lib. Re-run with --rebuild-zmq."
+fi
 
 if "$rebuild_lighttpd"; then
     [[ "$lighttpd_root" =~ /lighttpd-1\.4\.76/?$ ]] || die "Refusing to rebuild lighttpd outside a lighttpd-1.4.76 leaf directory: $lighttpd_root"
     mkdir -p "$lighttpd_root"
-    rm -rf "$lighttpd_root"/*
+    rm -rf "${lighttpd_root:?}"/*
     curl --fail --location -o "$lighttpd_root.tar.xz" "https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$lighttpd_version.tar.xz"
     printf '%s  %s\n' "$lighttpd_sha256" "$lighttpd_root.tar.xz" | sha256sum -c -
     tar xf "$lighttpd_root.tar.xz" -C "$lighttpd_root" --strip-components=1
