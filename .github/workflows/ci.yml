@@ -21,23 +21,23 @@ permissions:
   contents: read
 
 jobs:
-  host-validation:
-    name: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.action == 'edited' &&
-          github.event.changes.base == null &&
-          'metadata-edit' || 'host-validation' }}
+  # Lane selection is a tiny job so policy can start immediately and the
+  # expensive native runner is never provisioned for docs-only changes.
+  select-validation:
+    name: select-validation
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.draft == false &&
        (github.event.action != 'edited' || github.event.changes.base != null))
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.changes.outputs.native }}
+      shell: ${{ steps.changes.outputs.shell }}
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          # Gitleaks and the publication-boundary audit both inspect Git history.
           fetch-depth: 0
           submodules: false
 
@@ -48,61 +48,29 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
         run: bash tools/select-ci-validation.sh
 
-      - name: Check out native submodules
-        if: steps.changes.outputs.native == 'true'
-        run: git submodule update --init --recursive
+  policy-validation:
+    name: policy-validation
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false &&
+       (github.event.action != 'edited' || github.event.changes.base != null))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          # Gitleaks and the publication-boundary audit both inspect Git history.
+          fetch-depth: 0
+          submodules: false
 
-      - name: Install host validation dependencies
+      - name: Confirm policy tools
         run: |
-          packages=(pipx)
-          if [ "${{ steps.changes.outputs.shell }}" = "true" ]; then
-            packages+=(shellcheck)
+          if ! command -v pipx >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends pipx
           fi
-          if [ "${{ steps.changes.outputs.native }}" = "true" ]; then
-            packages+=(build-essential cmake file libmbedtls-dev libzmq3-dev)
-          fi
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends "${packages[@]}"
-
-      - name: Check shell syntax and style
-        if: steps.changes.outputs.shell == 'true'
-        run: |
-          find . -path ./.git -prune -o -path './ui/lib/lvgl' -prune -o -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
-          bash tools/select-ci-validation-selftest.sh
-
-      - name: Run repository fixture and audit self-tests
-        if: steps.changes.outputs.native == 'true'
-        timeout-minutes: 10
-        run: |
-          bash tools/deneb-compile-all-selftest.sh
-          bash tools/deneb-stock-menu-prune-selftest.sh
-          bash tools/deneb-printsvc-smoke-selftest.sh
-          bash tools/deneb-printsvc-stability.sh --selftest
-          bash tools/deneb-printsvc-init-selftest.sh
-          bash tools/deneb-printsvc-release-gate-selftest.sh
-          bash tools/deneb-printsvc-native-audit-selftest.sh
-          bash tools/deneb-printsvc-integration-audit-selftest.sh
-      - name: Build and test native print service
-        if: steps.changes.outputs.native == 'true'
-        run: |
-          cmake -S printsvc -B build/ci-printsvc -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/ci-printsvc --parallel
-          ctest --test-dir build/ci-printsvc --output-on-failure
-
-      - name: Build host API and UI stubs
-        if: steps.changes.outputs.native == 'true'
-        run: |
-          cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/ci-web --parallel
-          cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/ci-ui --parallel
-
-      - name: Build native Digital Factory service
-        if: steps.changes.outputs.native == 'true'
-        run: |
-          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/ci-dfsvc --parallel
+          command -v pwsh
 
       - name: Check documentation and publication boundary
         shell: pwsh
@@ -135,3 +103,126 @@ jobs:
             log_opts="--all"
           fi
           ./gitleaks git --redact --no-banner --verbose --log-opts="$log_opts" .
+
+  shell-validation:
+    name: shell-validation
+    needs: select-validation
+    if: needs.select-validation.outputs.shell == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Confirm shellcheck
+        run: |
+          if ! command -v shellcheck >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends shellcheck
+          fi
+
+      - name: Check shell syntax and style
+        run: |
+          find . -path ./.git -prune -o -path './ui/lib/lvgl' -prune -o -type f -name '*.sh' -print0 | xargs -0 -r sh -n
+          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+          bash tools/select-ci-validation-selftest.sh
+
+  native-validation:
+    name: native-validation
+    needs: select-validation
+    if: needs.select-validation.outputs.native == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Check out native submodules
+        run: git submodule update --init --recursive --depth 1
+
+      - name: Install native host libraries
+        run: |
+          packages=(libmbedtls-dev libzmq3-dev)
+          if ! command -v cmake >/dev/null; then
+            packages+=(cmake)
+          fi
+          if ! command -v g++ >/dev/null; then
+            packages+=(build-essential)
+          fi
+          if ! command -v file >/dev/null; then
+            packages+=(file)
+          fi
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends "${packages[@]}"
+
+      - name: Run repository fixture and audit self-tests
+        timeout-minutes: 10
+        run: |
+          bash tools/deneb-compile-all-selftest.sh
+          bash tools/deneb-stock-menu-prune-selftest.sh
+          bash tools/deneb-printsvc-smoke-selftest.sh
+          bash tools/deneb-printsvc-stability.sh --selftest
+          bash tools/deneb-printsvc-init-selftest.sh
+          bash tools/deneb-printsvc-release-gate-selftest.sh
+          bash tools/deneb-printsvc-native-audit-selftest.sh
+          bash tools/deneb-printsvc-integration-audit-selftest.sh
+
+      - name: Build and test native print service
+        run: |
+          cmake -S printsvc -B build/ci-printsvc -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-printsvc --parallel
+          ctest --test-dir build/ci-printsvc --output-on-failure
+
+      - name: Build host API and UI stubs
+        run: |
+          cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-web --parallel
+          cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-ui --parallel
+
+      - name: Build native Digital Factory service
+        run: |
+          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/ci-dfsvc --parallel
+
+  # Branch protection requires this exact check name. Optional shell/native
+  # jobs are allowed to skip, but a failed or cancelled required lane must
+  # still fail the aggregator. Metadata-only edits keep a distinct name so a
+  # skipped run cannot replace the live host-validation result.
+  host-validation:
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          github.event.changes.base == null &&
+          'metadata-edit' || 'host-validation' }}
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.draft == false &&
+        (github.event.action != 'edited' || github.event.changes.base != null)))
+    needs:
+      - select-validation
+      - policy-validation
+      - shell-validation
+      - native-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Confirm required lanes
+        env:
+          SELECT: ${{ needs.select-validation.result }}
+          POLICY: ${{ needs.policy-validation.result }}
+          SHELL: ${{ needs.shell-validation.result }}
+          NATIVE: ${{ needs.native-validation.result }}
+        run: |
+          set -euo pipefail
+          [ "$SELECT" = success ]
+          [ "$POLICY" = success ]
+          [ "$SHELL" = success ] || [ "$SHELL" = skipped ]
+          [ "$NATIVE" = success ] || [ "$NATIVE" = skipped ]

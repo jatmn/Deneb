@@ -117,7 +117,11 @@ non-motion and non-heating validation whenever it can answer the question.
 ## Validation
 
 Run the narrowest relevant checks first, then the broader gates affected by the
-change. The CI source of truth is `.github/workflows/ci.yml`.
+change. The CI source of truth is `.github/workflows/ci.yml`. GitHub Actions
+splits host validation across `policy-validation`, `shell-validation`, and
+`native-validation` jobs. Branch protection still requires the
+`host-validation` aggregator so a skipped optional lane cannot hide a failed
+required check.
 
 Baseline repository checks:
 
