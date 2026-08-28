@@ -187,8 +187,11 @@ needs the bootstrap bridge first.
 - After a full `.deneb` install, the native Deneb update screen does not list
   or install `.img` files. Official firmware restore is UltiMaker's own
   recovery path, not Deneb **Maintenance > Update Firmware**.
-- If an update has fallen back to the stock/bootstrap UI, official `.img`
-  files are selectable there again.
+- A failed later `.deneb` update may re-enable the stock menu init without
+  restoring the Cygnus firmware browser. Official `.img` files are selectable
+  only if that browser is actually still present, typically before the first
+  successful full install. Otherwise use UltiMaker recovery or a verified
+  `.deneb` package.
 - Installing official firmware is the intentional escape hatch back toward
   vendor software.
 - Deneb package signatures/branding must never be treated as UltiMaker
@@ -201,7 +204,7 @@ needs the bootstrap bridge first.
 
 | Symptom | Likely cause | What to try |
 | --- | --- | --- |
-| No `.deneb` files on the native Deneb update screen | USB layout, extension, or path | Place one `*.deneb` at USB root. That screen never lists `.img` files |
+| No `.deneb` files on the native Deneb update screen | USB layout, path, or non-lowercase extension | Place one file named with lowercase `.deneb` at USB root. That screen never lists `.img` or `.DENEB` |
 | No `.deneb` files on the stock/bootstrap updater | Bootstrap lane missing or USB layout | Reinstall `Deneb_get_started.img` from that same stock/bootstrap USB flow; place one file at USB root |
 | Installer rejects package | Incomplete build or failed package audits | Rebuild with `build-update-release`; use only verified output |
 | Services missing after reboot | Partial copy, wrong file flashed, or interrupted update | Reflash a verified `.deneb`; check SSH logs if available |

@@ -157,7 +157,7 @@ After bootstrap is present:
 
 1. Copy the latest `dist/Deneb_Update_<commit>.deneb` package to a USB drive
 2. Insert USB into the UltiMaker 2+ Connect
-3. On Deneb: Maintenance > Update Firmware
+3. On the printer: Maintenance > Update Firmware
 4. Select the Deneb update .deneb file
 5. Wait for installation and reboot
 
