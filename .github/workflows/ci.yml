@@ -24,8 +24,16 @@ jobs:
   # Skipped optional jobs count as passing required checks, so shell and
   # native can stay conditional. select-validation stays required so a
   # selector failure cannot skip native work and still look green.
+  # Metadata-only PR edits still skip work, but must not publish the
+  # required check names: GitHub treats skipped required checks as
+  # success, and a later skipped run can replace a failed result on the
+  # same SHA. Report those events as metadata-edit instead.
   select-validation:
-    name: select-validation
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          github.event.changes.base == null &&
+          'metadata-edit' || 'select-validation' }}
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.draft == false &&
@@ -50,7 +58,11 @@ jobs:
         run: bash tools/select-ci-validation.sh
 
   policy-validation:
-    name: policy-validation
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          github.event.changes.base == null &&
+          'metadata-edit' || 'policy-validation' }}
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.draft == false &&
@@ -106,7 +118,11 @@ jobs:
           ./gitleaks git --redact --no-banner --verbose --log-opts="$log_opts" .
 
   shell-validation:
-    name: shell-validation
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          github.event.changes.base == null &&
+          'metadata-edit' || 'shell-validation' }}
     needs: select-validation
     if: needs.select-validation.outputs.shell == 'true'
     runs-on: ubuntu-24.04
@@ -132,7 +148,11 @@ jobs:
           bash tools/select-ci-validation-selftest.sh
 
   native-validation:
-    name: native-validation
+    name: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'edited' &&
+          github.event.changes.base == null &&
+          'metadata-edit' || 'native-validation' }}
     needs: select-validation
     if: needs.select-validation.outputs.native == 'true'
     runs-on: ubuntu-24.04
