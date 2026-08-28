@@ -17,6 +17,10 @@ Once bootstrap is in place, normal project updates are **only** `.deneb`
 packages. You do not rebuild or reflash the bootstrap image for ordinary UI,
 print-service, Web, or Digital Factory changes.
 
+The USB installer that can select `.img` files is the stock/bootstrap Cygnus
+firmware update flow. After a full `.deneb` install, native Deneb
+**Maintenance > Update Firmware** lists `.deneb` packages only.
+
 ```text
 Already bootstrapped printer
         |
@@ -126,18 +130,25 @@ After reboot, spot-check:
 
 If you keep SSH enabled, confirm the password you expect still works. Normal
 `.deneb` updates are not the bootstrap password-reset path. Reinstalling
-`Deneb_get_started.img` intentionally restores the known password `deneb` on
-`root` and on `ultimaker` when that account exists. Login still does not force
-a password change afterward.
+`Deneb_get_started.img` from the stock/bootstrap USB updater intentionally
+restores the known password `deneb` on `root` and on `ultimaker` when that
+account exists. The native Deneb update screen cannot install that `.img`.
+Login still does not force a password change afterward.
 
 ## When to rebuild or reinstall bootstrap
 
-Reinstall `Deneb_get_started.img` only when you need the bootstrap lane itself:
+Reinstall `Deneb_get_started.img` from USB only while the stock/bootstrap
+Cygnus updater is still the screen in front of you. That is the installer
+that can select `.img` files. After a full `.deneb` install, the native Deneb
+update screen does not list `Deneb_get_started.img`.
+
+Use that Cygnus USB path when you need the bootstrap lane itself:
 
 - first migration from stock firmware
-- SSH/Dropbear bootstrap repair
+- SSH/Dropbear bootstrap repair while still on the stock/bootstrap UI
 - stock USB updater no longer lists `.deneb` packages
 - you intentionally want the bootstrap splash/update-lane patches reapplied
+  and the printer is still on the stock/bootstrap UI
 
 Build it with:
 
@@ -149,13 +160,14 @@ bash tools/build-get-started.sh
 powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 ```
 
-Then install it from the USB firmware update flow exactly as in
-[Getting Started](GETTING_STARTED.md). The filename `Deneb_get_started.img` is
-part of the allowed reinstall path.
+Then install it from the stock/bootstrap USB firmware update flow exactly as
+in [Getting Started](GETTING_STARTED.md). The filename `Deneb_get_started.img`
+is part of the allowed reinstall path on that updater.
 
-Bootstrap reinstall does not by itself replace a full native stack. Install or
-reinstall a `.deneb` package afterward if the UI/services need to be restored or
-updated.
+Bootstrap reinstall does not by itself replace a full native stack. If the
+native Deneb UI is already running, install a `.deneb` package for UI/service
+updates. If an update has fallen back to the stock/bootstrap UI, install a
+verified `.deneb` package from that Cygnus updater after bootstrap is present.
 
 ## Updating from stock again
 
@@ -170,8 +182,13 @@ needs the bootstrap bridge first.
 
 ## Official firmware and recovery notes
 
-- After bootstrap, official `.img` firmware files remain selectable in the USB
-  update flow.
+- After bootstrap and **before** a full `.deneb` install, the stock USB
+  updater still accepts official UltiMaker `.img` firmware files.
+- After a full `.deneb` install, the native Deneb update screen does not list
+  or install `.img` files. Official firmware restore is UltiMaker's own
+  recovery path, not Deneb **Maintenance > Update Firmware**.
+- If an update has fallen back to the stock/bootstrap UI, official `.img`
+  files are selectable there again.
 - Installing official firmware is the intentional escape hatch back toward
   vendor software.
 - Deneb package signatures/branding must never be treated as UltiMaker
@@ -184,7 +201,8 @@ needs the bootstrap bridge first.
 
 | Symptom | Likely cause | What to try |
 | --- | --- | --- |
-| No `.deneb` files shown | Bootstrap lane missing or USB layout issue | Reinstall `Deneb_get_started.img`; place one file at USB root |
+| No `.deneb` files on the native Deneb update screen | USB layout, extension, or path | Place one `*.deneb` at USB root. That screen never lists `.img` files |
+| No `.deneb` files on the stock/bootstrap updater | Bootstrap lane missing or USB layout | Reinstall `Deneb_get_started.img` from that same stock/bootstrap USB flow; place one file at USB root |
 | Installer rejects package | Incomplete build or failed package audits | Rebuild with `build-update-release`; use only verified output |
 | Services missing after reboot | Partial copy, wrong file flashed, or interrupted update | Reflash a verified `.deneb`; check SSH logs if available |
 | Unexpected stock UI after update | Update failed closed and rolled the menu path back, or bootstrap-only state | Install a verified full `.deneb` package |

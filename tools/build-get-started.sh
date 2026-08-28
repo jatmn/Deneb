@@ -50,6 +50,12 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+case "$version" in
+    ''|*[!A-Za-z0-9._+-]*|.*|*.)
+        die "Invalid --version '$version'. Use a token of letters, digits, '.', '_', '+', or '-' (for example 0.2.8)."
+        ;;
+esac
+
 package_dir=$repo_root/packages/ssh-bootstrap
 branding_dir=$repo_root/assets/branding
 rgb565_script=$repo_root/tools/png-to-rgb565.py
@@ -89,9 +95,10 @@ python3 "$rgb565_script" \
 rgb_size=$(wc -c < "$staging_dir/deneb-splash.rgb565")
 [ "$rgb_size" -eq 153600 ] || die "RGB565 output size mismatch: expected 153600 bytes, got $rgb_size"
 
-# Keep the packaging scripts portable across BusyBox/GNU sed.
+# Rewrite version without interpolating it into a sed replacement expression.
 tmp_manifest=$(mktemp)
-sed "s/^version=.*/version=$version/" "$staging_dir/manifest.txt" > "$tmp_manifest"
+VERSION="$version" awk 'BEGIN { version = ENVIRON["VERSION"] } /^version=/ { $0 = "version=" version } { print }' \
+    "$staging_dir/manifest.txt" > "$tmp_manifest"
 mv "$tmp_manifest" "$staging_dir/manifest.txt"
 
 # Normalize text payloads to LF for the target device.

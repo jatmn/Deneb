@@ -135,8 +135,9 @@ The package is intentionally narrow. It:
   `Deneb_get_started.img` reinstall package
 - disables stock internet firmware update checks/prompts
 - installs Deneb splash branding, including an early framebuffer splash
-- preserves the stock `.img` path so official firmware images can still be
-  selected later
+- preserves the stock `.img` path on the stock/bootstrap USB updater so
+  official firmware images can still be selected until a full `.deneb`
+  install replaces that screen
 
 It does **not** install the native UI, print service, Web UI, or Cura stack.
 Those arrive in the `.deneb` update package.
@@ -246,7 +247,9 @@ build.
 The full installer deploys the native touchscreen UI, Web/API runtime, print
 service, mDNS helper, Digital Factory native service path, locales, and related
 init scripts. It also disables the stock Cygnus menu for the next boot and
-replaces stock Wi-Fi captive-portal setup with USB import.
+replaces stock Wi-Fi captive-portal setup with USB import. From that next boot,
+**Maintenance > Update Firmware** is the native Deneb updater and lists
+`.deneb` packages only.
 
 ### Verify the full install
 
@@ -283,18 +286,29 @@ See:
 
 ## Returning toward official firmware
 
-Deneb preserves a path back to official UltiMaker firmware images:
+There are two USB updaters, and only one of them can select `.img` files:
 
-- after bootstrap, the USB updater still accepts stock `.img` firmware files
-- Deneb does not present its packages as UltiMaker-signed official images
-- factory reset in the UI is a local-settings reset, not a guaranteed full
-  return to a pristine vendor image
+- After bootstrap, while the stock/Cygnus menu is still running, the USB
+  updater accepts official UltiMaker `.img` files as well as `.deneb`
+  packages.
+- After the first full `.deneb` install, the native Deneb update screen lists
+  `.deneb` packages only. It will not show official firmware `.img` files or
+  `Deneb_get_started.img`.
 
-If you need a clean vendor image, install an official UltiMaker firmware
-`.img` through the USB firmware update flow and follow UltiMaker's own recovery
-guidance when a deeper restore is required. Keep any personal full-flash
-backups you made before experimental work; Deneb does not currently ship a
-complete independent image/rollback product.
+Deneb does not present its packages as UltiMaker-signed official images.
+Factory reset in the UI is a local-settings reset, not a return to a pristine
+vendor image.
+
+If you need a clean vendor image:
+
+- If the printer is still on the stock/bootstrap UI, install an official
+  UltiMaker firmware `.img` through that USB firmware update flow.
+- If the native Deneb UI is already running, use UltiMaker's own recovery
+  guidance for a vendor image. The Deneb **Maintenance > Update Firmware**
+  screen cannot install `.img` files.
+
+Keep any personal full-flash backups you made before experimental work; Deneb
+does not currently ship a complete independent image/rollback product.
 
 ## Troubleshooting
 
@@ -302,7 +316,7 @@ complete independent image/rollback product.
 | --- | --- | --- |
 | Stock UI will not show the bootstrap file | Wrong extension, nested folder, or non-FAT32 stick | Put `Deneb_get_started.img` at the USB root on FAT32 |
 | Bootstrap installs but SSH fails | Printer offline, wrong user, or password not yet applied | Confirm network, use `root` / `deneb`, reboot once, reinstall bootstrap if needed |
-| `.deneb` package is not listed | Bootstrap never installed, or file extension/case/path issue | Reinstall `Deneb_get_started.img`, keep one `*.deneb` at USB root |
+| `.deneb` package is not listed on the stock/bootstrap updater | Bootstrap never installed, or file extension/case/path issue | Reinstall `Deneb_get_started.img` from that same stock/bootstrap USB flow, keep one `*.deneb` at USB root |
 | Update package build fails missing toolchain | Build lane not set up | Run the matching setup script in [WSL_BUILD_ENVIRONMENT.md](WSL_BUILD_ENVIRONMENT.md) |
 | `.deneb` install fails audit/smoke checks | Incomplete or mixed package | Rebuild with the release wrapper and only flash a verified package |
 | Printer stays on "updating firmware" | Update UI process interrupted | Wait for the reboot watchdog; power-cycle only if it remains stuck well beyond the normal update window |
