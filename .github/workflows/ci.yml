@@ -144,7 +144,7 @@ jobs:
           submodules: false
 
       - name: Check out native submodules
-        run: git submodule update --init --recursive --depth 1
+        run: git submodule update --init --recursive
 
       - name: Install native host libraries
         run: |
