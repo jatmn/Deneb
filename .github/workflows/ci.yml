@@ -21,8 +21,9 @@ permissions:
   contents: read
 
 jobs:
-  # Lane selection is a tiny job so policy can start immediately and the
-  # expensive native runner is never provisioned for docs-only changes.
+  # Skipped optional jobs count as passing required checks, so shell and
+  # native can stay conditional. select-validation stays required so a
+  # selector failure cannot skip native work and still look green.
   select-validation:
     name: select-validation
     if: >-
@@ -190,39 +191,3 @@ jobs:
         run: |
           cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-dfsvc --parallel
-
-  # Branch protection requires this exact check name. Optional shell/native
-  # jobs are allowed to skip, but a failed or cancelled required lane must
-  # still fail the aggregator. Metadata-only edits keep a distinct name so a
-  # skipped run cannot replace the live host-validation result.
-  host-validation:
-    name: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.action == 'edited' &&
-          github.event.changes.base == null &&
-          'metadata-edit' || 'host-validation' }}
-    if: >-
-      always() &&
-      (github.event_name != 'pull_request' ||
-       (github.event.pull_request.draft == false &&
-        (github.event.action != 'edited' || github.event.changes.base != null)))
-    needs:
-      - select-validation
-      - policy-validation
-      - shell-validation
-      - native-validation
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Confirm required lanes
-        env:
-          SELECT: ${{ needs.select-validation.result }}
-          POLICY: ${{ needs.policy-validation.result }}
-          SHELL: ${{ needs.shell-validation.result }}
-          NATIVE: ${{ needs.native-validation.result }}
-        run: |
-          set -euo pipefail
-          [ "$SELECT" = success ]
-          [ "$POLICY" = success ]
-          [ "$SHELL" = success ] || [ "$SHELL" = skipped ]
-          [ "$NATIVE" = success ] || [ "$NATIVE" = skipped ]
