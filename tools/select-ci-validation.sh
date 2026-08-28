@@ -26,15 +26,22 @@ fi
 
 native=false
 shell=false
+bootstrap=false
 if [[ "$full_validation" == true ]]; then
     native=true
     shell=true
+    bootstrap=true
     : > "$changed_files"
 else
     while IFS= read -r -d '' path; do
         case "$path" in
             *.sh) shell=true ;;
-            .github/workflows/ci.yml) shell=true ;;
+            .github/workflows/ci.yml) shell=true; bootstrap=true ;;
+        esac
+        case "$path" in
+            assets/branding/*|packages/ssh-bootstrap/*|tools/png-to-rgb565.py|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1)
+                bootstrap=true
+                ;;
         esac
         # Native cmake/fixture work is for firmware trees and the tools those
         # steps execute. Operator docs, UI markdown, policy scripts, the lane
@@ -57,10 +64,13 @@ else
     done < "$changed_files"
 fi
 
-printf 'native=%s\n' "$native" >> "$GITHUB_OUTPUT"
-printf 'shell=%s\n' "$shell" >> "$GITHUB_OUTPUT"
+{
+    printf 'native=%s\n' "$native"
+    printf 'shell=%s\n' "$shell"
+    printf 'bootstrap=%s\n' "$bootstrap"
+} >> "$GITHUB_OUTPUT"
 printf '%s\n' '### Validation selection' >> "$GITHUB_STEP_SUMMARY"
-printf '%s\n' "* Native lane: \`$native\`" "* Shell lane: \`$shell\`" >> "$GITHUB_STEP_SUMMARY"
+printf '%s\n' "* Native lane: \`$native\`" "* Shell lane: \`$shell\`" "* Bootstrap lane: \`$bootstrap\`" >> "$GITHUB_STEP_SUMMARY"
 if [[ "$full_validation" == true ]]; then
     printf '%s\n' '* Changed files: full-validation fallback' >> "$GITHUB_STEP_SUMMARY"
 else

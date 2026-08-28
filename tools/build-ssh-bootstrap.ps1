@@ -104,7 +104,11 @@ function Set-UstarMemberUnixMode {
             for ($i = 0; $i -lt 512; $i++) {
                 $sum += $bytes[$offset + $i]
             }
-            $checksum = ("{0:o6}" -f $sum) + ([char]0) + ' '
+            $checksumOctal = [Convert]::ToString($sum, 8)
+            if ($checksumOctal.Length -gt 6) {
+                throw "ustar checksum $checksumOctal does not fit the 6-digit checksum field"
+            }
+            $checksum = $checksumOctal.PadLeft(6, '0') + ([char]0) + ' '
             $checksumBytes = [System.Text.Encoding]::ASCII.GetBytes($checksum)
             [System.Buffer]::BlockCopy($checksumBytes, 0, $bytes, $offset + 148, 8)
             [System.IO.File]::WriteAllBytes($ArchivePath, $bytes)

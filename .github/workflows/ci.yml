@@ -30,6 +30,7 @@ jobs:
     outputs:
       native: ${{ steps.changes.outputs.native }}
       shell: ${{ steps.changes.outputs.shell }}
+      bootstrap: ${{ steps.changes.outputs.bootstrap }}
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -120,6 +121,53 @@ jobs:
           find . -path ./.git -prune -o -path './ui/lib/lvgl' -prune -o -type f -name '*.sh' -print0 | xargs -0 -r sh -n
           shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
           bash tools/select-ci-validation-selftest.sh
+
+  windows-bootstrap-validation:
+    needs: select-validation
+    if: needs.select-validation.outputs.bootstrap == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Install bootstrap image dependency
+        shell: pwsh
+        run: py -3 -m pip install Pillow
+
+      - name: Build and inspect Windows bootstrap image
+        shell: pwsh
+        run: |
+          $output = "build/ci-bootstrap"
+          tools/build-get-started.ps1 -Version "0.2.8-ci" -OutputDirectory $output
+          $artifact = Join-Path $output "Deneb_get_started.img"
+          $checksum = "$artifact.sha256"
+
+          & tar -tf $artifact | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+              throw "Windows-built bootstrap archive is unreadable"
+          }
+
+          $mode = (& tar -tvf $artifact | Where-Object { $_ -match ' update[.]sh$' } | Select-Object -First 1).Split()[0]
+          if ($mode -ne '-rwxr-xr-x') {
+              throw "Expected update.sh mode 0755, got '$mode'"
+          }
+
+          $manifestVersion = & tar -xOf $artifact manifest.txt |
+              Where-Object { $_ -like 'version=*' } |
+              Select-Object -First 1
+          if ($manifestVersion -ne 'version=0.2.8-ci') {
+              throw "Unexpected manifest version '$manifestVersion'"
+          }
+
+          $expectedHash = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0]
+          $actualHash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+              throw "Bootstrap checksum mismatch"
+          }
 
   native-validation:
     needs: select-validation
