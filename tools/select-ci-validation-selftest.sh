@@ -90,7 +90,7 @@ before="$(git -C "$repo" rev-parse HEAD)"
 printf '# converter\n' > "$repo/tools/png-to-rgb565.py"
 git -C "$repo" add .
 git -C "$repo" commit -qm bootstrap-converter
-assert_lanes false false true "$(run_selector push "$before")"
+assert_lanes true false true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
 mkdir -p "$repo/assets/branding"
