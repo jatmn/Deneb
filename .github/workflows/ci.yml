@@ -4,17 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
+    # Do not listen for `edited`. GitHub does not evaluate job `name:`
+    # expressions on skipped jobs, so a title/body edit published four
+    # skipped checks named the raw expression. Sourcery body rewrites
+    # kept starting those runs. Title/body edits must not start CI at
+    # all, so they cannot replace a required result on the same SHA.
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_dispatch:
 
 concurrency:
-  # Metadata-only PR edits get a separate skipped run so they cannot cancel
-  # validation for the current head. Base edits retain the normal PR group.
-  group: >-
-    ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{
-      github.event_name == 'pull_request' &&
-      github.event.action == 'edited' &&
-      github.event.changes.base == null && 'metadata' || 'validate' }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -24,20 +23,8 @@ jobs:
   # Skipped optional jobs count as passing required checks, so shell and
   # native can stay conditional. select-validation stays required so a
   # selector failure cannot skip native work and still look green.
-  # Metadata-only PR edits still skip work, but must not publish the
-  # required check names: GitHub treats skipped required checks as
-  # success, and a later skipped run can replace a failed result on the
-  # same SHA. Report those events as metadata-edit instead.
   select-validation:
-    name: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.action == 'edited' &&
-          github.event.changes.base == null &&
-          'metadata-edit' || 'select-validation' }}
-    if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft == false &&
-       (github.event.action != 'edited' || github.event.changes.base != null))
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -58,15 +45,7 @@ jobs:
         run: bash tools/select-ci-validation.sh
 
   policy-validation:
-    name: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.action == 'edited' &&
-          github.event.changes.base == null &&
-          'metadata-edit' || 'policy-validation' }}
-    if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft == false &&
-       (github.event.action != 'edited' || github.event.changes.base != null))
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -118,11 +97,6 @@ jobs:
           ./gitleaks git --redact --no-banner --verbose --log-opts="$log_opts" .
 
   shell-validation:
-    name: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.action == 'edited' &&
-          github.event.changes.base == null &&
-          'metadata-edit' || 'shell-validation' }}
     needs: select-validation
     if: needs.select-validation.outputs.shell == 'true'
     runs-on: ubuntu-24.04
@@ -148,11 +122,6 @@ jobs:
           bash tools/select-ci-validation-selftest.sh
 
   native-validation:
-    name: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.action == 'edited' &&
-          github.event.changes.base == null &&
-          'metadata-edit' || 'native-validation' }}
     needs: select-validation
     if: needs.select-validation.outputs.native == 'true'
     runs-on: ubuntu-24.04

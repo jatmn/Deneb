@@ -121,8 +121,9 @@ change. The CI source of truth is `.github/workflows/ci.yml`. GitHub Actions
 splits host validation across `policy-validation`, `shell-validation`, and
 `native-validation` jobs. Branch protection requires those jobs plus
 `select-validation`; a skipped optional lane is a pass, not a missing check.
-Metadata-only PR edits report as `metadata-edit` so they cannot replace a
-live required result on the same commit.
+Title or body edits do not start CI, so they cannot replace a live required
+result on the same commit. Retargeting a PR base does not start a new run;
+re-run the checks or push a commit.
 
 Baseline repository checks:
 
