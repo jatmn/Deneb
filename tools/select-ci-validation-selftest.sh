@@ -13,7 +13,7 @@ git init -q "$repo"
 git -C "$repo" config user.email ci-selftest@example.invalid
 git -C "$repo" config user.name "CI self-test"
 
-mkdir -p "$repo/.github/workflows" "$repo/common" "$repo/docs" "$repo/packages/bootstrap"
+mkdir -p "$repo/.github/workflows" "$repo/common" "$repo/docs" "$repo/packages/bootstrap" "$repo/tools" "$repo/ui"
 printf 'int original;\n' > "$repo/common/original.c"
 git -C "$repo" add .
 git -C "$repo" commit -qm base
@@ -59,6 +59,48 @@ printf '#!/bin/sh\n' > "$repo/packages/bootstrap/update.sh"
 git -C "$repo" add .
 git -C "$repo" commit -qm shell
 assert_lanes false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '# UI notes\n' > "$repo/ui/README.md"
+git -C "$repo" add .
+git -C "$repo" commit -qm ui-docs
+assert_lanes false false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/build-get-started.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm bootstrap-builder
+assert_lanes false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'Write-Output bootstrap\n' > "$repo/tools/build-ssh-bootstrap.ps1"
+git -C "$repo" add .
+git -C "$repo" commit -qm bootstrap-packaging
+assert_lanes false false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'Write-Output policy\n' > "$repo/tools/check-publication-boundary.ps1"
+git -C "$repo" add .
+git -C "$repo" commit -qm policy-tool
+assert_lanes false false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/select-ci-validation.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm selector
+assert_lanes false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/deneb-compile-all-selftest.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm native-tool
+assert_lanes true true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'int ui;\n' > "$repo/ui/main.c"
+git -C "$repo" add .
+git -C "$repo" commit -qm ui-source
+assert_lanes true false "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
 printf 'name: CI\n' > "$repo/.github/workflows/ci.yml"

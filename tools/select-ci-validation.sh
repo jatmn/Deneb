@@ -36,8 +36,21 @@ else
             *.sh) shell=true ;;
             .github/workflows/ci.yml) shell=true ;;
         esac
+        # Native cmake/fixture work is for firmware trees and the tools those
+        # steps execute. Operator docs, UI markdown, policy scripts, the lane
+        # selector, and USB/bootstrap packaging do not need that lane.
         case "$path" in
-            .github/workflows/ci.yml|.gitmodules|common/*|dfsvc/*|printsvc/*|ui/*|web/*|tools/*|UM2C_MODDING_CHECKLIST.md|docs/PRINTSVC_EVIDENCE_LEDGER.md|docs/PRINTSVC_INTEGRATION_AUDIT.md)
+            .github/workflows/ci.yml|.gitmodules|common/*|dfsvc/*|printsvc/*|web/*|UM2C_MODDING_CHECKLIST.md|docs/PRINTSVC_EVIDENCE_LEDGER.md|docs/PRINTSVC_INTEGRATION_AUDIT.md)
+                native=true
+                ;;
+            ui/*.md)
+                ;;
+            ui/*)
+                native=true
+                ;;
+            tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/build-cura-plugin.ps1)
+                ;;
+            tools/*)
                 native=true
                 ;;
         esac
