@@ -50,8 +50,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+# Keep this in lockstep with tools/build-ssh-bootstrap.ps1: first character
+# must be alphanumeric so Linux and Windows builders accept the same tokens.
 case "$version" in
-    ''|*[!A-Za-z0-9._+-]*|.*|*.)
+    ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._+-]*|*.)
         die "Invalid --version '$version'. Use a token of letters, digits, '.', '_', '+', or '-' (for example 0.2.8)."
         ;;
 esac

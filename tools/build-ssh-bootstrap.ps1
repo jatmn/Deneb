@@ -8,6 +8,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Keep this in lockstep with tools/build-get-started.sh: first character must
+# be alphanumeric so Linux and Windows builders accept the same tokens.
 if ($Version -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?$') {
     throw "Invalid -Version '$Version'. Use a token of letters, digits, '.', '_', '+', or '-' (for example 0.2.8)."
 }
