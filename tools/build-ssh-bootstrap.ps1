@@ -8,6 +8,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($Version -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?$') {
+    throw "Invalid -Version '$Version'. Use a token of letters, digits, '.', '_', '+', or '-' (for example 0.2.8)."
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageDir = Join-Path $repoRoot "packages/ssh-bootstrap"
 $brandingDir = Join-Path $repoRoot "assets/branding"
@@ -31,6 +35,86 @@ function Normalize-LfFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     Write-LfFile -Path $Path -Content ([System.IO.File]::ReadAllText($Path))
+}
+
+function Set-UnixExecuteMode {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $chmod = Get-Command chmod -ErrorAction SilentlyContinue
+    if ($chmod) {
+        & chmod 0755 $Path
+        if ($LASTEXITCODE -ne 0) {
+            throw "chmod 0755 failed for $Path"
+        }
+    }
+}
+
+function Get-UstarOctal {
+    param(
+        [Parameter(Mandatory = $true)][byte[]]$Bytes,
+        [Parameter(Mandatory = $true)][int]$Offset,
+        [Parameter(Mandatory = $true)][int]$Length
+    )
+
+    $text = [System.Text.Encoding]::ASCII.GetString($Bytes, $Offset, $Length).Trim([char]0, [char]' ')
+    if ([string]::IsNullOrEmpty($text)) {
+        return [int64]0
+    }
+
+    return [Convert]::ToInt64($text, 8)
+}
+
+function Set-UstarMemberUnixMode {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchivePath,
+        [Parameter(Mandatory = $true)][string]$MemberName,
+        [Parameter(Mandatory = $true)][string]$OctalMode
+    )
+
+    $bytes = [System.IO.File]::ReadAllBytes($ArchivePath)
+    $offset = 0
+    $modeField = $OctalMode.PadLeft(7, '0').Substring(0, 7) + [char]0
+
+    while ($offset + 512 -le $bytes.Length) {
+        $allZero = $true
+        for ($i = 0; $i -lt 512; $i++) {
+            if ($bytes[$offset + $i] -ne 0) {
+                $allZero = $false
+                break
+            }
+        }
+        if ($allZero) {
+            break
+        }
+
+        $nameLength = 0
+        while ($nameLength -lt 100 -and $bytes[$offset + $nameLength] -ne 0) {
+            $nameLength++
+        }
+        $name = [System.Text.Encoding]::ASCII.GetString($bytes, $offset, $nameLength)
+        if ($name -eq $MemberName) {
+            $modeBytes = [System.Text.Encoding]::ASCII.GetBytes($modeField)
+            [System.Buffer]::BlockCopy($modeBytes, 0, $bytes, $offset + 100, 8)
+            for ($i = 0; $i -lt 8; $i++) {
+                $bytes[$offset + 148 + $i] = 32
+            }
+            $sum = 0
+            for ($i = 0; $i -lt 512; $i++) {
+                $sum += $bytes[$offset + $i]
+            }
+            $checksum = ("{0:o6}" -f $sum) + ([char]0) + ' '
+            $checksumBytes = [System.Text.Encoding]::ASCII.GetBytes($checksum)
+            [System.Buffer]::BlockCopy($checksumBytes, 0, $bytes, $offset + 148, 8)
+            [System.IO.File]::WriteAllBytes($ArchivePath, $bytes)
+            return
+        }
+
+        $size = Get-UstarOctal -Bytes $bytes -Offset ($offset + 124) -Length 12
+        $padded = [int](([Math]::Floor(($size + 511) / 512)) * 512)
+        $offset += 512 + $padded
+    }
+
+    throw "tar member '$MemberName' not found in $ArchivePath"
 }
 
 function Get-PythonWithPillow {
@@ -102,6 +186,7 @@ Write-LfFile -Path $manifestPath -Content $manifestContent
 
 Normalize-LfFile -Path (Join-Path $stagingDir "update.sh")
 Normalize-LfFile -Path (Join-Path $stagingDir "README.md")
+Set-UnixExecuteMode -Path (Join-Path $stagingDir "update.sh")
 
 Remove-Item -LiteralPath $artifact -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
@@ -116,6 +201,10 @@ try {
 finally {
     Pop-Location
 }
+
+# Windows tar does not store Unix execute bits from NTFS. Force update.sh to
+# 0755 in the ustar header so stock firmware can run /tmp/update/update.sh.
+Set-UstarMemberUnixMode -ArchivePath $artifact -MemberName "update.sh" -OctalMode "755"
 
 $hash = (& certutil -hashfile $artifact SHA256)[1]
 Write-LfFile -Path $checksum -Content "$($hash.ToLowerInvariant())  $(Split-Path -Leaf $artifact)`n"
