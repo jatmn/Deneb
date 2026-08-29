@@ -94,11 +94,10 @@ mkdir -p "$staging_dir" "$dist_dir"
 cp "$package_dir/update.sh" "$staging_dir/update.sh"
 cp "$package_dir/README.md" "$staging_dir/README.md"
 cp "$package_dir/manifest.txt" "$staging_dir/manifest.txt"
-cp "$branding_dir/deneb-boot-320x240.png" "$staging_dir/deneb-boot-320x240.png"
 cp "$branding_dir/deneb-splash-128x102.jpg" "$staging_dir/deneb-splash-128x102.jpg"
 
 "$bootstrap_python" "$rgb565_script" \
-    "$staging_dir/deneb-boot-320x240.png" \
+    "$branding_dir/deneb-boot-320x240.png" \
     "$staging_dir/deneb-splash.rgb565"
 
 rgb_size=$(wc -c < "$staging_dir/deneb-splash.rgb565")
@@ -145,7 +144,6 @@ temp_checksum=$(mktemp "$dist_dir/.Deneb_get_started.img.sha256.XXXXXX")
         update.sh \
         README.md \
         manifest.txt \
-        deneb-boot-320x240.png \
         deneb-splash-128x102.jpg \
         deneb-splash.rgb565
 )
@@ -153,7 +151,6 @@ temp_checksum=$(mktemp "$dist_dir/.Deneb_get_started.img.sha256.XXXXXX")
 expected_members='update.sh
 README.md
 manifest.txt
-deneb-boot-320x240.png
 deneb-splash-128x102.jpg
 deneb-splash.rgb565'
 actual_members=$(tar -tf "$temp_artifact")
