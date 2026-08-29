@@ -45,4 +45,3 @@ This package is step one of the stock-firmware migration. The full operator
 sequence is documented in [Getting Started](../../docs/GETTING_STARTED.md).
 Later Deneb stack updates use `.deneb` packages and are covered by
 [Updating Deneb](../../docs/UPDATING.md).
-

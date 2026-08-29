@@ -72,6 +72,27 @@ jobs:
       - name: Check license declarations
         run: pipx run --spec reuse==6.2.0 reuse lint
 
+      - name: Check changed-file whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            diff_range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$EVENT_NAME" = "push" ] &&
+               [ -n "$BEFORE_SHA" ] &&
+               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
+               git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            diff_range="${BEFORE_SHA}..HEAD"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            diff_range="HEAD^..HEAD"
+          else
+            diff_range="$(git hash-object -t tree /dev/null)..HEAD"
+          fi
+          git diff --check "$diff_range"
+
       - name: Scan changed Git history for secrets
         env:
           GITLEAKS_VERSION: 8.30.1

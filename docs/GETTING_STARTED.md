@@ -221,10 +221,11 @@ bash tools/build-update-release.sh
 
 ### Windows with Debian WSL 2
 
-```powershell
-# One-time setup; see docs/WSL_BUILD_ENVIRONMENT.md for the full sequence
-powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
-```
+Complete the Windows/WSL lane's [Setup](WSL_BUILD_ENVIRONMENT.md#setup) and
+[Build and audit](WSL_BUILD_ENVIRONMENT.md#build-and-audit) sections. That guide
+owns the first-build dependency switches, later rebuild command, environment
+verification, and recovery sequence; follow it from setup through the verified
+package result without skipping to the later-build command.
 
 A package is trustworthy only when the release wrapper finishes cleanly and
 prints:
