@@ -90,12 +90,53 @@ similar to:
 Verified native-only print service package: /path/to/dist/Deneb_Update_<version>.deneb
 ```
 
+The successful wrapper also produces the post-audit sidecar
+`dist/Deneb_Update_<version>.deneb.sha256`. If that sidecar is absent, the
+release audits or checksum publication did not finish; do not install the
+package merely because the `.deneb` file exists.
+
+### Verify and copy the update package
+
+Use this handoff for both the first full Deneb install and every later update.
+Replace the example package version, mount path, or drive letter with yours.
+
+Native Debian/Linux:
+
+```sh
+package=dist/Deneb_Update_abc1234.deneb
+checksum="$package.sha256"
+(cd "$(dirname "$package")" && sha256sum --check "$(basename "$checksum")")
+usb_package=/media/USERNAME/USB_LABEL/"$(basename "$package")"
+cp "$package" "$usb_package"
+expected=$(awk '{print $1}' "$checksum")
+actual=$(sha256sum "$usb_package" | awk '{print $1}')
+[ "$actual" = "$expected" ] || { echo "USB package checksum mismatch" >&2; false; }
+```
+
+Windows PowerShell:
+
+```powershell
+$package = "dist\Deneb_Update_abc1234.deneb"
+$checksum = "$package.sha256"
+$expected = (Get-Content $checksum).Split()[0].ToLowerInvariant()
+$sourceHash = (Get-FileHash $package -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($sourceHash -ne $expected) { throw "Source package checksum mismatch" }
+$usbRoot = "E:\"
+$usbPackage = Join-Path $usbRoot (Split-Path -Leaf $package)
+Copy-Item $package $usbPackage
+$usbHash = (Get-FileHash $usbPackage -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($usbHash -ne $expected) { throw "USB package checksum mismatch" }
+```
+
+Do not continue after either mismatch. Rebuild or recopy, verify the actual USB
+file again, and safely eject the drive before inserting it into the printer.
+
 ## Install a newer `.deneb` package
 
-1. Copy `dist/Deneb_Update_<version>.deneb` to USB.
-2. Insert the USB drive into the printer.
+1. Complete [Verify and copy the update package](#verify-and-copy-the-update-package).
+2. Safely eject the verified USB drive and insert it into the printer.
 3. On Deneb open **Maintenance > Update Firmware**.
-4. Select the new `.deneb` package.
+4. Select the verified `.deneb` package.
 5. Wait for installation and reboot.
 
 The installer validates required binaries and audits, backs up selected stock

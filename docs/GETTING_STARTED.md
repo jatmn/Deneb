@@ -249,7 +249,8 @@ bootstrap package is safe to reinstall from USB if needed; the package name
 
 ## Step 4: Build the full Deneb update package
 
-The full stack is packaged as `dist/Deneb_Update_<version>.deneb`.
+The full stack is packaged as `dist/Deneb_Update_<version>.deneb`, with a
+post-audit `.deneb.sha256` sidecar published by the successful release wrapper.
 
 Follow one complete lane from the
 [Debian/Linux build environment](WSL_BUILD_ENVIRONMENT.md). Do not mix the
@@ -290,10 +291,10 @@ build.
 
 ## Step 5: Install the first full Deneb package
 
-1. Copy `dist/Deneb_Update_<version>.deneb` to a FAT32 USB drive.
-2. Insert the USB drive into the printer.
+1. Complete [Verify and copy the update package](UPDATING.md#verify-and-copy-the-update-package).
+2. Safely eject the verified FAT32 USB drive and insert it into the printer.
 3. On the printer open **Maintenance > Update Firmware**.
-4. Choose the USB install path and select the `.deneb` package.
+4. Choose the USB install path and select the verified `.deneb` package.
 5. Wait for installation and reboot.
 
 The full installer deploys the native touchscreen UI, Web/API runtime, print

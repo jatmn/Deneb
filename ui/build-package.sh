@@ -298,6 +298,10 @@ DENEB_INSTALLER="${STAGING_DIR}/update.sh" \
 DENEB_REPO_ROOT="$REPO_ROOT" "${STAGING_DIR}/deneb-stock-menu-import-check"
 
 # Create tar-backed .deneb package for the Deneb USB update lane
+# A release wrapper publishes the matching checksum only after its additional
+# archive audits pass. Invalidate any earlier success marker before replacing
+# the package so a failed rebuild cannot inherit a stale digest.
+rm -f "$OUTPUT_IMG.sha256"
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
     deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest \

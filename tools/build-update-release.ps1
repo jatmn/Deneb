@@ -290,3 +290,9 @@ $verifyPackage = "set -euo pipefail; " +
 if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }
+
+$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
+& wsl -d $Distro -u root -- bash -lc $writeChecksum
+if ($LASTEXITCODE -ne 0) {
+    throw "release package checksum publication failed with exit code $LASTEXITCODE"
+}
