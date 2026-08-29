@@ -7,7 +7,7 @@ for the ILI9341 SPI TFT (fb_ili9341, fb0).
 Output is 153,600 bytes (320 * 240 * 2) that can be written directly:
     cat splash.rgb565 > /dev/fb0
 
-Requires: Pillow (pip install Pillow)
+Requires: the locked Pillow dependency in tools/bootstrap-requirements.txt
 """
 
 import argparse
@@ -18,7 +18,7 @@ from pathlib import Path
 try:
     from PIL import Image
 except ImportError:
-    print("ERROR: Pillow is required.  pip install Pillow", file=sys.stderr)
+    print("ERROR: locked Pillow is required; install tools/bootstrap-requirements.txt with pip --require-hashes", file=sys.stderr)
     sys.exit(1)
 
 

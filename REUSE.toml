@@ -29,3 +29,9 @@ path = "notices/LIGHTTPD-1.4.76-LICENSE.txt"
 precedence = "override"
 SPDX-FileCopyrightText = "2004 Jan Kneschke, incremental"
 SPDX-License-Identifier = "BSD-3-Clause"
+
+[[annotations]]
+path = "notices/PILLOW-12.3.0-LICENSE.txt"
+precedence = "override"
+SPDX-FileCopyrightText = ["1997-2011 Secret Labs AB", "1995-2011 Fredrik Lundh and contributors", "2010 Jeffrey 'Alex' Clark and contributors"]
+SPDX-License-Identifier = "MIT-CMU"

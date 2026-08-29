@@ -158,7 +158,10 @@ jobs:
       - name: Install bootstrap image dependency
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends python3-pil
+          sudo apt-get install --no-install-recommends python3 python3-venv
+          python3 -m venv build/bootstrap-python
+          build/bootstrap-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
+          echo "$PWD/build/bootstrap-python/bin" >> "$GITHUB_PATH"
 
       - name: Build and inspect Linux bootstrap image
         run: |
@@ -201,7 +204,10 @@ jobs:
 
       - name: Install bootstrap image dependency
         shell: pwsh
-        run: py -3 -m pip install Pillow
+        run: |
+          py -3 -m venv build/bootstrap-python
+          build/bootstrap-python/Scripts/python.exe -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
+          (Resolve-Path build/bootstrap-python/Scripts).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build and inspect Windows bootstrap image
         shell: pwsh

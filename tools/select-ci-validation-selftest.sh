@@ -93,6 +93,12 @@ git -C "$repo" commit -qm bootstrap-converter
 assert_lanes true false true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
+printf 'Pillow==12.3.0\n' > "$repo/tools/bootstrap-requirements.txt"
+git -C "$repo" add .
+git -C "$repo" commit -qm bootstrap-dependency-lock
+assert_lanes false false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
 mkdir -p "$repo/assets/branding"
 printf 'branding\n' > "$repo/assets/branding/splash.png"
 git -C "$repo" add .

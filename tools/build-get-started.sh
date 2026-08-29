@@ -61,6 +61,7 @@ esac
 package_dir=$repo_root/packages/ssh-bootstrap
 branding_dir=$repo_root/assets/branding
 rgb565_script=$repo_root/tools/png-to-rgb565.py
+rgb565_digest_file=$branding_dir/deneb-splash.rgb565.sha256
 
 if [ "${output_directory#/}" = "$output_directory" ]; then
     dist_dir=$repo_root/$output_directory
@@ -76,9 +77,10 @@ checksum=$artifact.sha256
 [ -d "$package_dir" ] || die "Package directory not found: $package_dir"
 [ -d "$branding_dir" ] || die "Branding directory not found: $branding_dir"
 [ -f "$rgb565_script" ] || die "Missing converter script: $rgb565_script"
+[ -f "$rgb565_digest_file" ] || die "Missing expected RGB565 digest: $rgb565_digest_file"
 
 if ! python3 -c 'import PIL' >/dev/null 2>&1; then
-    die "Python 3 with Pillow is required. Install it with: sudo apt-get install python3-pil"
+    die "Python 3 with locked Pillow is required. Install tools/bootstrap-requirements.txt with pip --require-hashes."
 fi
 
 rm -rf "$staging_root"
@@ -96,6 +98,14 @@ python3 "$rgb565_script" \
 
 rgb_size=$(wc -c < "$staging_dir/deneb-splash.rgb565")
 [ "$rgb_size" -eq 153600 ] || die "RGB565 output size mismatch: expected 153600 bytes, got $rgb_size"
+expected_rgb_hash=$(awk 'NR == 1 { print $1 }' "$rgb565_digest_file")
+case "$expected_rgb_hash" in
+    *[!0-9a-f]*|'') die "Invalid expected RGB565 SHA256 in $rgb565_digest_file" ;;
+esac
+[ "${#expected_rgb_hash}" -eq 64 ] || die "Invalid expected RGB565 SHA256 in $rgb565_digest_file"
+actual_rgb_hash=$(sha256sum "$staging_dir/deneb-splash.rgb565" | awk '{ print $1 }')
+[ "$actual_rgb_hash" = "$expected_rgb_hash" ] || \
+    die "RGB565 digest mismatch: expected $expected_rgb_hash, got $actual_rgb_hash"
 
 # Rewrite version without interpolating it into a sed replacement expression.
 tmp_manifest=$(mktemp)

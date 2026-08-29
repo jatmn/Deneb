@@ -17,6 +17,7 @@ if ($Version -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?$') {
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageDir = Join-Path $repoRoot "packages/ssh-bootstrap"
 $brandingDir = Join-Path $repoRoot "assets/branding"
+$rgb565DigestFile = Join-Path $brandingDir "deneb-splash.rgb565.sha256"
 $distDir = Join-Path $repoRoot $OutputDirectory
 $stagingRoot = Join-Path $repoRoot "build/ssh-bootstrap"
 $stagingDir = Join-Path $stagingRoot "Deneb_get_started_$Version"
@@ -151,7 +152,7 @@ function Get-PythonWithPillow {
         }
     }
 
-    throw "Python with Pillow is required. Install it with: py -3 -m pip install Pillow"
+    throw "Python with locked Pillow is required. Install tools/bootstrap-requirements.txt with pip --require-hashes."
 }
 
 if (!(Test-Path -LiteralPath $packageDir)) {
@@ -160,6 +161,10 @@ if (!(Test-Path -LiteralPath $packageDir)) {
 
 if (!(Test-Path -LiteralPath $brandingDir)) {
     throw "Branding directory not found: $brandingDir"
+}
+
+if (!(Test-Path -LiteralPath $rgb565DigestFile)) {
+    throw "Missing expected RGB565 digest: $rgb565DigestFile"
 }
 
 Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -184,6 +189,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ((Get-Item $rgb565Output).Length -ne 153600) {
     throw "RGB565 output size mismatch: expected 153600 bytes, got $((Get-Item $rgb565Output).Length)"
+}
+$expectedRgbHash = ((Get-Content -LiteralPath $rgb565DigestFile | Select-Object -First 1) -split '\s+')[0].ToLowerInvariant()
+if ($expectedRgbHash -notmatch '^[0-9a-f]{64}$') {
+    throw "Invalid expected RGB565 SHA256 in $rgb565DigestFile"
+}
+$actualRgbHash = (Get-FileHash -LiteralPath $rgb565Output -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualRgbHash -ne $expectedRgbHash) {
+    throw "RGB565 digest mismatch: expected $expectedRgbHash, got $actualRgbHash"
 }
 
 $manifestPath = Join-Path $stagingDir "manifest.txt"

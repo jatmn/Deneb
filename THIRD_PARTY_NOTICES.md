@@ -17,6 +17,15 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 - mbedTLS 2.28.8 is statically linked into deneb-dfsvc under its Apache-2.0 OR GPL-2.0-or-later choice. The upstream LICENSE is packaged as MBEDTLS_LICENSE.txt.
 - lighttpd 1.4.76 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
 
+### Pillow bootstrap host tool
+
+- Pillow 12.3.0 is used only on the build host to convert the Deneb splash to
+  RGB565. It is installed from repository-locked wheel hashes and is not
+  included in target packages.
+- Upstream: https://github.com/python-pillow/Pillow at commit
+  `bb1d8e8ab8d29048624d96e3ee53cecf7c13d13d`
+- License: MIT-CMU, retained in `notices/PILLOW-12.3.0-LICENSE.txt`
+
 ### LVGL
 
 - Component: LVGL runtime subset

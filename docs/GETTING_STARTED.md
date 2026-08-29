@@ -96,27 +96,38 @@ This produces:
 
 ### Native Debian/Linux
 
-Host packages needed for the bootstrap package:
+Host packages needed for the bootstrap package (Python 3.10 or newer):
 
 ```sh
 sudo apt-get update
-sudo apt-get install --no-install-recommends ca-certificates python3 python3-pil tar
+sudo apt-get install --no-install-recommends ca-certificates python3 python3-venv tar
+python3 -m venv build/bootstrap-python
+build/bootstrap-python/bin/python -m pip install --disable-pip-version-check \
+  --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
 ```
 
 Build:
 
 ```sh
-bash tools/build-get-started.sh
+PATH="$PWD/build/bootstrap-python/bin:$PATH" bash tools/build-get-started.sh
 ```
 
 ### Windows with Debian WSL 2 or native PowerShell tooling
 
-Python 3 with Pillow is required on the Windows side for the splash conversion:
+Python 3.10 or newer with Pillow is required on the Windows side for the
+splash conversion:
 
 ```powershell
-py -3 -m pip install Pillow
+py -3 -m venv build/bootstrap-python
+build/bootstrap-python/Scripts/python.exe -m pip install --disable-pip-version-check `
+  --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
+$env:Path = "$(Resolve-Path build/bootstrap-python/Scripts);$env:Path"
 powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 ```
+
+Both lanes install the repository-locked Pillow wheels with verified hashes.
+The builders also reject generated RGB565 bytes that do not match the audited
+digest in `assets/branding/deneb-splash.rgb565.sha256`.
 
 `tools/build-get-started.ps1` is a thin wrapper around
 `tools/build-ssh-bootstrap.ps1`.
