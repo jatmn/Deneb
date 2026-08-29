@@ -205,11 +205,38 @@ INITEOF
 from pathlib import Path
 import os
 import shutil
+import sys
 
 preflight = os.environ.get("DENEB_PATCH_PREFLIGHT") == "1"
 backup_dir = Path("/home/deneb/backups/get-started")
-if not preflight:
-    backup_dir.mkdir(parents=True, exist_ok=True)
+
+def replace_known_block(text, old_blocks, new, label):
+    if isinstance(old_blocks, str):
+        old_blocks = [old_blocks]
+    new_count = text.count(new)
+    if new_count == 1:
+        remainder = text.replace(new, "", 1)
+        if new not in remainder and not any(old in remainder for old in old_blocks):
+            return text
+        raise RuntimeError("{} contains ambiguous old/new blocks".format(label))
+    old_counts = [text.count(old) for old in old_blocks]
+    if new_count == 0 and old_counts.count(1) == 1 and sum(old_counts) == 1:
+        return text.replace(old_blocks[old_counts.index(1)], new, 1)
+    raise RuntimeError("{} is not an exact known preimage or postimage".format(label))
+
+if os.environ.get("DENEB_PATCH_SELFTEST") == "1":
+    old = "active stock block\n"
+    new = "active Deneb block\n"
+    assert replace_known_block(old, old, new, "old fixture") == new
+    assert replace_known_block(new, old, new, "new fixture") == new
+    for invalid in ("# mentions *.deneb only\n", old + new, old + old):
+        try:
+            replace_known_block(invalid, old, new, "invalid fixture")
+        except RuntimeError:
+            continue
+        raise AssertionError("invalid patch fixture was accepted")
+    print("SSH bootstrap patch helper self-test: PASS")
+    sys.exit(0)
 
 files = {
     "navigator": Path("/home/cygnus/menu/navigator/settings/update_firmware_navigator.py"),
@@ -217,7 +244,6 @@ files = {
     "version_page": Path("/home/cygnus/menu/screens/update_firmware_version_page.py"),
     "main_menu": Path("/home/cygnus/menu/screens/main_menu_page.py"),
     "root_navigator": Path("/home/cygnus/menu/navigator/root_navigator.py"),
-    "welcome": Path("/home/cygnus/menu/screens/show_welcome_hello.py"),
     "welcome_link": Path("/home/cygnus/menu/screens/show_welcome_link.py"),
     "images": Path("/home/cygnus/menu/img/images.py"),
     "handler": Path("/home/cygnus/coordinator/handlers/firmwareupdatehandling.py"),
@@ -228,34 +254,38 @@ def backup_once(path):
     if not backup.exists():
         shutil.copy2(str(path), str(backup))
 
-def write_if_changed(path, content):
-    if path.read_text() != content:
-        if preflight:
-            return
-        backup_once(path)
-        path.write_text(content)
+pending_writes = []
+
+def queue_if_changed(path, content):
+    original = path.read_text()
+    if original != content:
+        pending_writes.append((path, original, content))
 
 nav = files["navigator"]
 text = nav.read_text()
 old = "    found_imgs = list(USB_PATH.glob('*.img'))\n\n    if len(list(found_imgs)) == 1:\n        return found_imgs[0]\n"
 new = """    update_files = []\n    for pattern in ('*.img', '*.IMG', '*.deneb', '*.DENEB'):\n        update_files.extend(USB_PATH.glob(pattern))\n\n    unique_files = sorted(set(update_files))\n    if len(unique_files) == 1:\n        return unique_files[0]\n"""
-if old in text:
-    text = text.replace(old, new)
-if "*.deneb" not in text:
-    raise RuntimeError("Could not patch Deneb auto-selection support in {}".format(nav))
-write_if_changed(nav, text)
+text = replace_known_block(text, old, new, "Deneb auto-selection support in {}".format(nav))
+queue_if_changed(nav, text)
 
 browse = files["browse"]
 text = browse.read_text()
 old = '                if item_path.suffix.upper() == ".IMG":\n'
 new = '                if item_path.suffix.upper() in (".IMG", ".DENEB"):\n'
-if old in text:
-    text = text.replace(old, new)
-text = text.replace("Explore the USB drive for IMG files", "Explore the USB drive for IMG and DENEB files")
-text = text.replace("Scan the USB's current directory for IMG files", "Scan the USB's current directory for IMG and DENEB files")
-if ".DENEB" not in text:
-    raise RuntimeError("Could not patch Deneb browse support in {}".format(browse))
-write_if_changed(browse, text)
+text = replace_known_block(text, old, new, "Deneb browse filter in {}".format(browse))
+text = replace_known_block(
+    text,
+    "Explore the USB drive for IMG files",
+    "Explore the USB drive for IMG and DENEB files",
+    "Deneb browse help in {}".format(browse),
+)
+text = replace_known_block(
+    text,
+    "Scan the USB's current directory for IMG files",
+    "Scan the USB's current directory for IMG and DENEB files",
+    "Deneb browse scan help in {}".format(browse),
+)
+queue_if_changed(browse, text)
 
 handler = files["handler"]
 text = handler.read_text()
@@ -333,9 +363,7 @@ new = '''        # Check signature. Deneb packages use the same tar/update.sh tr
                 return
                 """
 '''
-if old in text:
-    text = text.replace(old, new)
-old = '''        # Check signature. Deneb packages use the same tar/update.sh transport,
+old_deneb_only = '''        # Check signature. Deneb packages use the same tar/update.sh transport,
         # but are intentionally project-local packages rather than UltiMaker firmware images.
         if str(self._shared.meta['src']).lower().endswith(".deneb"):
             logger.info("Skipping UltiMaker signature verification for Deneb package")
@@ -369,11 +397,13 @@ old = '''        # Check signature. Deneb packages use the same tar/update.sh tr
                 return
                 """
 '''
-if old in text:
-    text = text.replace(old, new)
-if "deneb_get_started.img" not in text or "Skipping UltiMaker signature verification for Deneb package" not in text:
-    raise RuntimeError("Could not patch Deneb signature bypass in {}".format(handler))
-write_if_changed(handler, text)
+text = replace_known_block(
+    text,
+    [old, old_deneb_only],
+    new,
+    "Deneb signature bypass in {}".format(handler),
+)
+queue_if_changed(handler, text)
 
 version_page = files["version_page"]
 text = version_page.read_text()
@@ -390,8 +420,7 @@ new = '''        install_from_usb_button = ("Install firmware via USB", self._on
         # Deneb handles project updates through USB .deneb packages for now.
         buttons = [install_from_usb_button]
 '''
-if old in text:
-    text = text.replace(old, new)
+text = replace_known_block(text, old, new, "Deneb USB update buttons in {}".format(version_page))
 old = '''        if latest_version == "-" or not is_online():
             icon_src = ImageSource.usb
             message = "No internet connection, printer could not check for updates"
@@ -405,11 +434,8 @@ old = '''        if latest_version == "-" or not is_online():
 new = '''        icon_src = ImageSource.usb
         message = "Install firmware from USB"
 '''
-if old in text:
-    text = text.replace(old, new)
-if "buttons = [install_from_usb_button]" not in text or "Install firmware from USB" not in text:
-    raise RuntimeError("Could not patch Deneb USB-first update page in {}".format(version_page))
-write_if_changed(version_page, text)
+text = replace_known_block(text, old, new, "Deneb USB update message in {}".format(version_page))
+queue_if_changed(version_page, text)
 
 main_menu = files["main_menu"]
 text = main_menu.read_text()
@@ -434,11 +460,8 @@ old = '''        if is_time_for_version_check() and is_online():
 new = '''        logger.info("Deneb disables stock internet firmware update checks")
         return
 '''
-if old in text:
-    text = text.replace(old, new)
-if "Deneb disables stock internet firmware update checks" not in text:
-    raise RuntimeError("Could not disable stock internet update checks in {}".format(main_menu))
-write_if_changed(main_menu, text)
+text = replace_known_block(text, old, new, "stock internet update checks in {}".format(main_menu))
+queue_if_changed(main_menu, text)
 
 root_navigator = files["root_navigator"]
 text = root_navigator.read_text()
@@ -460,63 +483,44 @@ new = '''        # Deneb: the early-boot init script (S11deneb-splash) already s
         # the main menu is ready -- no stock "Ultimaker 2+ Connect" text.
         self.goto(MenuNavigator)
 '''
-for old in old_blocks:
-    if old in text:
-        text = text.replace(old, new)
-        break
-if new not in text:
-    raise RuntimeError("Could not patch Deneb boot splash navigation in {}".format(root_navigator))
-write_if_changed(root_navigator, text)
+text = replace_known_block(text, old_blocks, new, "Deneb boot splash navigation in {}".format(root_navigator))
+queue_if_changed(root_navigator, text)
 
 images = files["images"]
 text = images.read_text()
-if "\tdeneb_boot = auto()\n" not in text:
-    text = text.replace("class ImageSource(Enum):\n", "class ImageSource(Enum):\n\tdeneb_boot = auto()\n")
-if "\tdeneb_boot = auto()\n" not in text:
-    raise RuntimeError("Could not register Deneb splash image source in {}".format(images))
-write_if_changed(images, text)
-
-welcome = files["welcome"]
-text = '''from cygnus.marshal.types.gui_status import GUIStatusState
-from cygnus.menu import style
-from cygnus.menu.img.images import ImageSource
-from cygnus.menu.pylvgl import LV_ALIGN_IN_TOP_LEFT
-from cygnus.menu.screen import Screen
-from cygnus.menu.ui_elements.image import Image
-from gershwin.duration import Duration
-
-
-class ShowWelcomeHello(Screen):
-    gui_status = GUIStatusState.MAINTENANCE
-
-    def __init__(self):
-        super().__init__()
-
-        self.splash = Image(self.background,
-                            path=ImageSource.deneb_boot,
-                            size=(style.DISPLAY_WIDTH, style.DISPLAY_HEIGHT),
-                            align=(self.background, LV_ALIGN_IN_TOP_LEFT, 0, 0))
-
-    def on_activate(self) -> None:
-        self.async_task(self._async_continue)
-
-    def _async_continue(self):
-        yield Duration(1000)
-        self.get_controller().on_start_at_main_menu()
-'''
-write_if_changed(welcome, text)
+old = "class ImageSource(Enum):\n"
+new = "class ImageSource(Enum):\n\tdeneb_boot = auto()\n"
+text = replace_known_block(text, old, new, "Deneb splash image source in {}".format(images))
+queue_if_changed(images, text)
 
 welcome_link = files["welcome_link"]
 text = welcome_link.read_text()
-text = text.replace('''        welcome_message = "Register your printer at:\\n" \\
+old = '''        welcome_message = "Register your printer at:\\n" \\
                           "ultimaker.com/register-your-printer\\n" \\
                           "and follow the free Ultimaker 2+ Connect product course to get started"
-''', '''        welcome_message = "Deneb get-started is installed.\\n" \\
+'''
+new = '''        welcome_message = "Deneb get-started is installed.\\n" \\
                           "SSH is enabled and future Deneb packages can be installed from USB."
-''')
-if "Deneb get-started is installed." not in text:
-    raise RuntimeError("Could not patch Deneb welcome link in {}".format(welcome_link))
-write_if_changed(welcome_link, text)
+'''
+text = replace_known_block(text, old, new, "Deneb welcome link in {}".format(welcome_link))
+queue_if_changed(welcome_link, text)
+
+if not preflight:
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    for path, _, _ in pending_writes:
+        backup_once(path)
+    written = []
+    try:
+        for path, original, content in pending_writes:
+            written.append((path, original))
+            path.write_text(content)
+    except Exception:
+        for path, original in reversed(written):
+            try:
+                path.write_text(original)
+            except Exception:
+                pass
+        raise
 PY
 
     if [ "$mode" = preflight ]; then
@@ -549,6 +553,11 @@ fi
 # stock layout therefore fails closed instead of leaving a partial bootstrap.
 install_deneb_update_lane preflight
 
+# Commit the validated recovery/update lane before exposing the known bootstrap
+# credential or enabling SSH. If lane installation fails, security state stays
+# unchanged and the stock updater remains the recovery path.
+install_deneb_update_lane apply
+
 set_shadow_hash root "${DENEB_HASH}"
 set_passwd_placeholder root
 
@@ -564,8 +573,6 @@ fi
 ensure_dropbear_config
 
 ensure_dropbear_enabled_at_boot
-
-install_deneb_update_lane apply
 
 log "finished; ssh should be available after reboot on port 22 with root password deneb"
 schedule_reboot

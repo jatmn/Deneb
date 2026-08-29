@@ -191,15 +191,11 @@ Use that Cygnus USB path when you need the bootstrap lane itself:
 - you intentionally want the bootstrap splash/update-lane patches reapplied
   and the printer is still on the stock/bootstrap UI
 
-Build it with:
-
-```sh
-# Native Debian/Linux
-bash tools/build-get-started.sh
-
-# Windows
-powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
-```
+Rebuild it by completing
+[Getting Started: Step 2](GETTING_STARTED.md#step-2-build-the-get-started-bootstrap-package)
+for the current checkout and host. That section owns the hash-locked Pillow
+venv and the required `DENEB_BOOTSTRAP_PYTHON` selection; do not substitute a
+bare builder command or a system-wide Pillow installation.
 
 Then install it from the stock/bootstrap USB firmware update flow exactly as
 in [Getting Started](GETTING_STARTED.md). The filename `Deneb_get_started.img`

@@ -55,7 +55,7 @@ else
             ui/*)
                 native=true
                 ;;
-            tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/bootstrap-requirements.txt|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/build-cura-plugin.ps1)
+            tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/bootstrap-requirements.txt|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/ssh-bootstrap-patch-selftest.sh|tools/build-cura-plugin.ps1)
                 ;;
             tools/*)
                 native=true

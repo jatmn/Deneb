@@ -75,6 +75,12 @@ git -C "$repo" commit -qm bootstrap-builder
 assert_lanes false true true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/ssh-bootstrap-patch-selftest.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm bootstrap-patch-selftest
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
 printf 'Write-Output bootstrap\n' > "$repo/tools/build-ssh-bootstrap.ps1"
 git -C "$repo" add .
 git -C "$repo" commit -qm bootstrap-packaging

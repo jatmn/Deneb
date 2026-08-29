@@ -27,17 +27,12 @@ local network. SSH login does not force a password change. Optionally run
 
 ## Build
 
-Produce `dist/Deneb_get_started.img` from the repository root:
-
-```sh
-# Native Debian/Linux
-bash tools/build-get-started.sh
-```
-
-```powershell
-# Windows
-powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
-```
+From the repository root, complete
+[Getting Started: Step 2](../../docs/GETTING_STARTED.md#step-2-build-the-get-started-bootstrap-package)
+for your host. That procedure installs the hash-locked Pillow wheels in the
+checkout venv, selects that exact interpreter, and runs the matching builder.
+Do not invoke a bare builder on a fresh host; system Python is not the locked
+bootstrap environment.
 
 ## Install
 
