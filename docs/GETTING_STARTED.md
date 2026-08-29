@@ -144,6 +144,28 @@ Those arrive in the `.deneb` update package.
 
 ## Step 3: Install the bootstrap package from stock firmware
 
+Before copying the package to USB, verify it in the same environment where you
+built it.
+
+Native Debian/Linux:
+
+```sh
+cd dist
+sha256sum --check Deneb_get_started.img.sha256
+cd ..
+```
+
+Windows PowerShell:
+
+```powershell
+$expected = (Get-Content dist/Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
+$actual = (Get-FileHash dist/Deneb_get_started.img -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Deneb_get_started.img checksum mismatch" }
+```
+
+Do not install or copy the image if verification fails. Rebuild it and verify
+the replacement before continuing.
+
 1. Copy only `dist/Deneb_get_started.img` to the root of a FAT32 USB drive.
    Keeping one firmware file on the stick avoids ambiguous auto-selection.
 2. Insert the USB drive into the printer.
@@ -163,8 +185,14 @@ After reboot:
 3. SSH in:
 
 ```sh
-ssh root@PRINTER_IP
+ssh -o HostKeyAlgorithms=+ssh-rsa \
+    -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+    root@PRINTER_IP
 ```
+
+The stock Dropbear server uses legacy RSA algorithms that modern OpenSSH
+clients disable by default, so these options are required for this bootstrap
+login.
 
 Password:
 

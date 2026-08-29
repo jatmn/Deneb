@@ -111,11 +111,24 @@ for text_file in update.sh README.md manifest.txt; do
 done
 chmod 0755 "$staging_dir/update.sh"
 
-rm -f "$artifact" "$checksum"
+temp_artifact=
+temp_checksum=
+previous_checksum=
+cleanup_publish_outputs() {
+    [ -z "$temp_artifact" ] || rm -f "$temp_artifact"
+    [ -z "$temp_checksum" ] || rm -f "$temp_checksum"
+    [ -z "$previous_checksum" ] || rm -f "$previous_checksum"
+}
+trap cleanup_publish_outputs EXIT
+
+# Build and validate in the destination filesystem so an incomplete archive is
+# never exposed at the final package path.
+temp_artifact=$(mktemp "$dist_dir/.Deneb_get_started.img.XXXXXX")
+temp_checksum=$(mktemp "$dist_dir/.Deneb_get_started.img.sha256.XXXXXX")
 
 (
     cd "$staging_dir"
-    tar -cf "$artifact" \
+    tar -cf "$temp_artifact" \
         update.sh \
         README.md \
         manifest.txt \
@@ -124,8 +137,40 @@ rm -f "$artifact" "$checksum"
         deneb-splash.rgb565
 )
 
-hash=$(sha256sum "$artifact" | awk '{print $1}')
-printf '%s  %s\n' "$hash" "$(basename "$artifact")" > "$checksum"
+expected_members='update.sh
+README.md
+manifest.txt
+deneb-boot-320x240.png
+deneb-splash-128x102.jpg
+deneb-splash.rgb565'
+actual_members=$(tar -tf "$temp_artifact")
+[ "$actual_members" = "$expected_members" ] || die "Bootstrap archive member validation failed"
+
+hash=$(sha256sum "$temp_artifact" | awk '{print $1}')
+printf '%s  %s\n' "$hash" "$temp_artifact" | sha256sum --check --status - || die "Bootstrap archive checksum validation failed"
+printf '%s  %s\n' "$hash" "$(basename "$artifact")" > "$temp_checksum"
+chmod 0644 "$temp_artifact" "$temp_checksum"
+
+if [ -f "$checksum" ]; then
+    previous_checksum=$(mktemp "$dist_dir/.Deneb_get_started.img.sha256.previous.XXXXXX")
+    cp -p "$checksum" "$previous_checksum"
+fi
+mv -f "$temp_checksum" "$checksum"
+temp_checksum=
+if ! mv -f "$temp_artifact" "$artifact"; then
+    if [ -n "$previous_checksum" ]; then
+        mv -f "$previous_checksum" "$checksum"
+        previous_checksum=
+    else
+        rm -f "$checksum"
+    fi
+    die "Failed to publish bootstrap archive"
+fi
+temp_artifact=
+if [ -n "$previous_checksum" ]; then
+    rm -f "$previous_checksum"
+    previous_checksum=
+fi
 
 printf 'Built %s\n' "$artifact"
 printf 'SHA256 %s\n' "$hash"

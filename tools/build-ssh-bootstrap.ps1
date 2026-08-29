@@ -194,26 +194,76 @@ Normalize-LfFile -Path (Join-Path $stagingDir "update.sh")
 Normalize-LfFile -Path (Join-Path $stagingDir "README.md")
 Set-UnixExecuteMode -Path (Join-Path $stagingDir "update.sh")
 
-Remove-Item -LiteralPath $artifact -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
+$publishId = [Guid]::NewGuid().ToString("N")
+$tempArtifact = Join-Path $distDir ".Deneb_get_started.img.$publishId.tmp"
+$tempChecksum = Join-Path $distDir ".Deneb_get_started.img.sha256.$publishId.tmp"
+$expectedMembers = @(
+    "update.sh",
+    "README.md",
+    "manifest.txt",
+    "deneb-boot-320x240.png",
+    "deneb-splash-128x102.jpg",
+    "deneb-splash.rgb565"
+)
 
-Push-Location $stagingDir
 try {
-    & tar -cf $artifact update.sh README.md manifest.txt deneb-boot-320x240.png deneb-splash-128x102.jpg deneb-splash.rgb565
+    Push-Location $stagingDir
+    try {
+        & tar -cf $tempArtifact @expectedMembers
+        if ($LASTEXITCODE -ne 0) {
+            throw "tar failed with exit code $LASTEXITCODE"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    # Windows tar does not store Unix execute bits from NTFS. Force update.sh
+    # to 0755 so stock firmware can run /tmp/update/update.sh.
+    Set-UstarMemberUnixMode -ArchivePath $tempArtifact -MemberName "update.sh" -OctalMode "755"
+
+    $actualMembers = @(& tar -tf $tempArtifact)
     if ($LASTEXITCODE -ne 0) {
-        throw "tar failed with exit code $LASTEXITCODE"
+        throw "tar validation failed with exit code $LASTEXITCODE"
+    }
+    if ((Compare-Object -ReferenceObject $expectedMembers -DifferenceObject $actualMembers -SyncWindow 0)) {
+        throw "Bootstrap archive member validation failed"
+    }
+
+    $hash = (Get-FileHash -LiteralPath $tempArtifact -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($hash -notmatch '^[0-9a-f]{64}$') {
+        throw "Get-FileHash returned an invalid SHA256 digest"
+    }
+    Write-LfFile -Path $tempChecksum -Content "$hash  $(Split-Path -Leaf $artifact)`n"
+
+    $hadPreviousChecksum = Test-Path -LiteralPath $checksum
+    if ($hadPreviousChecksum) {
+        $previousChecksum = [System.IO.File]::ReadAllBytes($checksum)
+    }
+    Move-Item -LiteralPath $tempChecksum -Destination $checksum -Force
+    $tempChecksum = $null
+    try {
+        Move-Item -LiteralPath $tempArtifact -Destination $artifact -Force
+        $tempArtifact = $null
+    }
+    catch {
+        if ($hadPreviousChecksum) {
+            [System.IO.File]::WriteAllBytes($checksum, $previousChecksum)
+        }
+        else {
+            Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
+        }
+        throw
     }
 }
 finally {
-    Pop-Location
+    if ($tempArtifact -and (Test-Path -LiteralPath $tempArtifact)) {
+        Remove-Item -LiteralPath $tempArtifact -Force
+    }
+    if ($tempChecksum -and (Test-Path -LiteralPath $tempChecksum)) {
+        Remove-Item -LiteralPath $tempChecksum -Force
+    }
 }
 
-# Windows tar does not store Unix execute bits from NTFS. Force update.sh to
-# 0755 in the ustar header so stock firmware can run /tmp/update/update.sh.
-Set-UstarMemberUnixMode -ArchivePath $artifact -MemberName "update.sh" -OctalMode "755"
-
-$hash = (& certutil -hashfile $artifact SHA256)[1]
-Write-LfFile -Path $checksum -Content "$($hash.ToLowerInvariant())  $(Split-Path -Leaf $artifact)`n"
-
 Write-Output "Built $artifact"
-Write-Output "SHA256 $($hash.ToLowerInvariant())"
+Write-Output "SHA256 $hash"
