@@ -199,13 +199,14 @@ New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $packageDir "update.sh") -Destination (Join-Path $stagingDir "update.sh")
 Copy-Item -LiteralPath (Join-Path $packageDir "README.md") -Destination (Join-Path $stagingDir "README.md")
 Copy-Item -LiteralPath (Join-Path $packageDir "manifest.txt") -Destination (Join-Path $stagingDir "manifest.txt")
+Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-boot-320x240.png") -Destination (Join-Path $stagingDir "deneb-boot-320x240.png")
 Copy-Item -LiteralPath (Join-Path $brandingDir "deneb-splash-128x102.jpg") -Destination (Join-Path $stagingDir "deneb-splash-128x102.jpg")
 
 # Convert the 320x240 PNG splash to raw RGB565 for direct /dev/fb0 writes during early boot.
 # The ILI9341 framebuffer is 320x240 RGB565 LE = 153,600 bytes.
 $rgb565Script = Join-Path (Join-Path $repoRoot "tools") "png-to-rgb565.py"
 $rgb565Output = Join-Path $stagingDir "deneb-splash.rgb565"
-$pngSource = Join-Path $brandingDir "deneb-boot-320x240.png"
+$pngSource = Join-Path $stagingDir "deneb-boot-320x240.png"
 $python = Get-PythonWithPillow
 & $python.Exe @($python.Args) $rgb565Script $pngSource $rgb565Output
 if ($LASTEXITCODE -ne 0) {
@@ -238,6 +239,7 @@ $expectedMembers = @(
     "update.sh",
     "README.md",
     "manifest.txt",
+    "deneb-boot-320x240.png",
     "deneb-splash-128x102.jpg",
     "deneb-splash.rgb565"
 )

@@ -174,6 +174,7 @@ jobs:
           expected_members='update.sh
           README.md
           manifest.txt
+          deneb-boot-320x240.png
           deneb-splash-128x102.jpg
           deneb-splash.rgb565'
           actual_members=$(tar -tf "$artifact")
@@ -221,6 +222,7 @@ jobs:
               "update.sh",
               "README.md",
               "manifest.txt",
+              "deneb-boot-320x240.png",
               "deneb-splash-128x102.jpg",
               "deneb-splash.rgb565"
           )
