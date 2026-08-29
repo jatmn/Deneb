@@ -168,12 +168,35 @@ the replacement before continuing.
 
 1. Copy only `dist/Deneb_get_started.img` to the root of a FAT32 USB drive.
    Keeping one firmware file on the stick avoids ambiguous auto-selection.
-2. Insert the USB drive into the printer.
-3. On stock firmware open the firmware update flow and choose install from USB.
+2. Before ejecting the drive, verify the copy that is actually on the USB
+   filesystem. Replace the example mount or drive letter with yours.
+
+   Native Debian/Linux:
+
+   ```sh
+   usb_image=/media/USERNAME/USB_LABEL/Deneb_get_started.img
+   expected=$(awk '{print $1}' dist/Deneb_get_started.img.sha256)
+   actual=$(sha256sum "$usb_image" | awk '{print $1}')
+   [ "$actual" = "$expected" ] || { echo "USB image checksum mismatch" >&2; false; }
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   $usbImage = "E:\Deneb_get_started.img"
+   $expected = (Get-Content dist/Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
+   $actual = (Get-FileHash $usbImage -Algorithm SHA256).Hash.ToLowerInvariant()
+   if ($actual -ne $expected) { throw "USB image checksum mismatch" }
+   ```
+
+   Do not continue if this destination check fails. Copy the verified source
+   again and recheck the USB file.
+3. Safely eject the USB drive, then insert it into the printer.
+4. On stock firmware open the firmware update flow and choose install from USB.
    The exact stock labels vary by version, but the path is the normal
    Maintenance / Update Firmware USB install.
-4. Select `Deneb_get_started.img`.
-5. Wait for the package to finish. The installer schedules a reboot watchdog and
+5. Select `Deneb_get_started.img`.
+6. Wait for the package to finish. The installer schedules a reboot watchdog and
    reboots the printer.
 
 ### Verify bootstrap success
