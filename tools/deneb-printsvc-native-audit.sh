@@ -164,6 +164,7 @@ audit_source() {
     require_file "${repo}/common/print/print_backend_route.h" "native route header exists"
     require_file "${repo}/ui/build-package.sh" "package builder exists"
     require_file "${repo}/ui/installer/update.sh" "installer exists"
+    require_file "${repo}/tools/build-update-release.sh" "native release wrapper exists"
     require_file "${repo}/tools/build-update-release.ps1" "release wrapper exists"
     require_file "${repo}/printsvc/init/deneb-printsvc.init" "native printsvc init exists"
     require_file "${repo}/web/init/deneb-web.init" "web init exists"
@@ -335,6 +336,18 @@ audit_source() {
     require_pattern "${repo}/tools/build-update-release.ps1" \
         'deneb-printsvc-integration-audit-selftest' \
         "release wrapper runs integration audit selftest"
+    require_order "${repo}/tools/build-update-release.sh" \
+        'DENEB_INSTALLER=.*deneb-printsvc-init-selftest' \
+        'write-package-checksum[.]sh' \
+        "native release wrapper publishes checksum after audits"
+    require_order "${repo}/tools/build-update-release.ps1" \
+        'bash -lc [$]verifyPackage' \
+        '[$]writeChecksum = ' \
+        "Windows release wrapper prepares checksum after package verification"
+    require_order "${repo}/tools/build-update-release.ps1" \
+        '[$]writeChecksum = ' \
+        'bash -lc [$]writeChecksum' \
+        "Windows release wrapper publishes the prepared checksum"
     require_pattern "${repo}/tools/deneb-printsvc-release-gate-selftest.sh" \
         'DENEB_PACKAGE_VERSION_OVERRIDE="\$PACKAGE_VERSION"' \
         "release gate selftest isolates package staging"

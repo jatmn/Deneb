@@ -248,6 +248,11 @@ find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.
 find "$STAGING_DIR" \( -name 'deneb-df-bridge.py' \)
 ! grep -Eq '(^|/)deneb-df-bridge$' "$STAGING_DIR/package-files.txt"
 EOF
+    cat > "$root/tools/build-update-release.sh" <<'EOF'
+#!/bin/sh
+DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_INSTALLER=/tmp/update.sh sh /tmp/deneb-printsvc-init-selftest
+bash "$repo_root/tools/write-package-checksum.sh" "$package"
+EOF
     cat > "$root/tools/deneb-python-runtime-inventory.sh" <<'EOF'
 #!/bin/sh
 # DENEB_COORDINATOR_DISABLED
@@ -264,6 +269,9 @@ $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativ
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-integration-audit
 deneb-printsvc-integration-audit-selftest
+& wsl -d $Distro -u root -- bash -lc $verifyPackage
+$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
+& wsl -d $Distro -u root -- bash -lc $writeChecksum
 EOF
     cat > "$root/tools/deneb-printsvc-release-gate-selftest.sh" <<'EOF'
 #!/bin/sh
@@ -537,6 +545,33 @@ grep -v 'Non-experimental release builds require -PrintsvcStockSummary and -Prin
 mv "$SOURCE_MISSING_WRAPPER_PREFLIGHT/tools/build-update-release.tmp" \
     "$SOURCE_MISSING_WRAPPER_PREFLIGHT/tools/build-update-release.ps1"
 expect_failure rejects_source_missing_wrapper_preflight "$AUDIT" --source "$SOURCE_MISSING_WRAPPER_PREFLIGHT"
+
+SOURCE_MISSING_NATIVE_CHECKSUM="$TMP_DIR/source-missing-native-checksum"
+write_valid_source "$SOURCE_MISSING_NATIVE_CHECKSUM"
+grep -v 'write-package-checksum' \
+    "$SOURCE_MISSING_NATIVE_CHECKSUM/tools/build-update-release.sh" > \
+    "$SOURCE_MISSING_NATIVE_CHECKSUM/tools/build-update-release.tmp"
+mv "$SOURCE_MISSING_NATIVE_CHECKSUM/tools/build-update-release.tmp" \
+    "$SOURCE_MISSING_NATIVE_CHECKSUM/tools/build-update-release.sh"
+expect_failure rejects_source_missing_native_checksum "$AUDIT" --source "$SOURCE_MISSING_NATIVE_CHECKSUM"
+
+SOURCE_EARLY_NATIVE_CHECKSUM="$TMP_DIR/source-early-native-checksum"
+write_valid_source "$SOURCE_EARLY_NATIVE_CHECKSUM"
+cat > "$SOURCE_EARLY_NATIVE_CHECKSUM/tools/build-update-release.sh" <<'EOF'
+#!/bin/sh
+bash "$repo_root/tools/write-package-checksum.sh" "$package"
+DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_INSTALLER=/tmp/update.sh sh /tmp/deneb-printsvc-init-selftest
+EOF
+expect_failure rejects_source_early_native_checksum "$AUDIT" --source "$SOURCE_EARLY_NATIVE_CHECKSUM"
+
+SOURCE_MISSING_WINDOWS_CHECKSUM="$TMP_DIR/source-missing-windows-checksum"
+write_valid_source "$SOURCE_MISSING_WINDOWS_CHECKSUM"
+grep -v 'writeChecksum' \
+    "$SOURCE_MISSING_WINDOWS_CHECKSUM/tools/build-update-release.ps1" > \
+    "$SOURCE_MISSING_WINDOWS_CHECKSUM/tools/build-update-release.tmp"
+mv "$SOURCE_MISSING_WINDOWS_CHECKSUM/tools/build-update-release.tmp" \
+    "$SOURCE_MISSING_WINDOWS_CHECKSUM/tools/build-update-release.ps1"
+expect_failure rejects_source_missing_windows_checksum "$AUDIT" --source "$SOURCE_MISSING_WINDOWS_CHECKSUM"
 
 SOURCE_MISSING_STOCK_SUMMARY_VERIFY="$TMP_DIR/source-missing-stock-summary-verify"
 write_valid_source "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY"
