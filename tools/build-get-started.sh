@@ -62,6 +62,7 @@ package_dir=$repo_root/packages/ssh-bootstrap
 branding_dir=$repo_root/assets/branding
 rgb565_script=$repo_root/tools/png-to-rgb565.py
 rgb565_digest_file=$branding_dir/deneb-splash.rgb565.sha256
+requirements_file=$repo_root/tools/bootstrap-requirements.txt
 
 if [ "${output_directory#/}" = "$output_directory" ]; then
     dist_dir=$repo_root/$output_directory
@@ -78,9 +79,13 @@ checksum=$artifact.sha256
 [ -d "$branding_dir" ] || die "Branding directory not found: $branding_dir"
 [ -f "$rgb565_script" ] || die "Missing converter script: $rgb565_script"
 [ -f "$rgb565_digest_file" ] || die "Missing expected RGB565 digest: $rgb565_digest_file"
+[ -f "$requirements_file" ] || die "Missing bootstrap dependency lock: $requirements_file"
 
-if ! python3 -c 'import PIL' >/dev/null 2>&1; then
-    die "Python 3 with locked Pillow is required. Install tools/bootstrap-requirements.txt with pip --require-hashes."
+locked_pillow_version=$(sed -n 's/^Pillow==\([0-9][0-9.]*\)[[:space:]].*$/\1/p' "$requirements_file")
+[ -n "$locked_pillow_version" ] || die "Could not read the locked Pillow version from $requirements_file"
+bootstrap_python=${DENEB_BOOTSTRAP_PYTHON:-python3}
+if ! "$bootstrap_python" -c 'import PIL, sys; sys.exit(PIL.__version__ != sys.argv[1])' "$locked_pillow_version" >/dev/null 2>&1; then
+    die "Python 3 with Pillow $locked_pillow_version is required. Install tools/bootstrap-requirements.txt with pip --require-hashes."
 fi
 
 rm -rf "$staging_root"
@@ -92,7 +97,7 @@ cp "$package_dir/manifest.txt" "$staging_dir/manifest.txt"
 cp "$branding_dir/deneb-boot-320x240.png" "$staging_dir/deneb-boot-320x240.png"
 cp "$branding_dir/deneb-splash-128x102.jpg" "$staging_dir/deneb-splash-128x102.jpg"
 
-python3 "$rgb565_script" \
+"$bootstrap_python" "$rgb565_script" \
     "$staging_dir/deneb-boot-320x240.png" \
     "$staging_dir/deneb-splash.rgb565"
 
@@ -123,11 +128,9 @@ chmod 0755 "$staging_dir/update.sh"
 
 temp_artifact=
 temp_checksum=
-previous_checksum=
 cleanup_publish_outputs() {
     [ -z "$temp_artifact" ] || rm -f "$temp_artifact"
     [ -z "$temp_checksum" ] || rm -f "$temp_checksum"
-    [ -z "$previous_checksum" ] || rm -f "$previous_checksum"
 }
 trap cleanup_publish_outputs EXIT
 
@@ -161,26 +164,13 @@ printf '%s  %s\n' "$hash" "$temp_artifact" | sha256sum --check --status - || die
 printf '%s  %s\n' "$hash" "$(basename "$artifact")" > "$temp_checksum"
 chmod 0644 "$temp_artifact" "$temp_checksum"
 
-if [ -f "$checksum" ]; then
-    previous_checksum=$(mktemp "$dist_dir/.Deneb_get_started.img.sha256.previous.XXXXXX")
-    cp -p "$checksum" "$previous_checksum"
-fi
-mv -f "$temp_checksum" "$checksum"
-temp_checksum=
-if ! mv -f "$temp_artifact" "$artifact"; then
-    if [ -n "$previous_checksum" ]; then
-        mv -f "$previous_checksum" "$checksum"
-        previous_checksum=
-    else
-        rm -f "$checksum"
-    fi
-    die "Failed to publish bootstrap archive"
-fi
+# The checksum is the publication marker. Keep it absent until the validated
+# image is at its final path so interruption cannot expose a mismatched pair.
+rm -f "$checksum"
+mv -f "$temp_artifact" "$artifact" || die "Failed to publish bootstrap archive"
 temp_artifact=
-if [ -n "$previous_checksum" ]; then
-    rm -f "$previous_checksum"
-    previous_checksum=
-fi
+mv -f "$temp_checksum" "$checksum" || die "Failed to publish bootstrap checksum"
+temp_checksum=
 
 printf 'Built %s\n' "$artifact"
 printf 'SHA256 %s\n' "$hash"

@@ -109,7 +109,8 @@ build/bootstrap-python/bin/python -m pip install --disable-pip-version-check \
 Build:
 
 ```sh
-PATH="$PWD/build/bootstrap-python/bin:$PATH" bash tools/build-get-started.sh
+DENEB_BOOTSTRAP_PYTHON="$PWD/build/bootstrap-python/bin/python" \
+  bash tools/build-get-started.sh
 ```
 
 ### Windows with Debian WSL 2 or native PowerShell tooling
@@ -121,13 +122,16 @@ splash conversion:
 py -3 -m venv build/bootstrap-python
 build/bootstrap-python/Scripts/python.exe -m pip install --disable-pip-version-check `
   --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
-$env:Path = "$(Resolve-Path build/bootstrap-python/Scripts);$env:Path"
+$env:DENEB_BOOTSTRAP_PYTHON = (Resolve-Path build/bootstrap-python/Scripts/python.exe).Path
 powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 ```
 
 Both lanes install the repository-locked Pillow wheels with verified hashes.
 The builders also reject generated RGB565 bytes that do not match the audited
 digest in `assets/branding/deneb-splash.rgb565.sha256`.
+Before changing a password, enabling SSH, or writing branding/UI files, the
+target installer dry-runs its exact Cygnus patch transformation and aborts if
+the stock layout is incompatible.
 
 `tools/build-get-started.ps1` is a thin wrapper around
 `tools/build-ssh-bootstrap.ps1`.

@@ -92,7 +92,11 @@ ensure_dropbear_enabled_at_boot() {
 }
 
 install_deneb_update_lane() {
-    mkdir -p "${DENEB_BACKUP_DIR}"
+    mode=${1:-apply}
+    case "$mode" in
+        apply|preflight) ;;
+        *) log "invalid update-lane mode: $mode"; exit 1 ;;
+    esac
 
     if [ ! -f /tmp/update/deneb-boot-320x240.png ]; then
         log "missing Deneb touchscreen splash asset; aborting"
@@ -109,16 +113,18 @@ install_deneb_update_lane() {
         exit 1
     fi
 
-    mkdir -p /home/cygnus/menu/img /etc/nodogsplash/htdocs/images
+    if [ "$mode" = apply ]; then
+        mkdir -p "${DENEB_BACKUP_DIR}"
+        mkdir -p /home/cygnus/menu/img /etc/nodogsplash/htdocs/images
 
-    if [ ! -f "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig" ] && [ -f /etc/nodogsplash/htdocs/images/splash.jpg ]; then
-        cp /etc/nodogsplash/htdocs/images/splash.jpg "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig"
-    fi
+        if [ ! -f "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig" ] && [ -f /etc/nodogsplash/htdocs/images/splash.jpg ]; then
+            cp /etc/nodogsplash/htdocs/images/splash.jpg "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig"
+        fi
 
-    cp /tmp/update/deneb-boot-320x240.png /home/cygnus/menu/img/deneb_boot.png
-    cp /tmp/update/deneb-splash-128x102.jpg /etc/nodogsplash/htdocs/images/splash.jpg
-    cp /tmp/update/deneb-splash.rgb565 /home/deneb/deneb-splash.rgb565
-    chmod 0644 /home/cygnus/menu/img/deneb_boot.png /etc/nodogsplash/htdocs/images/splash.jpg /home/deneb/deneb-splash.rgb565
+        cp /tmp/update/deneb-boot-320x240.png /home/cygnus/menu/img/deneb_boot.png
+        cp /tmp/update/deneb-splash-128x102.jpg /etc/nodogsplash/htdocs/images/splash.jpg
+        cp /tmp/update/deneb-splash.rgb565 /home/deneb/deneb-splash.rgb565
+        chmod 0644 /home/cygnus/menu/img/deneb_boot.png /etc/nodogsplash/htdocs/images/splash.jpg /home/deneb/deneb-splash.rgb565
 
     # Install the early-boot framebuffer splash init script.
     # This writes the Deneb splash directly to /dev/fb0 at S11 priority,
@@ -190,14 +196,20 @@ stop() {
 }
 INITEOF
     chmod 0755 /etc/init.d/deneb-splash
-    /etc/init.d/deneb-splash enable
+        /etc/init.d/deneb-splash enable
+    fi
 
-    python3 - <<'PY'
+    patch_preflight=0
+    [ "$mode" = apply ] || patch_preflight=1
+    DENEB_PATCH_PREFLIGHT="$patch_preflight" python3 - <<'PY'
 from pathlib import Path
+import os
 import shutil
 
+preflight = os.environ.get("DENEB_PATCH_PREFLIGHT") == "1"
 backup_dir = Path("/home/deneb/backups/get-started")
-backup_dir.mkdir(parents=True, exist_ok=True)
+if not preflight:
+    backup_dir.mkdir(parents=True, exist_ok=True)
 
 files = {
     "navigator": Path("/home/cygnus/menu/navigator/settings/update_firmware_navigator.py"),
@@ -218,6 +230,8 @@ def backup_once(path):
 
 def write_if_changed(path, content):
     if path.read_text() != content:
+        if preflight:
+            return
         backup_once(path)
         path.write_text(content)
 
@@ -505,6 +519,11 @@ if "Deneb get-started is installed." not in text:
 write_if_changed(welcome_link, text)
 PY
 
+    if [ "$mode" = preflight ]; then
+        log "stock Cygnus patch preflight passed"
+        return 0
+    fi
+
     uci -q delete ultimaker.version.latest || true
     uci -q delete ultimaker.version.update_popup_shown || true
     uci -q delete ultimaker.version.last_update_check || true
@@ -525,6 +544,11 @@ if [ ! -x /usr/sbin/dropbear ]; then
     exit 1
 fi
 
+# Execute the exact patch transformation without writes before credentials,
+# services, branding, init scripts, or stock UI files are changed. A different
+# stock layout therefore fails closed instead of leaving a partial bootstrap.
+install_deneb_update_lane preflight
+
 set_shadow_hash root "${DENEB_HASH}"
 set_passwd_placeholder root
 
@@ -541,7 +565,7 @@ ensure_dropbear_config
 
 ensure_dropbear_enabled_at_boot
 
-install_deneb_update_lane
+install_deneb_update_lane apply
 
 log "finished; ssh should be available after reboot on port 22 with root password deneb"
 schedule_reboot

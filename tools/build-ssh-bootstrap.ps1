@@ -18,6 +18,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $packageDir = Join-Path $repoRoot "packages/ssh-bootstrap"
 $brandingDir = Join-Path $repoRoot "assets/branding"
 $rgb565DigestFile = Join-Path $brandingDir "deneb-splash.rgb565.sha256"
+$requirementsFile = Join-Path $repoRoot "tools/bootstrap-requirements.txt"
 $distDir = Join-Path $repoRoot $OutputDirectory
 $stagingRoot = Join-Path $repoRoot "build/ssh-bootstrap"
 $stagingDir = Join-Path $stagingRoot "Deneb_get_started_$Version"
@@ -125,7 +126,24 @@ function Set-UstarMemberUnixMode {
 }
 
 function Get-PythonWithPillow {
+    if ($env:DENEB_BOOTSTRAP_PYTHON) {
+        if (!(Test-Path -LiteralPath $env:DENEB_BOOTSTRAP_PYTHON -PathType Leaf)) {
+            throw "DENEB_BOOTSTRAP_PYTHON does not exist: $env:DENEB_BOOTSTRAP_PYTHON"
+        }
+        $explicit = @{ Exe = $env:DENEB_BOOTSTRAP_PYTHON; Args = @() }
+        & $explicit.Exe -c "import PIL, sys; sys.exit(PIL.__version__ != sys.argv[1])" $lockedPillowVersion 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "DENEB_BOOTSTRAP_PYTHON must provide locked Pillow $lockedPillowVersion"
+        }
+        return $explicit
+    }
+
     $candidates = @()
+
+    $pathPython = (Get-Command python -ErrorAction SilentlyContinue).Source
+    if ($pathPython) {
+        $candidates += @{ Exe = $pathPython; Args = @() }
+    }
 
     $pyLauncher = (Get-Command py -ErrorAction SilentlyContinue).Source
     if ($pyLauncher) {
@@ -139,20 +157,15 @@ function Get-PythonWithPillow {
         }
     }
 
-    $pathPython = (Get-Command python -ErrorAction SilentlyContinue).Source
-    if ($pathPython) {
-        $candidates += @{ Exe = $pathPython; Args = @() }
-    }
-
     foreach ($candidate in $candidates) {
-        $checkArgs = @($candidate.Args) + @("-c", "import PIL")
+        $checkArgs = @($candidate.Args) + @("-c", "import PIL, sys; sys.exit(PIL.__version__ != sys.argv[1])", $lockedPillowVersion)
         & $candidate.Exe @checkArgs 2>$null
         if ($LASTEXITCODE -eq 0) {
             return $candidate
         }
     }
 
-    throw "Python with locked Pillow is required. Install tools/bootstrap-requirements.txt with pip --require-hashes."
+    throw "Python with locked Pillow $lockedPillowVersion is required. Install tools/bootstrap-requirements.txt with pip --require-hashes."
 }
 
 if (!(Test-Path -LiteralPath $packageDir)) {
@@ -166,6 +179,18 @@ if (!(Test-Path -LiteralPath $brandingDir)) {
 if (!(Test-Path -LiteralPath $rgb565DigestFile)) {
     throw "Missing expected RGB565 digest: $rgb565DigestFile"
 }
+
+if (!(Test-Path -LiteralPath $requirementsFile)) {
+    throw "Missing bootstrap dependency lock: $requirementsFile"
+}
+
+$requirementsLine = Get-Content -LiteralPath $requirementsFile |
+    Where-Object { $_ -match '^Pillow==([0-9]+(?:[.][0-9]+)+)\s' } |
+    Select-Object -First 1
+if (!$requirementsLine -or $requirementsLine -notmatch '^Pillow==([0-9]+(?:[.][0-9]+)+)\s') {
+    throw "Could not read the locked Pillow version from $requirementsFile"
+}
+$lockedPillowVersion = $Matches[1]
 
 Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
@@ -249,25 +274,14 @@ try {
     }
     Write-LfFile -Path $tempChecksum -Content "$hash  $(Split-Path -Leaf $artifact)`n"
 
-    $hadPreviousChecksum = Test-Path -LiteralPath $checksum
-    if ($hadPreviousChecksum) {
-        $previousChecksum = [System.IO.File]::ReadAllBytes($checksum)
-    }
+    # The checksum is the publication marker. Keep it absent until the
+    # validated image is at its final path so interruption cannot expose a
+    # mismatched pair.
+    Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
+    Move-Item -LiteralPath $tempArtifact -Destination $artifact -Force
+    $tempArtifact = $null
     Move-Item -LiteralPath $tempChecksum -Destination $checksum -Force
     $tempChecksum = $null
-    try {
-        Move-Item -LiteralPath $tempArtifact -Destination $artifact -Force
-        $tempArtifact = $null
-    }
-    catch {
-        if ($hadPreviousChecksum) {
-            [System.IO.File]::WriteAllBytes($checksum, $previousChecksum)
-        }
-        else {
-            Remove-Item -LiteralPath $checksum -Force -ErrorAction SilentlyContinue
-        }
-        throw
-    }
 }
 finally {
     if ($tempArtifact -and (Test-Path -LiteralPath $tempArtifact)) {

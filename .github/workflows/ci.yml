@@ -161,7 +161,7 @@ jobs:
           sudo apt-get install --no-install-recommends python3 python3-venv
           python3 -m venv build/bootstrap-python
           build/bootstrap-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
-          echo "$PWD/build/bootstrap-python/bin" >> "$GITHUB_PATH"
+          echo "DENEB_BOOTSTRAP_PYTHON=$PWD/build/bootstrap-python/bin/python" >> "$GITHUB_ENV"
 
       - name: Build and inspect Linux bootstrap image
         run: |
@@ -207,7 +207,7 @@ jobs:
         run: |
           py -3 -m venv build/bootstrap-python
           build/bootstrap-python/Scripts/python.exe -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
-          (Resolve-Path build/bootstrap-python/Scripts).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "DENEB_BOOTSTRAP_PYTHON=$((Resolve-Path build/bootstrap-python/Scripts/python.exe).Path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build and inspect Windows bootstrap image
         shell: pwsh
