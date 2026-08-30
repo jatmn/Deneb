@@ -25,6 +25,8 @@ unsafe motion, heating, flashing, update, and recovery behavior.
 - `docs/README.md` defines documentation placement and status vocabulary.
 - `UM2C_MODDING_CHECKLIST.md` and the print-service ledgers are
   machine-audited acceptance inventories, not general status summaries.
+- `docs/GETTING_STARTED.md` and `docs/UPDATING.md` are the operator guides for
+  stock-firmware bootstrap and later `.deneb` package updates.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.
@@ -118,9 +120,10 @@ non-motion and non-heating validation whenever it can answer the question.
 
 Run the narrowest relevant checks first, then the broader gates affected by the
 change. The CI source of truth is `.github/workflows/ci.yml`. GitHub Actions
-splits host validation across `policy-validation`, `shell-validation`, and
-`native-validation` jobs. Branch protection requires those jobs plus
-`select-validation`; a skipped optional lane is a pass, not a missing check.
+splits host validation across `policy-validation`, conditional shell/bootstrap
+producers aggregated by `shell-validation`, and `native-validation`. Branch
+protection requires those three stable jobs plus `select-validation`; the shell
+aggregate fails when any selected Linux or Windows bootstrap producer fails.
 Title or body edits do not start CI, so they cannot replace a live required
 result on the same commit. Retargeting a PR base does not start a new run;
 re-run the checks or push a commit.
@@ -138,8 +141,11 @@ Shell and fixture checks run in the documented Debian/Linux environment:
 ```sh
 find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
   -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh \
+shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
+  tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh \
   tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+sh tools/write-package-checksum-selftest.sh
+sh tools/ssh-bootstrap-patch-selftest.sh
 bash tools/select-ci-validation-selftest.sh
 bash tools/deneb-compile-all-selftest.sh
 bash tools/deneb-stock-menu-prune-selftest.sh

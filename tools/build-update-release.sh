@@ -159,4 +159,5 @@ sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive "$package"
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit-selftest
 DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest
+bash "$repo_root/tools/write-package-checksum.sh" "$package"
 printf 'Verified native-only print service package: %s\n' "$package"

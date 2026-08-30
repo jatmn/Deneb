@@ -11,6 +11,11 @@ Native build dependencies are stored under the checkout's ignored `build/deneb-c
 | Native Debian/Linux | `bash tools/setup-linux-build.sh "$PWD"` | `bash tools/build-update-release.sh` |
 | Windows checkout with Debian WSL 2 | PowerShell invoking `tools/setup-wsl-build.sh` in WSL | `tools/build-update-release.ps1` |
 
+First-time printer installation also needs the stock-firmware bootstrap package
+from `tools/build-get-started.sh` or `tools/build-get-started.ps1`. That package
+does not require the MIPS cross toolchain. See
+[Getting Started](GETTING_STARTED.md) and [Updating Deneb](UPDATING.md).
+
 Do not mix the lanes: the native scripts keep dependencies in the checkout's
 `build/deneb-cross/` directory, while the PowerShell wrapper uses `/root`
 inside the WSL distribution.
@@ -39,7 +44,12 @@ Later experimental builds reuse those dependency trees:
 bash tools/build-update-release.sh
 ```
 
-The script cross-builds all native services, packages `dist/Deneb_Update_<git-describe>.deneb`, and audits the archive. Trust a package only after it prints `Verified native-only print service package` and exits zero.
+The script cross-builds all native services, packages
+`dist/Deneb_Update_<git-describe>.deneb`, and audits the archive. Trust a
+package only after it prints `Verified native-only print service package`,
+exits zero, and publishes the matching post-audit `.deneb.sha256` sidecar.
+Before installation, follow the source-and-USB verification handoff in
+[Updating Deneb](UPDATING.md#verify-and-copy-the-update-package).
 
 Nightly and stable packages require verified stock/native evidence summaries:
 
@@ -122,7 +132,11 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1 `
   -PrintsvcNativeEvidenceSummary C:\evidence\native-evidence-summary
 ```
 
-The PowerShell wrapper remains available for Windows worktrees. A package exists before all checks finish, so the file alone is not proof of success.
+The PowerShell wrapper remains available for Windows worktrees. A package
+exists before all checks finish, so the file alone is not proof of success.
+The same zero-exit, verification-message, and matching `.deneb.sha256` sidecar
+contract applies before the
+[verified USB handoff](UPDATING.md#verify-and-copy-the-update-package).
 
 ## Verify either lane
 

@@ -20,9 +20,8 @@ permissions:
   contents: read
 
 jobs:
-  # Skipped optional jobs count as passing required checks, so shell and
-  # native can stay conditional. select-validation stays required so a
-  # selector failure cannot skip native work and still look green.
+  # Conditional producers feed stable required contexts. select-validation
+  # stays required so a selector failure cannot skip work and still look green.
   select-validation:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
@@ -30,6 +29,7 @@ jobs:
     outputs:
       native: ${{ steps.changes.outputs.native }}
       shell: ${{ steps.changes.outputs.shell }}
+      bootstrap: ${{ steps.changes.outputs.bootstrap }}
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -71,6 +71,27 @@ jobs:
       - name: Check license declarations
         run: pipx run --spec reuse==6.2.0 reuse lint
 
+      - name: Check changed-file whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            diff_range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$EVENT_NAME" = "push" ] &&
+               [ -n "$BEFORE_SHA" ] &&
+               [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
+               git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            diff_range="${BEFORE_SHA}..HEAD"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            diff_range="HEAD^..HEAD"
+          else
+            diff_range="$(git hash-object -t tree /dev/null)..HEAD"
+          fi
+          git diff --check "$diff_range"
+
       - name: Scan changed Git history for secrets
         env:
           GITLEAKS_VERSION: 8.30.1
@@ -96,7 +117,7 @@ jobs:
           fi
           ./gitleaks git --redact --no-banner --verbose --log-opts="$log_opts" .
 
-  shell-validation:
+  shell-static-validation:
     needs: select-validation
     if: needs.select-validation.outputs.shell == 'true'
     runs-on: ubuntu-24.04
@@ -118,8 +139,174 @@ jobs:
       - name: Check shell syntax and style
         run: |
           find . -path ./.git -prune -o -path './ui/lib/lvgl' -prune -o -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-update-release.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+          sh tools/write-package-checksum-selftest.sh
+          sh tools/ssh-bootstrap-patch-selftest.sh
           bash tools/select-ci-validation-selftest.sh
+
+  linux-bootstrap-validation:
+    needs: select-validation
+    if: needs.select-validation.outputs.bootstrap == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Install bootstrap image dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends python3 python3-venv
+          python3 -m venv build/bootstrap-python
+          build/bootstrap-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
+          echo "DENEB_BOOTSTRAP_PYTHON=$PWD/build/bootstrap-python/bin/python" >> "$GITHUB_ENV"
+
+      - name: Build and inspect Linux bootstrap image
+        run: |
+          output="build/ci-bootstrap-linux"
+          bash tools/build-get-started.sh --version "0.2.8-ci" --output-directory "$output"
+          artifact="$output/Deneb_get_started.img"
+          checksum="$artifact.sha256"
+
+          expected_members='update.sh
+          README.md
+          manifest.txt
+          deneb-boot-320x240.png
+          deneb-splash-128x102.jpg
+          deneb-splash.rgb565'
+          actual_members=$(tar -tf "$artifact")
+          [ "$actual_members" = "$expected_members" ]
+
+          mode=$(tar -tvf "$artifact" | awk '$NF == "update.sh" { print $1; exit }')
+          [ "$mode" = '-rwxr-xr-x' ]
+
+          manifest_version=$(tar -xOf "$artifact" manifest.txt | awk -F= '$1 == "version" { print; exit }')
+          [ "$manifest_version" = 'version=0.2.8-ci' ]
+
+          rgb565_size=$(tar -xOf "$artifact" deneb-splash.rgb565 | wc -c)
+          [ "$rgb565_size" -eq 153600 ]
+
+          (cd "$output" && sha256sum --check "$(basename "$checksum")")
+
+  windows-bootstrap-validation:
+    needs: select-validation
+    if: needs.select-validation.outputs.bootstrap == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Install bootstrap image dependency
+        shell: pwsh
+        run: |
+          py -3 -m venv build/bootstrap-python
+          build/bootstrap-python/Scripts/python.exe -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
+          "DENEB_BOOTSTRAP_PYTHON=$((Resolve-Path build/bootstrap-python/Scripts/python.exe).Path)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build and inspect Windows bootstrap image
+        shell: pwsh
+        run: |
+          $output = "build/ci-bootstrap"
+          tools/build-get-started.ps1 -Version "0.2.8-ci" -OutputDirectory $output
+          $artifact = Join-Path $output "Deneb_get_started.img"
+          $checksum = "$artifact.sha256"
+
+          $expectedMembers = @(
+              "update.sh",
+              "README.md",
+              "manifest.txt",
+              "deneb-boot-320x240.png",
+              "deneb-splash-128x102.jpg",
+              "deneb-splash.rgb565"
+          )
+          $actualMembers = @(& tar -tf $artifact)
+          if ($LASTEXITCODE -ne 0) {
+              throw "Windows-built bootstrap archive is unreadable"
+          }
+          if (Compare-Object -ReferenceObject $expectedMembers -DifferenceObject $actualMembers -SyncWindow 0) {
+              throw "Windows-built bootstrap archive has unexpected members"
+          }
+
+          $mode = (& tar -tvf $artifact | Where-Object { $_ -match ' update[.]sh$' } | Select-Object -First 1).Split()[0]
+          if ($mode -ne '-rwxr-xr-x') {
+              throw "Expected update.sh mode 0755, got '$mode'"
+          }
+
+          $manifestVersion = & tar -xOf $artifact manifest.txt |
+              Where-Object { $_ -like 'version=*' } |
+              Select-Object -First 1
+          if ($manifestVersion -ne 'version=0.2.8-ci') {
+              throw "Unexpected manifest version '$manifestVersion'"
+          }
+
+          $inspection = Join-Path $output "inspection"
+          New-Item -ItemType Directory -Path $inspection -Force | Out-Null
+          & tar -xf $artifact -C $inspection deneb-splash.rgb565
+          if ($LASTEXITCODE -ne 0) {
+              throw "Could not extract RGB565 splash for inspection"
+          }
+          $rgb565Size = (Get-Item -LiteralPath (Join-Path $inspection "deneb-splash.rgb565")).Length
+          if ($rgb565Size -ne 153600) {
+              throw "Expected RGB565 splash size 153600, got '$rgb565Size'"
+          }
+
+          $expectedHash = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0]
+          $actualHash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+              throw "Bootstrap checksum mismatch"
+          }
+
+  shell-validation:
+    needs:
+      - select-validation
+      - shell-static-validation
+      - linux-bootstrap-validation
+      - windows-bootstrap-validation
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Enforce selected shell and bootstrap results
+        env:
+          SELECT_RESULT: ${{ needs.select-validation.result }}
+          SHELL_SELECTED: ${{ needs.select-validation.outputs.shell }}
+          SHELL_RESULT: ${{ needs.shell-static-validation.result }}
+          BOOTSTRAP_SELECTED: ${{ needs.select-validation.outputs.bootstrap }}
+          LINUX_BOOTSTRAP_RESULT: ${{ needs.linux-bootstrap-validation.result }}
+          WINDOWS_BOOTSTRAP_RESULT: ${{ needs.windows-bootstrap-validation.result }}
+        run: |
+          require_result() {
+            label=$1
+            actual=$2
+            expected=$3
+            if [ "$actual" != "$expected" ]; then
+              printf '%s result was %s; expected %s\n' "$label" "$actual" "$expected" >&2
+              exit 1
+            fi
+          }
+
+          require_result selector "$SELECT_RESULT" success
+          if [ "$SHELL_SELECTED" = true ]; then
+            require_result shell-static "$SHELL_RESULT" success
+          else
+            require_result shell-static "$SHELL_RESULT" skipped
+          fi
+          if [ "$BOOTSTRAP_SELECTED" = true ]; then
+            require_result linux-bootstrap "$LINUX_BOOTSTRAP_RESULT" success
+            require_result windows-bootstrap "$WINDOWS_BOOTSTRAP_RESULT" success
+          else
+            require_result linux-bootstrap "$LINUX_BOOTSTRAP_RESULT" skipped
+            require_result windows-bootstrap "$WINDOWS_BOOTSTRAP_RESULT" skipped
+          fi
 
   native-validation:
     needs: select-validation

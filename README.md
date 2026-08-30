@@ -66,6 +66,8 @@ target acceptance. Its per-workstream status is recorded in the
 
 | Need | Document |
 | --- | --- |
+| First install from stock firmware | [Getting Started](docs/GETTING_STARTED.md) |
+| Updating an existing Deneb install | [Updating Deneb](docs/UPDATING.md) |
 | Documentation map | [docs/README.md](docs/README.md) |
 | Current work, defects, and priorities | [Project Status](docs/PROJECT_STATUS.md) |
 | De-Python, Web, OpenWrt, image, and Marlin plan | [Modernization Roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md) |
@@ -78,6 +80,22 @@ target acceptance. Its per-workstream status is recorded in the
 Dated investigations are under `docs/evidence/`; superseded plans are under
 `docs/archive/`. Neither is a current work queue.
 
+## Install
+
+New printers still on stock UltiMaker firmware need a two-step USB migration:
+
+1. Build and install `Deneb_get_started.img` to enable SSH and the Deneb `.deneb`
+   update lane.
+2. Build and install `Deneb_Update_<version>.deneb` for the native UI, print
+   service, Web/API runtime, and related services.
+
+Host setup, the locked Pillow venv, builder invocation, USB verification, and
+touchscreen install steps are owned by
+[Getting Started](docs/GETTING_STARTED.md). Use that guide's Step 2 commands
+verbatim; this README does not keep a second apt/pip recipe. Later packages
+use [Updating Deneb](docs/UPDATING.md). Windows/WSL hosts follow the same
+guides, then the PowerShell builders named there.
+
 ## Build
 
 Target binaries require Debian (native or under WSL 2) and the documented MIPS
@@ -86,6 +104,10 @@ musl toolchain. Use one complete lane from the [Debian/Linux build guide](docs/W
 ### Native Debian/Linux
 
 ```sh
+# First-install bootstrap package after Getting Started Step 2
+DENEB_BOOTSTRAP_PYTHON="$PWD/build/bootstrap-python/bin/python" \
+  bash tools/build-get-started.sh
+
 # Experimental MIPS update package
 bash tools/build-update-release.sh
 ```
@@ -93,6 +115,8 @@ bash tools/build-update-release.sh
 ### Windows with Debian WSL 2
 
 ```powershell
+# Complete the locked Pillow setup in docs/GETTING_STARTED.md first.
+powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ```
 

@@ -283,10 +283,18 @@ $verifyPackage = "set -euo pipefail; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest >/tmp/deneb-release-native-audit-selftest.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive '$packageWsl' >/tmp/deneb-release-integration-audit.log; " +
                  "sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit-selftest >/tmp/deneb-release-integration-audit-selftest.log; " +
-                 "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log; " +
-                 "printf 'Verified native-only print service package: %s\n' '$packageWsl'"
+                 "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log"
 
 & wsl -d $Distro -u root -- bash -lc $verifyPackage
 if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }
+
+$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
+& wsl -d $Distro -u root -- bash -lc $writeChecksum
+if ($LASTEXITCODE -ne 0) {
+    throw "release package checksum publication failed with exit code $LASTEXITCODE"
+}
+
+$package = Join-Path $repoRoot "dist/Deneb_Update_$gitShort.deneb"
+Write-Output "Verified native-only print service package: $package"

@@ -149,10 +149,19 @@ cmake --build build/ci-ui --parallel
 
 ## Installation
 
-1. Copy the latest `dist/Deneb_Update_<commit>.deneb` package to a USB drive
-2. Insert USB into the UltiMaker 2+ Connect
-3. On Deneb: Maintenance > Update Firmware
-4. Select the Deneb update .deneb file
+Stock firmware cannot install `.deneb` packages directly. Complete the bootstrap
+and first-install flow in [Getting Started](../docs/GETTING_STARTED.md) once,
+then use [Updating Deneb](../docs/UPDATING.md#verify-and-copy-the-update-package)
+to verify the source package and its USB copy, safely eject the drive, and
+install later packages.
+
+After bootstrap is present:
+
+1. Follow [Verify and copy the update package](../docs/UPDATING.md#verify-and-copy-the-update-package)
+   for the latest `dist/Deneb_Update_<commit>.deneb`
+2. Safely eject the verified USB drive and insert it into the UltiMaker 2+ Connect
+3. On the printer: Maintenance > Update Firmware
+4. Select the verified Deneb update `.deneb` file
 5. Wait for installation and reboot
 
 The installer will:

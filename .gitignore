@@ -20,6 +20,7 @@
 *.zip
 *.sig
 *.sha256
+!assets/branding/deneb-splash.rgb565.sha256
 *.manifest
 
 # Secrets, keys, and device-specific data.
