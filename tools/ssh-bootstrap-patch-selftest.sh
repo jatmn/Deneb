@@ -31,4 +31,27 @@ credential_line=$(grep -n '^set_shadow_hash root ' "$installer" | cut -d: -f1)
 [ "$preflight_line" -lt "$apply_line" ]
 [ "$apply_line" -lt "$credential_line" ]
 
+# GETTING_STARTED owns the bootstrap host-package list. README must not keep a
+# second apt recipe that can omit ca-certificates.
+grep -Fq 'ca-certificates python3 python3-venv tar' \
+    "$repo_root/docs/GETTING_STARTED.md"
+if grep -Eq 'apt-get install --no-install-recommends python3 python3-venv tar' \
+    "$repo_root/README.md"; then
+    echo "README.md must not duplicate a shortened bootstrap apt recipe" >&2
+    exit 1
+fi
+
+# Active package notes must describe framebuffer-only boot, not the retired
+# LVGL welcome timer. The installer must not still write that unused path.
+if grep -Fq 'automatically advance to the main UI after about 1 second' \
+    "$repo_root/packages/ssh-bootstrap/README.md"; then
+    echo "packages/ssh-bootstrap/README.md still documents the retired LVGL welcome timer" >&2
+    exit 1
+fi
+if grep -Eq 'deneb_boot = auto|/home/cygnus/menu/img/deneb_boot.png|show_welcome_link.py' \
+    "$installer"; then
+    echo "packages/ssh-bootstrap/update.sh still writes the unused Cygnus LVGL welcome path" >&2
+    exit 1
+fi
+
 printf 'SSH bootstrap patch self-test: PASS\n'

@@ -12,9 +12,8 @@ It is intentionally narrow:
 - Patch the touchscreen USB update flow to accept `.deneb` package files.
 - Skip UltiMaker firmware signature verification only for `.deneb` package files and the exact `Deneb_get_started.img` reinstall package.
 - Disable stock internet firmware update checks and prompts for now.
-- Replace the stock welcome/captive-portal splash branding with Deneb assets.
-- Replace the stock `Welcome to your new Ultimaker 2+ Connect` boot text with the Deneb splash as the first UI screen on every boot, then automatically advance to the main UI after about 1 second.
-- Write the Deneb splash directly to the ILI9341 framebuffer at S11 priority via raw RGB565, covering the ~100s gap before Cygnus starts. Unbind fbcon to prevent kernel console overwrites. Skip the Cygnus welcome screen entirely so the raw splash stays visible until the main menu loads.
+- Replace the stock nodogsplash/captive-portal splash with Deneb assets.
+- Install the early-boot framebuffer splash via `/etc/init.d/deneb-splash` (raw RGB565 to `/dev/fb0` at S11, covering the gap before Cygnus). Skip the Cygnus LVGL welcome flow and go straight to the main menu so that splash stays visible until the menu is ready.
 - Schedule a reboot watchdog so the stock updating screen cannot remain indefinitely after the package exits.
 - Preserve the stock `.img` firmware update path for official firmware images.
 

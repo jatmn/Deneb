@@ -149,7 +149,8 @@ The package is intentionally narrow. It:
 - skips UltiMaker signature verification only for `.deneb` files and the exact
   `Deneb_get_started.img` reinstall package
 - disables stock internet firmware update checks/prompts
-- installs Deneb splash branding, including an early framebuffer splash
+- installs Deneb splash branding, including an early framebuffer splash, and
+  skips the Cygnus LVGL welcome screen so that splash stays until the main menu
 - preserves the stock `.img` path on the stock/bootstrap USB updater so
   official firmware images can still be selected until a full `.deneb`
   install replaces that screen

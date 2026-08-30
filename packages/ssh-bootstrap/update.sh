@@ -115,16 +115,18 @@ install_deneb_update_lane() {
 
     if [ "$mode" = apply ]; then
         mkdir -p "${DENEB_BACKUP_DIR}"
-        mkdir -p /home/cygnus/menu/img /etc/nodogsplash/htdocs/images
+        mkdir -p /etc/nodogsplash/htdocs/images
 
         if [ ! -f "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig" ] && [ -f /etc/nodogsplash/htdocs/images/splash.jpg ]; then
             cp /etc/nodogsplash/htdocs/images/splash.jpg "${DENEB_BACKUP_DIR}/nodogsplash-splash.jpg.orig"
         fi
 
-        cp /tmp/update/deneb-boot-320x240.png /home/cygnus/menu/img/deneb_boot.png
+        # The packaged PNG is the host RGB565 source and a required archive
+        # member. Device boot branding is framebuffer-only; do not register a
+        # Cygnus LVGL ImageSource or copy the PNG into the stock menu tree.
         cp /tmp/update/deneb-splash-128x102.jpg /etc/nodogsplash/htdocs/images/splash.jpg
         cp /tmp/update/deneb-splash.rgb565 /home/deneb/deneb-splash.rgb565
-        chmod 0644 /home/cygnus/menu/img/deneb_boot.png /etc/nodogsplash/htdocs/images/splash.jpg /home/deneb/deneb-splash.rgb565
+        chmod 0644 /etc/nodogsplash/htdocs/images/splash.jpg /home/deneb/deneb-splash.rgb565
 
     # Install the early-boot framebuffer splash init script.
     # This writes the Deneb splash directly to /dev/fb0 at S11 priority,
@@ -244,8 +246,6 @@ files = {
     "version_page": Path("/home/cygnus/menu/screens/update_firmware_version_page.py"),
     "main_menu": Path("/home/cygnus/menu/screens/main_menu_page.py"),
     "root_navigator": Path("/home/cygnus/menu/navigator/root_navigator.py"),
-    "welcome_link": Path("/home/cygnus/menu/screens/show_welcome_link.py"),
-    "images": Path("/home/cygnus/menu/img/images.py"),
     "handler": Path("/home/cygnus/coordinator/handlers/firmwareupdatehandling.py"),
 }
 
@@ -485,25 +485,6 @@ new = '''        # Deneb: the early-boot init script (S11deneb-splash) already s
 '''
 text = replace_known_block(text, old_blocks, new, "Deneb boot splash navigation in {}".format(root_navigator))
 queue_if_changed(root_navigator, text)
-
-images = files["images"]
-text = images.read_text()
-old = "class ImageSource(Enum):\n"
-new = "class ImageSource(Enum):\n\tdeneb_boot = auto()\n"
-text = replace_known_block(text, old, new, "Deneb splash image source in {}".format(images))
-queue_if_changed(images, text)
-
-welcome_link = files["welcome_link"]
-text = welcome_link.read_text()
-old = '''        welcome_message = "Register your printer at:\\n" \\
-                          "ultimaker.com/register-your-printer\\n" \\
-                          "and follow the free Ultimaker 2+ Connect product course to get started"
-'''
-new = '''        welcome_message = "Deneb get-started is installed.\\n" \\
-                          "SSH is enabled and future Deneb packages can be installed from USB."
-'''
-text = replace_known_block(text, old, new, "Deneb welcome link in {}".format(welcome_link))
-queue_if_changed(welcome_link, text)
 
 if not preflight:
     backup_dir.mkdir(parents=True, exist_ok=True)

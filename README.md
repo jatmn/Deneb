@@ -89,25 +89,12 @@ New printers still on stock UltiMaker firmware need a two-step USB migration:
 2. Build and install `Deneb_Update_<version>.deneb` for the native UI, print
    service, Web/API runtime, and related services.
 
-```sh
-# Bootstrap package for stock firmware (first host setup)
-sudo apt-get update
-sudo apt-get install --no-install-recommends python3 python3-venv tar
-python3 -m venv build/bootstrap-python
-build/bootstrap-python/bin/python -m pip install --disable-pip-version-check \
-  --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
-DENEB_BOOTSTRAP_PYTHON="$PWD/build/bootstrap-python/bin/python" \
-  bash tools/build-get-started.sh
-
-# Full experimental update package after the Debian/Linux build setup
-bash tools/build-update-release.sh
-```
-
-Windows users can use the PowerShell equivalents (`tools/build-get-started.ps1`
-and `tools/build-update-release.ps1`) after the locked bootstrap dependency
-setup in [Getting Started](docs/GETTING_STARTED.md). The complete first-install
-and update sequences are documented there and in
-[Updating Deneb](docs/UPDATING.md).
+Host setup, the locked Pillow venv, builder invocation, USB verification, and
+touchscreen install steps are owned by
+[Getting Started](docs/GETTING_STARTED.md). Use that guide's Step 2 commands
+verbatim; this README does not keep a second apt/pip recipe. Later packages
+use [Updating Deneb](docs/UPDATING.md). Windows/WSL hosts follow the same
+guides, then the PowerShell builders named there.
 
 ## Build
 
@@ -117,7 +104,7 @@ musl toolchain. Use one complete lane from the [Debian/Linux build guide](docs/W
 ### Native Debian/Linux
 
 ```sh
-# First-install bootstrap package after the Install setup above
+# First-install bootstrap package after Getting Started Step 2
 DENEB_BOOTSTRAP_PYTHON="$PWD/build/bootstrap-python/bin/python" \
   bash tools/build-get-started.sh
 
