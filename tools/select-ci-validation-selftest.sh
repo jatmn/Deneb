@@ -57,6 +57,18 @@ git -C "$repo" commit -qm docs
 assert_lanes false false false "$(run_selector push "$base")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
+printf '# Getting started\n' > "$repo/docs/GETTING_STARTED.md"
+git -C "$repo" add .
+git -C "$repo" commit -qm getting-started-docs
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '# Root readme\n' > "$repo/README.md"
+git -C "$repo" add .
+git -C "$repo" commit -qm root-readme
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
 printf '#!/bin/sh\n' > "$repo/packages/ssh-bootstrap/update.sh"
 git -C "$repo" add .
 git -C "$repo" commit -qm shell

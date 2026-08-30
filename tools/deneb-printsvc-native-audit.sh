@@ -348,6 +348,13 @@ audit_source() {
         '[$]writeChecksum = ' \
         'bash -lc [$]writeChecksum' \
         "Windows release wrapper publishes the prepared checksum"
+    require_order "${repo}/tools/build-update-release.ps1" \
+        'bash -lc [$]writeChecksum' \
+        'Verified native-only print service package' \
+        "Windows release wrapper prints verification after checksum publication"
+    reject_pattern "${repo}/tools/build-update-release.ps1" \
+        "printf 'Verified native-only print service package" \
+        "Windows release wrapper does not print verification inside verifyPackage"
     require_pattern "${repo}/tools/deneb-printsvc-release-gate-selftest.sh" \
         'DENEB_PACKAGE_VERSION_OVERRIDE="\$PACKAGE_VERSION"' \
         "release gate selftest isolates package staging"

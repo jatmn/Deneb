@@ -272,6 +272,7 @@ deneb-printsvc-integration-audit-selftest
 & wsl -d $Distro -u root -- bash -lc $verifyPackage
 $writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
 & wsl -d $Distro -u root -- bash -lc $writeChecksum
+Write-Output "Verified native-only print service package: $package"
 EOF
     cat > "$root/tools/deneb-printsvc-release-gate-selftest.sh" <<'EOF'
 #!/bin/sh
@@ -440,12 +441,12 @@ EOF
 
 VALID="$TMP_DIR/valid"
 write_valid_package "$VALID"
-sh "$AUDIT" --package-dir "$VALID" >/tmp/deneb-native-audit-selftest-valid.log
+sh "$AUDIT" --package-dir "$VALID" >"$TMP_DIR/valid.log"
 echo "PASS: valid package fixture accepted"
 
 VALID_SOURCE="$TMP_DIR/source-valid"
 write_valid_source "$VALID_SOURCE"
-sh "$AUDIT" --source "$VALID_SOURCE" >/tmp/deneb-native-audit-selftest-source-valid.log
+sh "$AUDIT" --source "$VALID_SOURCE" >"$TMP_DIR/source-valid.log"
 echo "PASS: valid source fixture accepted"
 
 SOURCE_STOCK_SELECTOR="$TMP_DIR/source-stock-selector"
@@ -572,6 +573,28 @@ grep -v 'writeChecksum' \
 mv "$SOURCE_MISSING_WINDOWS_CHECKSUM/tools/build-update-release.tmp" \
     "$SOURCE_MISSING_WINDOWS_CHECKSUM/tools/build-update-release.ps1"
 expect_failure rejects_source_missing_windows_checksum "$AUDIT" --source "$SOURCE_MISSING_WINDOWS_CHECKSUM"
+
+SOURCE_EARLY_WINDOWS_VERIFIED="$TMP_DIR/source-early-windows-verified"
+write_valid_source "$SOURCE_EARLY_WINDOWS_VERIFIED"
+cat > "$SOURCE_EARLY_WINDOWS_VERIFIED/tools/build-update-release.ps1" <<'EOF'
+[ValidateSet("experimental", "nightly", "stable")]
+$ReleaseChannel = "experimental"
+if ($ReleaseChannel -ne "experimental") {
+    throw "Non-experimental release builds require -PrintsvcStockSummary and -PrintsvcNativeSummary."
+}
+$buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
+$buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
+$buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativeEvidenceSummaryWsl -join ' ')'"
+deneb-printsvc-release-gate-selftest
+deneb-printsvc-integration-audit
+deneb-printsvc-integration-audit-selftest
+$verifyPackage = "printf 'Verified native-only print service package: %s\n' '$packageWsl'"
+& wsl -d $Distro -u root -- bash -lc $verifyPackage
+$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
+& wsl -d $Distro -u root -- bash -lc $writeChecksum
+Write-Output "Verified native-only print service package: $package"
+EOF
+expect_failure rejects_source_early_windows_verified "$AUDIT" --source "$SOURCE_EARLY_WINDOWS_VERIFIED"
 
 SOURCE_MISSING_STOCK_SUMMARY_VERIFY="$TMP_DIR/source-missing-stock-summary-verify"
 write_valid_source "$SOURCE_MISSING_STOCK_SUMMARY_VERIFY"
