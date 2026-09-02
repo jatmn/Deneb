@@ -592,6 +592,8 @@ static void replace_file_extension(const char *in, const char *extension,
                                    char *out, size_t out_size)
 {
     const char *dot;
+    size_t used;
+    size_t remaining;
 
     if (!out || out_size == 0)
         return;
@@ -604,8 +606,12 @@ static void replace_file_extension(const char *in, const char *extension,
     dot = strrchr(out, '.');
     if (dot)
         out[dot - out] = '\0';
-    if (strlen(out) + strlen(extension) + 1 <= out_size)
-        strncat(out, extension, out_size - strlen(out) - 1);
+    used = strlen(out);
+    if (used >= out_size)
+        return;
+    remaining = out_size - used;
+    if (extension && strlen(extension) < remaining)
+        snprintf(out + used, remaining, "%s", extension);
 }
 
 static int extract_ufp_member(const char *ufp_path, const char *member,
