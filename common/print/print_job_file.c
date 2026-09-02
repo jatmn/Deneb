@@ -302,6 +302,7 @@ int deneb_print_job_file_replace_extension(const char *name,
 {
     const char *dot;
     size_t base_len;
+    int written;
 
     if (!name || !*name || !extension || !out || out_sz == 0) {
         errno = EINVAL;
@@ -310,7 +311,8 @@ int deneb_print_job_file_replace_extension(const char *name,
 
     dot = strrchr(name, '.');
     base_len = dot ? (size_t)(dot - name) : strlen(name);
-    if (base_len == 0 || base_len + strlen(extension) + 1 > out_sz) {
+    if (base_len == 0 || base_len >= out_sz ||
+        strlen(extension) >= out_sz - base_len) {
         errno = ENAMETOOLONG;
         out[0] = '\0';
         return -1;
@@ -318,7 +320,12 @@ int deneb_print_job_file_replace_extension(const char *name,
 
     memcpy(out, name, base_len);
     out[base_len] = '\0';
-    strncat(out, extension, out_sz - strlen(out) - 1);
+    written = snprintf(out + base_len, out_sz - base_len, "%s", extension);
+    if (written < 0 || (size_t)written >= out_sz - base_len) {
+        errno = ENAMETOOLONG;
+        out[0] = '\0';
+        return -1;
+    }
     return 0;
 }
 

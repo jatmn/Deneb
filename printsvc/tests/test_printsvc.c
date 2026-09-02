@@ -64,6 +64,7 @@
 #include "system_language.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -4246,6 +4247,18 @@ static void test_print_job_file_metadata(void)
     assert(deneb_print_job_file_replace_extension(
                "print.UFP", ".gcode", safe, sizeof(safe)) == 0);
     assert(strcmp(safe, "print.gcode") == 0);
+    assert(deneb_print_job_file_replace_extension(
+               "a.ufp", ".gcode", safe, 8) == 0);
+    assert(strcmp(safe, "a.gcode") == 0);
+    errno = 0;
+    assert(deneb_print_job_file_replace_extension(
+               "print.UFP", ".gcode", safe, 8) != 0);
+    assert(errno == ENAMETOOLONG);
+    assert(safe[0] == '\0');
+    errno = 0;
+    assert(deneb_print_job_file_replace_extension(
+               "print.UFP", ".gcode", safe, 0) != 0);
+    assert(errno == EINVAL);
     assert(deneb_print_job_file_metadata_extract_value(
                "; material_guid = target-guid\n", "material_guid",
                value, sizeof(value)) == 0);
