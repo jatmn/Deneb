@@ -155,6 +155,7 @@ bash tools/deneb-printsvc-init-selftest.sh
 bash tools/deneb-printsvc-release-gate-selftest.sh
 bash tools/deneb-printsvc-native-audit-selftest.sh
 bash tools/deneb-printsvc-integration-audit-selftest.sh
+bash tools/deneb-web-ui-xss-selftest.sh
 ```
 
 Native host builds:
