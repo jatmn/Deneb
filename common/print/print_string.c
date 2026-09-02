@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "print_string.h"
 
+#include <errno.h>
+#include <limits.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 int deneb_ascii_tolower(int c)
@@ -13,7 +16,33 @@ int deneb_ascii_tolower(int c)
 
 int deneb_ascii_isspace(int c)
 {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' ||
+           c == '\f';
+}
+
+int deneb_parse_int(const char *text, int *out)
+{
+    char *end = NULL;
+    long parsed;
+
+    if (!text || !out)
+        return -1;
+
+    errno = 0;
+    parsed = strtol(text, &end, 10);
+    if (errno != 0 || end == text)
+        return -1;
+
+    while (*end && deneb_ascii_isspace((unsigned char)*end))
+        end++;
+    if (*end)
+        return -1;
+
+    if (parsed < (long)INT_MIN || parsed > (long)INT_MAX)
+        return -1;
+
+    *out = (int)parsed;
+    return 0;
 }
 
 int deneb_str_eq_ci(const char *a, const char *b)

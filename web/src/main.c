@@ -28,6 +28,7 @@
 #include "api_http.h"
 #include "backend_zmq.h"
 #include "df_bridge.h"
+#include "print_string.h"
 
 #define SOCKET_PATH     "/var/run/deneb-api.sock"
 #define MAX_EVENTS      16
@@ -315,8 +316,15 @@ int main(int argc, char *argv[])
         }
         int timeout = 20;
         for (int i = 3; i < argc; i++) {
-            if (strcmp(argv[i], "--timeout") == 0 && i + 1 < argc) {
-                timeout = atoi(argv[++i]);
+            if (strcmp(argv[i], "--timeout") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "deneb-api: invalid --timeout value\n");
+                    return 1;
+                }
+                if (deneb_parse_int(argv[++i], &timeout) != 0) {
+                    fprintf(stderr, "deneb-api: invalid --timeout value\n");
+                    return 1;
+                }
             }
         }
         char result[160];

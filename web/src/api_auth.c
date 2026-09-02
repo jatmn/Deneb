@@ -8,6 +8,7 @@
 #include "api_auth.h"
 #include "md5.h"
 #include "json_writer.h"
+#include "print_string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,11 +81,15 @@ static void load_config(void)
     while (fgets(line, sizeof(line), f)) {
         char *nl = strchr(line, '\n');
         if (nl) *nl = '\0';
-        if (strncmp(line, "setup_complete=", 15) == 0)
-            setup_complete = atoi(line + 15);
-        else if (strncmp(line, "auth_disabled=", 14) == 0)
-            auth_disabled = atoi(line + 14);
-        else if (strncmp(line, "password=", 9) == 0)
+        if (strncmp(line, "setup_complete=", 15) == 0) {
+            int parsed;
+            if (deneb_parse_int(line + 15, &parsed) == 0)
+                setup_complete = parsed;
+        } else if (strncmp(line, "auth_disabled=", 14) == 0) {
+            int parsed;
+            if (deneb_parse_int(line + 14, &parsed) == 0)
+                auth_disabled = parsed;
+        } else if (strncmp(line, "password=", 9) == 0)
             snprintf(password_hash, sizeof(password_hash), "%s", line + 9);
         else if (strncmp(line, "digest_ha1=", 11) == 0)
             snprintf(digest_ha1, sizeof(digest_ha1), "%s", line + 11);

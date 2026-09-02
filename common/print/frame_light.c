@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "frame_light.h"
+#include "print_string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +50,7 @@ static int read_uci_int(const char *key, int fallback)
     char cmd[128];
     char buf[32];
     FILE *f;
+    int parsed;
 
     if (!key || !*key)
         return fallback;
@@ -66,7 +68,9 @@ static int read_uci_int(const char *key, int fallback)
     }
     pclose(f);
 
-    return atoi(buf);
+    if (deneb_parse_int(buf, &parsed) != 0)
+        return fallback;
+    return parsed;
 }
 
 int deneb_frame_light_read_saved_state(deneb_frame_light_state_t *state)

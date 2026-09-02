@@ -9,6 +9,7 @@
 #include "wifi_setup.h"
 #include "net_utils.h"
 #include "locale.h"
+#include "print_string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -435,12 +436,14 @@ bool wifi_setup_is_enabled(void)
 
     net_read_command(buf, sizeof(buf),
                      "uci -q get wireless.radio0.disabled 2>/dev/null");
-    radio_disabled = atoi(buf);
+    if (deneb_parse_int(buf, &radio_disabled) != 0)
+        radio_disabled = 1;
 
     buf[0] = '\0';
     net_read_command(buf, sizeof(buf),
                      "uci -q get wireless.sta.disabled 2>/dev/null");
-    sta_disabled = atoi(buf);
+    if (deneb_parse_int(buf, &sta_disabled) != 0)
+        sta_disabled = 1;
 
     return radio_disabled != 1 && sta_disabled != 1;
 }
