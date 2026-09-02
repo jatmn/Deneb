@@ -41,10 +41,81 @@ Deneb.ui = {
         default:
             return;
         }
-        content.innerHTML = html;
+        this.setTrustedStaticHtml(content, html);
         Deneb.i18n.apply();
         if (this.lastStatus) this.updateStatus(this.lastStatus);
         else this.updateMotionState();
+    },
+
+    /* Parse compile-time page templates. Untrusted data must not reach this. */
+    setTrustedStaticHtml: function(el, html) {
+        el.textContent = '';
+        if (!html) return;
+        var parsed = new DOMParser().parseFromString(html, 'text/html');
+        var nodes = parsed.body.childNodes;
+        var copy = [];
+        for (var i = 0; i < nodes.length; i++) {
+            copy.push(nodes[i]);
+        }
+        for (var j = 0; j < copy.length; j++) {
+            el.appendChild(document.importNode(copy[j], true));
+        }
+    },
+
+    createJobsEmpty: function(i18nKey, fallback) {
+        var empty = document.createElement('div');
+        empty.className = 'jobs-empty';
+        empty.setAttribute('data-i18n', i18nKey);
+        empty.textContent = fallback;
+        return empty;
+    },
+
+    jobStatusClass: function(state) {
+        var token = String(state || '').toLowerCase();
+        if (token === 'printing' || token === 'paused' ||
+            token === 'completed' || token === 'error') {
+            return token;
+        }
+        return '';
+    },
+
+    createJobsItem: function(name, metaText, statusText, statusClass) {
+        var item = document.createElement('div');
+        item.className = 'jobs-item';
+
+        var main = document.createElement('div');
+        main.className = 'jobs-item-main';
+
+        var nameEl = document.createElement('div');
+        nameEl.className = 'jobs-item-name';
+        nameEl.textContent = name || 'Unknown';
+
+        var meta = document.createElement('div');
+        meta.className = 'jobs-item-meta';
+        meta.textContent = metaText == null ? '' : String(metaText);
+
+        main.appendChild(nameEl);
+        main.appendChild(meta);
+
+        var status = document.createElement('div');
+        var extra = this.jobStatusClass(statusClass);
+        status.className = extra ? 'jobs-item-status ' + extra : 'jobs-item-status';
+        status.textContent = statusText == null ? '' : String(statusText);
+
+        item.appendChild(main);
+        item.appendChild(status);
+        return item;
+    },
+
+    appendJobsProgress: function(item, progress) {
+        var main = item.firstChild;
+        var bar = document.createElement('div');
+        bar.className = 'jobs-progress-bar';
+        var fill = document.createElement('div');
+        fill.className = 'jobs-progress-fill';
+        fill.style.width = this.asNumber(progress, 0).toFixed(0) + '%';
+        bar.appendChild(fill);
+        main.appendChild(bar);
     },
 
     updateStatus: function(data) {
@@ -131,77 +202,64 @@ Deneb.ui = {
 
         var container = document.getElementById('jobs-current');
         if (container) {
+            container.textContent = '';
             if (current) {
                 var elapsed = this.formatTime(current.time_elapsed || 0);
                 var total = current.time_total > 0 ? this.formatTime(current.time_total) : '--:--';
                 var left = (current.time_left || 0) > 0 ? this.formatTime(current.time_left) : '--:--';
-                var progress = current.progress || 0;
-                container.innerHTML = '<div class="jobs-item">' +
-                    '<div class="jobs-item-main">' +
-                    '<div class="jobs-item-name">' + this.escapeHtml(current.name || 'Unknown') + '</div>' +
-                    '<div class="jobs-item-meta">' + elapsed + ' / ' + total + ' &middot; ' + (Deneb.i18n.t('web.jobs.left') || 'left') + ': ' + left + '</div>' +
-                    '<div class="jobs-progress-bar"><div class="jobs-progress-fill" style="width:' + progress.toFixed(0) + '%"></div></div>' +
-                    '</div>' +
-                    '<div class="jobs-item-status ' + this.escapeHtml(current.state || '') + '">' + this.escapeHtml(current.state || '') + '</div>' +
-                    '</div>';
+                var item = this.createJobsItem(
+                    current.name || 'Unknown',
+                    elapsed + ' / ' + total + ' \u00b7 ' + (Deneb.i18n.t('web.jobs.left') || 'left') + ': ' + left,
+                    current.state || '',
+                    current.state || ''
+                );
+                this.appendJobsProgress(item, current.progress);
+                container.appendChild(item);
             } else {
-                container.innerHTML = '<div class="jobs-empty" data-i18n="web.jobs.no_current">No active print job</div>';
+                container.appendChild(this.createJobsEmpty('web.jobs.no_current', 'No active print job'));
             }
         }
 
         var pending = document.getElementById('jobs-pending');
         if (pending && hasJobsData) {
             var jobs = data.pending || [];
+            pending.textContent = '';
             if (jobs.length > 0) {
-                var html = '';
                 for (var i = 0; i < jobs.length; i++) {
                     var job = jobs[i];
-                    html += '<div class="jobs-item">' +
-                        '<div class="jobs-item-main">' +
-                        '<div class="jobs-item-name">' + this.escapeHtml(job.name || 'Unknown') + '</div>' +
-                        '<div class="jobs-item-meta">' + this.escapeHtml(job.source || '') + '</div>' +
-                        '</div>' +
-                        '<div class="jobs-item-status">pending</div>' +
-                        '</div>';
+                    pending.appendChild(this.createJobsItem(
+                        job.name || 'Unknown',
+                        job.source || '',
+                        'pending',
+                        ''
+                    ));
                 }
-                pending.innerHTML = html;
             } else {
-                pending.innerHTML = '<div class="jobs-empty" data-i18n="web.jobs.no_pending">No pending jobs</div>';
+                pending.appendChild(this.createJobsEmpty('web.jobs.no_pending', 'No pending jobs'));
             }
         }
 
         var history = document.getElementById('jobs-history');
         if (history && hasJobsData) {
             var hist = data.history || [];
+            history.textContent = '';
             if (hist.length > 0) {
-                var html = '';
                 for (var i = hist.length - 1; i >= 0; i--) {
                     var job = hist[i];
                     var elapsed = this.formatTime(job.time_elapsed || 0);
                     var total = job.time_total > 0 ? this.formatTime(job.time_total) : '--:--';
-                    var progress = (job.progress || 0).toFixed(0) + '%';
-                    html += '<div class="jobs-item">' +
-                        '<div class="jobs-item-main">' +
-                        '<div class="jobs-item-name">' + this.escapeHtml(job.name || 'Unknown') + '</div>' +
-                        '<div class="jobs-item-meta">' + elapsed + ' / ' + total + ' &middot; ' + progress + ' &middot; ' + this.escapeHtml(job.source || '') + '</div>' +
-                        '</div>' +
-                        '<div class="jobs-item-status ' + this.escapeHtml(job.state || '') + '">' + this.escapeHtml(job.state || '') + '</div>' +
-                        '</div>';
+                    var progress = this.asNumber(job.progress, 0).toFixed(0) + '%';
+                    history.appendChild(this.createJobsItem(
+                        job.name || 'Unknown',
+                        elapsed + ' / ' + total + ' \u00b7 ' + progress + ' \u00b7 ' + (job.source || ''),
+                        job.state || '',
+                        job.state || ''
+                    ));
                 }
-                history.innerHTML = html;
             } else {
-                history.innerHTML = '<div class="jobs-empty" data-i18n="web.jobs.no_history">No print history yet</div>';
+                history.appendChild(this.createJobsEmpty('web.jobs.no_history', 'No print history yet'));
             }
         }
-    },
-
-    escapeHtml: function(text) {
-        if (typeof text !== 'string') return '';
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
     },
 
     updateMotionState: function() {
