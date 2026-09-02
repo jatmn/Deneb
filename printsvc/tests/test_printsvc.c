@@ -3404,6 +3404,10 @@ static void test_parse_int_helpers(void)
     assert(value == 100);
     assert(deneb_parse_int("1\r", &value) == 0);
     assert(value == 1);
+    assert(deneb_parse_int("\v42\f", &value) == 0);
+    assert(value == 42);
+    assert(deneb_parse_int("7\v", &value) == 0);
+    assert(value == 7);
     assert(deneb_parse_int("+8", &value) == 0);
     assert(value == 8);
 

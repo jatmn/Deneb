@@ -16,7 +16,8 @@ int deneb_ascii_tolower(int c)
 
 int deneb_ascii_isspace(int c)
 {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' ||
+           c == '\f';
 }
 
 int deneb_parse_int(const char *text, int *out)
