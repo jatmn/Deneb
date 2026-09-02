@@ -316,7 +316,11 @@ int main(int argc, char *argv[])
         }
         int timeout = 20;
         for (int i = 3; i < argc; i++) {
-            if (strcmp(argv[i], "--timeout") == 0 && i + 1 < argc) {
+            if (strcmp(argv[i], "--timeout") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "deneb-api: invalid --timeout value\n");
+                    return 1;
+                }
                 if (deneb_parse_int(argv[++i], &timeout) != 0) {
                     fprintf(stderr, "deneb-api: invalid --timeout value\n");
                     return 1;
