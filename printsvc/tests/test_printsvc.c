@@ -52,6 +52,7 @@
 #include "print_backend_route.h"
 #include "print_profile.h"
 #include "print_state_rules.h"
+#include "print_string.h"
 #include "runtime_diagnostics.h"
 #include "sha256.h"
 #include "service.h"
@@ -65,6 +66,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -3388,6 +3390,52 @@ static void test_material_workflow_helpers(void)
            DENEB_MATERIAL_WORKFLOW_STATUS_HEATING);
 }
 
+static void test_parse_int_helpers(void)
+{
+    int value = 12345;
+
+    assert(deneb_parse_int("0", &value) == 0);
+    assert(value == 0);
+    assert(deneb_parse_int("-7", &value) == 0);
+    assert(value == -7);
+    assert(deneb_parse_int("42", &value) == 0);
+    assert(value == 42);
+    assert(deneb_parse_int("  100\n", &value) == 0);
+    assert(value == 100);
+    assert(deneb_parse_int("1\r", &value) == 0);
+    assert(value == 1);
+    assert(deneb_parse_int("+8", &value) == 0);
+    assert(value == 8);
+
+    value = 99;
+    assert(deneb_parse_int("", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("   ", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("12abc", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("0x10", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("+", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("2147483648", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("-2147483649", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("999999999999999999999", &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int(NULL, &value) == -1);
+    assert(value == 99);
+    assert(deneb_parse_int("1", NULL) == -1);
+
+    if (INT_MAX == 2147483647) {
+        assert(deneb_parse_int("2147483647", &value) == 0);
+        assert(value == 2147483647);
+        assert(deneb_parse_int("-2147483648", &value) == 0);
+        assert(value == INT_MIN);
+    }
+}
+
 static void test_json_string_helpers(void)
 {
     char value[64];
@@ -6455,6 +6503,7 @@ int main(void)
     test_status_payload_filename_resolution();
     test_gcode_command_helpers();
     test_frame_light_helpers();
+    test_parse_int_helpers();
     test_diagnostics_export_helpers();
     test_manual_motion_helpers();
     test_buildplate_level_helpers();

@@ -4,6 +4,7 @@
 
 int deneb_ascii_tolower(int c);
 int deneb_ascii_isspace(int c);
+int deneb_parse_int(const char *text, int *out);
 int deneb_str_eq_ci(const char *a, const char *b);
 int deneb_str_is_one_of_ci(const char *value, const char *const *choices);
 int deneb_str_contains_ci(const char *haystack, const char *needle);
