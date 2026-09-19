@@ -101,16 +101,24 @@ jobs:
           bash tools/build-get-started.sh --version "$VERSION" --output-directory "$output"
           artifact=$output/Deneb_get_started.img
           checksum=$artifact.sha256
-          expected_members='update.sh
-          README.md
-          manifest.txt
-          deneb-boot-320x240.png
-          deneb-splash-128x102.jpg
-          deneb-splash.rgb565'
+          # Keep this list unindented so it matches tar -tf and
+          # tools/build-get-started.sh (YAML continuation spaces would fail).
+          expected_members=$(printf '%s\n' \
+            update.sh \
+            README.md \
+            manifest.txt \
+            deneb-boot-320x240.png \
+            deneb-splash-128x102.jpg \
+            deneb-splash.rgb565)
           actual_members=$(tar -tf "$artifact")
           [ "$actual_members" = "$expected_members" ]
+          mode=$(tar -tvf "$artifact" | awk '$NF == "update.sh" { print $1; exit }')
+          [ "$mode" = '-rwxr-xr-x' ]
           manifest_version=$(tar -xOf "$artifact" manifest.txt | awk -F= '$1 == "version" { print; exit }')
           [ "$manifest_version" = "version=$VERSION" ]
+          rgb565_size=$(tar -xOf "$artifact" deneb-splash.rgb565 | wc -c)
+          [ "$rgb565_size" -eq 153600 ]
+          (cd "$output" && sha256sum --check "$(basename "$checksum")")
           echo "ARTIFACT=$artifact" >> "$GITHUB_ENV"
           echo "CHECKSUM=$checksum" >> "$GITHUB_ENV"
 
