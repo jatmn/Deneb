@@ -106,8 +106,9 @@ uses that same skip-if-unchanged rule on the daily schedule or a
    ```
 
 4. Continue at
-   [Step 3](#step-3-install-the-bootstrap-package-from-stock-firmware). Use
-   that download folder as the image source instead of `dist/`.
+   [Step 3](#step-3-install-the-bootstrap-package-from-stock-firmware). Set
+   `img_dir` / `$imgDir` there to this download folder (do not use `dist/`
+   unless you rebuilt in Step 2).
 
 Do not copy the image if verification fails. Re-download both files and verify
 again before continuing. Skip clone and Step 2 unless you want to rebuild the
@@ -202,20 +203,23 @@ Those arrive in the `.deneb` update package.
 
 ## Step 3: Install the bootstrap package from stock firmware
 
-Before copying the package to USB, verify the image you will copy. Use the
-GitHub Releases download folder from above, or `dist/` after a local rebuild.
+Before copying the package to USB, verify the image you will copy. Set
+`img_dir` / `$imgDir` to the GitHub Releases download folder from above, or to
+`dist` only after a local rebuild.
 
 Native Debian/Linux:
 
 ```sh
-img_dir=dist   # or the folder that holds the GitHub Releases download
+img_dir=/path/to/download-folder   # folder that holds both GitHub Releases files
+# img_dir=dist                     # after a local rebuild from Step 2
 (cd "$img_dir" && sha256sum --check Deneb_get_started.img.sha256)
 ```
 
 Windows PowerShell:
 
 ```powershell
-$imgDir = "dist"   # or the folder that holds the GitHub Releases download
+$imgDir = "C:\Users\YOU\Downloads"   # folder that holds both GitHub Releases files
+# $imgDir = "dist"                   # after a local rebuild from Step 2
 $expected = (Get-Content (Join-Path $imgDir "Deneb_get_started.img.sha256")).Split()[0].ToLowerInvariant()
 $actual = (Get-FileHash (Join-Path $imgDir "Deneb_get_started.img") -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "Deneb_get_started.img checksum mismatch" }
