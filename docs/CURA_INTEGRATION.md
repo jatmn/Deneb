@@ -1,5 +1,7 @@
 # Deneb Cura Integration
 
+Operator Cura setup: https://deneb3d.dev/docs/cura/
+
 Deneb now has a Cura local-network compatibility layer for the UltiMaker 2+
 Connect. It is implemented as a small Deneb web/API runtime on the printer plus
 a Cura plugin that teaches Cura how to map Deneb's advertised network machine

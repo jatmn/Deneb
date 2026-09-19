@@ -21,6 +21,11 @@
 *.sig
 *.sha256
 !assets/branding/deneb-splash.rgb565.sha256
+!website/vendor-pins/*.sha256
+/website/public/
+/website/resources/
+/website/assets/js/vendor/
+/website/.hugo_build.lock
 *.manifest
 
 # Secrets, keys, and device-specific data.

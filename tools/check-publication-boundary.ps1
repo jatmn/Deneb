@@ -60,4 +60,16 @@ if ($records.Count -ne 280) {
 
 & (Join-Path $PSScriptRoot 'check-markdown-links.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$siteLinkSelftest = Join-Path $repoRoot 'website/scripts/check-site-links-selftest.sh'
+$siteLinkCheck = Join-Path $repoRoot 'website/scripts/check-site-links.sh'
+$bash = Get-Command bash -ErrorAction SilentlyContinue
+if (-not $bash) {
+    throw "bash is required to validate public wiki site-root links"
+}
+& $bash.Source $siteLinkSelftest
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $bash.Source $siteLinkCheck
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Output "Publication boundary: PASS"

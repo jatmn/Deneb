@@ -164,4 +164,18 @@ git -C "$repo" mv common/original.c docs/original.md
 git -C "$repo" commit -qm rename
 assert_lanes true false false "$(run_selector push "$before")"
 
+before="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/website/scripts"
+printf '#!/bin/sh\necho site\n' > "$repo/website/scripts/prepare-assets.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm website
+assert_lanes false false false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/website/content/docs"
+printf '# Getting started\n' > "$repo/website/content/docs/getting-started.md"
+git -C "$repo" add .
+git -C "$repo" commit -qm website-getting-started
+assert_lanes false true false "$(run_selector push "$before")"
+
 printf 'CI validation selector self-test: PASS\n'

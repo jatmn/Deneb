@@ -1,0 +1,20 @@
+{{- $lastUpdated := (T "lastUpdated") | default "Last updated on" -}}
+{{- $page := . -}}
+
+{{- if site.Params.displayUpdatedDate -}}
+  {{- with .Lastmod -}}
+    {{ $datetime := (time.Format "2006-01-02T15:04:05.000Z" .) }}
+    <div class="deneb-last-updated">
+      {{ $lastUpdated }} <time datetime="{{ $datetime }}">{{ partial "utils/format-date" . }}</time>
+      {{- if site.Params.displayUpdatedAuthor -}}
+        {{- with $page.GitInfo -}}
+          {{ print " • " .AuthorName | safeHTML }}
+        {{- end -}}
+      {{- end -}}
+    </div>
+  {{- else -}}
+    <div class="hx:mt-16"></div>
+  {{- end -}}
+{{- else -}}
+  <div class="hx:mt-16"></div>
+{{- end -}}

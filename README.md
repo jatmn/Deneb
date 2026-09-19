@@ -64,15 +64,20 @@ target acceptance. Its per-workstream status is recorded in the
 
 ## Documentation
 
+Operator install and feature guides are published at
+[deneb3d.dev](https://deneb3d.dev/). Planning, evidence, and agent checklists
+remain in this repository.
+
 | Need | Document |
 | --- | --- |
-| First install from stock firmware | [Getting Started](docs/GETTING_STARTED.md) |
-| Updating an existing Deneb install | [Updating Deneb](docs/UPDATING.md) |
+| Public site | [deneb3d.dev](https://deneb3d.dev/) |
+| First install from stock firmware | [Getting started](https://deneb3d.dev/docs/getting-started/) |
+| Updating an existing Deneb install | [Updating](https://deneb3d.dev/docs/updating/) |
 | Documentation map | [docs/README.md](docs/README.md) |
 | Current work, defects, and priorities | [Project Status](docs/PROJECT_STATUS.md) |
 | De-Python, Web, OpenWrt, image, and Marlin plan | [Modernization Roadmap](docs/PLATFORM_MODERNIZATION_ROADMAP.md) |
 | Debian/Linux and Windows/WSL cross-build setup | [Debian/Linux Build Environment](docs/WSL_BUILD_ENVIRONMENT.md) |
-| Web/API and Cura | [Web UI](docs/WEB_UI.md) / [Cura](docs/CURA_INTEGRATION.md) |
+| Web/API and Cura internals | [Web UI](docs/WEB_UI.md) / [Cura](docs/CURA_INTEGRATION.md) |
 | Third-party slicer command/profile rules | [Slicer Compatibility](docs/SLICER_COMPATIBILITY.md) |
 | Touchscreen and backend | [UI](ui/README.md) / [IPC](docs/BACKEND_IPC_PROTOCOL.md) |
 | Contribution and source provenance | [CONTRIBUTING.md](CONTRIBUTING.md) / [Provenance](docs/SOURCE_PROVENANCE.md) |
@@ -89,12 +94,12 @@ New printers still on stock UltiMaker firmware need a two-step USB migration:
 2. Build and install `Deneb_Update_<version>.deneb` for the native UI, print
    service, Web/API runtime, and related services.
 
-Host setup, the locked Pillow venv, builder invocation, USB verification, and
-touchscreen install steps are owned by
-[Getting Started](docs/GETTING_STARTED.md). Use that guide's Step 2 commands
-verbatim; this README does not keep a second apt/pip recipe. Later packages
-use [Updating Deneb](docs/UPDATING.md). Windows/WSL hosts follow the same
-guides, then the PowerShell builders named there.
+Host setup, the locked Pillow venv, and builder invocation are owned by
+[Getting Started](docs/GETTING_STARTED.md). Use that file's Step 2 commands
+verbatim; this README does not keep a second apt/pip recipe. USB flashing and
+later packages are at https://deneb3d.dev/docs/getting-started/ and
+https://deneb3d.dev/docs/updating/. Windows/WSL hosts follow the same
+bootstrap Python steps, then the PowerShell builders named there.
 
 ## Build
 

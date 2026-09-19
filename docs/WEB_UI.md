@@ -24,7 +24,8 @@ Browser/Cura  --->  lighttpd (:80)  --->  deneb-api (Unix socket)
 - **Static web UI** is vanilla HTML/CSS/JS (115.7 KiB tracked on 2026-07-22), no frameworks
 
 For the Cura-specific discovery, plugin, and upload/start behavior, see
-[Cura integration](CURA_INTEGRATION.md).
+[Cura integration](CURA_INTEGRATION.md). Operator setup is at
+https://deneb3d.dev/docs/web-ui/
 
 ## Resource Evidence
 
@@ -101,23 +102,6 @@ should focus on lifecycle accuracy, storage/upload UX, security, diagnostics,
 updates/rollback, accessibility, and hardware-backed browser workflows. See
 [PROJECT_STATUS.md](PROJECT_STATUS.md) and
 [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
-
-## Installation
-
-Stock firmware cannot install a `.deneb` package directly. For a first install,
-follow [Getting Started](GETTING_STARTED.md) from the bootstrap image through
-the verified full-package handoff. For an existing Deneb installation, follow
-[Updating Deneb](UPDATING.md#verify-and-copy-the-update-package) to verify the
-post-audit checksum, copy the package, and verify the USB copy.
-
-Install the verified package from **Maintenance > Update Firmware**. After the
-full package succeeds, the Web UI is available at `http://<printer-ip>/`.
-
-## First-Connect Setup
-
-On first access, the web UI shows a setup page:
-- Set a password (recommended)
-- Or choose "Open Access" (no password required)
 
 ## API Compatibility
 

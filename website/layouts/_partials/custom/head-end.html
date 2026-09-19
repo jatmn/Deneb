@@ -1,0 +1,9 @@
+<link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=space-grotesk:500,600,700|ibm-plex-sans:400,500,600|ibm-plex-mono:400,500,600">
+{{- with resources.Get "js/lightbox.js" -}}
+  {{- $js := . -}}
+  {{- if hugo.IsProduction -}}
+    {{- $js = $js | minify | fingerprint -}}
+  {{- end -}}
+<script defer src="{{ $js.RelPermalink }}"{{ with $js.Data.Integrity }} integrity="{{ . }}"{{ end }}></script>
+{{- end -}}

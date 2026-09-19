@@ -2,7 +2,9 @@
 
 Last reconciled: 2026-07-10
 
-This is the user-facing slicer contract for Deneb. The detailed controller-source
+Operator summary: https://deneb3d.dev/docs/slicer-compatibility/
+
+This is the slicer/protocol contract for Deneb. The detailed controller-source
 evidence is in
 [MARLIN_COMMAND_PROTOCOL_AUDIT.md](evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md).
 

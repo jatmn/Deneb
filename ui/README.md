@@ -149,20 +149,9 @@ cmake --build build/ci-ui --parallel
 
 ## Installation
 
-Stock firmware cannot install `.deneb` packages directly. Complete the bootstrap
-and first-install flow in [Getting Started](../docs/GETTING_STARTED.md) once,
-then use [Updating Deneb](../docs/UPDATING.md#verify-and-copy-the-update-package)
-to verify the source package and its USB copy, safely eject the drive, and
-install later packages.
-
-After bootstrap is present:
-
-1. Follow [Verify and copy the update package](../docs/UPDATING.md#verify-and-copy-the-update-package)
-   for the latest `dist/Deneb_Update_<commit>.deneb`
-2. Safely eject the verified USB drive and insert it into the UltiMaker 2+ Connect
-3. On the printer: Maintenance > Update Firmware
-4. Select the verified Deneb update `.deneb` file
-5. Wait for installation and reboot
+Operator USB install is at https://deneb3d.dev/docs/getting-started/ and
+https://deneb3d.dev/docs/updating/. Stock firmware cannot install `.deneb`
+packages until bootstrap is present.
 
 The installer will:
 - Back up the stock menu init script
@@ -180,15 +169,9 @@ The installer will:
 ## Network Setup
 
 Deneb configures networking from USB files instead of the stock WiFi captive
-portal. On the touchscreen, open Settings > Network, insert a USB drive, then
-choose the relevant import action.
-
-- Use [WiFi setup via USB](../docs/WIFI_SETUP.md) with `wifi.txt` to configure
-  WiFi SSID, password, DHCP/static IP, DNS, NTP, hostname, and country.
-- Use [Ethernet setup via USB](../docs/ETH_SETUP.md) with `eth.txt` to set
-  Ethernet DHCP/static IP, DNS, NTP, or hostname.
-- Template files live at [`wifi.txt.example`](wifi.txt.example) and
-  [`eth.txt.example`](eth.txt.example).
+portal. Operator import steps: https://deneb3d.dev/docs/wifi-setup/ and
+https://deneb3d.dev/docs/ethernet-setup/. Template files live at
+[`wifi.txt.example`](wifi.txt.example) and [`eth.txt.example`](eth.txt.example).
 
 ## Backend IPC
 
@@ -271,7 +254,8 @@ lane Deneb-only. See `docs/STOCK_UI_COVERAGE.md` for the current stock-vs-Deneb
 coverage matrix, including the stock base version shown on the About screen and
 the remaining native LVGL replacement work.
 
-For visual reference, see the screenshot-backed
+For visual reference, see https://deneb3d.dev/docs/touchscreen/. Host-capture
+regeneration is in
 [`docs/TOUCHSCREEN_SCREEN_CATALOG.md`](../docs/TOUCHSCREEN_SCREEN_CATALOG.md).
 
 ## Locale Support
