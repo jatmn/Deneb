@@ -8,7 +8,7 @@ Last reconciled: 2026-07-10
 
 This is the user-facing slicer contract for Deneb. The detailed controller-source
 evidence is in
-[MARLIN_COMMAND_PROTOCOL_AUDIT.md](../../../docs/evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md).
+[MARLIN_COMMAND_PROTOCOL_AUDIT.md](https://github.com/jatmn/Deneb/blob/main/docs/evidence/MARLIN_COMMAND_PROTOCOL_AUDIT.md).
 
 ## Current support
 

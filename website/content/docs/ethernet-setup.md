@@ -8,8 +8,8 @@ Deneb supports configuring the wired Ethernet interface via a file-based
 approach: create an `eth.txt` file on a USB drive, insert it into the printer,
 and import via the touchscreen.
 
-Related: [WiFi setup](wifi-setup.md), [UI README](../../../ui/README.md), and the
-[eth.txt example template](../../../ui/eth.txt.example).
+Related: [WiFi setup](/docs/wifi-setup/), [UI README](https://github.com/jatmn/Deneb/blob/main/ui/README.md), and the
+[eth.txt example template](https://github.com/jatmn/Deneb/blob/main/ui/eth.txt.example).
 
 ## Quick Start
 

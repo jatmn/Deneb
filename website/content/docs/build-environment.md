@@ -18,7 +18,7 @@ Native build dependencies are stored under the checkout's ignored `build/deneb-c
 First-time printer installation also needs the stock-firmware bootstrap package
 from `tools/build-get-started.sh` or `tools/build-get-started.ps1`. That package
 does not require the MIPS cross toolchain. See
-[Getting Started](getting-started.md) and [Updating Deneb](updating.md).
+[Getting Started](/docs/getting-started/) and [Updating Deneb](/docs/updating/).
 
 Do not mix the lanes: the native scripts keep dependencies in the checkout's
 `build/deneb-cross/` directory, while the PowerShell wrapper uses `/root`
@@ -53,7 +53,7 @@ The script cross-builds all native services, packages
 package only after it prints `Verified native-only print service package`,
 exits zero, and publishes the matching post-audit `.deneb.sha256` sidecar.
 Before installation, follow the source-and-USB verification handoff in
-[Updating Deneb](updating.md#verify-and-copy-the-update-package).
+[Updating Deneb](/docs/updating/#verify-and-copy-the-update-package).
 
 Nightly and stable packages require verified stock/native evidence summaries:
 
@@ -140,7 +140,7 @@ The PowerShell wrapper remains available for Windows worktrees. A package
 exists before all checks finish, so the file alone is not proof of success.
 The same zero-exit, verification-message, and matching `.deneb.sha256` sidecar
 contract applies before the
-[verified USB handoff](updating.md#verify-and-copy-the-update-package).
+[verified USB handoff](/docs/updating/#verify-and-copy-the-update-package).
 
 ## Verify either lane
 

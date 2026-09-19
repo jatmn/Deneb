@@ -8,8 +8,8 @@ Deneb replaces the stock WiFi setup (AP captive portal) with a simple file-based
 approach: create a `wifi.txt` file on a USB drive, insert it into the printer,
 and import via the touchscreen.
 
-Related: [Ethernet setup](ethernet-setup.md), [UI README](../../../ui/README.md), and
-the [wifi.txt example template](../../../ui/wifi.txt.example).
+Related: [Ethernet setup](/docs/ethernet-setup/), [UI README](https://github.com/jatmn/Deneb/blob/main/ui/README.md), and
+the [wifi.txt example template](https://github.com/jatmn/Deneb/blob/main/ui/wifi.txt.example).
 
 ## Quick Start
 

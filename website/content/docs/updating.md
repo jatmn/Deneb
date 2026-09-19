@@ -6,7 +6,7 @@ weight: 20
 
 This guide covers day-2 package updates after the first successful Deneb
 install. For the stock-firmware bootstrap path, start with
-[Getting Started](getting-started.md).
+[Getting Started](/docs/getting-started/).
 
 ## Update model
 
@@ -41,13 +41,13 @@ Updated experimental Deneb stack
 - Update only on a trusted local network.
 - Know how you built or obtained the package. Prefer packages produced by the
   release wrappers in this repository.
-- Read [Project status](../../../docs/PROJECT_STATUS.md) before moving between significantly
+- Read [Project status](https://github.com/jatmn/Deneb/blob/main/docs/PROJECT_STATUS.md) before moving between significantly
   different revisions; experimental builds can still change behavior.
 
 ## Build a newer update package
 
 Use one complete build lane from
-[Debian/Linux build environment](build-environment.md).
+[Debian/Linux build environment](/docs/build-environment/).
 
 ### Native Debian/Linux
 
@@ -196,13 +196,13 @@ Use that Cygnus USB path when you need the bootstrap lane itself:
   and the printer is still on the stock/bootstrap UI
 
 Rebuild it by completing
-[Getting Started: Step 2](getting-started.md#step-2-build-the-get-started-bootstrap-package)
+[Getting Started: Step 2](/docs/getting-started/#step-2-build-the-get-started-bootstrap-package)
 for the current checkout and host. That section owns the hash-locked Pillow
 venv and the required `DENEB_BOOTSTRAP_PYTHON` selection; do not substitute a
 bare builder command or a system-wide Pillow installation.
 
 Then install it from the stock/bootstrap USB firmware update flow exactly as
-in [Getting Started](getting-started.md). The filename `Deneb_get_started.img`
+in [Getting Started](/docs/getting-started/). The filename `Deneb_get_started.img`
 is part of the allowed reinstall path on that updater.
 
 Bootstrap reinstall does not by itself replace a full native stack. If the
@@ -254,9 +254,9 @@ needs the bootstrap bridge first.
 
 ## Related documents
 
-- [Getting Started](getting-started.md)
-- [Build environment](build-environment.md)
-- [Project status](../../../docs/PROJECT_STATUS.md)
-- [UI package notes](../../../ui/README.md)
-- [Web UI](web-ui.md)
-- [Cura integration](cura.md)
+- [Getting Started](/docs/getting-started/)
+- [Build environment](/docs/build-environment/)
+- [Project status](https://github.com/jatmn/Deneb/blob/main/docs/PROJECT_STATUS.md)
+- [UI package notes](https://github.com/jatmn/Deneb/blob/main/ui/README.md)
+- [Web UI](/docs/web-ui/)
+- [Cura integration](/docs/cura/)

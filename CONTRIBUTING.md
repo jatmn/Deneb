@@ -26,8 +26,9 @@ the requested work.
 
 - Do not introduce a new implementation language, runtime, build system, or
   framework on the printer or in firmware/host packaging. The `website/`
-  public docs site (Hugo + Hextra) is the approved exception for
-  deneb3d.dev.
+  public docs site (Hugo + Hextra, GitHub Actions, and Bunny static hosting)
+  is the approved exception for deneb3d.dev. It must not add Python, ship a
+  printer runtime, or replace the printer Web UI.
 - New Python source, dependencies, tools, generated Python, or target-side
   Python runtime use are explicitly forbidden.
 - Existing Python files do not make Python an accepted Deneb implementation

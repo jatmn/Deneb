@@ -34,3 +34,11 @@ Repository secrets:
 
 Disable Bunny Pull Zone JavaScript minification/rewriting so FlexSearch
 subresource integrity still matches.
+
+The first production deploy overlays files into Bunny Storage. Removed pages
+are not deleted automatically; purge the zone or delete stale objects if a
+path is retired.
+
+Operator guides under `website/content/docs/` are the public copies. In-repo
+`docs/GETTING_STARTED.md` and related files remain for CI and agents; update
+both when operator steps change.

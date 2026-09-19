@@ -14,7 +14,7 @@ Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter *.md |
         $text = Get-Content -LiteralPath $file.FullName -Raw
         foreach ($match in [regex]::Matches($text, '(?<!\!)\[[^\]]+\]\(([^)]+)\)')) {
             $target = $match.Groups[1].Value.Trim()
-            if ($target -match '^(https?://|mailto:|#)') { continue }
+            if ($target -match '^(https?://|mailto:|#|/)') { continue }
             $target = ($target -split '#', 2)[0]
             if ([string]::IsNullOrWhiteSpace($target)) { continue }
             $target = [uri]::UnescapeDataString($target.Trim('<', '>'))

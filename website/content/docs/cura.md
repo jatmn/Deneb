@@ -10,7 +10,7 @@ a Cura plugin that teaches Cura how to map Deneb's advertised network machine
 id back to Cura's stock UM2+ Connect profile.
 
 For controller-command differences and non-Cura profile requirements, see
-[slicer compatibility](slicer-compatibility.md).
+[slicer compatibility](/docs/slicer-compatibility/).
 
 ## Components
 

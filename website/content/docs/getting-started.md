@@ -16,7 +16,7 @@ OpenWrt/Cygnus base:
    service, Web/API runtime, and related services.
 
 If Deneb is already installed and you only need a newer package, use
-[Updating Deneb](updating.md) instead.
+[Updating Deneb](/docs/updating/) instead.
 
 ## What you need
 
@@ -31,7 +31,7 @@ If Deneb is already installed and you only need a newer package, use
 Optional after install:
 
 - Ethernet or Wi-Fi for SSH, Web UI, Cura discovery, and Digital Factory
-- [WiFi setup via USB](wifi-setup.md) and [Ethernet setup via USB](ethernet-setup.md)
+- [WiFi setup via USB](/docs/wifi-setup/) and [Ethernet setup via USB](/docs/ethernet-setup/)
 
 ## Safety and expectations
 
@@ -273,7 +273,7 @@ The full stack is packaged as `dist/Deneb_Update_<version>.deneb`, with a
 post-audit `.deneb.sha256` sidecar published by the successful release wrapper.
 
 Follow one complete lane from the
-[Debian/Linux build environment](build-environment.md). Do not mix the
+[Debian/Linux build environment](/docs/build-environment/). Do not mix the
 native checkout dependency tree with the Windows/WSL `/root` dependency tree.
 
 ### Native Debian/Linux
@@ -293,8 +293,8 @@ bash tools/build-update-release.sh
 
 ### Windows with Debian WSL 2
 
-Complete the Windows/WSL lane's [Setup](build-environment.md#setup) and
-[Build and audit](build-environment.md#build-and-audit) sections. That guide
+Complete the Windows/WSL lane's [Setup](/docs/build-environment/#setup) and
+[Build and audit](/docs/build-environment/#build-and-audit) sections. That guide
 owns the first-build dependency switches, later rebuild command, environment
 verification, and recovery sequence; follow it from setup through the verified
 package result without skipping to the later-build command.
@@ -311,7 +311,7 @@ build.
 
 ## Step 5: Install the first full Deneb package
 
-1. Complete [Verify and copy the update package](updating.md#verify-and-copy-the-update-package).
+1. Complete [Verify and copy the update package](/docs/updating/#verify-and-copy-the-update-package).
 2. Safely eject the verified FAT32 USB drive and insert it into the printer.
 3. On the printer open **Maintenance > Update Firmware**.
 4. Choose the USB install path and select the verified `.deneb` package.
@@ -340,11 +340,11 @@ Useful next checks:
 
 See:
 
-- [WiFi setup](wifi-setup.md)
-- [Ethernet setup](ethernet-setup.md)
-- [Web UI](web-ui.md)
-- [Cura integration](cura.md)
-- [Project status](../../../docs/PROJECT_STATUS.md)
+- [WiFi setup](/docs/wifi-setup/)
+- [Ethernet setup](/docs/ethernet-setup/)
+- [Web UI](/docs/web-ui/)
+- [Cura integration](/docs/cura/)
+- [Project status](https://github.com/jatmn/Deneb/blob/main/docs/PROJECT_STATUS.md)
 
 ## After install
 
@@ -353,9 +353,9 @@ See:
 | Optional: change SSH passwords | Manual `passwd` / `passwd ultimaker` only if you want non-default credentials; login never forces this |
 | Configure Wi-Fi | USB `wifi.txt` + Settings > Network |
 | Configure Ethernet | USB `eth.txt` + Settings > Network |
-| Install a newer Deneb build | [Updating Deneb](updating.md) |
-| Understand current gaps | [Project status](../../../docs/PROJECT_STATUS.md) |
-| Rebuild packages later | [Build environment](build-environment.md) |
+| Install a newer Deneb build | [Updating Deneb](/docs/updating/) |
+| Understand current gaps | [Project status](https://github.com/jatmn/Deneb/blob/main/docs/PROJECT_STATUS.md) |
+| Rebuild packages later | [Build environment](/docs/build-environment/) |
 
 ## Returning toward official firmware
 
@@ -390,15 +390,15 @@ does not currently ship a complete independent image/rollback product.
 | Stock UI will not show the bootstrap file | Wrong extension, nested folder, or non-FAT32 stick | Put `Deneb_get_started.img` at the USB root on FAT32 |
 | Bootstrap installs but SSH fails | Printer offline, wrong user, or password not yet applied | Confirm network, use `root` / `deneb`, reboot once, reinstall bootstrap if needed |
 | `.deneb` package is not listed on the stock/bootstrap updater | Bootstrap never installed, or file extension/case/path issue | Reinstall `Deneb_get_started.img` from that same stock/bootstrap USB flow, keep one `*.deneb` at USB root |
-| Update package build fails missing toolchain | Build lane not set up | Run the matching setup script in [WSL_BUILD_ENVIRONMENT.md](build-environment.md) |
+| Update package build fails missing toolchain | Build lane not set up | Run the matching setup script in [Build environment](/docs/build-environment/) |
 | `.deneb` install fails audit/smoke checks | Incomplete or mixed package | Rebuild with the release wrapper and only flash a verified package |
 | Printer stays on "updating firmware" | Update UI process interrupted | Wait for the reboot watchdog; power-cycle only if it remains stuck well beyond the normal update window |
 
 ## Related documents
 
-- [Updating Deneb](updating.md)
-- [Build environment](build-environment.md)
-- [Bootstrap package notes](../../../packages/ssh-bootstrap/README.md)
-- [UI package install notes](../../../ui/README.md)
+- [Updating Deneb](/docs/updating/)
+- [Build environment](/docs/build-environment/)
+- [Bootstrap package notes](https://github.com/jatmn/Deneb/blob/main/packages/ssh-bootstrap/README.md)
+- [UI package install notes](https://github.com/jatmn/Deneb/blob/main/ui/README.md)
 - Historical bootstrap plan (archived, not the live guide):
-  [SSH_BOOTSTRAP_PLAN.md](../../../docs/archive/SSH_BOOTSTRAP_PLAN.md)
+  [SSH_BOOTSTRAP_PLAN.md](https://github.com/jatmn/Deneb/blob/main/docs/archive/SSH_BOOTSTRAP_PLAN.md)

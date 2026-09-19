@@ -70,12 +70,12 @@ Home is the root menu:
 
 Pause safety, some material and leveling cancel paths, update UX, and
 diagnostics still have open work. See the
-[repository screen catalog](../../../docs/TOUCHSCREEN_SCREEN_CATALOG.md)
+[repository screen catalog](https://github.com/jatmn/Deneb/blob/main/docs/TOUCHSCREEN_SCREEN_CATALOG.md)
 for the full per-screen capture notes.
 
 ## Network from the panel
 
 Wi-Fi and Ethernet are configured from USB files, not a captive portal:
 
-- [Wi-Fi setup](wifi-setup.md)
-- [Ethernet setup](ethernet-setup.md)
+- [Wi-Fi setup](/docs/wifi-setup/)
+- [Ethernet setup](/docs/ethernet-setup/)

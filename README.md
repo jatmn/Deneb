@@ -72,7 +72,6 @@ remain in this repository.
 | --- | --- |
 | Public site | [deneb3d.dev](https://deneb3d.dev/) |
 | First install from stock firmware | [Getting Started](docs/GETTING_STARTED.md) |
-
 | Updating an existing Deneb install | [Updating Deneb](docs/UPDATING.md) |
 | Documentation map | [docs/README.md](docs/README.md) |
 | Current work, defects, and priorities | [Project Status](docs/PROJECT_STATUS.md) |
