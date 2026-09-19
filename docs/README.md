@@ -27,8 +27,9 @@ and locked-Pillow contract that CI still greps. Keep Step 2 in
 `docs/GETTING_STARTED.md` trigger the Website workflow so deneb3d.dev
 rebuilds. Site-root `/docs/` and `/images/` links under
 `website/content` are checked by `website/scripts/check-site-links.sh`
-from `tools/check-publication-boundary.ps1` and after Hugo against
-`website/public/`.
+from `tools/check-publication-boundary.ps1` (source) and by
+`website/scripts/build.sh` after Hugo (built `website/public/`) inside
+required `policy-validation` on every non-draft PR and push.
 
 ## Active technical documentation
 

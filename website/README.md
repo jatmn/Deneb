@@ -25,11 +25,13 @@ From the repository root, use `bash website/scripts/build.sh` instead.
 `scripts/check-site-links.sh` fails if a site-root `/docs/` or
 `/images/` target in `content/` does not map onto a content page or
 hugo.yaml mount. `scripts/build.sh` runs that check again against
-`public/` so missing built routes and heading fragments fail the
-Website job. `tools/check-publication-boundary.ps1` runs the same
-source check (and `scripts/check-site-links-selftest.sh`) so broken
-wiki navigation fails the required policy gate even when Website
-`build` is not a branch-protection context.
+`public/` so missing built routes and heading fragments fail the build.
+`tools/check-publication-boundary.ps1` runs the source check (and
+`scripts/check-site-links-selftest.sh`) on every required
+`policy-validation` run. The same job also runs `website/scripts/build.sh`
+when `website/` is present, so merges cannot pass without a full Hugo
+build and post-build link validation. The Website workflow still builds
+on website-related pushes and PRs and uploads deploy artifacts on `main`.
 
 ## Deploy
 

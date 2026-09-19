@@ -29,8 +29,9 @@ unsafe motion, heating, flashing, update, and recovery behavior.
   list and locked Pillow interpreter. Operator install and later `.deneb`
   updates live under `website/` and at deneb3d.dev. Site-root `/docs/`
   and `/images/` links in `website/content` are checked by
-  `website/scripts/check-site-links.sh` from publication-boundary and
-  again after Hugo against `website/public/`.
+  `website/scripts/check-site-links.sh` from publication-boundary (source)
+  and again after Hugo via `website/scripts/build.sh` in required
+  `policy-validation`.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.
