@@ -131,6 +131,9 @@ powershell -ExecutionPolicy Bypass -File tools/build-get-started.ps1
 ```
 
 Both lanes install the repository-locked Pillow wheels with verified hashes.
+The builder must see that exact interpreter through `DENEB_BOOTSTRAP_PYTHON`.
+System Python is not the locked bootstrap environment.
+
 The builders also reject generated RGB565 bytes that do not match the audited
 digest in `assets/branding/deneb-splash.rgb565.sha256`.
 Before changing a password, enabling SSH, or writing branding/UI files, the

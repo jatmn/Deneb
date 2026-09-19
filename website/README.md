@@ -10,10 +10,14 @@ This tree is not a printer runtime.
 Requires Hugo extended 0.166.0 (see `vendor-pins/hugo.version`) and Go for
 Hugo modules. Python is not used.
 
+Run from this directory (`website/`):
+
 ```sh
 export HUGO_BIN=/path/to/hugo
-bash website/scripts/build.sh
+bash scripts/build.sh
 ```
+
+From the repository root, use `bash website/scripts/build.sh` instead.
 
 `scripts/prepare-assets.sh` downloads pinned FlexSearch into
 `assets/js/vendor/` (gitignored) after checking the SHA-256 pin.
