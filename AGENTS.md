@@ -30,8 +30,8 @@ unsafe motion, heating, flashing, update, and recovery behavior.
   updates live under `website/` and at deneb3d.dev. Site-root `/docs/`
   and `/images/` links in `website/content` are checked by
   `website/scripts/check-site-links.sh` from publication-boundary (source)
-  and again after Hugo via `website/scripts/build.sh` in required
-  `policy-validation`.
+  and again after Hugo via `website/scripts/build.sh` in
+  `policy-validation` when the diff touches website-related paths.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.

@@ -47,7 +47,7 @@ jobs:
   policy-validation:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -68,15 +68,64 @@ jobs:
         shell: pwsh
         run: tools/check-publication-boundary.ps1
 
+      - name: Detect public site changes
+        id: site
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          needs=false
+          public_site_path() {
+            case "$1" in
+              website/*|assets/branding/*|docs/touchscreen-screens/*) return 0 ;;
+              docs/GETTING_STARTED.md|.github/workflows/website.yml) return 0 ;;
+              tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1) return 0 ;;
+              website/scripts/check-site-links.sh|website/scripts/check-site-links-selftest.sh) return 0 ;;
+            esac
+            return 1
+          }
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            needs=true
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            while IFS= read -r path; do
+              [[ -n "$path" ]] || continue
+              if public_site_path "$path"; then needs=true; break; fi
+            done < <(git diff --no-renames --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA")
+          elif [[ "$EVENT_NAME" == "push" ]] &&
+               [[ -n "$BEFORE_SHA" ]] &&
+               [[ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] &&
+               git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            while IFS= read -r path; do
+              [[ -n "$path" ]] || continue
+              if public_site_path "$path"; then needs=true; break; fi
+            done < <(git diff --no-renames --name-only "$BEFORE_SHA" HEAD)
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            while IFS= read -r path; do
+              [[ -n "$path" ]] || continue
+              if public_site_path "$path"; then needs=true; break; fi
+            done < <(git diff --no-renames --name-only HEAD^ HEAD)
+          else
+            needs=true
+          fi
+          printf 'needs_site_build=%s\n' "$needs" >> "$GITHUB_OUTPUT"
+          if [[ "$needs" == true ]]; then
+            printf '%s\n' 'Public site: full Hugo build selected for this revision range.'
+          else
+            printf '%s\n' 'Public site: skipping Hugo build (no website-impacting paths in range).'
+          fi
+
       - name: Set up Go
-        if: hashFiles('website/go.sum') != ''
+        if: steps.site.outputs.needs_site_build == 'true'
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
         with:
           go-version: "1.25.x"
           cache-dependency-path: website/go.sum
 
       - name: Build public site (Hugo + post-build link check)
-        if: hashFiles('website/scripts/build.sh') != ''
+        if: steps.site.outputs.needs_site_build == 'true'
         run: |
           HUGO_VERSION="$(tr -d '[:space:]' < website/vendor-pins/hugo.version)"
           expected="$(awk '{print $1}' website/vendor-pins/hugo_extended_linux-amd64.tar.gz.sha256)"
