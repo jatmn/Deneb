@@ -39,7 +39,7 @@ $repo_root/website/content/docs/getting-started.md"
 bootstrap_markers='ca-certificates python3 python3-venv tar
 --require-hashes -r tools/bootstrap-requirements.txt
 DENEB_BOOTSTRAP_PYTHON
-The builder must see that exact interpreter through `DENEB_BOOTSTRAP_PYTHON`.
+The builder must see that exact interpreter through
 System Python is not the locked bootstrap environment.'
 while IFS= read -r doc; do
     [ -n "$doc" ] || continue
