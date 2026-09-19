@@ -40,5 +40,5 @@ are not deleted automatically; purge the zone or delete stale objects if a
 path is retired.
 
 Operator guides under `website/content/docs/` are the public copies. In-repo
-`docs/GETTING_STARTED.md` and related files remain for CI and agents; update
-both when operator steps change.
+`docs/GETTING_STARTED.md` keeps the CI-guarded bootstrap host-package list;
+do not recopy operator how-to into `docs/`.

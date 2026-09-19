@@ -77,12 +77,12 @@ params:
       width: 28
       height: 28
   footer:
-    displayCopyright: true
+    displayCopyright: false
     displayPoweredBy: false
     width: wide
   theme:
     default: dark
-    displayToggle: true
+    displayToggle: false
   page:
     width: wide
   search:

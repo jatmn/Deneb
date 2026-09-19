@@ -257,7 +257,7 @@ installer because Deneb networking is client-only. IPv4 client networking is
 handled by `netifd` and `udhcpc`; the stale `dhcp.wlan` AP DHCP scope is
 removed. The `dnsmasq` and `odhcpd` binaries remain in the read-only base image.
 WiFi setup is handled by USB `wifi.txt` import; see
-[WiFi setup via USB](../WIFI_SETUP.md).
+https://deneb3d.dev/docs/wifi-setup/.
 
 Total remaining Python RSS: ~37.9 MB. The stock-service table above uses VSZ,
 so compare VSZ-to-VSZ or RSS-to-RSS only.

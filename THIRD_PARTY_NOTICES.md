@@ -92,6 +92,8 @@ not installed on the printer.
   (fetched at build; pin in `website/vendor-pins/flexsearch.bundle.min.js.sha256`)
 - Space Grotesk, OFL-1.1, loaded from https://fonts.bunny.net
 - IBM Plex Sans and IBM Plex Mono, OFL-1.1, loaded from https://fonts.bunny.net
+- bunny.net favicon, trademark of bunny.net, loaded at runtime from
+  https://bunny.net/favicon.ico for the affiliate footer mark
 
 ## Ongoing Release Checks
 

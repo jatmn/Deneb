@@ -3,6 +3,27 @@
   --primary-hue: 351deg;
   --primary-saturation: 79%;
   --primary-lightness: 59%;
+  --deneb-bg: #f6f6fb;
+  --deneb-bg-raise: #ffffff;
+  --deneb-line: #d5d7e4;
+  --deneb-text: #1a1a2e;
+  --deneb-muted: #5a5f73;
+  --deneb-heading: #111827;
+  --deneb-accent: #e94560;
+  --deneb-card-bg: #ffffff;
+  --deneb-well: #0f111f;
+}
+
+html.dark,
+html[class~="dark"] {
+  --deneb-bg: #1a1a2e;
+  --deneb-bg-raise: #121225;
+  --deneb-line: #2a2a4a;
+  --deneb-text: #e8e8f0;
+  --deneb-muted: #9aa0b5;
+  --deneb-heading: #ffffff;
+  --deneb-card-bg: rgba(18, 18, 37, 0.55);
+  --deneb-well: #07080f;
 }
 
 @layer theme {
@@ -18,8 +39,7 @@ html {
 }
 
 h1, h2, h3, h4, h5, h6,
-.hextra-nav-container,
-.hextra-hero-headline {
+.hextra-nav-container {
   font-family: "Space Grotesk", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -30,21 +50,267 @@ code, kbd, pre, samp,
 
 html.dark body,
 html[class~="dark"] body {
-  background: #1a1a2e;
+  background: var(--deneb-bg);
 }
 
-.hextra-footer {
-  font-size: 0.85rem;
+.deneb-home {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.deneb-hero {
+  display: grid;
+  gap: 2.25rem;
+  align-items: center;
+  padding: 0.5rem 0 2.75rem;
+}
+
+@media (min-width: 900px) {
+  .deneb-hero {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 3rem;
+    min-height: 26rem;
+  }
+}
+
+.deneb-hero-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.deneb-kicker {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--deneb-line);
+  background: var(--deneb-bg-raise);
+  color: var(--deneb-muted);
+  border-radius: 999px;
+  padding: 0.28rem 0.75rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.deneb-hero h1 {
+  margin: 0;
+  font-size: clamp(2.75rem, 6vw, 4.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  color: var(--deneb-heading);
+  font-weight: 700;
+}
+
+.deneb-lede {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 1.15rem;
   line-height: 1.45;
+  color: var(--deneb-muted);
+}
+
+.deneb-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+}
+
+.deneb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.85rem;
+  padding: 0.7rem 1.25rem;
+  border-radius: 999px;
+  font-family: "Space Grotesk", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.deneb-btn-primary {
+  background: var(--deneb-accent);
+  color: #fff;
+}
+
+.deneb-btn-primary:hover {
+  background: #ff5a73;
+  color: #fff;
+}
+
+.deneb-btn-ghost {
+  border: 1px solid var(--deneb-line);
+  color: var(--deneb-text);
+  background: transparent;
+}
+
+.deneb-btn-ghost:hover {
+  border-color: var(--deneb-heading);
+  color: var(--deneb-heading);
+}
+
+.deneb-hero-art-wrap {
+  margin: 0;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid var(--deneb-line);
+  background: #0f111f;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.deneb-hero-art-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.deneb-features {
+  padding-top: 2rem;
+  border-top: 1px solid var(--deneb-line);
+}
+
+.deneb-features h2 {
+  margin: 0 0 1.15rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--deneb-muted);
+}
+
+.deneb-card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 760px) {
+  .deneb-card-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.deneb-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--deneb-line);
+  border-radius: 1.15rem;
+  background: var(--deneb-card-bg);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 160ms ease;
+}
+
+.deneb-card:hover {
+  border-color: var(--deneb-heading);
+}
+
+.deneb-card-screen {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.15rem;
+  background: var(--deneb-well);
+}
+
+.deneb-card-screen img {
+  display: block;
+  width: min(100%, 320px);
+  height: auto;
+  aspect-ratio: 320 / 240;
+  object-fit: contain;
+  flex: 0 0 auto;
+  image-rendering: pixelated;
+  border-radius: 4px;
+  border: 1px solid #3a3a55;
+  box-shadow: 0 0 0 3px #121225;
+  background: #000;
+}
+
+.deneb-card-copy {
+  padding: 1rem 1.15rem 1.2rem;
+}
+
+.deneb-card-copy h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--deneb-heading);
+}
+
+.deneb-card-copy p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--deneb-muted);
+}
+
+.deneb-footer {
+  margin-top: 0;
+  padding: 2.75rem 1.5rem 3.25rem;
+  background: var(--deneb-bg-raise);
+  border-top: 1px solid var(--deneb-line);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--deneb-muted);
+}
+
+.deneb-footer-inner {
+  max-width: 36rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.85rem;
 }
 
 .deneb-footer-legal,
-.deneb-footer-host {
-  margin: 0 0 0.5rem;
+.deneb-footer-affiliate,
+.deneb-footer-copy {
+  margin: 0;
 }
 
-.deneb-footer-host a {
+.deneb-footer a {
+  color: var(--deneb-text);
+}
+
+.deneb-bunny {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
   font-weight: 600;
+  text-decoration: none;
+  color: var(--deneb-heading);
+}
+
+.deneb-bunny:hover {
+  color: var(--deneb-accent);
+}
+
+.deneb-bunny-mark {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  object-fit: contain;
+}
+
+.deneb-footer-affiliate {
+  font-size: 0.8rem;
+}
+
+.deneb-footer-copy {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
 }
 
 .deneb-screen-grid {
@@ -62,12 +328,150 @@ html[class~="dark"] body {
   width: 100%;
   height: auto;
   image-rendering: pixelated;
-  border: 1px solid #2a2a4a;
+  border: 1px solid var(--deneb-line);
   background: #0f111f;
 }
 
-.deneb-hero-art {
+.deneb-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin: 1.25rem 0 2rem;
+}
+
+.deneb-screen {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  border: 1px solid var(--deneb-line);
+  border-radius: 1rem;
+  background: var(--deneb-card-bg);
+}
+
+@media (min-width: 700px) {
+  .deneb-screen {
+    grid-template-columns: 200px minmax(0, 1fr);
+    align-items: center;
+  }
+}
+
+.deneb-screen h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  color: var(--deneb-heading);
+}
+
+.deneb-screen p {
+  margin: 0;
+  color: var(--deneb-muted);
+}
+
+.deneb-zoom {
   display: block;
-  max-width: min(640px, 100%);
-  margin: 1.5rem auto 0;
+  cursor: zoom-in;
+}
+
+.deneb-zoom img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 320 / 240;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border: 1px solid var(--deneb-line);
+  background: #000;
+}
+
+.deneb-zoom-dialog {
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  width: min(90vw, 720px);
+}
+
+.deneb-zoom-dialog::backdrop {
+  background: rgba(8, 8, 16, 0.84);
+}
+
+.deneb-zoom-dialog img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 320 / 240;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border: 1px solid var(--deneb-line);
+  background: #000;
+}
+
+.deneb-zoom-dialog form {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin: 0 0 0.6rem;
+}
+
+.deneb-zoom-close {
+  border: 1px solid var(--deneb-line);
+  border-radius: 999px;
+  background: var(--deneb-bg-raise);
+  color: var(--deneb-text);
+  font-family: "Space Grotesk", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.hextra-sidebar-container [data-toggle-animation="show"] {
+  display: none;
+}
+
+.deneb-toc-meta {
+  margin-top: 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--deneb-line);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  background: transparent;
+}
+
+.deneb-toc-label,
+.deneb-edit-link,
+.deneb-back-to-top,
+.deneb-last-updated {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--deneb-muted);
+}
+
+.deneb-edit-link {
+  text-decoration: none;
+}
+
+.deneb-edit-link:hover,
+.deneb-back-to-top:hover {
+  color: var(--deneb-heading);
+}
+
+.deneb-back-to-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.deneb-back-to-top svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.deneb-last-updated {
+  margin: 2.5rem 0 1.5rem;
+  text-align: right;
 }

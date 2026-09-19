@@ -25,9 +25,9 @@ unsafe motion, heating, flashing, update, and recovery behavior.
 - `docs/README.md` defines documentation placement and status vocabulary.
 - `UM2C_MODDING_CHECKLIST.md` and the print-service ledgers are
   machine-audited acceptance inventories, not general status summaries.
-- `docs/GETTING_STARTED.md` and `docs/UPDATING.md` are the in-repo operator
-  guides for stock-firmware bootstrap and later `.deneb` package updates.
-  The public copies live under `website/` and at deneb3d.dev.
+- `docs/GETTING_STARTED.md` keeps the CI-guarded bootstrap host-package
+  list and locked Pillow interpreter. Operator install and later `.deneb`
+  updates live under `website/` and at deneb3d.dev.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.

@@ -5,20 +5,23 @@ current project status.
 
 ## Start here
 
-Public operator guides live at [deneb3d.dev](https://deneb3d.dev/). The Markdown
-files below remain the in-repo copies that CI and agents still read.
+Public operator guides live at [deneb3d.dev](https://deneb3d.dev/).
 
-1. [Getting started](GETTING_STARTED.md) — first install from stock UltiMaker
-   firmware through bootstrap and the initial `.deneb` package.
-2. [Updating Deneb](UPDATING.md) — day-2 `.deneb` package updates and when to
-   rebuild bootstrap.
+1. [Getting started](https://deneb3d.dev/docs/getting-started/) — first install
+   from stock UltiMaker firmware through bootstrap and the initial `.deneb`
+   package.
+2. [Updating Deneb](https://deneb3d.dev/docs/updating/) — day-2 `.deneb`
+   package updates and when to rebuild bootstrap.
 3. [Project status](PROJECT_STATUS.md) — the only human-maintained source for
    what is done, in progress, planned, blocked, or known broken.
 4. [Platform modernization roadmap](PLATFORM_MODERNIZATION_ROADMAP.md) — the
    ordered plan for de-Pythonization, Web/API productization, a current OpenWrt
    base, an independent image, and modern Marlin work.
-5. [Debian/Linux build environment](WSL_BUILD_ENVIRONMENT.md) — required workstation and
-   cross-build setup.
+5. [Debian/Linux build environment](WSL_BUILD_ENVIRONMENT.md) — required
+   workstation and cross-build setup.
+
+[GETTING_STARTED.md](GETTING_STARTED.md) is the in-repo bootstrap host-package
+and locked-Pillow contract that CI still greps.
 
 ## Active technical documentation
 
@@ -27,18 +30,18 @@ explain how the project works now, not preserve a running diary.
 
 | Area | Document |
 | --- | --- |
-| First install from stock firmware | [GETTING_STARTED.md](GETTING_STARTED.md) |
-| Package updates after bootstrap | [UPDATING.md](UPDATING.md) |
+| Bootstrap host Python / Pillow | [GETTING_STARTED.md](GETTING_STARTED.md) |
 | Third-party slicer profiles and command rules | [SLICER_COMPATIBILITY.md](SLICER_COMPATIBILITY.md) |
 | Web/API architecture and first-class product requirements | [WEB_UI.md](WEB_UI.md) |
-| Cura discovery and local printing | [CURA_INTEGRATION.md](CURA_INTEGRATION.md) |
+| Cura discovery and local printing internals | [CURA_INTEGRATION.md](CURA_INTEGRATION.md) |
 | Touchscreen parity | [STOCK_UI_COVERAGE.md](STOCK_UI_COVERAGE.md) |
-| Touchscreen screen reference | [TOUCHSCREEN_SCREEN_CATALOG.md](TOUCHSCREEN_SCREEN_CATALOG.md) |
+| Touchscreen host-capture procedure | [TOUCHSCREEN_SCREEN_CATALOG.md](TOUCHSCREEN_SCREEN_CATALOG.md) |
 | Native UI/backend protocol | [BACKEND_IPC_PROTOCOL.md](BACKEND_IPC_PROTOCOL.md) |
 | Fault handling policy | [FAULT_POLICY.md](FAULT_POLICY.md) |
-| WiFi USB setup | [WIFI_SETUP.md](WIFI_SETUP.md) |
-| Ethernet USB setup | [ETH_SETUP.md](ETH_SETUP.md) |
 | Source, license, and generated-data provenance | [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md) |
+
+Operator Wi-Fi, Ethernet, touchscreen, Web UI, Cura, and slicer guides are on
+the public site, not duplicated here.
 
 Component-specific build and implementation documentation also lives beside
 the code, including `ui/README.md` and `printsvc/README.md`.
@@ -81,3 +84,5 @@ promote an implementation or old test into current completion.
    `FAILED`, `BLOCKED`, and `PLANNED`.
 7. A checkbox means only that its exact item is satisfied. It never means the
    containing feature or release is complete.
+8. Operator how-to lives under `website/` / deneb3d.dev. Do not recopy those
+   guides into this directory.

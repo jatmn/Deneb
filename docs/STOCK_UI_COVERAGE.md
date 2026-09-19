@@ -1,5 +1,7 @@
 # Stock UI Coverage
 
+Operator screen catalog: https://deneb3d.dev/docs/touchscreen/
+
 This compares the stock Cygnus touchscreen menus on an UltiMaker 2+ Connect
 against the current native Deneb LVGL UI. The stock reference was checked
 against the extracted recovery image at `rootfs/home/cygnus/menu`.
@@ -45,7 +47,9 @@ Deneb now exposes:
 
    Deneb replaces the stock AP/captive-portal wizard with USB `wifi.txt`
    import. This avoids the stock Tornado wificonnect service, but it does not
-   reproduce the stock animated progress wizard.
+   reproduce the stock animated progress wizard. Operator USB import steps:
+   https://deneb3d.dev/docs/wifi-setup/ and
+   https://deneb3d.dev/docs/ethernet-setup/.
 
 2. Print preparation parity
 
@@ -76,7 +80,8 @@ navigation or safety-related actions.
 
    Deneb now displays printer/network address information and supports USB
    WiFi/Ethernet imports from `wifi.txt` and `eth.txt`. See
-   [WiFi setup](WIFI_SETUP.md) and [Ethernet setup](ETH_SETUP.md).
+   https://deneb3d.dev/docs/wifi-setup/ and
+   https://deneb3d.dev/docs/ethernet-setup/.
 
 3. Build plate leveling
 

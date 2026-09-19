@@ -36,7 +36,7 @@ else
     while IFS= read -r -d '' path; do
         case "$path" in
             # Operator install docs are guarded by ssh-bootstrap-patch-selftest.sh.
-            docs/GETTING_STARTED.md|docs/UPDATING.md|README.md) shell=true ;;
+            docs/GETTING_STARTED.md|README.md) shell=true ;;
             website/*)
                 ;;
             *.sh) shell=true ;;
