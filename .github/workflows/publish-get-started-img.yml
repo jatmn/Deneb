@@ -2,9 +2,10 @@
 name: Publish get-started image
 
 # Builds Deneb_get_started.img only. Do not attach .deneb packages here.
-# Called from release-please (tagged) and nightly-get-started (rolling).
-# GITHUB_TOKEN-created releases do not start a separate on: release workflow,
-# so upload happens in this same job.
+# Called from release-get-started (rolling latest) and nightly-get-started.
+# The image version token is a stock-updater compatibility number, not a
+# Deneb semver. GITHUB_TOKEN-created releases do not start a separate
+# on: release workflow, so upload happens in this same job.
 
 on:
   workflow_call:
@@ -85,7 +86,6 @@ jobs:
         run: |
           set -euo pipefail
           version=$VERSION
-          version=${version#get-started-v}
           version=${version#v}
           output=build/published-get-started
           bash tools/build-get-started.sh --version "$version" --output-directory "$output"

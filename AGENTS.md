@@ -38,9 +38,11 @@ unsafe motion, heating, flashing, update, and recovery behavior.
 - `COMPLIANCE.md`, `SECURITY.md`, and
   `docs/SOURCE_PROVENANCE.md` define publication, credential, and source
   boundaries. GitHub Releases currently publish `Deneb_get_started.img`
-  only: release-please for tagged `get-started-v*` versions, and
-  `nightly-get-started` when `tools/get-started-source-paths.txt` inputs
-  change. Do not attach `.deneb` packages to those workflows.
+  only. The rolling `get-started` release and `nightly-get-started`
+  pre-release rebuild when `tools/get-started-source-paths.txt` inputs
+  change. The image version token is a stock-updater compatibility
+  number, not a Deneb semver; do not bump it for overlay changes. Do not
+  attach `.deneb` packages to those workflows.
 
 Do not infer completion from a checkbox, implementation, old evidence file, or
 successful host test. Preserve the distinctions between `SOURCE`, `HOST`,

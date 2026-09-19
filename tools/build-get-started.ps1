@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "0.2.8", # x-release-please-version
+    [string]$Version = "0.2.8",
     [string]$OutputDirectory = "dist"
 )
 

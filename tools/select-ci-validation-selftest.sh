@@ -160,9 +160,9 @@ git -C "$repo" commit -qm workflow
 assert_lanes true true true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
-printf 'name: release-please\n' > "$repo/.github/workflows/release-please.yml"
+printf 'name: release-get-started\n' > "$repo/.github/workflows/release-get-started.yml"
 git -C "$repo" add .
-git -C "$repo" commit -qm release-please-workflow
+git -C "$repo" commit -qm release-get-started-workflow
 assert_lanes false true false "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"

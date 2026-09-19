@@ -66,7 +66,7 @@ else
                 ;;
             *.sh) shell=true ;;
             .github/workflows/ci.yml) shell=true; bootstrap=true ;;
-            .github/workflows/release-please.yml|.github/workflows/publish-get-started-img.yml|.github/workflows/nightly-get-started.yml)
+            .github/workflows/release-get-started.yml|.github/workflows/publish-get-started-img.yml|.github/workflows/nightly-get-started.yml)
                 shell=true
                 ;;
         esac

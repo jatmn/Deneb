@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "0.2.8", # x-release-please-version
+    [string]$Version = "0.2.8",
     [string]$OutputDirectory = "dist"
 )
 
@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 # Keep this in lockstep with tools/build-get-started.sh: first character must
 # be alphanumeric so Linux and Windows builders accept the same tokens.
+# The default is a stock-updater compatibility token, not a Deneb semver.
 if ($Version -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?$') {
     throw "Invalid -Version '$Version'. Use a token of letters, digits, '.', '_', '+', or '-' (for example 0.2.8)."
 }
