@@ -87,3 +87,8 @@ code can compile.
 The Debian/Linux release environment (including the optional WSL workflow) is documented in
 [`docs/WSL_BUILD_ENVIRONMENT.md`](docs/WSL_BUILD_ENVIRONMENT.md). A generated
 package is not valid unless the release wrapper completes all package audits.
+
+Get-started image versions come from Conventional Commits under
+`packages/ssh-bootstrap` (`feat` / `fix`). Nightly `Deneb_get_started.img`
+rebuilds only when those bootstrap sources change. Do not add `.deneb`
+publish jobs without an explicit maintainer decision.

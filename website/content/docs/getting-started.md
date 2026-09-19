@@ -24,8 +24,8 @@ If Deneb is already installed and you only need a newer package, use
 | --- | --- |
 | UltiMaker 2+ Connect | Working stock touchscreen firmware update path |
 | FAT32 USB drive | Used for both the bootstrap `.img` and later `.deneb` packages |
-| Build host | Native Debian/Linux, or Windows 10/11 with Debian WSL 2 |
-| Network access for the first build | Toolchain, ZeroMQ, lighttpd, and related pinned deps |
+| Build host | Only if you rebuild `Deneb_get_started.img` or a `.deneb` package: native Debian/Linux, or Windows 10/11 with Debian WSL 2 |
+| Network access for a local build | Toolchain, ZeroMQ, lighttpd, and related pinned deps |
 | Trusted local network only | Bootstrap enables SSH with the known password `deneb` and does not force a password change on login |
 
 Optional after install:
@@ -77,6 +77,21 @@ offers a tar-backed `.img` update lane. `Deneb_get_started.img` is that first
 bridge: it unlocks SSH and teaches the stock updater how to accept later
 Deneb-owned `.deneb` packages. The full native stack is **not** inside the
 bootstrap image.
+
+## Download or build the bootstrap image
+
+GitHub Releases attach `Deneb_get_started.img` (Deneb overlay only; no
+UltiMaker firmware). Prefer a tagged `get-started-v*` release. The
+`nightly-get-started` pre-release is rebuilt only when bootstrap sources
+change.
+
+1. Open https://github.com/jatmn/Deneb/releases
+2. Download `Deneb_get_started.img` and `Deneb_get_started.img.sha256`
+3. Verify the checksum, then continue at
+   [Step 3](#step-3-install-the-bootstrap-package-from-stock-firmware).
+
+Skip clone and Step 2 unless you want to rebuild the image. `.deneb` stack
+packages are not published from this automation yet.
 
 ## Step 1: Clone the repository
 

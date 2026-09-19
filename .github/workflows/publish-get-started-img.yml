@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Publish get-started image
+
+# Builds Deneb_get_started.img only. Do not attach .deneb packages here.
+# Called from release-please (tagged) and nightly-get-started (rolling).
+# GITHUB_TOKEN-created releases do not start a separate on: release workflow,
+# so upload happens in this same job.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Manifest version token passed to the builder
+        required: true
+        type: string
+      release_tag:
+        description: GitHub release tag to attach the image to
+        required: true
+        type: string
+      prerelease:
+        description: Mark or keep the GitHub release as a pre-release
+        required: false
+        type: boolean
+        default: false
+      latest:
+        description: Whether this release should be GitHub's latest
+        required: false
+        type: boolean
+        default: true
+      replace_notes:
+        description: Create the release if missing and replace its notes
+        required: false
+        type: boolean
+        default: false
+      title:
+        description: Release title used when replace_notes is true
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Manifest version token passed to the builder
+        required: true
+        type: string
+      release_tag:
+        description: GitHub release tag to attach the image to
+        required: true
+        type: string
+      prerelease:
+        description: Mark the GitHub release as a pre-release
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-get-started-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Install bootstrap image dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends python3 python3-venv
+          python3 -m venv build/bootstrap-python
+          build/bootstrap-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
+          echo "DENEB_BOOTSTRAP_PYTHON=$PWD/build/bootstrap-python/bin/python" >> "$GITHUB_ENV"
+
+      - name: Build get-started image
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version=$VERSION
+          version=${version#get-started-v}
+          version=${version#v}
+          output=build/published-get-started
+          bash tools/build-get-started.sh --version "$version" --output-directory "$output"
+          artifact=$output/Deneb_get_started.img
+          checksum=$artifact.sha256
+          expected_members='update.sh
+          README.md
+          manifest.txt
+          deneb-boot-320x240.png
+          deneb-splash-128x102.jpg
+          deneb-splash.rgb565'
+          actual_members=$(tar -tf "$artifact")
+          [ "$actual_members" = "$expected_members" ]
+          manifest_version=$(tar -xOf "$artifact" manifest.txt | awk -F= '$1 == "version" { print; exit }')
+          [ "$manifest_version" = "version=$version" ]
+          echo "ARTIFACT=$artifact" >> "$GITHUB_ENV"
+          echo "CHECKSUM=$checksum" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Publish image to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          LATEST: ${{ inputs.latest }}
+          REPLACE_NOTES: ${{ inputs.replace_notes }}
+          TITLE: ${{ inputs.title }}
+        run: |
+          set -euo pipefail
+          title=$TITLE
+          [ -n "$title" ] || title=$RELEASE_TAG
+          [ -n "${PRERELEASE:-}" ] || PRERELEASE=false
+          [ -n "${LATEST:-}" ] || LATEST=true
+          [ -n "${REPLACE_NOTES:-}" ] || REPLACE_NOTES=false
+          notes_file=$RUNNER_TEMP/get-started-release-notes.md
+          {
+            echo 'Deneb_get_started.img (Deneb overlay only; no UltiMaker firmware or rootfs).'
+            echo
+            echo "source_sha: $GITHUB_SHA"
+            echo "version: $PACKAGE_VERSION"
+          } > "$notes_file"
+          extra=()
+          if [ "$PRERELEASE" = true ]; then
+            extra+=(--prerelease)
+          fi
+          if [ "$LATEST" = true ]; then
+            extra+=(--latest=true)
+          else
+            extra+=(--latest=false)
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [ "$REPLACE_NOTES" = true ]; then
+              gh release edit "$RELEASE_TAG" --title "$title" --notes-file "$notes_file" --target "$GITHUB_SHA" "${extra[@]}"
+            fi
+          else
+            gh release create "$RELEASE_TAG" --title "$title" --notes-file "$notes_file" --target "$GITHUB_SHA" "${extra[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" "$ARTIFACT" "$CHECKSUM" --clobber

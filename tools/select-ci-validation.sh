@@ -27,6 +27,30 @@ fi
 native=false
 shell=false
 bootstrap=false
+
+script_dir=$(cd "$(dirname -- "$0")" && pwd)
+get_started_paths_file=$script_dir/get-started-source-paths.txt
+[ -f "$get_started_paths_file" ]
+[ -s "$get_started_paths_file" ]
+
+is_get_started_source() {
+    local path=$1
+    local spec
+    while IFS= read -r spec || [ -n "$spec" ]; do
+        case "$spec" in
+            ''|'#'*)
+                continue
+                ;;
+        esac
+        case "$path" in
+            "$spec"|"$spec"/*)
+                return 0
+                ;;
+        esac
+    done < "$get_started_paths_file"
+    return 1
+}
+
 if [[ "$full_validation" == true ]]; then
     native=true
     shell=true
@@ -42,12 +66,13 @@ else
                 ;;
             *.sh) shell=true ;;
             .github/workflows/ci.yml) shell=true; bootstrap=true ;;
-        esac
-        case "$path" in
-            assets/branding/*|packages/ssh-bootstrap/*|tools/bootstrap-requirements.txt|tools/png-to-rgb565.py|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1)
-                bootstrap=true
+            .github/workflows/release-please.yml|.github/workflows/publish-get-started-img.yml|.github/workflows/nightly-get-started.yml)
+                shell=true
                 ;;
         esac
+        if is_get_started_source "$path"; then
+            bootstrap=true
+        fi
         # Native cmake/fixture work is for firmware trees and the tools those
         # steps execute. Operator docs, UI markdown, policy scripts, the lane
         # selector, and USB/bootstrap packaging do not need that lane.
@@ -60,7 +85,7 @@ else
             ui/*)
                 native=true
                 ;;
-            tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/bootstrap-requirements.txt|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/ssh-bootstrap-patch-selftest.sh|tools/build-cura-plugin.ps1)
+            tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/bootstrap-requirements.txt|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/ssh-bootstrap-patch-selftest.sh|tools/build-cura-plugin.ps1|tools/get-started-source-changed.sh|tools/get-started-source-paths.txt)
                 ;;
             tools/*)
                 native=true

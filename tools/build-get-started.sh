@@ -9,7 +9,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-version=0.2.8
+version=0.2.8 # x-release-please-version
 output_directory=dist
 
 usage() {

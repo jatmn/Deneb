@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Nightly get-started image
+
+# Rebuilds Deneb_get_started.img only when bootstrap sources changed since the
+# last nightly-get-started source_sha. Do not publish .deneb packages here.
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if get-started sources did not change
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-get-started
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Skip when get-started sources are unchanged
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -euo pipefail
+          version_base=$(tr -d '[:space:]' < packages/ssh-bootstrap/version.txt)
+          short_sha=$(git rev-parse --short=12 HEAD)
+          day=$(date -u +%Y%m%d)
+          version="${version_base}-nightly.${day}+${short_sha}"
+          prev=
+          if notes=$(gh release view nightly-get-started --json body --jq .body 2>/dev/null); then
+            prev=$(printf '%s\n' "$notes" | awk '/^source_sha:/{print $2; exit}')
+          fi
+          build=true
+          if [ "$FORCE" != true ] && [ -n "$prev" ] && git cat-file -e "${prev}^{commit}" 2>/dev/null; then
+            changed=$(bash tools/get-started-source-changed.sh --since "$prev" | awk -F= '$1=="changed"{print $2; exit}')
+            if [ "$changed" = false ]; then
+              build=false
+            fi
+          fi
+          {
+            echo "build=$build"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "Nightly get-started build=$build version=$version previous_source_sha=${prev:-none}" >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    uses: ./.github/workflows/publish-get-started-img.yml
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      release_tag: nightly-get-started
+      prerelease: true
+      latest: false
+      replace_notes: true
+      title: get-started nightly
+    secrets: inherit

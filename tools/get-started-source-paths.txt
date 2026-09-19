@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Inputs that compose Deneb_get_started.img. Nightly skip, CI bootstrap-lane
+# selection, and this list must stay in lockstep. Directory entries match that
+# path and every file under it.
+assets/branding
+packages/ssh-bootstrap
+tools/bootstrap-requirements.txt
+tools/png-to-rgb565.py
+tools/build-get-started.sh
+tools/build-get-started.ps1
+tools/build-ssh-bootstrap.ps1
+tools/get-started-source-paths.txt

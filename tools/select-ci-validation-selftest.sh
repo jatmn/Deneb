@@ -160,6 +160,36 @@ git -C "$repo" commit -qm workflow
 assert_lanes true true true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
+printf 'name: release-please\n' > "$repo/.github/workflows/release-please.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm release-please-workflow
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'name: nightly\n' > "$repo/.github/workflows/nightly-get-started.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm nightly-workflow
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'name: publish\n' > "$repo/.github/workflows/publish-get-started-img.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm publish-workflow
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'assets/branding\n' > "$repo/tools/get-started-source-paths.txt"
+git -C "$repo" add .
+git -C "$repo" commit -qm get-started-paths
+assert_lanes false false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/get-started-source-changed.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm get-started-changed-helper
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" mv common/original.c docs/original.md
 git -C "$repo" commit -qm rename
 assert_lanes true false false "$(run_selector push "$before")"
