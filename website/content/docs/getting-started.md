@@ -81,17 +81,37 @@ bootstrap image.
 ## Download or build the bootstrap image
 
 GitHub Releases attach `Deneb_get_started.img` (Deneb overlay only; no
-UltiMaker firmware). Prefer the `get-started` release. The
-`nightly-get-started` pre-release is rebuilt only when bootstrap sources
-change.
+UltiMaker firmware). Prefer the `get-started` release; it updates on `main`
+pushes when bootstrap sources change. The `nightly-get-started` pre-release
+uses that same skip-if-unchanged rule on the daily schedule or a
+`nightly=true` dispatch, not on ordinary `main` pushes.
 
 1. Open https://github.com/jatmn/Deneb/releases
-2. Download `Deneb_get_started.img` and `Deneb_get_started.img.sha256`
-3. Verify the checksum, then continue at
-   [Step 3](#step-3-install-the-bootstrap-package-from-stock-firmware).
+2. Download `Deneb_get_started.img` and `Deneb_get_started.img.sha256` into
+   the same folder
+3. Verify the checksum in that folder:
 
-Skip clone and Step 2 unless you want to rebuild the image. `.deneb` stack
-packages are not published from this automation yet.
+   Native Debian/Linux:
+
+   ```sh
+   sha256sum --check Deneb_get_started.img.sha256
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   $expected = (Get-Content Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
+   $actual = (Get-FileHash Deneb_get_started.img -Algorithm SHA256).Hash.ToLowerInvariant()
+   if ($actual -ne $expected) { throw "Deneb_get_started.img checksum mismatch" }
+   ```
+
+4. Continue at
+   [Step 3](#step-3-install-the-bootstrap-package-from-stock-firmware). Use
+   that download folder as the image source instead of `dist/`.
+
+Do not copy the image if verification fails. Re-download both files and verify
+again before continuing. Skip clone and Step 2 unless you want to rebuild the
+image. `.deneb` stack packages are not published from this automation yet.
 
 ## Step 1: Clone the repository
 
@@ -182,30 +202,31 @@ Those arrive in the `.deneb` update package.
 
 ## Step 3: Install the bootstrap package from stock firmware
 
-Before copying the package to USB, verify it in the same environment where you
-built it.
+Before copying the package to USB, verify the image you will copy. Use the
+GitHub Releases download folder from above, or `dist/` after a local rebuild.
 
 Native Debian/Linux:
 
 ```sh
-cd dist
-sha256sum --check Deneb_get_started.img.sha256
-cd ..
+img_dir=dist   # or the folder that holds the GitHub Releases download
+(cd "$img_dir" && sha256sum --check Deneb_get_started.img.sha256)
 ```
 
 Windows PowerShell:
 
 ```powershell
-$expected = (Get-Content dist/Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
-$actual = (Get-FileHash dist/Deneb_get_started.img -Algorithm SHA256).Hash.ToLowerInvariant()
+$imgDir = "dist"   # or the folder that holds the GitHub Releases download
+$expected = (Get-Content (Join-Path $imgDir "Deneb_get_started.img.sha256")).Split()[0].ToLowerInvariant()
+$actual = (Get-FileHash (Join-Path $imgDir "Deneb_get_started.img") -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "Deneb_get_started.img checksum mismatch" }
 ```
 
-Do not install or copy the image if verification fails. Rebuild it and verify
-the replacement before continuing.
+Do not install or copy the image if verification fails. Rebuild or re-download
+it and verify the replacement before continuing.
 
-1. Copy only `dist/Deneb_get_started.img` to the root of a FAT32 USB drive.
-   Keeping one firmware file on the stick avoids ambiguous auto-selection.
+1. Copy only that verified `Deneb_get_started.img` (from `$img_dir` / `$imgDir`,
+   not a nested folder) to the root of a FAT32 USB drive. Keeping one firmware
+   file on the stick avoids ambiguous auto-selection.
 2. Before ejecting the drive, verify the copy that is actually on the USB
    filesystem. Replace the example mount or drive letter with yours.
 
@@ -213,7 +234,7 @@ the replacement before continuing.
 
    ```sh
    usb_image=/media/USERNAME/USB_LABEL/Deneb_get_started.img
-   expected=$(awk '{print $1}' dist/Deneb_get_started.img.sha256)
+   expected=$(awk '{print $1}' "$img_dir/Deneb_get_started.img.sha256")
    actual=$(sha256sum "$usb_image" | awk '{print $1}')
    [ "$actual" = "$expected" ] || { echo "USB image checksum mismatch" >&2; false; }
    ```
@@ -222,7 +243,7 @@ the replacement before continuing.
 
    ```powershell
    $usbImage = "E:\Deneb_get_started.img"
-   $expected = (Get-Content dist/Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
+   $expected = (Get-Content (Join-Path $imgDir "Deneb_get_started.img.sha256")).Split()[0].ToLowerInvariant()
    $actual = (Get-FileHash $usbImage -Algorithm SHA256).Hash.ToLowerInvariant()
    if ($actual -ne $expected) { throw "USB image checksum mismatch" }
    ```

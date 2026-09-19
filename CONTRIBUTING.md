@@ -90,6 +90,8 @@ package is not valid unless the release wrapper completes all package audits.
 
 `Deneb_get_started.img` uses a fixed stock-updater version token (currently
 `0.2.8`). Raise it only if a newer UltiMaker firmware would outrank it; do
-not bump it for Deneb overlay changes. Nightly and rolling GitHub Releases
-rebuild the image only when bootstrap sources change. Do not add `.deneb`
-publish jobs without an explicit maintainer decision.
+not bump it for Deneb overlay changes. The rolling `get-started` release
+rebuilds on `main` pushes only when bootstrap sources change. The
+`nightly-get-started` pre-release applies that same skip on the daily
+schedule or a `nightly=true` dispatch. Do not add `.deneb` publish jobs
+without an explicit maintainer decision.

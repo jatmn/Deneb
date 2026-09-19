@@ -144,9 +144,21 @@ jobs:
           else
             extra+=(--latest=false)
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" "${extra[@]}"
-          else
-            gh release create "$TAG" "${extra[@]}"
+          # source_sha in notes is the skip cursor. Create a placeholder
+          # release if needed, attach assets, then write source_sha so a
+          # failed upload cannot make the next run skip this SHA.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            create_extra=(--target "$GITHUB_SHA" --title "$TITLE"
+              --notes 'Deneb_get_started.img (Deneb overlay only; no UltiMaker firmware or rootfs).')
+            if [ "$PRERELEASE" = true ]; then
+              create_extra+=(--prerelease)
+            fi
+            if [ "$LATEST" = true ]; then
+              create_extra+=(--latest=true)
+            else
+              create_extra+=(--latest=false)
+            fi
+            gh release create "$TAG" "${create_extra[@]}"
           fi
           gh release upload "$TAG" "$ARTIFACT" "$CHECKSUM" --clobber
+          gh release edit "$TAG" "${extra[@]}"
