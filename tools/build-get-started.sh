@@ -9,6 +9,8 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# Stock-updater compatibility token. Raise only if newer UltiMaker firmware
+# would outrank this package. Do not bump for Deneb overlay changes.
 version=0.2.8
 output_directory=dist
 

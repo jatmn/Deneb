@@ -33,6 +33,9 @@ checkout venv, selects that exact interpreter, and runs the matching builder.
 Do not invoke a bare builder on a fresh host; system Python is not the locked
 bootstrap environment.
 
+GitHub Releases also publish this `Deneb_get_started.img` for hosts that do
+not rebuild it. `.deneb` stack packages are not published from that automation.
+
 ## Install
 
 This package is step one of the stock-firmware migration. The full operator

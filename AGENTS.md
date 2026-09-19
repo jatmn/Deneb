@@ -37,7 +37,14 @@ unsafe motion, heating, flashing, update, and recovery behavior.
   wrappers.
 - `COMPLIANCE.md`, `SECURITY.md`, and
   `docs/SOURCE_PROVENANCE.md` define publication, credential, and source
-  boundaries.
+  boundaries. GitHub Releases currently publish `Deneb_get_started.img`
+  only. The rolling `get-started` release rebuilds on `main` pushes when
+  `tools/get-started-source-paths.txt` inputs changed since that tag's
+  last `source_sha`. The `nightly-get-started` pre-release uses the same
+  skip rule on the daily schedule or a `nightly=true` dispatch, not on
+  ordinary `main` pushes. The image version token is a stock-updater
+  compatibility number, not a Deneb semver; do not bump it for overlay
+  changes. Do not attach `.deneb` packages to those workflows.
 
 Do not infer completion from a checkbox, implementation, old evidence file, or
 successful host test. Preserve the distinctions between `SOURCE`, `HOST`,
@@ -153,10 +160,11 @@ find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
   -type f -name '*.sh' -print0 | xargs -0 -r sh -n
 shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
   tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh \
-  tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh
+  tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh
 sh tools/write-package-checksum-selftest.sh
 sh tools/ssh-bootstrap-patch-selftest.sh
 bash tools/select-ci-validation-selftest.sh
+bash tools/get-started-source-changed.sh --selftest
 bash tools/deneb-compile-all-selftest.sh
 bash tools/deneb-stock-menu-prune-selftest.sh
 bash tools/deneb-printsvc-smoke-selftest.sh

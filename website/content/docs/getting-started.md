@@ -24,8 +24,8 @@ If Deneb is already installed and you only need a newer package, use
 | --- | --- |
 | UltiMaker 2+ Connect | Working stock touchscreen firmware update path |
 | FAT32 USB drive | Used for both the bootstrap `.img` and later `.deneb` packages |
-| Build host | Native Debian/Linux, or Windows 10/11 with Debian WSL 2 |
-| Network access for the first build | Toolchain, ZeroMQ, lighttpd, and related pinned deps |
+| Build host | Only if you rebuild `Deneb_get_started.img` or a `.deneb` package: native Debian/Linux, or Windows 10/11 with Debian WSL 2 |
+| Network access for a local build | Toolchain, ZeroMQ, lighttpd, and related pinned deps |
 | Trusted local network only | Bootstrap enables SSH with the known password `deneb` and does not force a password change on login |
 
 Optional after install:
@@ -77,6 +77,42 @@ offers a tar-backed `.img` update lane. `Deneb_get_started.img` is that first
 bridge: it unlocks SSH and teaches the stock updater how to accept later
 Deneb-owned `.deneb` packages. The full native stack is **not** inside the
 bootstrap image.
+
+## Download or build the bootstrap image
+
+GitHub Releases attach `Deneb_get_started.img` (Deneb overlay only; no
+UltiMaker firmware). Prefer the `get-started` release; it updates on `main`
+pushes when bootstrap sources change. The `nightly-get-started` pre-release
+uses that same skip-if-unchanged rule on the daily schedule or a
+`nightly=true` dispatch, not on ordinary `main` pushes.
+
+1. Open https://github.com/jatmn/Deneb/releases
+2. Download `Deneb_get_started.img` and `Deneb_get_started.img.sha256` into
+   the same folder
+3. Verify the checksum in that folder:
+
+   Native Debian/Linux:
+
+   ```sh
+   sha256sum --check Deneb_get_started.img.sha256
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   $expected = (Get-Content Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
+   $actual = (Get-FileHash Deneb_get_started.img -Algorithm SHA256).Hash.ToLowerInvariant()
+   if ($actual -ne $expected) { throw "Deneb_get_started.img checksum mismatch" }
+   ```
+
+4. Continue at
+   [Step 3](#step-3-install-the-bootstrap-package-from-stock-firmware). Set
+   `img_dir` / `$imgDir` there to this download folder (do not use `dist/`
+   unless you rebuilt in Step 2).
+
+Do not copy the image if verification fails. Re-download both files and verify
+again before continuing. Skip clone and Step 2 unless you want to rebuild the
+image. `.deneb` stack packages are not published from this automation yet.
 
 ## Step 1: Clone the repository
 
@@ -167,30 +203,34 @@ Those arrive in the `.deneb` update package.
 
 ## Step 3: Install the bootstrap package from stock firmware
 
-Before copying the package to USB, verify it in the same environment where you
-built it.
+Before copying the package to USB, verify the image you will copy. Set
+`img_dir` / `$imgDir` to the GitHub Releases download folder from above, or to
+`dist` only after a local rebuild.
 
 Native Debian/Linux:
 
 ```sh
-cd dist
-sha256sum --check Deneb_get_started.img.sha256
-cd ..
+img_dir=/path/to/download-folder   # folder that holds both GitHub Releases files
+# img_dir=dist                     # after a local rebuild from Step 2
+(cd "$img_dir" && sha256sum --check Deneb_get_started.img.sha256)
 ```
 
 Windows PowerShell:
 
 ```powershell
-$expected = (Get-Content dist/Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
-$actual = (Get-FileHash dist/Deneb_get_started.img -Algorithm SHA256).Hash.ToLowerInvariant()
+$imgDir = "C:\Users\YOU\Downloads"   # folder that holds both GitHub Releases files
+# $imgDir = "dist"                   # after a local rebuild from Step 2
+$expected = (Get-Content (Join-Path $imgDir "Deneb_get_started.img.sha256")).Split()[0].ToLowerInvariant()
+$actual = (Get-FileHash (Join-Path $imgDir "Deneb_get_started.img") -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "Deneb_get_started.img checksum mismatch" }
 ```
 
-Do not install or copy the image if verification fails. Rebuild it and verify
-the replacement before continuing.
+Do not install or copy the image if verification fails. Rebuild or re-download
+it and verify the replacement before continuing.
 
-1. Copy only `dist/Deneb_get_started.img` to the root of a FAT32 USB drive.
-   Keeping one firmware file on the stick avoids ambiguous auto-selection.
+1. Copy only that verified `Deneb_get_started.img` (from `$img_dir` / `$imgDir`,
+   not a nested folder) to the root of a FAT32 USB drive. Keeping one firmware
+   file on the stick avoids ambiguous auto-selection.
 2. Before ejecting the drive, verify the copy that is actually on the USB
    filesystem. Replace the example mount or drive letter with yours.
 
@@ -198,7 +238,7 @@ the replacement before continuing.
 
    ```sh
    usb_image=/media/USERNAME/USB_LABEL/Deneb_get_started.img
-   expected=$(awk '{print $1}' dist/Deneb_get_started.img.sha256)
+   expected=$(awk '{print $1}' "$img_dir/Deneb_get_started.img.sha256")
    actual=$(sha256sum "$usb_image" | awk '{print $1}')
    [ "$actual" = "$expected" ] || { echo "USB image checksum mismatch" >&2; false; }
    ```
@@ -207,7 +247,7 @@ the replacement before continuing.
 
    ```powershell
    $usbImage = "E:\Deneb_get_started.img"
-   $expected = (Get-Content dist/Deneb_get_started.img.sha256).Split()[0].ToLowerInvariant()
+   $expected = (Get-Content (Join-Path $imgDir "Deneb_get_started.img.sha256")).Split()[0].ToLowerInvariant()
    $actual = (Get-FileHash $usbImage -Algorithm SHA256).Hash.ToLowerInvariant()
    if ($actual -ne $expected) { throw "USB image checksum mismatch" }
    ```

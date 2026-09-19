@@ -160,6 +160,24 @@ git -C "$repo" commit -qm workflow
 assert_lanes true true true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
+printf 'name: get-started-img\n' > "$repo/.github/workflows/get-started-img.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm get-started-img-workflow
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'assets/branding\n' > "$repo/tools/get-started-source-paths.txt"
+git -C "$repo" add .
+git -C "$repo" commit -qm get-started-paths
+assert_lanes false false true "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/get-started-source-changed.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm get-started-changed-helper
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" mv common/original.c docs/original.md
 git -C "$repo" commit -qm rename
 assert_lanes true false false "$(run_selector push "$before")"

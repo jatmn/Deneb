@@ -32,7 +32,10 @@ Deneb should be an addon/mod kit built around user-supplied firmware or a
 user-owned printer. Release artifacts should contain only Deneb-owned files,
 metadata, manifests, signatures, scripts needed to install or remove Deneb
 changes, and license/notice files for third-party components that Deneb
-redistributes or links into shipped binaries.
+redistributes or links into shipped binaries. GitHub Releases may attach
+`Deneb_get_started.img` because that archive is a Deneb-owned overlay
+(`contains_vendor_files=false`). Do not attach UltiMaker firmware, extracted
+root filesystems, or other vendor images.
 
 ## Official Firmware Escape Hatch
 
