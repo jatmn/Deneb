@@ -171,4 +171,11 @@ git -C "$repo" add .
 git -C "$repo" commit -qm website
 assert_lanes false false false "$(run_selector push "$before")"
 
+before="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/website/content/docs"
+printf '# Getting started\n' > "$repo/website/content/docs/getting-started.md"
+git -C "$repo" add .
+git -C "$repo" commit -qm website-getting-started
+assert_lanes false true false "$(run_selector push "$before")"
+
 printf 'CI validation selector self-test: PASS\n'

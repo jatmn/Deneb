@@ -21,8 +21,9 @@ bash website/scripts/build.sh
 ## Deploy
 
 GitHub Actions workflow `.github/workflows/website.yml` builds on changes to
-this tree and, on `main`, uploads `website/public/` to a Bunny Storage Zone
-then purges the Pull Zone.
+this tree, `docs/GETTING_STARTED.md` (bootstrap host-package contract), and
+related assets, then on `main` uploads `website/public/` to a Bunny Storage
+Zone and purges the Pull Zone.
 
 Repository secrets:
 
@@ -41,4 +42,6 @@ path is retired.
 
 Operator guides under `website/content/docs/` are the public copies. In-repo
 `docs/GETTING_STARTED.md` keeps the CI-guarded bootstrap host-package list;
-do not recopy operator how-to into `docs/`.
+`website/content/docs/getting-started.md` Step 2 must stay aligned with it.
+`tools/ssh-bootstrap-patch-selftest.sh` greps both. Do not recopy operator
+how-to into `docs/`.

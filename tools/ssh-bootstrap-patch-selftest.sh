@@ -31,10 +31,32 @@ credential_line=$(grep -n '^set_shadow_hash root ' "$installer" | cut -d: -f1)
 [ "$preflight_line" -lt "$apply_line" ]
 [ "$apply_line" -lt "$credential_line" ]
 
-# GETTING_STARTED owns the bootstrap host-package list. README must not keep a
-# second apt recipe that can omit ca-certificates.
-grep -Fq 'ca-certificates python3 python3-venv tar' \
-    "$repo_root/docs/GETTING_STARTED.md"
+# GETTING_STARTED and the public getting-started page share the bootstrap
+# host-package and locked-Pillow contract. README must not keep a second apt
+# recipe that can omit ca-certificates.
+bootstrap_docs="$repo_root/docs/GETTING_STARTED.md
+$repo_root/website/content/docs/getting-started.md"
+bootstrap_markers='ca-certificates python3 python3-venv tar
+--require-hashes -r tools/bootstrap-requirements.txt
+DENEB_BOOTSTRAP_PYTHON'
+while IFS= read -r doc; do
+    [ -n "$doc" ] || continue
+    [ -f "$doc" ] || {
+        echo "Missing bootstrap contract doc: $doc" >&2
+        exit 1
+    }
+    while IFS= read -r marker; do
+        [ -n "$marker" ] || continue
+        grep -Fq -- "$marker" "$doc" || {
+            echo "Bootstrap contract marker missing in ${doc#"$repo_root"/}: $marker" >&2
+            exit 1
+        }
+    done <<EOF
+$bootstrap_markers
+EOF
+done <<EOF
+$bootstrap_docs
+EOF
 if grep -Eq 'apt-get install --no-install-recommends python3 python3-venv tar' \
     "$repo_root/README.md"; then
     echo "README.md must not duplicate a shortened bootstrap apt recipe" >&2

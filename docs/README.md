@@ -21,7 +21,11 @@ Public operator guides live at [deneb3d.dev](https://deneb3d.dev/).
    workstation and cross-build setup.
 
 [GETTING_STARTED.md](GETTING_STARTED.md) is the in-repo bootstrap host-package
-and locked-Pillow contract that CI still greps.
+and locked-Pillow contract that CI still greps. Keep Step 2 in
+`website/content/docs/getting-started.md` aligned with that file;
+`tools/ssh-bootstrap-patch-selftest.sh` checks both, and edits to
+`docs/GETTING_STARTED.md` trigger the Website workflow so deneb3d.dev
+rebuilds.
 
 ## Active technical documentation
 

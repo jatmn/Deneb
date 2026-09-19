@@ -18,18 +18,28 @@
 
     var img = dialog.querySelector("img");
 
+    function showZoom(link) {
+      var thumb = link.querySelector("img");
+      if (typeof dialog.showModal !== "function") {
+        return false;
+      }
+      img.src = link.href;
+      img.alt = thumb ? thumb.alt : "";
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+      return true;
+    }
+
     document.addEventListener("click", function (event) {
       var link = event.target.closest("a.deneb-zoom");
       if (!link) {
         return;
       }
-      event.preventDefault();
-      var thumb = link.querySelector("img");
-      img.src = link.href;
-      img.alt = thumb ? thumb.alt : "";
-      if (typeof dialog.showModal === "function") {
-        dialog.showModal();
+      if (!showZoom(link)) {
+        return;
       }
+      event.preventDefault();
     });
 
     dialog.addEventListener("click", function (event) {
