@@ -28,3 +28,4 @@ bash "${root}/scripts/prepare-assets.sh"
     cd "$root"
     HUGO_ENVIRONMENT=production "$hugo_bin" --gc --minify
 )
+bash "${root}/scripts/check-site-links.sh" --public "${root}/public"

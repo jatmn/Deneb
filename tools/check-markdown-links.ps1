@@ -14,6 +14,9 @@ Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter *.md |
         $text = Get-Content -LiteralPath $file.FullName -Raw
         foreach ($match in [regex]::Matches($text, '(?<!\!)\[[^\]]+\]\(([^)]+)\)')) {
             $target = $match.Groups[1].Value.Trim()
+            # Site-root /docs and /images wiki links are not local files.
+            # tools/check-publication-boundary.ps1 runs
+            # website/scripts/check-site-links.sh to map those routes.
             if ($target -match '^(https?://|mailto:|#|/)') { continue }
             $target = ($target -split '#', 2)[0]
             if ([string]::IsNullOrWhiteSpace($target)) { continue }

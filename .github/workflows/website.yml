@@ -64,6 +64,9 @@ jobs:
         run: |
           bash -n website/scripts/prepare-assets.sh
           bash -n website/scripts/build.sh
+          bash -n website/scripts/check-site-links.sh
+          bash -n website/scripts/check-site-links-selftest.sh
+          bash website/scripts/check-site-links-selftest.sh
           bash website/scripts/build.sh
 
       - name: Upload pages artifact

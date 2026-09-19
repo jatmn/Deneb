@@ -22,6 +22,15 @@ From the repository root, use `bash website/scripts/build.sh` instead.
 `scripts/prepare-assets.sh` downloads pinned FlexSearch into
 `assets/js/vendor/` (gitignored) after checking the SHA-256 pin.
 
+`scripts/check-site-links.sh` fails if a site-root `/docs/` or
+`/images/` target in `content/` does not map onto a content page or
+hugo.yaml mount. `scripts/build.sh` runs that check again against
+`public/` so missing built routes and heading fragments fail the
+Website job. `tools/check-publication-boundary.ps1` runs the same
+source check (and `scripts/check-site-links-selftest.sh`) so broken
+wiki navigation fails the required policy gate even when Website
+`build` is not a branch-protection context.
+
 ## Deploy
 
 GitHub Actions workflow `.github/workflows/website.yml` builds on changes to

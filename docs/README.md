@@ -25,7 +25,10 @@ and locked-Pillow contract that CI still greps. Keep Step 2 in
 `website/content/docs/getting-started.md` aligned with that file;
 `tools/ssh-bootstrap-patch-selftest.sh` checks both, and edits to
 `docs/GETTING_STARTED.md` trigger the Website workflow so deneb3d.dev
-rebuilds.
+rebuilds. Site-root `/docs/` and `/images/` links under
+`website/content` are checked by `website/scripts/check-site-links.sh`
+from `tools/check-publication-boundary.ps1` and after Hugo against
+`website/public/`.
 
 ## Active technical documentation
 
