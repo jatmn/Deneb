@@ -25,8 +25,9 @@ unsafe motion, heating, flashing, update, and recovery behavior.
 - `docs/README.md` defines documentation placement and status vocabulary.
 - `UM2C_MODDING_CHECKLIST.md` and the print-service ledgers are
   machine-audited acceptance inventories, not general status summaries.
-- `docs/GETTING_STARTED.md` and `docs/UPDATING.md` are the operator guides for
-  stock-firmware bootstrap and later `.deneb` package updates.
+- `docs/GETTING_STARTED.md` and `docs/UPDATING.md` are the in-repo operator
+  guides for stock-firmware bootstrap and later `.deneb` package updates.
+  The public copies live under `website/` and at deneb3d.dev.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.
@@ -41,7 +42,10 @@ successful host test. Preserve the distinctions between `SOURCE`, `HOST`,
 ## Technical Direction
 
 - Do not introduce a new implementation language, runtime, framework, build
-  system, or service.
+  system, or service **on the printer, in firmware services, or in host
+  packaging**. The public docs site under `website/` is an explicit exception:
+  Hugo + Hextra, GitHub Actions, and Bunny static hosting only. It must not
+  add Python, ship a target runtime, or replace the printer Web UI.
 - New Python source, dependencies, tools, generated Python, and target-side
   Python use are forbidden.
 - Existing Python files are bounded legacy/host integration exceptions. Only
@@ -70,6 +74,8 @@ successful host test. Preserve the distinctions between `SOURCE`, `HOST`,
 - `dfsvc/`: native C Digital Factory connector.
 - `cura/`: existing Cura compatibility plugin; Python exception, not a
   general implementation pattern.
+- `website/`: public landing page and operator guides for deneb3d.dev (Hugo +
+  Hextra). Not a printer runtime.
 - `tools/`: build, audit, fixture, and device scripts.
 - `docs/evidence/`: dated proof for a named package and workflow.
 - `docs/archive/`: superseded or completed plans, never current truth.

@@ -37,6 +37,8 @@ else
         case "$path" in
             # Operator install docs are guarded by ssh-bootstrap-patch-selftest.sh.
             docs/GETTING_STARTED.md|docs/UPDATING.md|README.md) shell=true ;;
+            website/*)
+                ;;
             *.sh) shell=true ;;
             .github/workflows/ci.yml) shell=true; bootstrap=true ;;
         esac

@@ -5,6 +5,9 @@ current project status.
 
 ## Start here
 
+Public operator guides live at [deneb3d.dev](https://deneb3d.dev/). The Markdown
+files below remain the in-repo copies that CI and agents still read.
+
 1. [Getting started](GETTING_STARTED.md) — first install from stock UltiMaker
    firmware through bootstrap and the initial `.deneb` package.
 2. [Updating Deneb](UPDATING.md) — day-2 `.deneb` package updates and when to

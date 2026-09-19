@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MPL-2.0
+baseURL: https://deneb3d.dev/
+title: Deneb
+defaultContentLanguage: en
+enableGitInfo: true
+enableRobotsTXT: true
+disableKinds:
+  - taxonomy
+  - term
+
+module:
+  imports:
+    - path: github.com/imfing/hextra
+      mounts:
+        - source: layouts
+          target: layouts
+        - source: assets
+          target: assets
+        - source: data
+          target: data
+        - source: i18n
+          target: i18n
+  mounts:
+    - source: content
+      target: content
+    - source: static
+      target: static
+    - source: layouts
+      target: layouts
+    - source: assets
+      target: assets
+    - source: i18n
+      target: i18n
+    - source: ../assets/branding/deneb-loading-mark-48x48.png
+      target: static/images/branding/deneb-loading-mark-48x48.png
+    - source: ../assets/branding/deneb-readme-banner.jpg
+      target: static/images/branding/deneb-readme-banner.jpg
+    - source: ../docs/touchscreen-screens
+      target: static/images/screens
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    noClasses: false
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: Search
+      weight: 2
+      params:
+        type: search
+    - name: GitHub
+      weight: 3
+      url: https://github.com/jatmn/Deneb
+      params:
+        icon: github
+    - name: Theme
+      weight: 4
+      params:
+        type: theme-toggle
+
+params:
+  description: Community firmware-mod for the UltiMaker 2+ Connect. Local-first printing, native touchscreen, and a trusted-LAN Web UI.
+  navbar:
+    displayTitle: true
+    displayLogo: true
+    width: wide
+    logo:
+      path: images/branding/deneb-loading-mark-48x48.png
+      dark: images/branding/deneb-loading-mark-48x48.png
+      link: /
+      width: 28
+      height: 28
+  footer:
+    displayCopyright: true
+    displayPoweredBy: false
+    width: wide
+  theme:
+    default: dark
+    displayToggle: true
+  page:
+    width: wide
+  search:
+    enable: true
+    type: flexsearch
+    flexsearch:
+      index: content
+      tokenize: forward
+      js: js/vendor/flexsearch.bundle.min.js
+  editURL:
+    enable: true
+    base: https://github.com/jatmn/Deneb/edit/main/website/content
+  displayUpdatedDate: true
+  dateFormat: 2 January 2006

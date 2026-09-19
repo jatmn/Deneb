@@ -25,7 +25,9 @@ the requested work.
 ## Technical Direction
 
 - Do not introduce a new implementation language, runtime, build system, or
-  framework.
+  framework on the printer or in firmware/host packaging. The `website/`
+  public docs site (Hugo + Hextra) is the approved exception for
+  deneb3d.dev.
 - New Python source, dependencies, tools, generated Python, or target-side
   Python runtime use are explicitly forbidden.
 - Existing Python files do not make Python an accepted Deneb implementation

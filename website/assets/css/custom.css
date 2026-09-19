@@ -1,0 +1,73 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+:root {
+  --primary-hue: 351deg;
+  --primary-saturation: 79%;
+  --primary-lightness: 59%;
+}
+
+@layer theme {
+  :root {
+    --hx-default-sans-font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --hx-default-heading-font-family: "Space Grotesk", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --hx-default-mono-font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+}
+
+html {
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6,
+.hextra-nav-container,
+.hextra-hero-headline {
+  font-family: "Space Grotesk", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+code, kbd, pre, samp,
+.hextra-code-block {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html.dark body,
+html[class~="dark"] body {
+  background: #1a1a2e;
+}
+
+.hextra-footer {
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.deneb-footer-legal,
+.deneb-footer-host {
+  margin: 0 0 0.5rem;
+}
+
+.deneb-footer-host a {
+  font-weight: 600;
+}
+
+.deneb-screen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+
+.deneb-screen-grid figure {
+  margin: 0;
+}
+
+.deneb-screen-grid img {
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  border: 1px solid #2a2a4a;
+  background: #0f111f;
+}
+
+.deneb-hero-art {
+  display: block;
+  max-width: min(640px, 100%);
+  margin: 1.5rem auto 0;
+}

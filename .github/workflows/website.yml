@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "assets/branding/**"
+      - "docs/touchscreen-screens/**"
+      - ".github/workflows/website.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - "website/**"
+      - "assets/branding/**"
+      - "docs/touchscreen-screens/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: website-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: website/go.sum
+
+      - name: Install Hugo extended
+        run: |
+          HUGO_VERSION="$(tr -d '[:space:]' < website/vendor-pins/hugo.version)"
+          curl -fsSL -o /tmp/hugo.tgz \
+            "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
+          tar -xzf /tmp/hugo.tgz -C /tmp hugo
+          sudo mv /tmp/hugo /usr/local/bin/hugo
+          hugo version
+
+      - name: Build site
+        run: |
+          bash -n website/scripts/prepare-assets.sh
+          bash -n website/scripts/build.sh
+          bash website/scripts/build.sh
+
+      - name: Upload pages artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deneb3d-site
+          path: website/public
+          if-no-files-found: error
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download built site
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: deneb3d-site
+          path: public
+
+      - name: Upload to Bunny Storage and purge
+        env:
+          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
+          BUNNY_STORAGE_PASSWORD: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+          BUNNY_STORAGE_ENDPOINT: ${{ secrets.BUNNY_STORAGE_ENDPOINT }}
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+          BUNNY_PULL_ZONE_ID: ${{ secrets.BUNNY_PULL_ZONE_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${BUNNY_STORAGE_ZONE:-}" || -z "${BUNNY_STORAGE_PASSWORD:-}" ||
+                -z "${BUNNY_STORAGE_ENDPOINT:-}" || -z "${BUNNY_API_KEY:-}" ||
+                -z "${BUNNY_PULL_ZONE_ID:-}" ]]; then
+            echo "Bunny secrets are not configured; skipping deploy."
+            exit 0
+          fi
+          cd public
+          find . -type f | while IFS= read -r file; do
+            filepath="${file#./}"
+            curl -fsS -X PUT \
+              "${BUNNY_STORAGE_ENDPOINT%/}/${BUNNY_STORAGE_ZONE}/${filepath}" \
+              -H "AccessKey: ${BUNNY_STORAGE_PASSWORD}" \
+              --upload-file "$filepath" >/dev/null
+          done
+          curl -fsS -X POST \
+            "https://api.bunny.net/pullzone/${BUNNY_PULL_ZONE_ID}/purgeCache" \
+            -H "AccessKey: ${BUNNY_API_KEY}" >/dev/null
+          echo "Uploaded and purged Bunny Pull Zone ${BUNNY_PULL_ZONE_ID}"

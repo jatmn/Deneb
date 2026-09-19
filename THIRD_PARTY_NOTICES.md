@@ -81,6 +81,18 @@ in source form under CC0-1.0. The stock legal screen was used only as a
 comparison point: this notice inventory is derived from the actual Deneb
 payload, not copied from stock notices.
 
+## Public website (deneb3d.dev)
+
+These components are used to generate or render the public docs site. They are
+not installed on the printer.
+
+- Hugo extended 0.166.0, Apache-2.0, https://github.com/gohugoio/hugo
+- Hextra, MIT, https://github.com/imfing/hextra (Hugo module)
+- FlexSearch 0.8.143, Apache-2.0, https://github.com/nextapps-de/flexsearch
+  (fetched at build; pin in `website/vendor-pins/flexsearch.bundle.min.js.sha256`)
+- Space Grotesk, OFL-1.1, loaded from https://fonts.bunny.net
+- IBM Plex Sans and IBM Plex Mono, OFL-1.1, loaded from https://fonts.bunny.net
+
 ## Ongoing Release Checks
 
 - Re-run the dependency and provenance inventory when a dependency or generated dataset changes.
