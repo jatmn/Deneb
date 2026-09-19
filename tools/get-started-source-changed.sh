@@ -13,8 +13,9 @@ usage: tools/get-started-source-changed.sh --since COMMIT [options]
 Compare get-started image inputs since COMMIT.
 
 Options:
-  --since COMMIT     Base commit, tag, or SHA (required except --selftest)
+  --since COMMIT     Base commit, tag, or SHA (required except --version/--selftest)
   --until COMMIT     Tip commit (default: HEAD)
+  --version          Print the stock-updater version token and exit
   --selftest         Run embedded checks and exit
   -h, --help         Show this help
 USAGE
@@ -27,9 +28,11 @@ die() {
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 paths_file=$script_dir/get-started-source-paths.txt
+manifest_file=$script_dir/../packages/ssh-bootstrap/manifest.txt
 since=
 until_rev=HEAD
 selftest=false
+print_version=false
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -40,6 +43,10 @@ while [ "$#" -gt 0 ]; do
         --until)
             until_rev=${2:?missing value}
             shift 2
+            ;;
+        --version)
+            print_version=true
+            shift
             ;;
         --selftest)
             selftest=true
@@ -55,20 +62,25 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-write_git_pathspecs() {
-    dest=$1
+stock_version() {
+    awk -F= '/^version=/ {
+        sub(/#.*/, "", $2)
+        gsub(/[[:space:]]/, "", $2)
+        print $2
+        exit
+    }' "$manifest_file"
+}
+
+pathspecs() {
     spec=
-    : > "$dest"
-    [ -f "$paths_file" ] || die "Missing get-started path list: $paths_file"
     while IFS= read -r spec || [ -n "$spec" ]; do
         case "$spec" in
             ''|'#'*)
                 continue
                 ;;
         esac
-        printf '%s\n' "$spec" >> "$dest"
+        printf '%s\n' "$spec"
     done < "$paths_file"
-    [ -s "$dest" ] || die "No get-started paths listed in $paths_file"
 }
 
 matches_get_started_source() {
@@ -90,10 +102,9 @@ matches_get_started_source() {
 }
 
 report_changed() {
-    value=$1
-    printf 'changed=%s\n' "$value"
+    printf 'changed=%s\n' "$1"
     if [ -n "${GITHUB_OUTPUT:-}" ]; then
-        printf 'changed=%s\n' "$value" >> "$GITHUB_OUTPUT"
+        printf 'changed=%s\n' "$1" >> "$GITHUB_OUTPUT"
     fi
 }
 
@@ -126,6 +137,7 @@ run_selftest() {
     printf '%s\n' "$output" | grep -qx 'changed=true'
 
     grep -Fq 'get-started-source-paths.txt' "$script_dir/select-ci-validation.sh"
+    [ -n "$(stock_version)" ]
     matches_get_started_source 'packages/ssh-bootstrap/manifest.txt'
     matches_get_started_source 'assets/branding/deneb_splash_480x272.png'
     matches_get_started_source 'tools/build-get-started.sh'
@@ -142,18 +154,24 @@ if [ "$selftest" = true ]; then
     exit 0
 fi
 
+if [ "$print_version" = true ]; then
+    version=$(stock_version)
+    [ -n "$version" ] || die "Missing version in $manifest_file"
+    printf '%s\n' "$version"
+    exit 0
+fi
+
 [ -n "$since" ] || die "Missing --since"
+[ -f "$paths_file" ] || die "Missing get-started path list: $paths_file"
+specs=$(pathspecs)
+[ -n "$specs" ] || die "No get-started paths listed in $paths_file"
 
 git cat-file -e "${since}^{commit}" 2>/dev/null || die "Unknown --since revision: $since"
 git cat-file -e "${until_rev}^{commit}" 2>/dev/null || die "Unknown --until revision: $until_rev"
 
-pathspec_file=$(mktemp)
-trap 'rm -f "$pathspec_file"' EXIT
-write_git_pathspecs "$pathspec_file"
-
 # Word-split is intentional: get-started pathspecs do not contain spaces.
-# shellcheck disable=SC2046
-if git diff --quiet "$since" "$until_rev" -- $(cat "$pathspec_file"); then
+# shellcheck disable=SC2086
+if git diff --quiet "$since" "$until_rev" -- $specs; then
     report_changed false
 else
     status=$?

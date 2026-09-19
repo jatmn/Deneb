@@ -160,21 +160,9 @@ git -C "$repo" commit -qm workflow
 assert_lanes true true true "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"
-printf 'name: release-get-started\n' > "$repo/.github/workflows/release-get-started.yml"
+printf 'name: get-started-img\n' > "$repo/.github/workflows/get-started-img.yml"
 git -C "$repo" add .
-git -C "$repo" commit -qm release-get-started-workflow
-assert_lanes false true false "$(run_selector push "$before")"
-
-before="$(git -C "$repo" rev-parse HEAD)"
-printf 'name: nightly\n' > "$repo/.github/workflows/nightly-get-started.yml"
-git -C "$repo" add .
-git -C "$repo" commit -qm nightly-workflow
-assert_lanes false true false "$(run_selector push "$before")"
-
-before="$(git -C "$repo" rev-parse HEAD)"
-printf 'name: publish\n' > "$repo/.github/workflows/publish-get-started-img.yml"
-git -C "$repo" add .
-git -C "$repo" commit -qm publish-workflow
+git -C "$repo" commit -qm get-started-img-workflow
 assert_lanes false true false "$(run_selector push "$before")"
 
 before="$(git -C "$repo" rev-parse HEAD)"

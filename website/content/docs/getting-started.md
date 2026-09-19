@@ -83,8 +83,7 @@ bootstrap image.
 GitHub Releases attach `Deneb_get_started.img` (Deneb overlay only; no
 UltiMaker firmware). Prefer the `get-started` release. The
 `nightly-get-started` pre-release is rebuilt only when bootstrap sources
-change. The version number inside the image is a stock-updater
-compatibility token, not a Deneb release counter.
+change.
 
 1. Open https://github.com/jatmn/Deneb/releases
 2. Download `Deneb_get_started.img` and `Deneb_get_started.img.sha256`
