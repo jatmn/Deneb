@@ -45,7 +45,9 @@ Repository secrets:
 
 - `BUNNY_STORAGE_ZONE`
 - `BUNNY_STORAGE_PASSWORD`
-- `BUNNY_STORAGE_ENDPOINT` (example: `https://storage.bunnycdn.com`)
+- `BUNNY_STORAGE_ENDPOINT` — regional host only, for example
+  `https://storage.bunnycdn.com`. If the Access tab URL already ends with the
+  zone name, deploy strips the duplicate so files still land at the zone root.
 - `BUNNY_API_KEY`
 - `BUNNY_PULL_ZONE_ID`
 
@@ -54,7 +56,9 @@ subresource integrity still matches.
 
 The first production deploy overlays files into Bunny Storage. Removed pages
 are not deleted automatically; purge the zone or delete stale objects if a
-path is retired.
+path is retired. If an earlier deploy nested the site under a folder named
+after the storage zone, delete that folder in the Storage file manager after
+the next root upload.
 
 Operator guides under `website/content/docs/` are the public copies. In-repo
 `docs/GETTING_STARTED.md` keeps the CI-guarded bootstrap host-package list;
