@@ -34,8 +34,9 @@ metadata, manifests, signatures, scripts needed to install or remove Deneb
 changes, and license/notice files for third-party components that Deneb
 redistributes or links into shipped binaries. GitHub Releases may attach
 `Deneb_get_started.img` because that archive is a Deneb-owned overlay
-(`contains_vendor_files=false`). Do not attach UltiMaker firmware, extracted
-root filesystems, or other vendor images.
+(`contains_vendor_files=false`), and `DenebUM2CNetworkPrinting.curapackage`
+because it is the Deneb-owned Cura plugin. Do not attach UltiMaker firmware,
+extracted root filesystems, or other vendor images.
 
 ## Official Firmware Escape Hatch
 

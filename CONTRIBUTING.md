@@ -94,4 +94,6 @@ not bump it for Deneb overlay changes. The rolling `get-started` release
 rebuilds on `main` pushes only when bootstrap sources change. The
 `nightly-get-started` pre-release applies that same skip on the daily
 schedule or a `nightly=true` dispatch. Do not add `.deneb` publish jobs
-without an explicit maintainer decision.
+without an explicit maintainer decision. The Cura plugin package is published
+by `.github/workflows/cura-plugin.yml` on its own `cura-plugin` release. Do
+not attach it to the get-started releases.

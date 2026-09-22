@@ -143,14 +143,11 @@ Connect materials, variants, quality profiles, and printer presets. Do not
 patch Cura's bundled resources or copy definition files into Cura's user
 profile directly.
 
-Build the Cura plugin package with:
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/build-cura-plugin.ps1
-```
-
-Install `dist/DenebUM2CNetworkPrinting.curapackage` through Cura's package
+Install the published `DenebUM2CNetworkPrinting.curapackage` from
+https://github.com/jatmn/Deneb/releases/tag/cura-plugin through Cura's package
 install flow, then restart Cura so the plugin can register its resources before
-network discovery loads machine metadata.
+network discovery loads machine metadata. Source builds of that same package
+stay in [CURA_INTEGRATION.md](CURA_INTEGRATION.md#cura-plugin-build).
 
 The Cura local-network path implements the single-printer cluster endpoints that
 Cura 5.13 polls for monitor, upload, materials, and basic print-job actions.

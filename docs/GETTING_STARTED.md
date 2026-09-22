@@ -11,9 +11,11 @@ in `README.md`.
 Day-2 `.deneb` updates for operators: https://deneb3d.dev/docs/updating/
 
 Operators can download a built `Deneb_get_started.img` from
-https://github.com/jatmn/Deneb/releases instead of running this host build.
-This file remains the rebuild contract. GitHub Releases do not publish `.deneb`
-stack packages.
+https://github.com/jatmn/Deneb/releases/tag/get-started instead of running this
+host build. This file remains the rebuild contract. GitHub Releases do not
+publish `.deneb` stack packages. The Cura plugin package is a separate
+`cura-plugin` release:
+https://github.com/jatmn/Deneb/releases/tag/cura-plugin.
 
 ## Step 2: Build the get-started bootstrap package
 

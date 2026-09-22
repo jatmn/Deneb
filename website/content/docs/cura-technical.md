@@ -23,6 +23,7 @@ For controller-command differences and non-Cura profile requirements, see
   single-printer `/cluster-api/v1/` endpoints Cura polls.
 - `cura/plugins/DenebUM2CNetworkPrinting` is the Cura plugin package source.
 - `tools/build-cura-plugin.ps1` builds `dist/DenebUM2CNetworkPrinting.curapackage`.
+- The rolling [`cura-plugin` release](https://github.com/jatmn/Deneb/releases/tag/cura-plugin) publishes that built package. It is not attached to the get-started image release.
 
 ## Discovery Model
 
@@ -98,8 +99,15 @@ driver-side replacement and live validation of this flow.
 
 ## Cura Plugin Build
 
-The plugin is built locally; the current GitHub release workflows publish only
-the bootstrap image. There is no published Deneb plugin package to download.
+Operators download the built package from the
+[Cura plugin release](https://github.com/jatmn/Deneb/releases/tag/cura-plugin):
+`DenebUM2CNetworkPrinting.curapackage` and
+`DenebUM2CNetworkPrinting.curapackage.sha256`. That release updates on `main`
+when the plugin sources change. It is a desktop plugin, not printer firmware,
+and it is not attached to the `get-started` image release.
+
+The steps below rebuild the same package from source. No printer firmware
+build is needed.
 
 On a Windows computer with Git and PowerShell installed, clone the repository
 if you do not already have it:
