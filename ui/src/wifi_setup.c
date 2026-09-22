@@ -336,6 +336,10 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
     if (rc != 0)
         return WIFI_ERR_NET_FAIL;
 
+    /* Reload NTP daemon when import changed time servers (matches UCI apply). */
+    if (cfg->ntp_server[0] != '\0')
+        system("/etc/init.d/sysntpd restart >/dev/null 2>&1");
+
     return WIFI_OK;
 }
 

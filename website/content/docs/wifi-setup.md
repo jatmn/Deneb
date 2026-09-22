@@ -69,6 +69,10 @@ dots are recommended.
 ### Optional — Time
 
 The examples use the [US NTP pool](https://www.ntppool.org/zone/us).
+Leaving out `ntp` keeps the existing time-server list; it does not reset it.
+This setting is shared by Wi-Fi and Ethernet. Importing an `ntp` line saves
+the new list and restarts the time service so sync uses it (same apply step as
+[change time servers over SSH](#advanced-change-time-servers-over-ssh)).
 
 | Field        | Description                  | Example                         | Default                |
 |--------------|------------------------------|---------------------------------|------------------------|
@@ -184,9 +188,9 @@ encryption=wep
 - **Encoding**: Use plain ASCII or UTF-8. No BOM. Use Unix or Windows line
   endings (both work).
 
-- **NTP**: Importing an `ntp` line replaces the printer's saved time-server
-  list. Leaving that line out keeps the existing list; it does not restore
-  defaults. This setting is shared by Wi-Fi and Ethernet.
+- **NTP**: Importing an `ntp` line replaces the saved time-server list and
+  restarts the time service. Leaving that line out keeps the existing list; it
+  does not restore defaults. This setting is shared by Wi-Fi and Ethernet.
 
 ## Advanced: change time servers over SSH
 

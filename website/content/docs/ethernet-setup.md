@@ -57,7 +57,9 @@ Only alphanumeric characters, hyphens, and dots are recommended.
 
 The examples use the [US NTP pool](https://www.ntppool.org/zone/us).
 Leaving out `ntp` keeps the existing time-server list; it does not reset it.
-This setting is shared by Ethernet and Wi-Fi. For manual commands, see
+This setting is shared by Ethernet and Wi-Fi. Importing an `ntp` line saves
+the new list and restarts the time service so sync uses it. For the same
+apply step over SSH, see
 [change time servers over SSH](/docs/wifi-setup/#advanced-change-time-servers-over-ssh).
 
 | Field  | Description          | Example                  | Default                |

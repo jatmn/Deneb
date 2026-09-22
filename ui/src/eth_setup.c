@@ -200,6 +200,10 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
     if (rc != 0)
         return ETH_ERR_NET_FAIL;
 
+    /* Reload NTP daemon when import changed time servers (matches UCI apply). */
+    if (cfg->ntp_server[0] != '\0')
+        system("/etc/init.d/sysntpd restart >/dev/null 2>&1");
+
     return ETH_OK;
 }
 
