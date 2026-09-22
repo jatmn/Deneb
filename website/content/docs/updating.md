@@ -6,7 +6,7 @@ weight: 20
 
 This guide covers day-2 package updates after the first successful Deneb
 install. For the stock-firmware bootstrap path, start with
-[Getting Started](/docs/getting-started/).
+[Technical installation](/docs/getting-started/).
 
 ## Update model
 
@@ -196,13 +196,13 @@ Use that Cygnus USB path when you need the bootstrap lane itself:
   and the printer is still on the stock/bootstrap UI
 
 Rebuild it by completing
-[Getting Started: Step 2](/docs/getting-started/#step-2-build-the-get-started-bootstrap-package)
+[Technical installation: Step 2](/docs/getting-started/#step-2-build-the-get-started-bootstrap-package)
 for the current checkout and host. That section owns the hash-locked Pillow
 venv and the required `DENEB_BOOTSTRAP_PYTHON` selection; do not substitute a
 bare builder command or a system-wide Pillow installation.
 
 Then install it from the stock/bootstrap USB firmware update flow exactly as
-in [Getting Started](/docs/getting-started/). The filename `Deneb_get_started.img`
+in [Technical installation](/docs/getting-started/). The filename `Deneb_get_started.img`
 is part of the allowed reinstall path on that updater.
 
 Bootstrap reinstall does not by itself replace a full native stack. If the
@@ -254,7 +254,7 @@ needs the bootstrap bridge first.
 
 ## Related documents
 
-- [Getting Started](/docs/getting-started/)
+- [Technical installation](/docs/getting-started/)
 - [Build environment](/docs/build-environment/)
 - [Project status](https://github.com/jatmn/Deneb/blob/main/docs/PROJECT_STATUS.md)
 - [UI package notes](https://github.com/jatmn/Deneb/blob/main/ui/README.md)

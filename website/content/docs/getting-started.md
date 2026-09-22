@@ -1,8 +1,14 @@
 ---
-title: Getting started
-weight: 10
+title: Technical installation
+weight: 15
 ---
 
+Want the simpler download-and-USB instructions? Start with the
+[Getting started (easy guide)](/docs/quick-start/).
+
+This technical guide covers building your own packages, detailed verification,
+SSH checks, and recovery. If you used the prebuilt image already, continue at
+[Step 4: Build the full Deneb update package](#step-4-build-the-full-deneb-update-package).
 
 This guide is the first-install path from **stock UltiMaker 2+ Connect
 firmware** to a working experimental Deneb stack.
@@ -258,6 +264,9 @@ it and verify the replacement before continuing.
 4. On stock firmware open the firmware update flow and choose install from USB.
    The exact stock labels vary by version, but the path is the normal
    Maintenance / Update Firmware USB install.
+   If stock firmware only offers an internet update, disconnect the printer
+   from Ethernet and Wi-Fi, then leave and reopen this screen to show the USB
+   option. You can reconnect after the bootstrap install.
 5. Select `Deneb_get_started.img`.
 6. Wait for the package to finish. The installer schedules a reboot watchdog and
    reboots the printer.
@@ -312,6 +321,10 @@ bootstrap package is safe to reinstall from USB if needed; the package name
 
 ## Step 4: Build the full Deneb update package
 
+If you installed the prebuilt image without cloning the repository, complete
+[Step 1](#step-1-clone-the-repository) first. Run the build commands from that
+checkout. You can skip Step 2 when the prebuilt image is already installed.
+
 The full stack is packaged as `dist/Deneb_Update_<version>.deneb`, with a
 post-audit `.deneb.sha256` sidecar published by the successful release wrapper.
 
@@ -336,7 +349,9 @@ bash tools/build-update-release.sh
 
 ### Windows with Debian WSL 2
 
-Complete the Windows/WSL lane's [Setup](/docs/build-environment/#setup) and
+Start with the Windows/WSL lane's
+[Prerequisites](/docs/build-environment/#prerequisites), then complete
+[Setup](/docs/build-environment/#setup) and
 [Build and audit](/docs/build-environment/#build-and-audit) sections. That guide
 owns the first-build dependency switches, later rebuild command, environment
 verification, and recovery sequence; follow it from setup through the verified

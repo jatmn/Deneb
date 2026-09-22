@@ -60,6 +60,13 @@ path is retired. If an earlier deploy nested the site under a folder named
 after the storage zone, delete that folder in the Storage file manager after
 the next root upload.
 
+The homepage and docs index lead to the beginner guide at
+`/docs/quick-start/`. The technical installation article retains
+`/docs/getting-started/` and its heading links for existing bookmarks.
+Sidebar categories use Hextra's `sidebar.separator` front matter and page
+weights. Their pages also provide category links for mobile navigation.
+Keep the docs index grouped in the same order.
+
 Operator guides under `website/content/docs/` are the public copies. In-repo
 `docs/GETTING_STARTED.md` keeps the CI-guarded bootstrap host-package list;
 `website/content/docs/getting-started.md` Step 2 must stay aligned with it.

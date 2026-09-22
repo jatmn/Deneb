@@ -3,7 +3,7 @@
 
 {{- if site.Params.displayUpdatedDate -}}
   {{- with .Lastmod -}}
-    {{ $datetime := (time.Format "2006-01-02T15:04:05.000Z" .) }}
+    {{ $datetime := (time.Format "2006-01-02T15:04:05Z07:00" .) }}
     <div class="deneb-last-updated">
       {{ $lastUpdated }} <time datetime="{{ $datetime }}">{{ partial "utils/format-date" . }}</time>
       {{- if site.Params.displayUpdatedAuthor -}}

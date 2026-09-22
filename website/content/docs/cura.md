@@ -1,126 +1,96 @@
 ---
-title: Cura
-weight: 80
+title: Cura plugin setup
+weight: 60
 ---
 
+Use the Deneb plugin to find your UltiMaker 2+ Connect in Cura and connect to
+it over your home or workshop network.
 
-Deneb now has a Cura local-network compatibility layer for the UltiMaker 2+
-Connect. It is implemented as a small Deneb web/API runtime on the printer plus
-a Cura plugin that teaches Cura how to map Deneb's advertised network machine
-id back to Cura's stock UM2+ Connect profile.
+This guide covers installing the plugin on **your computer**. For package
+building and how the connection works, see the
+[Cura technical guide](/docs/cura-technical/).
 
-For controller-command differences and non-Cura profile requirements, see
-[slicer compatibility](/docs/slicer-compatibility/).
+## Before you start
 
-## Components
+You need:
 
-- `deneb-mdns` advertises `_ultimaker._tcp.local.` with Cura-compatible TXT
-  fields.
-- `deneb-api` serves the UltiMaker REST API v1-shaped endpoints and the
-  single-printer `/cluster-api/v1/` endpoints Cura polls.
-- `cura/plugins/DenebUM2CNetworkPrinting` is the Cura plugin package source.
-- `tools/build-cura-plugin.ps1` builds `dist/DenebUM2CNetworkPrinting.curapackage`.
+- **UltiMaker Cura** on your computer. Deneb's documented tests used
+  **Cura 5.13**; other versions have not been fully validated.
+- A printer running the **full Deneb software**. The get-started `.img`
+  alone is not enough. Finish [Technical installation](/docs/getting-started/)
+  first if you have only installed that image.
+- Your computer and printer connected to the **same trusted local network**.
+  The printer can use [Wi-Fi](/docs/wifi-setup/) or
+  [Ethernet](/docs/ethernet-setup/).
+- The plugin file: **DenebUM2CNetworkPrinting.curapackage**.
 
-## Discovery Model
+Deneb is experimental. Keep printer access on a trusted network.
 
-Deneb advertises the printer with `type=printer`, `machine=deneb_um2c`, a
-`name` formatted as `<configured printer name> (Deneb UM2C)`, and a
-Cura-compatible `firmware_version`. Cura rejects local-network devices whose
-advertised firmware version is older than `4.0.0`, so Deneb defaults the mDNS
-firmware TXT value to `4.0.0`.
+## 1. Get the plugin file
 
-The real Deneb build version remains available from:
+There is no ready-made Deneb plugin download in GitHub Releases yet.
+You or someone helping you must create the file using
+[Build the Cura plugin](/docs/cura-technical/#cura-plugin-build).
 
-- `GET /api/v1/deneb/version`
+Once you have **DenebUM2CNetworkPrinting.curapackage**, save it somewhere easy
+to find on the computer running Cura, such as your Downloads folder.
 
-Cura maps local-network machines by advertised machine/BOM metadata. The stock
-UM2+ Connect Cura definition is network-capable but does not currently expose a
-BOM value that Deneb can advertise directly. The Deneb plugin maps
-`deneb_um2c` to Cura's stock `ultimaker2_plus_connect` machine so existing UM2+
-Connect materials, variants, quality profiles, and printer presets are reused.
+Keep the file as it is. Do not unzip it, rename it, or put it on the printer's
+USB drive. Cura installs this file on your computer.
 
-Do not patch Cura's bundled resources or copy definition files into Cura's user
-profile directly.
+## 2. Install the plugin
 
-## Printer API Surface
+1. Open Cura and wait for its main window.
+   If this is your first time using Cura, finish the welcome setup first.
+   You can add a non-networked **UltiMaker 2+ Connect** for now.
+2. Open the folder containing **DenebUM2CNetworkPrinting.curapackage**.
+3. Drag the file into Cura's main window, over the area showing the build plate.
+4. Cura should show a message that the package will be installed after
+   restarting.
+5. Close Cura completely, then open it again.
 
-Deneb implements the core cluster endpoints Cura 5.13 polls for monitor,
-upload, and basic print-job actions:
+The plugin needs that restart before it can help Cura find your printer.
+You do not need to copy files into Cura's installation folders.
 
-- `GET /cluster-api/v1/materials`
-- `POST /cluster-api/v1/materials`
-- `GET /cluster-api/v1/printers`
-- `GET /cluster-api/v1/print_jobs`
-- `POST /cluster-api/v1/print_jobs`
-- `POST /cluster-api/v1/print_jobs/`
-- `PUT /cluster-api/v1/print_jobs/{uuid}/action`
-- `DELETE /cluster-api/v1/print_jobs/{uuid}`
-- `GET /cluster-api/v1/print_jobs/{uuid}/preview`
+## 3. Add your printer
 
-The UM API v1-shaped web endpoints also include:
+1. Turn on your Deneb printer and make sure it has joined your network.
+2. In Cura, open **Settings > Printer > Add Printer**.
+3. If asked, choose **UltiMaker printer**, then **Add local printer**.
+   Use the list of printers found on your network.
+4. Look for your printer's name followed by **(Deneb UM2C)**.
+   Click **Refresh** if needed.
+5. Select it and finish Cura's add-printer prompts.
 
-- `POST /api/v1/print_job`
-- `PUT /api/v1/print_job/state`
-- `GET /api/v1/print_job`
-- `GET /api/v1/materials`
+The plugin lets Cura use its normal **UltiMaker 2+ Connect** profile for the
+Deneb printer. You do not need to create a custom printer profile.
 
-Cluster upload/control is intentionally unauthenticated for stock Cura
-compatibility because current Cura does not send Deneb web-session credentials
-on these cluster write requests. The Deneb web UI and UM API v1 write endpoints
-remain protected by Open Access or Deneb auth.
+## 4. Check the connection
 
-## Upload And Start Flow
+Select the new network printer in Cura. Confirm that its printer type is
+**UltiMaker 2+ Connect**, then open **Monitor** to check that Cura can see it.
 
-For Cura cluster uploads, Deneb streams the multipart upload through `deneb-api`
-instead of buffering whole jobs in RAM. A pending-job metadata file at
-`/tmp/deneb-cluster-print-job.json` keeps the job visible while Deneb validates
-metadata, waits for conflict confirmation, prepares, and preheats.
+If you kept an older, non-networked printer entry, make sure the new network
+entry is selected when you want to send a job to Deneb.
 
-Current Cura sends UM2+ Connect jobs as `.ufp` archives. Deneb extracts
-`3D/model.gcode` before native registration so material/nozzle headers and
-model build-volume bounds are validated before the upload is copied into
-Deneb spool storage, written as pending metadata, or allowed to start motion. A 2026-06-14 Cura 5.13 local-network test on
-package `ff49e86b` proved this path for material-mismatch prompt, Cancel,
-Continue/start, completion, pause/resume, cancel/abort back to idle, and pending
-mismatch recovery after UI/API/print-service restarts. The first pre-fix
-Cura-local `.ufp` upload is retained as negative evidence: the raw archive
-reached native print registration and produced a Marlin payload ASCII error.
+You do not need to start a print just to check that the plugin is installed
+and the printer is connected.
 
-Upload registration, conflict continue/cancel, and pending-job cancel now use
-native Deneb code paths. `deneb-api` assigns a native pending-job tracker,
-writes Cura-visible pending metadata from UCI/file hints, leaves material/nozzle
-conflicts waiting for user confirmation, and starts no-conflict jobs with a
-native `JOB` command. The native `deneb-printsvc` milestone still owns the final
-driver-side replacement and live validation of this flow.
+## If something does not work
 
-## Cura Plugin Build
+- **Cura does not accept the file:** check that its name ends in
+  `.curapackage`, not `.zip`, and that you dropped it onto the main window.
+  If Cura reports an incompatible package, check your Cura version against
+  the tested version above.
+- **The printer is missing:** restart Cura after installing the plugin,
+  check that both devices are on the same network, then try **Refresh**.
+  Guest networks or a VPN can prevent devices from finding each other.
+- **Discovery still fails:** use **Add printer by IP** in the network-printer
+  list and enter the printer's local IP address from its network settings.
+- **Cura shows the printer as offline:** check the printer's network connection
+  and confirm you selected the network entry rather than an older offline one.
+- **Only the get-started image is installed:** install the full Deneb package
+  before trying to connect from Cura.
 
-Build the plugin package from the repository root:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/build-cura-plugin.ps1
-```
-
-Install `dist/DenebUM2CNetworkPrinting.curapackage` through Cura's package
-install flow, then restart Cura before testing discovery.
-
-## Remaining Release Blockers
-
-- Validate broader failure modes against current Cura builds on real hardware.
-  Discovery, upload, material-mismatch prompt, Cancel, Continue/start,
-  completion, pause/resume, cancel/abort back to idle, pending mismatch recovery
-  after UI/API/print-service restarts, and package `9cdb5d6f` progress/time
-  reporting are covered by the 2026-06-14 Cura 5.13 local-network runs.
-- Native progress/time reporting is target-proven for package `9cdb5d6f`.
-  Stock/S5 review found Griffin `TimeEstimator` reads G-code `TIME_ELAPSED`
-  layer markers against metadata total time; native parses `TIME` /
-  `PRINT.TIME`, starts active timing at the model layer boundary, compensates
-  total time from `TIME_ELAPSED`, and publishes `Tleft` for UI/API progress.
-  User-supervised target proof observed print start at 0% with reasonable
-  progress and timer behavior.
-- Confirm local-storage and USB-removal-safe behavior for uploaded jobs.
-- Add free-space and failure-mode validation around uploads.
-- Decide how much of the current web/touch/API print-control duplication moves
-  into the native `deneb-printsvc` rewrite.
-- Keep cluster API compatibility tests in sync with Cura behavior rather than
-  only with static endpoint assumptions.
+For build commands, discovery details, and known limitations, use the
+[Cura technical guide](/docs/cura-technical/).

@@ -9,7 +9,7 @@ layout: hextra-home
     <h1>Deneb</h1>
     <p class="deneb-lede">Tail of the Cygnus. Local-first firmware for the UltiMaker 2+ Connect.</p>
     <div class="deneb-hero-actions">
-      <a class="deneb-btn deneb-btn-primary" href="/docs/getting-started/">Get started</a>
+      <a class="deneb-btn deneb-btn-primary" href="/docs/quick-start/">Get started</a>
       <a class="deneb-btn deneb-btn-ghost" href="/docs/">Browse the docs</a>
     </div>
   </div>
