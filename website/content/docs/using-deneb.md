@@ -7,5 +7,4 @@ sidebar:
 
 - [Touchscreen](/docs/touchscreen/)
 - [Browser Web UI](/docs/web-ui/)
-- [Cura](/docs/cura/)
-- [Slicer compatibility](/docs/slicer-compatibility/)
+- [Cura plugin setup](/docs/cura/)

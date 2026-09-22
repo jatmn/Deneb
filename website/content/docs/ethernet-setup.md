@@ -55,11 +55,16 @@ Only alphanumeric characters, hyphens, and dots are recommended.
 
 ### Optional — Time
 
+The examples use the [US NTP pool](https://www.ntppool.org/zone/us).
+Leaving out `ntp` keeps the existing time-server list; it does not reset it.
+This setting is shared by Ethernet and Wi-Fi. For manual commands, see
+[change time servers over SSH](/docs/wifi-setup/#advanced-change-time-servers-over-ssh).
+
 | Field  | Description          | Example                  | Default                |
 |--------|----------------------|--------------------------|------------------------|
-| `ntp`  | NTP time server(s)   | `ntp=pool.ntp.org`      | `0-3.lede.pool.ntp.org`|
+| `ntp`  | NTP time server(s)   | `ntp=0.us.pool.ntp.org`      | Existing system setting (unchanged)|
 
-Multiple NTP servers can be space-separated: `ntp=0.pool.ntp.org 1.pool.ntp.org`
+Multiple NTP servers can be space-separated: `ntp=0.us.pool.ntp.org 1.us.pool.ntp.org`
 
 ## Field Name Aliases
 
@@ -90,7 +95,7 @@ ip=10.0.0.50
 netmask=255.255.255.0
 gateway=10.0.0.1
 dns=10.0.0.1 8.8.8.8
-ntp=ntp.example.com
+ntp=0.us.pool.ntp.org 1.us.pool.ntp.org
 ```
 
 ### Reset to DHCP (empty file or no ip field)

@@ -21,8 +21,7 @@ Project planning, evidence ledgers, and agent checklists stay in the [GitHub rep
 {{< cards >}}
   {{< card link="/docs/touchscreen/" title="Touchscreen" subtitle="Screens and interactions" icon="device-tablet" >}}
   {{< card link="/docs/web-ui/" title="Web UI" subtitle="Trusted-LAN browser control" icon="globe" >}}
-  {{< card link="/docs/cura/" title="Cura" subtitle="Local-network printing" icon="printer" >}}
-  {{< card link="/docs/slicer-compatibility/" title="Slicer compatibility" subtitle="Cura and third-party profiles" icon="template" >}}
+  {{< card link="/docs/cura/" title="Cura plugin setup" subtitle="Install the plugin and connect your printer" icon="printer" >}}
 {{< /cards >}}
 
 ## Network setup
@@ -36,4 +35,11 @@ Project planning, evidence ledgers, and agent checklists stay in the [GitHub rep
 
 {{< cards >}}
   {{< card link="/docs/build-environment/" title="Build environment" subtitle="Debian or Windows/WSL 2" icon="chip" >}}
+{{< /cards >}}
+
+## Technical reference
+
+{{< cards >}}
+  {{< card link="/docs/slicer-compatibility/" title="Slicer compatibility" subtitle="Cura and third-party profiles" icon="template" >}}
+  {{< card link="/docs/cura-technical/" title="Cura technical guide" subtitle="Build the plugin and understand the integration" icon="chip" >}}
 {{< /cards >}}

@@ -1,6 +1,6 @@
 ---
 title: Slicer compatibility
-weight: 70
+weight: 140
 ---
 
 

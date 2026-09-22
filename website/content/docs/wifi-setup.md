@@ -42,7 +42,7 @@ Lines starting with `#` are comments. Blank lines are ignored.
 |--------------|-------------------------------|-------------------------------------------|----------|
 | `password`   | WiFi password                 | Any string                                | (empty)  |
 | `encryption` | Authentication type           | See [Encryption Types](#encryption-types) | `psk2` with password, otherwise `none` |
-| `country`    | 2-letter country code         | `US`, `NL`, `DE`, `GB`, etc.              | `US`     |
+| `country`    | 2-letter country code         | `US` (United States), or your country’s code              | `US`     |
 
 ### Optional — IP Configuration
 
@@ -68,11 +68,13 @@ dots are recommended.
 
 ### Optional — Time
 
+The examples use the [US NTP pool](https://www.ntppool.org/zone/us).
+
 | Field        | Description                  | Example                         | Default                |
 |--------------|------------------------------|---------------------------------|------------------------|
-| `ntp`        | NTP time server(s)           | `ntp=pool.ntp.org`             | `0-3.lede.pool.ntp.org`|
+| `ntp`        | NTP time server(s)           | `ntp=0.us.pool.ntp.org`             | Existing system setting (unchanged)|
 
-Multiple NTP servers can be space-separated: `ntp=0.pool.ntp.org 1.pool.ntp.org`
+Multiple NTP servers can be space-separated: `ntp=0.us.pool.ntp.org 1.us.pool.ntp.org`
 
 ## Encryption Types
 
@@ -138,7 +140,7 @@ ip=10.0.0.50
 netmask=255.255.255.0
 gateway=10.0.0.1
 dns=10.0.0.1 8.8.8.8
-ntp=ntp.example.com
+ntp=0.us.pool.ntp.org 1.us.pool.ntp.org
 country=US
 ```
 
@@ -148,7 +150,7 @@ country=US
 ssid=SecureNetwork
 password=WPA3Passphrase
 encryption=sae
-country=DE
+country=US
 ```
 
 ### WEP legacy network (not recommended)
@@ -182,14 +184,30 @@ encryption=wep
 - **Encoding**: Use plain ASCII or UTF-8. No BOM. Use Unix or Windows line
   endings (both work).
 
-- **NTP**: If you set a custom NTP server, it replaces the default pool servers.
-  To go back to defaults, use **Settings > Network > Disconnect WiFi** and
-  re-import without an `ntp` line, or manually run:
-  ```
-  uci delete system.ntp.server
-  uci add_list system.ntp.server='0.lede.pool.ntp.org'
-  uci add_list system.ntp.server='1.lede.pool.ntp.org'
-  uci add_list system.ntp.server='2.lede.pool.ntp.org'
-  uci add_list system.ntp.server='3.lede.pool.ntp.org'
-  uci commit
-  ```
+- **NTP**: Importing an `ntp` line replaces the printer's saved time-server
+  list. Leaving that line out keeps the existing list; it does not restore
+  defaults. This setting is shared by Wi-Fi and Ethernet.
+
+## Advanced: change time servers over SSH
+
+You can set US time servers directly instead of importing an `ntp` line.
+Connect to the printer as `root` over SSH (see the
+[technical installation guide](/docs/getting-started/#verify-bootstrap-success)).
+Run these commands **on the printer**, one line at a time:
+
+```sh
+uci -q delete system.ntp.server
+uci add_list system.ntp.server='0.us.pool.ntp.org'
+uci add_list system.ntp.server='1.us.pool.ntp.org'
+uci add_list system.ntp.server='2.us.pool.ntp.org'
+uci add_list system.ntp.server='3.us.pool.ntp.org'
+uci commit system
+/etc/init.d/sysntpd restart
+uci get system.ntp.server
+```
+
+The delete command removes the previous list; it can report no change if no
+list was saved. The commit command saves the new list, and restarting the time
+service applies it. The final command should display all four US server names
+above. This confirms the saved configuration; time synchronization also requires
+a working internet connection and may take a little time.
