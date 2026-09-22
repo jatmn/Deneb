@@ -21,7 +21,7 @@ Project planning, evidence ledgers, and agent checklists stay in the [GitHub rep
 {{< cards >}}
   {{< card link="/docs/touchscreen/" title="Touchscreen" subtitle="Screens and interactions" icon="device-tablet" >}}
   {{< card link="/docs/web-ui/" title="Web UI" subtitle="Trusted-LAN browser control" icon="globe" >}}
-  {{< card link="/docs/cura/" title="Cura plugin setup" subtitle="Install the plugin and connect your printer" icon="printer" >}}
+  {{< card link="/docs/cura/" title="Cura plugin setup" subtitle="Download the plugin and connect your printer" icon="printer" >}}
 {{< /cards >}}
 
 ## Network setup

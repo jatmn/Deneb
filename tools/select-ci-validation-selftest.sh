@@ -196,4 +196,22 @@ git -C "$repo" add .
 git -C "$repo" commit -qm website-getting-started
 assert_lanes false true false "$(run_selector push "$before")"
 
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'name: cura-plugin\n' > "$repo/.github/workflows/cura-plugin.yml"
+git -C "$repo" add .
+git -C "$repo" commit -qm cura-plugin-workflow
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/inspect-cura-plugin-package.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm cura-inspect
+assert_lanes false true false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf 'Write-Output ok\n' > "$repo/tools/inspect-cura-plugin-package-selftest.ps1"
+git -C "$repo" add .
+git -C "$repo" commit -qm cura-inspect-selftest
+assert_lanes false false false "$(run_selector push "$before")"
+
 printf 'CI validation selector self-test: PASS\n'

@@ -1,0 +1,141 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Cura plugin package
+
+# Publishes DenebUM2CNetworkPrinting.curapackage only. Do not attach this
+# package to the get-started image releases, and do not publish .deneb
+# packages from this workflow. The release is not marked Latest.
+#
+# The job that builds and inspects repository scripts has contents: read.
+# Publication is a later main-only job so those scripts never see a write token.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - cura/plugins/DenebUM2CNetworkPrinting/**
+      - tools/build-cura-plugin.ps1
+      - .github/workflows/cura-plugin.yml
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - cura/plugins/DenebUM2CNetworkPrinting/**
+      - tools/build-cura-plugin.ps1
+      - tools/inspect-cura-plugin-package.sh
+      - tools/inspect-cura-plugin-package-selftest.ps1
+      - .github/workflows/cura-plugin.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Push and workflow_dispatch both publish tag cura-plugin. Key on the ref
+  # so those runs queue instead of mixing one commit's bytes with another's
+  # source_sha. Pull requests use a different ref and do not publish.
+  group: cura-plugin-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      package_version: ${{ steps.meta.outputs.package_version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+
+      - name: Confirm package tools
+        run: |
+          command -v pwsh
+          if ! command -v unzip >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends unzip
+          fi
+
+      - name: Build Cura plugin package
+        shell: pwsh
+        run: tools/build-cura-plugin.ps1
+
+      - name: Inspect Cura plugin package
+        run: |
+          set -euo pipefail
+          bash tools/inspect-cura-plugin-package.sh dist/DenebUM2CNetworkPrinting.curapackage
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/inspect-cura-plugin-package-selftest.ps1
+          hash=$(sha256sum dist/DenebUM2CNetworkPrinting.curapackage | awk '{print $1}')
+          printf '%s  %s\n' "$hash" DenebUM2CNetworkPrinting.curapackage > dist/DenebUM2CNetworkPrinting.curapackage.sha256
+          (cd dist && sha256sum --check DenebUM2CNetworkPrinting.curapackage.sha256)
+
+      - name: Record package version
+        id: meta
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^[[:space:]]*"package_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' cura/plugins/DenebUM2CNetworkPrinting/package.json)
+          [ -n "$version" ]
+          echo "package_version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Stage package files
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/cura-plugin-package"
+          mkdir -p "$stage"
+          cp dist/DenebUM2CNetworkPrinting.curapackage \
+            dist/DenebUM2CNetworkPrinting.curapackage.sha256 \
+            "$stage/"
+
+      - name: Upload built package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cura-plugin-package
+          path: ${{ runner.temp }}/cura-plugin-package/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: package
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download built package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cura-plugin-package
+          path: dist
+
+      - name: Publish package to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ needs.package.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          [ -n "$PACKAGE_VERSION" ]
+          test -f dist/DenebUM2CNetworkPrinting.curapackage
+          test -f dist/DenebUM2CNetworkPrinting.curapackage.sha256
+          (cd dist && sha256sum --check DenebUM2CNetworkPrinting.curapackage.sha256)
+          tag=cura-plugin
+          title='Cura plugin'
+          notes_file=$RUNNER_TEMP/cura-plugin-release-notes.md
+          {
+            echo 'DenebUM2CNetworkPrinting.curapackage (Cura desktop plugin; not printer firmware).'
+            echo
+            echo "source_sha: $GITHUB_SHA"
+            echo "package_version: $PACKAGE_VERSION"
+          } > "$notes_file"
+          extra=(--notes-file "$notes_file" --target "$GITHUB_SHA" --title "$title" --latest=false)
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$title" --latest=false \
+              --notes 'DenebUM2CNetworkPrinting.curapackage (Cura desktop plugin; not printer firmware).'
+          fi
+          gh release upload "$tag" \
+            dist/DenebUM2CNetworkPrinting.curapackage \
+            dist/DenebUM2CNetworkPrinting.curapackage.sha256 \
+            --clobber
+          gh release edit "$tag" "${extra[@]}"

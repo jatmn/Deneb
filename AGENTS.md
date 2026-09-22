@@ -37,14 +37,20 @@ unsafe motion, heating, flashing, update, and recovery behavior.
   wrappers.
 - `COMPLIANCE.md`, `SECURITY.md`, and
   `docs/SOURCE_PROVENANCE.md` define publication, credential, and source
-  boundaries. GitHub Releases currently publish `Deneb_get_started.img`
-  only. The rolling `get-started` release rebuilds on `main` pushes when
-  `tools/get-started-source-paths.txt` inputs changed since that tag's
-  last `source_sha`. The `nightly-get-started` pre-release uses the same
-  skip rule on the daily schedule or a `nightly=true` dispatch, not on
-  ordinary `main` pushes. The image version token is a stock-updater
-  compatibility number, not a Deneb semver; do not bump it for overlay
-  changes. Do not attach `.deneb` packages to those workflows.
+  boundaries. GitHub Releases publish `Deneb_get_started.img` and
+  `DenebUM2CNetworkPrinting.curapackage`. The rolling `get-started` release
+  rebuilds on `main` pushes when `tools/get-started-source-paths.txt` inputs
+  changed since that tag's last `source_sha`. The `nightly-get-started`
+  pre-release uses the same skip rule on the daily schedule or a
+  `nightly=true` dispatch, not on ordinary `main` pushes. The image version
+  token is a stock-updater compatibility number, not a Deneb semver; do not
+  bump it for overlay changes. Do not attach `.deneb` packages or the Cura
+  plugin package to the get-started workflows. The rolling `cura-plugin`
+  release rebuilds on `main` when Cura plugin sources,
+  `tools/build-cura-plugin.ps1`, or `.github/workflows/cura-plugin.yml`
+  change. It is not marked Latest, so
+  the get-started release keeps that badge. Do not attach `.deneb` packages
+  to the Cura plugin workflow.
 
 Do not infer completion from a checkbox, implementation, old evidence file, or
 successful host test. Preserve the distinctions between `SOURCE`, `HOST`,
@@ -160,7 +166,8 @@ find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
   -type f -name '*.sh' -print0 | xargs -0 -r sh -n
 shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
   tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh \
-  tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh
+  tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh \
+  tools/inspect-cura-plugin-package.sh
 sh tools/write-package-checksum-selftest.sh
 sh tools/ssh-bootstrap-patch-selftest.sh
 bash tools/select-ci-validation-selftest.sh

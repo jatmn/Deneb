@@ -2,8 +2,9 @@
 
 Deneb is experimental firmware for printers owned or controlled by the user.
 Only the current `main` branch receives security fixes. GitHub Releases may
-publish `Deneb_get_started.img`; that bootstrap overlay is not a stable
-firmware release.
+publish `Deneb_get_started.img` and `DenebUM2CNetworkPrinting.curapackage`.
+The bootstrap overlay is not a stable firmware release. The Cura package is
+a desktop plugin, not printer firmware.
 
 ## Bootstrap SSH Warning
 

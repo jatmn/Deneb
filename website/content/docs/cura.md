@@ -3,40 +3,43 @@ title: Cura plugin setup
 weight: 60
 ---
 
-Use the Deneb plugin to find your UltiMaker 2+ Connect in Cura and connect to
-it over your home or workshop network.
+Use the Deneb plugin so UltiMaker Cura can find your printer on your home or
+workshop network and send prints to it.
 
-This guide covers installing the plugin on **your computer**. For package
-building and how the connection works, see the
-[Cura technical guide](/docs/cura-technical/).
+You download a ready-made file and drop it into Cura. You do not build
+anything, and you do not copy this file onto the printer.
+
+Want the build commands, or an explanation of how the connection works? Use
+the [Cura technical guide](/docs/cura-technical/).
 
 ## Before you start
 
 You need:
 
 - **UltiMaker Cura** on your computer. Deneb's documented tests used
-  **Cura 5.13**; other versions have not been fully validated.
-- A printer running the **full Deneb software**. The get-started `.img`
-  alone is not enough. Finish [Technical installation](/docs/getting-started/)
-  first if you have only installed that image.
-- Your computer and printer connected to the **same trusted local network**.
-  The printer can use [Wi-Fi](/docs/wifi-setup/) or
-  [Ethernet](/docs/ethernet-setup/).
-- The plugin file: **DenebUM2CNetworkPrinting.curapackage**.
+  **Cura 5.13**. Other versions may work, but they have not been fully tested.
+- A printer that already has the **full Deneb software**. The get-started
+  image by itself is not enough. Finish
+  [Technical installation](/docs/getting-started/) first if that is all you
+  have installed.
+- Your computer and the printer on the **same trusted network**. The printer
+  can use [Wi-Fi](/docs/wifi-setup/) or [Ethernet](/docs/ethernet-setup/).
 
-Deneb is experimental. Keep printer access on a trusted network.
+Deneb is experimental. Keep the printer on a network you trust. Do not expose
+it to the public internet.
 
 ## 1. Get the plugin file
 
-There is no ready-made Deneb plugin download in GitHub Releases yet.
-You or someone helping you must create the file using
-[Build the Cura plugin](/docs/cura-technical/#cura-plugin-build).
+Open the [Deneb Cura plugin download page](https://github.com/jatmn/Deneb/releases/tag/cura-plugin).
 
-Once you have **DenebUM2CNetworkPrinting.curapackage**, save it somewhere easy
-to find on the computer running Cura, such as your Downloads folder.
+Under **Assets** (expand it if needed), download **DenebUM2CNetworkPrinting.curapackage**.
 
-Keep the file as it is. Do not unzip it, rename it, or put it on the printer's
-USB drive. Cura installs this file on your computer.
+Keep the name exactly as shown. Do not unzip it or rename it. Save it
+somewhere easy to find, such as your Downloads folder.
+
+This file is installed on the computer that runs Cura. Do not put it on the
+printer's USB drive. Skip the **Source code** downloads. This is not the
+get-started printer image.
 
 ## 2. Install the plugin
 

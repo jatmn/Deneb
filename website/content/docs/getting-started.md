@@ -90,7 +90,9 @@ GitHub Releases attach `Deneb_get_started.img` (Deneb overlay only; no
 UltiMaker firmware). Prefer the `get-started` release; it updates on `main`
 pushes when bootstrap sources change. The `nightly-get-started` pre-release
 uses that same skip-if-unchanged rule on the daily schedule or a
-`nightly=true` dispatch, not on ordinary `main` pushes.
+`nightly=true` dispatch, not on ordinary `main` pushes. The Cura desktop
+plugin is a separate [`cura-plugin` release](https://github.com/jatmn/Deneb/releases/tag/cura-plugin)
+and is not this image.
 
 1. Open https://github.com/jatmn/Deneb/releases
 2. Download `Deneb_get_started.img` and `Deneb_get_started.img.sha256` into

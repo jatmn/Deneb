@@ -15,7 +15,8 @@ Already running the full Deneb software? Use [Updating Deneb](/docs/updating/).
 **This is the first part of installing Deneb.** The file here prepares your
 printer to accept Deneb updates. It does **not** install the new touchscreen,
 Web UI, or printing software. Those need a second file ending in `.deneb`.
-GitHub currently provides only the first file.
+GitHub provides that preparation file. It does not provide the `.deneb`
+software file.
 {{< /callout >}}
 
 ## Before you start
