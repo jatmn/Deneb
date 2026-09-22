@@ -126,6 +126,8 @@ The `.sha256` file can stay on your computer. The printer only needs the
 2. Open **Maintenance > Update Firmware** on the touchscreen, then choose
    the USB install option. The exact words may differ with your stock
    firmware version.
+   If it only offers an internet update, disconnect the printer from Ethernet
+   and Wi-Fi, then leave and reopen the update screen to show the USB option.
 3. Select **Deneb_get_started.img** and follow the update prompts.
 4. Wait for installation to finish and the printer to restart. Leave the
    power on and the USB drive in place while it is updating.
