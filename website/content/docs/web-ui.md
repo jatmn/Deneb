@@ -14,7 +14,7 @@ printer to the public internet.
 
 ## Open it
 
-1. Finish [Getting started](/docs/getting-started/) or [Updating](/docs/updating/).
+1. Finish [Technical installation](/docs/getting-started/) or [Updating](/docs/updating/).
 2. Put the printer on Ethernet or Wi-Fi ([Wi-Fi](/docs/wifi-setup/) /
    [Ethernet](/docs/ethernet-setup/)).
 3. Browse to `http://PRINTER_IP/`.
@@ -38,4 +38,4 @@ failure recovery remain open on the
 
 - [Cura integration](/docs/cura/)
 - [Slicer compatibility](/docs/slicer-compatibility/)
-- [Getting started](/docs/getting-started/)
+- [Technical installation](/docs/getting-started/)

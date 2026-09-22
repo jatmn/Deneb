@@ -9,7 +9,8 @@ Operator guides for installing, updating, and using experimental Deneb on an Ult
 Project planning, evidence ledgers, and agent checklists stay in the [GitHub repository](https://github.com/jatmn/Deneb/tree/main/docs). They are not published here.
 
 {{< cards >}}
-  {{< card link="/docs/getting-started/" title="Getting started" subtitle="First install from stock firmware" icon="download" >}}
+  {{< card link="/docs/quick-start/" title="Getting started (easy guide)" subtitle="Download the ready-made image and install it with USB" icon="download" >}}
+  {{< card link="/docs/getting-started/" title="Technical installation" subtitle="Build packages, verify installation, and recover" icon="chip" >}}
   {{< card link="/docs/updating/" title="Updating" subtitle="Later .deneb packages" icon="refresh" >}}
   {{< card link="/docs/build-environment/" title="Build host" subtitle="Debian or Windows/WSL 2" icon="chip" >}}
   {{< card link="/docs/touchscreen/" title="Touchscreen" subtitle="Screens and interactions" icon="device-tablet" >}}

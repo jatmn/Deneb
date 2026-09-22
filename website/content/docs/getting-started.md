@@ -1,8 +1,14 @@
 ---
-title: Getting started
-weight: 10
+title: Technical installation
+weight: 15
 ---
 
+Want the simpler download-and-USB instructions? Start with the
+[Getting started (easy guide)](/docs/quick-start/).
+
+This technical guide covers building your own packages, detailed verification,
+SSH checks, and recovery. If you used the prebuilt image already, continue at
+[Step 4: Build the full Deneb update package](#step-4-build-the-full-deneb-update-package).
 
 This guide is the first-install path from **stock UltiMaker 2+ Connect
 firmware** to a working experimental Deneb stack.

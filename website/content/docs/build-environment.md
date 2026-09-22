@@ -18,7 +18,7 @@ Native build dependencies are stored under the checkout's ignored `build/deneb-c
 First-time printer installation also needs the stock-firmware bootstrap package
 from `tools/build-get-started.sh` or `tools/build-get-started.ps1`. That package
 does not require the MIPS cross toolchain. See
-[Getting Started](/docs/getting-started/) and [Updating Deneb](/docs/updating/).
+[Technical installation](/docs/getting-started/) and [Updating Deneb](/docs/updating/).
 
 Do not mix the lanes: the native scripts keep dependencies in the checkout's
 `build/deneb-cross/` directory, while the PowerShell wrapper uses `/root`
