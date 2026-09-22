@@ -8,7 +8,7 @@
       {{ $lastUpdated }} <time datetime="{{ $datetime }}">{{ partial "utils/format-date" . }}</time>
       {{- if site.Params.displayUpdatedAuthor -}}
         {{- with $page.GitInfo -}}
-          {{ print " • " .AuthorName | safeHTML }}
+          {{ print " • " .AuthorName }}
         {{- end -}}
       {{- end -}}
     </div>
