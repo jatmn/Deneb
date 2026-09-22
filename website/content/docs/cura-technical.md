@@ -103,7 +103,8 @@ Operators download the built package from the
 [Cura plugin release](https://github.com/jatmn/Deneb/releases/tag/cura-plugin):
 `DenebUM2CNetworkPrinting.curapackage` and
 `DenebUM2CNetworkPrinting.curapackage.sha256`. That release updates on `main`
-when the plugin sources change. It is a desktop plugin, not printer firmware,
+when the plugin sources, `tools/build-cura-plugin.ps1`, or
+`.github/workflows/cura-plugin.yml` change. It is a desktop plugin, not printer firmware,
 and it is not attached to the `get-started` image release.
 
 The steps below rebuild the same package from source. No printer firmware

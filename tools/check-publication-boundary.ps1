@@ -58,6 +58,12 @@ if ($records.Count -ne 280) {
     throw "Expected 280 provenance-audited material records; found $($records.Count)"
 }
 
+$curaWorkflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github/workflows/cura-plugin.yml') -Raw
+if ($curaWorkflow -notmatch 'bash tools/inspect-cura-plugin-package\.sh' -or
+    $curaWorkflow -notmatch 'File tools/inspect-cura-plugin-package-selftest\.ps1') {
+    throw "cura-plugin release wrapper must run the Cura package inspector and its self-test"
+}
+
 & (Join-Path $PSScriptRoot 'check-markdown-links.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

@@ -46,8 +46,9 @@ unsafe motion, heating, flashing, update, and recovery behavior.
   token is a stock-updater compatibility number, not a Deneb semver; do not
   bump it for overlay changes. Do not attach `.deneb` packages or the Cura
   plugin package to the get-started workflows. The rolling `cura-plugin`
-  release rebuilds on `main` when Cura plugin sources or
-  `.github/workflows/cura-plugin.yml` change. It is not marked Latest, so
+  release rebuilds on `main` when Cura plugin sources,
+  `tools/build-cura-plugin.ps1`, or `.github/workflows/cura-plugin.yml`
+  change. It is not marked Latest, so
   the get-started release keeps that badge. Do not attach `.deneb` packages
   to the Cura plugin workflow.
 

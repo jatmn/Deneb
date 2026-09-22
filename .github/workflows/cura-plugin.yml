@@ -66,6 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           bash tools/inspect-cura-plugin-package.sh dist/DenebUM2CNetworkPrinting.curapackage
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/inspect-cura-plugin-package-selftest.ps1
           hash=$(sha256sum dist/DenebUM2CNetworkPrinting.curapackage | awk '{print $1}')
           printf '%s  %s\n' "$hash" DenebUM2CNetworkPrinting.curapackage > dist/DenebUM2CNetworkPrinting.curapackage.sha256
           (cd dist && sha256sum --check DenebUM2CNetworkPrinting.curapackage.sha256)
