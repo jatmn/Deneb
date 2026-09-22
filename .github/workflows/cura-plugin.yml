@@ -113,6 +113,7 @@ jobs:
       - name: Publish package to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           PACKAGE_VERSION: ${{ needs.package.outputs.package_version }}
         run: |
           set -euo pipefail
