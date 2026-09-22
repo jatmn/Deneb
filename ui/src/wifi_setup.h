@@ -45,6 +45,7 @@ typedef enum {
     WIFI_ERR_NO_SSID,       /* SSID not specified */
     WIFI_ERR_UCI_FAIL,      /* UCI command failed */
     WIFI_ERR_NET_FAIL,      /* Network restart failed */
+    WIFI_ERR_NTP_FAIL,      /* NTP daemon restart failed after ntp= import */
 } wifi_result_t;
 
 /**

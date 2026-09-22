@@ -37,6 +37,7 @@ typedef enum {
     ETH_ERR_NO_FILE,       /* eth.txt not found on USB */
     ETH_ERR_UCI_FAIL,      /* UCI command failed */
     ETH_ERR_NET_FAIL,      /* Network restart failed */
+    ETH_ERR_NTP_FAIL,      /* NTP daemon restart failed after ntp= import */
 } eth_result_t;
 
 /**

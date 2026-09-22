@@ -201,8 +201,11 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
         return ETH_ERR_NET_FAIL;
 
     /* Reload NTP daemon when import changed time servers (matches UCI apply). */
-    if (cfg->ntp_server[0] != '\0')
-        system("/etc/init.d/sysntpd restart >/dev/null 2>&1");
+    if (cfg->ntp_server[0] != '\0') {
+        rc = system("/etc/init.d/sysntpd restart >/dev/null 2>&1");
+        if (rc != 0)
+            return ETH_ERR_NTP_FAIL;
+    }
 
     return ETH_OK;
 }
@@ -259,6 +262,10 @@ eth_result_t eth_setup_import(char *status_msg, int msg_size)
         case ETH_ERR_NET_FAIL:
             snprintf(status_msg, msg_size,
                      "%s", locale_get("network.eth_restarting"));
+            break;
+        case ETH_ERR_NTP_FAIL:
+            snprintf(status_msg, msg_size,
+                     "%s", locale_get("network.eth_ntp_restart_failed"));
             break;
         default:
             snprintf(status_msg, msg_size, "%s",
