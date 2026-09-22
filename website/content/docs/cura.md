@@ -1,6 +1,6 @@
 ---
 title: Cura
-weight: 80
+weight: 60
 ---
 
 

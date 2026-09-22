@@ -1,6 +1,6 @@
 ---
 title: Ethernet setup
-weight: 70
+weight: 100
 ---
 
 

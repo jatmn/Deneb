@@ -1,6 +1,6 @@
 ---
 title: Wi-Fi setup
-weight: 60
+weight: 90
 ---
 
 
