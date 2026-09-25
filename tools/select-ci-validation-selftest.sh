@@ -214,4 +214,17 @@ git -C "$repo" add .
 git -C "$repo" commit -qm cura-inspect-selftest
 assert_lanes false false false "$(run_selector push "$before")"
 
+before="$(git -C "$repo" rev-parse HEAD)"
+mkdir -p "$repo/tools/eslint"
+printf '{}\n' > "$repo/tools/eslint/package.json"
+git -C "$repo" add .
+git -C "$repo" commit -qm eslint-host-pin
+assert_lanes false false false "$(run_selector push "$before")"
+
+before="$(git -C "$repo" rev-parse HEAD)"
+printf '#!/bin/sh\n' > "$repo/tools/eslint-web-selftest.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm eslint-web-selftest
+assert_lanes false true false "$(run_selector push "$before")"
+
 printf 'CI validation selector self-test: PASS\n'

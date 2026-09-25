@@ -167,7 +167,9 @@ find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
 shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
   tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh \
   tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh \
-  tools/inspect-cura-plugin-package.sh
+  tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
+npm ci --ignore-scripts --prefix tools/eslint
+bash tools/eslint-web-selftest.sh
 sh tools/write-package-checksum-selftest.sh
 sh tools/ssh-bootstrap-patch-selftest.sh
 bash tools/select-ci-validation-selftest.sh
