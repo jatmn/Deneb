@@ -26,6 +26,18 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
   `bb1d8e8ab8d29048624d96e3ee53cecf7c13d13d`
 - License: MIT-CMU, retained in `notices/PILLOW-12.3.0-LICENSE.txt`
 
+### ESLint host checker
+
+- ESLint 10.11.0, with `@eslint/js` 10.0.1 and `globals` 17.12.0, checks the
+  existing browser JavaScript during CI. Versions are locked in
+  `tools/eslint/package-lock.json`.
+- Upstream registry: https://registry.npmjs.org/eslint/-/eslint-10.11.0.tgz
+- License: MIT. The ESLint and `@eslint/js` notice is
+  `notices/ESLINT-10.11.0-LICENSE.txt`. The `globals` notice is
+  `notices/GLOBALS-17.12.0-LICENSE.txt`.
+- This checker runs on the build host only. It is not part of a `.deneb`
+  package, the get-started image, or the printer about/legal screen.
+
 ### LVGL
 
 - Component: LVGL runtime subset
