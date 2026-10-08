@@ -20,25 +20,7 @@ a PR does not request a review, and Pullfrog's dashboard and managed mention
 dispatcher cannot launch this workflow. Do not replace it with the console's
 generated workflow. Existing CI stays independent.
 
-## Account and repository setup
-
-1. Give the Pullfrog GitHub App access to `jatmn/Deneb` and select the
-   repository in the [console](https://pullfrog.com/console/jatmn?repo=Deneb).
-   Use BYOK billing. Leave **Add workflow directly** untouched; this repository
-   supplies its own workflow.
-2. Connect the ChatGPT subscription with `npx pullfrog auth codex --org jatmn`.
-   Complete the browser device sign-in. Pullfrog stores and refreshes the
-   credential for the personal account; no credential belongs in Git or a
-   GitHub Actions secret. See [subscription setup](https://docs.pullfrog.com/codex-auth).
-3. Turn off managed mentions, automatic PR reviews and re-reviews, review
-   responses, issue enrichment and labels, CI autofix, merge-conflict fixes,
-   Quick Links, automatic approval and auto-merge. Keep non-collaborator
-   triggers off. The workflow's event and owner checks remain the execution
-   boundary even if a dashboard setting changes.
-4. Merge the reviewed workflow PR to the default branch, then click
-   **Verify manual installation** in the repository console. Comment workflows
-   load from the default branch. Create a new owner command to verify a live
-   run; local tests do not prove provider access.
+## Model and permissions
 
 The workflow explicitly selects `openai/gpt-sol` (Pullfrog's GPT Sol alias),
 using the connected ChatGPT subscription. No GitHub provider API keys are passed to this workflow. A matching API
