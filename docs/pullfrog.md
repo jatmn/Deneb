@@ -52,7 +52,7 @@ requested PR command; it does not enable automatic reviews or approving reviews.
 
 ## Maintenance and checks
 
-The action bootstrap is pinned to Pullfrog v0.1.97; its npm runtime accepts
+The action bootstrap is pinned to Pullfrog v0.1.122; its npm runtime accepts
 compatible 0.1.x updates. Keep `PULLFROG_VERSION` in
 `scripts/pullfrog-command-check.mjs` aligned with the bootstrap, and verify the upstream
 structured payload and check-reporting contracts when updating it. Large

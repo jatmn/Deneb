@@ -4,7 +4,7 @@ const OWNER = 'jatmn';
 const OWNER_ID = 12479882;
 const REPOSITORY = 'jatmn/Deneb';
 // Keep aligned with the action bootstrap in .github/workflows/pullfrog.yml.
-const PULLFROG_VERSION = '0.1.97';
+const PULLFROG_VERSION = '0.1.122';
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 
 if (process.env.GITHUB_EVENT_NAME !== 'issue_comment' ||
