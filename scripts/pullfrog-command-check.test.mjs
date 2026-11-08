@@ -41,7 +41,7 @@ test('owner PR and issue commands preserve identity and instruction without outp
     assert.equal(lines[1], 'authorized=true');
     const payload = JSON.parse(lines[0].slice('payload='.length));
     assert.equal(payload['~pullfrog'], true);
-    assert.equal(payload.version, '0.1.97');
+    assert.equal(payload.version, '0.1.122');
     assert.equal(payload.triggerer, 'jatmn');
     assert.equal(payload.event.authorPermission, 'admin');
     assert.equal(payload.event.issue_number, 7);
