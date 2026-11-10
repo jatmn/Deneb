@@ -11,6 +11,9 @@
 #define DENEB_COMMAND_VERB_PAUSE "PAUSE"
 #define DENEB_COMMAND_VERB_RESUME "RESUME"
 
+/* Data need not be NUL terminated. Receipt alone is not backend acceptance. */
+int deneb_command_reply_accepted(const void *data, size_t size);
+
 typedef struct {
     int len;
     int has_job_path;

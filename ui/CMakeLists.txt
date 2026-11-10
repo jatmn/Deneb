@@ -188,6 +188,7 @@ set(DENEB_SOURCES
     src/fonts/deneb_font_i18n_12.c
     src/fonts/deneb_font_i18n_14.c
     src/fonts/deneb_font_i18n_16.c
+    ../common/print/background_action.c
     ../common/print/buildplate_level.c
     ../common/print/command_format.c
     ../common/print/diagnostics_export.c

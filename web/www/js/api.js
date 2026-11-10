@@ -10,6 +10,7 @@ Deneb.api = {
     token: localStorage.getItem('deneb_token'),
     tokenExpiry: parseInt(localStorage.getItem('deneb_token_expiry') || '0', 10),
     sseSource: null,
+    sseRetry: null,
     statusCallbacks: [],
 
     request: function(method, path, body) {
@@ -88,8 +89,10 @@ Deneb.api = {
             url += '?token=' + this.token;
         }
         var self = this;
-        this.sseSource = new EventSource(url);
-        this.sseSource.onmessage = function(e) {
+        var source = new EventSource(url);
+        this.sseSource = source;
+        source.onmessage = function(e) {
+            if (self.sseSource !== source) return;
             try {
                 var data = JSON.parse(e.data);
                 for (var i = 0; i < self.statusCallbacks.length; i++) {
@@ -97,13 +100,21 @@ Deneb.api = {
                 }
             } catch(err) {}
         };
-        this.sseSource.onerror = function() {
-            /* Reconnect after 3s */
-            setTimeout(function() { self.connectSSE(); }, 3000);
+        source.onerror = function() {
+            if (self.sseSource !== source) return;
+            self.disconnectSSE();
+            self.sseRetry = setTimeout(function() {
+                self.sseRetry = null;
+                self.connectSSE();
+            }, 3000);
         };
     },
 
     disconnectSSE: function() {
+        if (this.sseRetry !== null) {
+            clearTimeout(this.sseRetry);
+            this.sseRetry = null;
+        }
         if (this.sseSource) {
             this.sseSource.close();
             this.sseSource = null;

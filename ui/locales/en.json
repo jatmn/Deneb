@@ -203,5 +203,11 @@
   "digital_factory.status_reconnecting": "Reconnecting",
   "digital_factory.status_pin_fmt": "PIN: %s",
   "digital_factory.status_cloud_signin_required": "Cloud sign-in required",
-  "digital_factory.status_disconnect_failed": "Disconnect failed"
+  "digital_factory.status_disconnect_failed": "Disconnect failed",
+  "update.complete": "Update completed. Awaiting reboot.",
+  "maintenance.running": "Maintenance is running. Please wait.",
+  "maintenance.ended": "Maintenance ended. Its result is unavailable in this session.",
+  "update.failed": "Update failed. Check the update log before retrying.",
+  "factory_reset.complete": "Factory reset completed. Awaiting reboot.",
+  "factory_reset.failed": "Factory reset failed. Check the reset log before retrying."
 }

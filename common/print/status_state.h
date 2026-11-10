@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include "manual_operation.h"
 #include <stdint.h>
 
 typedef struct {
@@ -40,6 +41,8 @@ typedef struct {
     int flow_resend;
     int flow_reject;
     int job_line_number;
+    uint64_t manual_id;
+    deneb_manual_state_t manual_state;
     int time_total;
     int time_left;
     float progress;
@@ -66,6 +69,11 @@ typedef struct {
     const char *completion_label;
 } deneb_status_transition_t;
 
+/* Five missed 1-second idle publications make readiness unknown. */
+#define DENEB_STATUS_STALE_MS 5000U
+int deneb_status_state_expire(deneb_backend_status_state_t *state, uint32_t now_ms);
+deneb_manual_state_t deneb_status_state_manual_result(
+    const deneb_backend_status_state_t *state, uint64_t operation_id, uint32_t elapsed_ms);
 void deneb_status_state_init(deneb_backend_status_state_t *state);
 void deneb_status_transition_init(deneb_status_transition_t *transition);
 deneb_status_filename_context_t deneb_status_state_filename_context(

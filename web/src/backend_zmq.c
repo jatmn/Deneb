@@ -107,12 +107,16 @@ int backend_zmq_has_active_job(void)
 }
 int backend_zmq_print_start_allowed(void)
 {
-    return deneb_print_start_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_start_allowed(state.connected, state.has_error,
                                      state.is_paused, state.is_printing);
 }
 int backend_zmq_manual_action_allowed(void)
 {
-    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_manual_action_allowed(state.connected, state.has_error,
                                              state.is_paused,
                                              state.is_printing);
 }
@@ -408,6 +412,10 @@ int backend_zmq_get_fd(void)
 
 void backend_zmq_poll(void)
 {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (deneb_status_state_expire(&state, (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000)))
+        update_status_cache();
     if (!status_sock) return;
 
     for (int i = 0; i < MAX_STATUS_MSGS; i++) {
@@ -423,8 +431,15 @@ void backend_zmq_poll(void)
         size_t len = zmq_msg_size(&msg);
 
         /* Skip topic prefix "10001<" */
-        const char *json = memchr(data, '<', len);
-        if (json) {
+        char frame[2048];
+        if (len >= sizeof(frame) || len <= 6 || memcmp(data, "10001<", 6) != 0) {
+            zmq_msg_close(&msg);
+            continue;
+        }
+        memcpy(frame, data, len);
+        frame[len] = '\0';
+        const char *json = frame + 5;
+        {
             printer_state_t prev = state;
             struct timespec ts;
             uint32_t now_ms;
@@ -542,13 +557,17 @@ int backend_zmq_has_active_job(void)
 
 int backend_zmq_print_start_allowed(void)
 {
-    return deneb_print_start_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_start_allowed(state.connected, state.has_error,
                                      state.is_paused, state.is_printing);
 }
 
 int backend_zmq_manual_action_allowed(void)
 {
-    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_manual_action_allowed(state.connected, state.has_error,
                                              state.is_paused,
                                              state.is_printing);
 }
@@ -586,12 +605,14 @@ static int backend_zmq_send_frame(const char *buf, size_t len)
     zmq_msg_t reply;
     zmq_msg_init(&reply);
     rc = zmq_msg_recv(&reply, rpc_sock, 0);
+    int accepted = rc >= 0 && deneb_command_reply_accepted(
+        zmq_msg_data(&reply), zmq_msg_size(&reply));
     zmq_msg_close(&reply);
     if (rc < 0) {
         reset_rpc_socket();
         return -1;
     }
-    return 0;
+    return accepted ? 0 : -1;
 }
 
 int backend_zmq_send_command(const char *cmd, const char *args)
@@ -602,13 +623,14 @@ int backend_zmq_send_command(const char *cmd, const char *args)
 
     if (!rpc_sock || !cmd || !*cmd) return -1;
     len = deneb_command_plan_frame(cmd, args, buf, sizeof(buf), &plan);
-    if (plan.has_job_path)
-        retain_backend_filename(plan.job_path);
     if (len < 0 || (size_t)len >= sizeof(buf)) {
         fprintf(stderr, "backend_zmq: rpc payload too large\n");
         return -1;
     }
-    return backend_zmq_send_frame(buf, (size_t)len);
+    int rc = backend_zmq_send_frame(buf, (size_t)len);
+    if (rc == 0 && plan.has_job_path)
+        retain_backend_filename(plan.job_path);
+    return rc;
 }
 
 int backend_zmq_send_gcode(const char *gcode)
@@ -655,8 +677,10 @@ int backend_zmq_send_job(const char *path, const char *source,
         fprintf(stderr, "backend_zmq: job payload too large\n");
         return -1;
     }
-    retain_backend_filename(path);
-    return backend_zmq_send_frame(buf, (size_t)len);
+    int rc = backend_zmq_send_frame(buf, (size_t)len);
+    if (rc == 0)
+        retain_backend_filename(path);
+    return rc;
 }
 
 static int pending_dispatch_start_allowed(void *ctx)

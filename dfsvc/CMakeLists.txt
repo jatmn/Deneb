@@ -103,3 +103,17 @@ endif()
 target_link_libraries(deneb-dfsvc PRIVATE m pthread)
 
 install(TARGETS deneb-dfsvc DESTINATION /usr/bin)
+
+if(NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+    add_executable(deneb-df-reconnect-tests tests/test_reconnect.c)
+    target_include_directories(deneb-df-reconnect-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-dfsvc,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(deneb-df-reconnect-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-dfsvc,COMPILE_DEFINITIONS>)
+    target_compile_options(deneb-df-reconnect-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-df-reconnect-tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(deneb-df-reconnect-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-dfsvc,LINK_LIBRARIES>)
+    add_test(NAME deneb-df-reconnect-tests COMMAND deneb-df-reconnect-tests)
+endif()
