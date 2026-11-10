@@ -51,6 +51,7 @@ endif()
 option(BUILD_HOST_STUB "Build without libzmq or serial device dependencies" OFF)
 
 set(DENEB_PRINTSVC_LIB_SOURCES
+    ../common/print/background_action.c
     ../common/print/buildplate_level.c
     ../common/print/command_format.c
     ../common/print/diagnostics_export.c

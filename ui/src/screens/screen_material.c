@@ -26,7 +26,9 @@ static lv_obj_t *workflow_unload_btn = NULL;
 static lv_obj_t *workflow_stop_btn = NULL;
 static lv_timer_t *workflow_timer = NULL;
 static deneb_material_workflow_t workflow_state;
-static uint32_t workflow_move_done_at = 0;
+static uint64_t workflow_operation_id = 0;
+static uint32_t workflow_operation_started;
+static int workflow_cancelling = 0;
 
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
@@ -97,10 +99,20 @@ static void workflow_update(void)
     int motion_allowed = material_motion_allowed();
     int ready = material_temp_ready(s);
 
-    if (workflow_state.moving && workflow_move_done_at &&
-        (int32_t)(lv_tick_get() - workflow_move_done_at) >= 0) {
-        deneb_material_workflow_complete_move(&workflow_state);
-        workflow_move_done_at = 0;
+    if (workflow_state.moving) {
+        deneb_manual_state_t result = deneb_status_state_manual_result(
+            s, workflow_operation_id, lv_tick_get() - workflow_operation_started);
+        if (result == DENEB_MANUAL_COMPLETE && !workflow_cancelling) {
+            deneb_material_workflow_complete_move(&workflow_state);
+            workflow_operation_id = 0;
+        } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR) {
+            deneb_material_workflow_cancel(&workflow_state);
+            deneb_material_workflow_finalize(&workflow_state);
+            deneb_material_workflow_prepare(&workflow_state, DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
+            deneb_material_workflow_set_target(&workflow_state, 0, 0);
+            workflow_operation_id = 0;
+            workflow_cancelling = 0;
+        }
     }
 
     if (workflow_temp_label && s)
@@ -180,7 +192,9 @@ static void workflow_load_cb(lv_event_t *e)
     if (backend_send_gcodes(seq.lines, 2) == 0) {
         deneb_material_workflow_begin_move(&workflow_state,
                                            DENEB_MATERIAL_WORKFLOW_OP_LOAD);
-        workflow_move_done_at = lv_tick_get() + seq.duration_ms;
+        workflow_operation_id = backend_get_last_operation();
+        workflow_operation_started = lv_tick_get();
+        workflow_cancelling = 0;
     }
     workflow_update();
 }
@@ -200,7 +214,9 @@ static void workflow_unload_cb(lv_event_t *e)
     if (backend_send_gcodes(seq.lines, 2) == 0) {
         deneb_material_workflow_begin_move(&workflow_state,
                                            DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
-        workflow_move_done_at = lv_tick_get() + seq.duration_ms;
+        workflow_operation_id = backend_get_last_operation();
+        workflow_operation_started = lv_tick_get();
+        workflow_cancelling = 0;
     }
     workflow_update();
 }
@@ -223,6 +239,14 @@ static void workflow_stop_material(int update_ui)
     deneb_material_workflow_stop_plan_t plan;
     int cooldown_sent = 0;
 
+    if (workflow_state.moving) {
+        if (!workflow_cancelling && backend_abort_print() == 0)
+            workflow_cancelling = 1;
+        if (update_ui)
+            workflow_update();
+        return;
+    }
+
     if (deneb_material_workflow_stop_plan(workflow_state.moving, &plan) == 0) {
         if (plan.stop_gcode)
             backend_send_gcode(plan.stop_gcode);
@@ -236,7 +260,7 @@ static void workflow_stop_material(int update_ui)
         deneb_material_workflow_prepare(&workflow_state,
                                         DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
         deneb_material_workflow_set_target(&workflow_state, 0, 0);
-        workflow_move_done_at = 0;
+        workflow_operation_id = 0;
     }
     if (update_ui && workflow_slider)
         lv_slider_set_value(workflow_slider, workflow_state.target_temp_c, LV_ANIM_ON);
@@ -346,7 +370,7 @@ static lv_obj_t *material_workflow_create(void)
     deneb_material_workflow_init(&workflow_state);
     deneb_material_workflow_prepare(&workflow_state,
                                     DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
-    workflow_move_done_at = 0;
+    workflow_operation_id = 0;
 
     workflow_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(workflow_screen, 320, 208);

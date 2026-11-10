@@ -11,6 +11,47 @@
 #define DENEB_PRINTSVC_FIRMWARE_PROBE_INTERVAL_TICKS 20
 #define DENEB_PRINTSVC_FIRMWARE_PROBE_MAX_ATTEMPTS 6
 
+int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc)
+{
+    if (!svc || (!svc->status.fault && svc->status.state != DENEB_PRINT_STATE_ERROR))
+        return 0;
+    if (!svc->fault_shutdown_started) {
+        svc->fault_shutdown_started = 1;
+        /* Retire pre-fault movement so it cannot be retransmitted. Preserve
+         * sequence numbering. Shutdown is best effort, not proof of cooling. */
+        deneb_flow_clear_inflight(&svc->flow);
+        if (svc->serial_ready) {
+            static const char *shutdown[] = {"M401", "M104 S0", "M140 S0"};
+            for (size_t i = 0; i < sizeof(shutdown) / sizeof(shutdown[0]); ++i) {
+                if (deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                                   svc->serial_ready, shutdown[i]) != 0)
+                    break;
+            }
+        }
+    }
+    deneb_gcode_stream_close(&svc->job_stream);
+    svc->job_active = 0;
+    svc->job_prepare_stage = 0;
+    svc->gcode_queue_active = 0;
+    svc->gcode_queue_count = 0;
+    svc->gcode_queue_index = 0;
+    svc->pause_position_probe_pending = 0;
+    svc->pause_policy_pending = 0;
+    svc->resume_policy_pending = 0;
+    svc->abort_cleanup_pending = 0;
+    svc->finish_cleanup_pending = 0;
+    svc->heater_wait.active = 0;
+    svc->paused_position_valid = 0;
+    svc->abort_requested = 0;
+    if (svc->status.manual_state == DENEB_MANUAL_RUNNING ||
+        svc->status.manual_state == DENEB_MANUAL_CANCELLING)
+        svc->status.manual_state = DENEB_MANUAL_ERROR;
+    /* Preserve the controller fault and observed targets. Never park/home or
+     * claim cooling/recovery merely because host submission has stopped. */
+    svc->status.state = DENEB_PRINT_STATE_ERROR;
+    return 1;
+}
+
 static int status_has_firmware(const deneb_print_service_t *svc)
 {
     return svc && svc->status.firmware[0] != '\0';
@@ -74,36 +115,15 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
 {
     deneb_motion_runtime_t runtime;
     int rc;
-    char abort_reply[128];
 
     if (deneb_service_context_motion_runtime(svc, &runtime) < 0)
         return -1;
 
+    deneb_print_service_stop_faulted_work(svc);
     rc = deneb_motion_runtime_poll(&runtime);
 
-    if (svc->job_active &&
-        svc->status.state == DENEB_PRINT_STATE_ERROR &&
-        svc->status.fault &&
-        svc->status.error.code != DENEB_ERROR_NONE) {
-        int auto_abort = 0;
-        switch (svc->status.error.code) {
-            case DENEB_ERROR_THERMAL:
-            case DENEB_ERROR_ENDSTOP:
-            case DENEB_ERROR_MARLIN_FAULT:
-            case DENEB_ERROR_STORAGE:
-                auto_abort = 1;
-                break;
-            case DENEB_ERROR_SERIAL:
-            case DENEB_ERROR_COMMAND:
-            case DENEB_ERROR_UNKNOWN:
-            default:
-                break;
-        }
-        if (auto_abort) {
-            (void)deneb_job_control_abort(svc, abort_reply,
-                                           sizeof(abort_reply));
-        }
-    }
+    if (deneb_print_service_stop_faulted_work(svc))
+        return -1;
     deneb_pause_resume_control_poll(svc);
     deneb_job_control_poll_abort_cleanup(svc);
     deneb_job_control_poll_finish_cleanup(svc);
@@ -176,6 +196,8 @@ int deneb_print_service_poll_job(deneb_print_service_t *svc)
     char abort_reply[128];
 
     if (deneb_service_context_job_streamer(svc, &streamer) < 0)
+        return -1;
+    if (deneb_print_service_stop_faulted_work(svc))
         return -1;
     if (svc->abort_requested)
         return deneb_job_control_abort(svc, abort_reply, sizeof(abort_reply));

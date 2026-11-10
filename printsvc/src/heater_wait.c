@@ -69,7 +69,8 @@ int deneb_heater_wait_ready(const deneb_heater_wait_t *wait,
 void deneb_heater_wait_apply_status(const deneb_heater_wait_t *wait,
                                     deneb_status_t *status)
 {
-    if (!wait || !status || !wait->active)
+    if (!wait || !status || !wait->active || status->fault ||
+        status->state == DENEB_PRINT_STATE_ERROR)
         return;
 
     status->state = DENEB_PRINT_STATE_PREPARING;

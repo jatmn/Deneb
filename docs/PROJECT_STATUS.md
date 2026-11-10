@@ -1,6 +1,6 @@
 # Deneb Project Status
 
-Last reconciled: 2026-07-22
+Last reconciled: 2026-11-09
 
 This is the only human-maintained dashboard for current project state. For
 navigation and documentation rules, see [README.md](README.md). Detailed test
@@ -14,6 +14,10 @@ in [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 - The 2026-07-10 automation results prove only the named installed package, not
   later source changes. The 2026-06-28 hands-on run remains the newest UI
   workflow evidence.
+- The [2026-11-09 state-machine repairs](evidence/STATE_MACHINE_REPAIRS_2026-11-09.md)
+  add source/host evidence for command ACKs, manual operation results,
+  pause prerequisites, fault precedence, connection ownership and maintenance
+  launch handling. They have not been deployed or physically accepted.
 
 ## Status vocabulary
 
@@ -34,7 +38,7 @@ in [PLATFORM_MODERNIZATION_ROADMAP.md](PLATFORM_MODERNIZATION_ROADMAP.md).
 | Native print service | **SOURCE + HOST + partial TARGET; experimental** | Completion and abort have bounded proof. Latest hands-on Pause failed; the source mitigation is not deployed or target-proven. Long active-soak memory behavior remains open. |
 | Remove stock coordinator | **SOURCE + partial TARGET; substantially implemented** | All 7 scoped workstreams have native implementation or an explicit retirement decision: 3 are complete and 4 are partial. The installer disables the stock coordinator by default, and clean reboot plus selected workflows ran with no live Python. Remaining gates are material load/unload, leveling Cancel, safe Pause/Resume, diagnostics, and broader recovery proof. |
 | Fully remove Python from the firmware | **NOT COMPLETE** | The read-only base image still contains Python; bootstrap patching, rollback, and AVR programming/recovery still depend on it. |
-| First-class Web UI | **MVP + partial TARGET** | Control recovery, storage/upload UX, security, diagnostics/update UX, accessibility, and connection cleanup remain incomplete. Four SSE clients currently starve REST and leak descriptors until reboot. |
+| First-class Web UI | **MVP + HOST + partial TARGET** | API descriptor/retry and duplicate-owner repairs have host proof. The installed four-SSE starvation defect and full proxy/upload concurrency still require a current-package retest; other UX/security gates remain. |
 | Current distro and dependencies | **PLANNED** | No reproducible printer-specific current OpenWrt image, device-tree/kernel port, safe test boot, or rollback lane exists yet. |
 | Fully Deneb-owned firmware image | **EARLY / PLANNED** | Display/touch, MCU control and recovery, storage, factory data, update, and recovery must be owned and proven on a clean image build. |
 | Modern Marlin controller firmware | **SOURCE AUDIT; PORT NOT STARTED** | The command/protocol and slicer boundary is inventoried. Modern Marlin has conflicting command meanings and lacks the Connect board, hardware, safety, and serial-protocol port; no recoverable test build exists. |
@@ -69,7 +73,7 @@ These successes do not make the complete firmware, UI, or print service stable.
 | 1 | Prove the reproducible WSL build lane | Dependency versions and hashes are pinned, setup is scripted, and the release wrapper is deterministic; a fresh-environment end-to-end MIPS package build is not yet recorded | Fresh environment builds and audits a current MIPS package reproducibly |
 | 2 | Make Pause/Resume safe and bounded | 2026-06-28 Pause allowed motion to continue; installed policy also commands Z205, outside the authorized test envelope; current source mitigation has **HOST** proof only | Current package passes hands-on Pause/Resume/Stop with bounded motion and zero new alerts |
 | 3 | Finish no-coordinator target acceptance | Replacement coverage exists across all 7 scoped workstreams: 3 complete, 4 partial. Stock coordinator disablement, clean idle, rejected upload, LAN/API completion, and LAN/API abort have no-Python target proof; material, leveling Cancel, safe Pause/Resume, diagnostics, and recovery gaps remain | Full workflow matrix passes with strict no-Python runtime inventory |
-| 4 | Fix Web/API concurrency and lifecycle ownership | Three SSE clients plus polling passed; four SSE clients starved REST and retained seven descriptors; service restart can create two API processes | Multiple clients, reconnects, service restarts, uploads, and long polling return to baseline without starvation or leaked descriptors |
+| 4 | Fix Web/API concurrency and lifecycle ownership | Source repairs reclaim API SSE slots/descriptors, own one browser retry, and prevent duplicate API socket ownership; installed four-client starvation remains target evidence | Multiple clients, reconnects, service restarts, uploads, and long polling return to baseline without starvation or leaked descriptors |
 | 5 | Explain print-service soak memory behavior | Short repeated jobs pass; longer runs showed a resident/private-memory staircase | Multi-hour representative run plateaus or the growth source is fixed |
 | 6 | Freeze Marlin and slicer compatibility contracts | Source audit found 19 Connect-added M-code numbers, modified standard commands, collisions, and custom transport; no build/profile/target proof exists | Versioned command/response fixtures, safe traces, profiles, generated jobs, and preflight validation cover every dependency |
 
@@ -79,16 +83,16 @@ These successes do not make the complete firmware, UI, or print service stable.
 | --- | --- | --- |
 | **Safety blocker** | Pause can change software state while motion continues | Failed 2026-06-28 hands-on run; do not promote until a current build passes physical proof |
 | **Safety blocker** | Installed Pause policy commands Z205 | Outside the authorized 0..190 mm automation envelope; revise policy before automated retest |
-| **Release blocker** | Material load/change does not prove a complete load/unload workflow | Fix state, heat presentation, extrusion sequencing, and hands-on completion |
-| **Release blocker** | Leveling Cancel did not rehome/reset the wizard | Implement deterministic cancel cleanup and target-test it |
-| **Release blocker** | Four SSE clients can starve REST and retain descriptors/sockets | Isolate capacity, close abandoned proxy/API sockets, and add regression coverage |
-| **Release blocker** | API init ownership can create duplicate processes | Establish one service owner and test restart/fallback behavior |
+| **Release blocker** | Material load/change does not prove a complete load/unload workflow | Source now observes backend completion/cancellation instead of estimated duration; heat presentation, sequencing and hands-on completion remain target gates |
+| **Release blocker** | Leveling Cancel did not rehome/reset the wizard | Source now sends ABORT, observes its result and resets the wizard; the next start homes. Physical stop/restart behavior requires target proof |
+| **Release blocker** | Four SSE clients can starve REST and retain descriptors/sockets | API descriptor/retry regressions pass; full lighttpd/proxy capacity, uploads and target recovery remain open |
+| **Release blocker** | API init ownership can create duplicate processes | Dedicated service ownership and socket lock have source/host coverage; target restart/fallback proof remains open |
 | **Incorrect state** | Manual heat reports the printer as printing | Separate heater activity from job activity in shared status classification |
 | **Missing target function** | Diagnostics export source/formatter exists but is not installed on the tested target | Package, install, and target-test bounded redacted export/download behavior |
 | **Incorrect identity** | Printer API reports missing/invalid firmware, machine, and PCB identity | Populate identity from authoritative device/config sources |
 | **Test tooling defect** | Runtime inventory can false-positive on shell command text containing `python` | Classify by `/proc/<pid>/exe` and structured argv instead of substring alone |
 | **Source/behavior mismatch** | Frame-light source now sends the Connect-required lowercase `M142 w...` form, but native startup/prime paths still emit removed `G10` | Remove or translate the remaining G10 path, host-test it, then verify physical behavior under the safety contract |
-| **UX blocker** | Update screen overflowed, appeared stuck, and lacked a dedicated updating state | Redesign and prove update/reboot/rollback presentation |
+| **UX blocker** | Update screen overflowed, appeared stuck, and lacked a dedicated updating state | Source now owns an update/reset lock and displays observed or unknown outcome; target layout, reboot and rollback presentation remain unproven |
 
 No unattended physical test may exceed the documented safety contract: home
 before motion, stop on any limit/endstop alert, keep commanded X/Y/Z within the

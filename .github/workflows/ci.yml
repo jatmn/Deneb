@@ -444,6 +444,7 @@ jobs:
           bash tools/deneb-printsvc-native-audit-selftest.sh
           bash tools/deneb-printsvc-integration-audit-selftest.sh
           bash tools/deneb-web-ui-xss-selftest.sh
+          sh tools/deneb-state-transitions-selftest.sh
 
       - name: Build and test native print service
         run: |
@@ -455,6 +456,7 @@ jobs:
         run: |
           cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-web --parallel
+          ctest --test-dir build/ci-web --output-on-failure
           cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-ui --parallel
 
@@ -462,3 +464,4 @@ jobs:
         run: |
           cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-dfsvc --parallel
+          ctest --test-dir build/ci-dfsvc --output-on-failure

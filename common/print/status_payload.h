@@ -5,6 +5,7 @@
 #include "print_state_rules.h"
 
 #include <stddef.h>
+#include "manual_operation.h"
 
 typedef struct {
     float nozzle_temp_cur;
@@ -17,6 +18,8 @@ typedef struct {
     float pos_y;
     float pos_z;
     float pos_e;
+    uint64_t manual_id;
+    deneb_manual_state_t manual_state;
     int time_total;
     int time_left;
     float progress;

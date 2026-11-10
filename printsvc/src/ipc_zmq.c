@@ -145,6 +145,11 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
             int n = zmq_recv(rep, buf, sizeof(buf) - 1, 0);
             if (n < 0)
                 continue;
+            if ((size_t)n >= sizeof(buf)) {
+                const char *error = "{\"status\":\"error\",\"message\":\"request too large\"}";
+                zmq_send(rep, error, strlen(error), 0);
+                continue;
+            }
             buf[n] = '\0';
 
             deneb_printsvc_ipc_handle_frame(svc, buf, reply, sizeof(reply));

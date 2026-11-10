@@ -503,8 +503,11 @@ audit_source() {
         '/usr/bin/deneb-printsvc-stability --selftest' \
         "installer runs stability selftest"
     require_pattern "${repo}/web/init/deneb-web.init" \
+        '/etc/init.d/deneb-api start' \
+        "web init starts the dedicated API owner before lighttpd"
+    reject_pattern "${repo}/web/init/deneb-web.init" \
         'procd_open_instance api' \
-        "web init supervises API dependency before lighttpd"
+        "web init does not create a second API owner"
     require_pattern "${repo}/web/init/deneb-web.init" \
         'procd_open_instance web' \
         "web init keeps lighttpd in a named procd instance"
