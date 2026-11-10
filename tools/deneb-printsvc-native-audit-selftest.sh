@@ -404,9 +404,7 @@ cat > "$root/web/init/deneb-web.init" <<'EOF'
 API_PROG=/usr/bin/deneb-api
 API_SOCK=/var/run/deneb-api.sock
 start_service() {
-    procd_open_instance api
-    procd_set_param command "$API_PROG"
-    procd_close_instance
+    /etc/init.d/deneb-api start
     [ -S "$API_SOCK" ] || true
     procd_open_instance web
     /usr/sbin/lighttpd -f /etc/deneb/lighttpd.conf -D
@@ -507,9 +505,14 @@ expect_failure rejects_source_missing_invalid_summary_check "$AUDIT" --source "$
 
 SOURCE_MISSING_WEB_API_INSTANCE="$TMP_DIR/source-missing-web-api-instance"
 write_valid_source "$SOURCE_MISSING_WEB_API_INSTANCE"
-grep -v 'procd_open_instance api' "$SOURCE_MISSING_WEB_API_INSTANCE/web/init/deneb-web.init" > "$SOURCE_MISSING_WEB_API_INSTANCE/web/init/deneb-web.tmp"
+grep -v '/etc/init.d/deneb-api start' "$SOURCE_MISSING_WEB_API_INSTANCE/web/init/deneb-web.init" > "$SOURCE_MISSING_WEB_API_INSTANCE/web/init/deneb-web.tmp"
 mv "$SOURCE_MISSING_WEB_API_INSTANCE/web/init/deneb-web.tmp" "$SOURCE_MISSING_WEB_API_INSTANCE/web/init/deneb-web.init"
 expect_failure rejects_source_missing_web_api_instance "$AUDIT" --source "$SOURCE_MISSING_WEB_API_INSTANCE"
+
+SOURCE_DUPLICATE_WEB_API_INSTANCE="$TMP_DIR/source-duplicate-web-api-instance"
+write_valid_source "$SOURCE_DUPLICATE_WEB_API_INSTANCE"
+printf '\nprocd_open_instance api\n' >> "$SOURCE_DUPLICATE_WEB_API_INSTANCE/web/init/deneb-web.init"
+expect_failure rejects_source_duplicate_web_api_instance "$AUDIT" --source "$SOURCE_DUPLICATE_WEB_API_INSTANCE"
 
 SOURCE_MISSING_WEB_LIGHTTPD_INSTANCE="$TMP_DIR/source-missing-web-lighttpd-instance"
 write_valid_source "$SOURCE_MISSING_WEB_LIGHTTPD_INSTANCE"

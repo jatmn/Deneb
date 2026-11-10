@@ -6,6 +6,7 @@
 
 #include "screen_mgr.h"
 #include "locale.h"
+#include "background_action.h"
 #include "lvgl.h"
 
 #include <dirent.h>
@@ -25,11 +26,30 @@ static char update_paths[MAX_UPDATES][MAX_PATH];
 static char update_names[MAX_UPDATES][MAX_NAME];
 static int update_count = 0;
 static int confirm_idx = -1;
+static pid_t update_pid;
+static lv_timer_t *update_timer;
+#define UPDATE_LOCK "/tmp/deneb-maintenance.lock"
+
+static void update_poll(lv_timer_t *timer)
+{
+    (void)timer;
+    int owned = update_pid > 0;
+    int rc = update_pid > 0 ? deneb_background_action_poll(&update_pid) :
+                             (deneb_background_action_running(UPDATE_LOCK) ? 0 : -1);
+    if (rc == 0)
+        return;
+    if (status_label)
+        lv_label_set_text(status_label, locale_get(!owned ? "maintenance.ended" :
+                         rc > 0 ? "update.complete" : "update.failed"));
+    lv_timer_delete(update_timer);
+    update_timer = NULL;
+}
 
 static void check_releases_cb(lv_event_t *e)
 {
     (void)e;
-    lv_label_set_text(status_label, locale_get("update.check_pending"));
+    if (!update_timer)
+        lv_label_set_text(status_label, locale_get("update.check_pending"));
 }
 
 static int has_suffix(const char *name, const char *suffix)
@@ -95,6 +115,8 @@ static void scan_updates(void)
 static void update_click_cb(lv_event_t *e)
 {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (update_timer || deneb_background_action_running(UPDATE_LOCK))
+        return;
     if (idx < 0 || idx >= update_count)
         return;
 
@@ -106,18 +128,21 @@ static void update_click_cb(lv_event_t *e)
     }
 
     char quoted[MAX_PATH * 5];
-    char cmd[768];
+    char cmd[1200];
     shell_quote(quoted, sizeof(quoted), update_paths[idx]);
     snprintf(cmd, sizeof(cmd),
-             "(rm -rf /tmp/update && mkdir -p /tmp/update && "
+             "rm -rf /tmp/update && mkdir -p /tmp/update && "
              "tar xf %s -C /tmp/update && "
              "chmod +x /tmp/update/update.sh && "
-             "/tmp/update/update.sh) >/tmp/deneb-update.log 2>&1 &",
+             "/tmp/update/update.sh",
              quoted);
 
     lv_label_set_text(status_label, locale_get("update.started"));
     confirm_idx = -1;
-    system(cmd);
+    if (deneb_background_action_start(UPDATE_LOCK, cmd, "/tmp/deneb-update.log", &update_pid) == 0)
+        update_timer = lv_timer_create(update_poll, 250, NULL);
+    else
+        lv_label_set_text(status_label, locale_get("update.failed"));
 }
 
 static void refresh_list(void)
@@ -194,6 +219,12 @@ static lv_obj_t *update_create(void)
     lv_obj_center(check_lbl);
 
     refresh_list();
+    if (update_timer || deneb_background_action_running(UPDATE_LOCK)) {
+        lv_label_set_text(status_label, locale_get(update_pid > 0 ?
+                         "update.started" : "maintenance.running"));
+        if (!update_timer)
+            update_timer = lv_timer_create(update_poll, 250, NULL);
+    }
     return update_screen;
 }
 

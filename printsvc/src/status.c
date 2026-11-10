@@ -4,6 +4,7 @@
 #include "print_control.h"
 #include "print_state_rules.h"
 #include "status.h"
+#include <inttypes.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -93,7 +94,7 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
                  "\"flowLastResponse\":\"%s\","
                  "\"jobQueueDepth\":%u,\"jobLineNumber\":%u,"
                  "\"commandLatencyMs\":%u,\"plannerStarvationCount\":%u,"
-                 "\"positionReportCount\":%u,"
+                 "\"positionReportCount\":%u,\"manualId\":\"%" PRIu64 "\",\"manualState\":%d,"
                  "\"finishDrainTicks\":%u,\"finishStableReports\":%u,"
                  "\"denebState\":\"%s\",\"denebActive\":%s,"
                  "\"denebStopAllowed\":%s,"
@@ -117,13 +118,14 @@ int deneb_status_serialize_payload(const deneb_status_t *status, char *out, size
                  flow_last_response,
                  status->job_queue_depth, status->job_line_number,
                  status->command_latency_ms, status->planner_starvation_count,
-                 status->position_report_count,
+                 status->position_report_count, status->manual_id, status->manual_state,
                  status->finish_drain_ticks, status->finish_stable_reports,
                  deneb_print_control_phase_name(
                      deneb_print_control_phase_from_state(status->state)),
                  deneb_status_has_active_print(status) ? "true" : "false",
-                 deneb_print_control_phase_stop_allowed(
-                     deneb_print_control_phase_from_state(status->state)) ? "true" : "false",
+                 (status->manual_state == DENEB_MANUAL_RUNNING ||
+                  deneb_print_control_phase_stop_allowed(
+                     deneb_print_control_phase_from_state(status->state))) ? "true" : "false",
                  status->error.key ? status->error.key : DENEB_PRINT_NONE_VALUE,
                  status->error.category ? status->error.category : DENEB_PRINT_NONE_VALUE,
                  error_detail,

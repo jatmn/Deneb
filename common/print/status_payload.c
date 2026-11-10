@@ -191,6 +191,10 @@ int deneb_status_payload_parse(const char *json,
     payload->pcb_id = deneb_json_get_int(json, "pcbId", 0);
     (void)deneb_json_get_truthy_value(json, "pcbIdValid",
                                       &payload->pcb_id_valid);
+    char manual_id[32];
+    copy_json_value(json, "manualId", manual_id, sizeof(manual_id));
+    payload->manual_id = deneb_manual_id_parse(manual_id);
+    payload->manual_state = deneb_json_get_int(json, "manualState", 0);
     payload->flow_inflight = deneb_json_get_int(json, "flowInflight", 0);
     payload->flow_sent = deneb_json_get_int(json, "flowSent", 0);
     payload->flow_ack = deneb_json_get_int(json, "flowAck", 0);

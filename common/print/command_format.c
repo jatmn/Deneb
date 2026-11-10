@@ -232,3 +232,85 @@ int deneb_command_plan_frame(const char *verb,
         plan->len = len;
     return len;
 }
+
+/* Native command replies are a flat object of string fields. Consume the whole
+ * frame: a matching substring in a message or a truncated reply is not an ACK. */
+static void reply_space(const char **p, const char *end)
+{
+    while (*p < end && strchr(" \t\r\n", **p) && **p)
+        ++*p;
+}
+
+static int reply_string(const char **p, const char *end,
+                         const char **start, size_t *len)
+{
+    if (*p == end || *(*p)++ != '"')
+        return -1;
+    *start = *p;
+    while (*p < end) {
+        unsigned char c = (unsigned char)*(*p)++;
+        if (c == '"') {
+            *len = (size_t)(*p - *start - 1);
+            return 0;
+        }
+        if (c < 0x20)
+            return -1;
+        if (c == '\\') {
+            if (*p == end)
+                return -1;
+            c = (unsigned char)*(*p)++;
+            if (c == 'u') {
+                for (int i = 0; i < 4; ++i) {
+                    if (*p == end || !**p || !strchr("0123456789abcdefABCDEF", *(*p)++))
+                        return -1;
+                }
+            } else if (!c || !strchr("\"\\/bfnrt", c)) {
+                return -1;
+            }
+        }
+    }
+    return -1;
+}
+
+int deneb_command_reply_accepted(const void *data, size_t size)
+{
+    const char *p = data;
+    const char *end;
+    int accepted = 0;
+    int seen_status = 0;
+
+    if (!data || !size || size > 1024)
+        return 0;
+    end = p + size;
+    reply_space(&p, end);
+    if (p == end || *p++ != '{')
+        return 0;
+    for (;;) {
+        const char *key, *value;
+        size_t key_len, value_len;
+        reply_space(&p, end);
+        if (reply_string(&p, end, &key, &key_len) != 0)
+            return 0;
+        reply_space(&p, end);
+        if (p == end || *p++ != ':')
+            return 0;
+        reply_space(&p, end);
+        if (reply_string(&p, end, &value, &value_len) != 0)
+            return 0;
+        if (key_len == 6 && memcmp(key, "status", 6) == 0) {
+            if (seen_status++)
+                return 0;
+            accepted = value_len == 2 && memcmp(value, "ok", 2) == 0;
+        }
+        reply_space(&p, end);
+        if (p == end)
+            return 0;
+        if (*p == '}') {
+            ++p;
+            reply_space(&p, end);
+            return p == end && accepted;
+        }
+        if (*p++ != ',')
+            return 0;
+    }
+}

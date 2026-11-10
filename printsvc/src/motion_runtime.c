@@ -54,6 +54,10 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
         int flow_rc = deneb_motion_observer_handle_line(
             runtime->status, runtime->heater_wait, runtime->flow, line,
             &resend_sequence);
+        /* Faults dominate all subsequent transport recovery, including lines
+         * in this same read batch. ACKs/temperatures may still be observed. */
+        if (runtime->status->fault || runtime->status->state == DENEB_PRINT_STATE_ERROR)
+            continue;
         if (flow_rc == 2) {
             (void)resend_sequence;
             if (deneb_motion_sender_resend_pending(runtime->flow,

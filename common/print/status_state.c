@@ -182,6 +182,8 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
               payload.flow_last_response);
     state->pcb_id = payload.pcb_id;
     state->pcb_id_valid = payload.pcb_id_valid != 0;
+    state->manual_id = payload.manual_id;
+    state->manual_state = payload.manual_state;
     state->flow_inflight = payload.flow_inflight;
     state->flow_sent = payload.flow_sent;
     state->flow_ack = payload.flow_ack;
@@ -224,4 +226,30 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
     state->last_update_ms = now_ms;
 
     return 0;
+}
+
+int deneb_status_state_expire(deneb_backend_status_state_t *state, uint32_t now_ms)
+{
+    if (state && state->connected &&
+        (uint32_t)(now_ms - state->last_update_ms) >= DENEB_STATUS_STALE_MS) {
+        state->connected = false;
+        return 1;
+    }
+    return 0;
+}
+
+deneb_manual_state_t deneb_status_state_manual_result(
+    const deneb_backend_status_state_t *state, uint64_t operation_id, uint32_t elapsed_ms)
+{
+    if (!state || !state->connected || state->has_error || operation_id <= 0 ||
+        elapsed_ms >= 610000U)
+        return DENEB_MANUAL_ERROR;
+    if (state->manual_id != operation_id) {
+        /* Allow publications already in transit when the ACK arrived, then
+         * fail closed on restart, supersession or missing operation status. */
+        return elapsed_ms >= DENEB_STATUS_STALE_MS ? DENEB_MANUAL_ERROR : DENEB_MANUAL_RUNNING;
+    }
+    if (state->manual_state == DENEB_MANUAL_NONE)
+        return DENEB_MANUAL_ERROR;
+    return state->manual_state;
 }

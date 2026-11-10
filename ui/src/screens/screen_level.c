@@ -10,7 +10,7 @@
 #include "buildplate_level.h"
 #include "lvgl.h"
 #include <stdint.h>
-#include <pthread.h>
+
 
 static lv_obj_t *level_screen = NULL;
 static lv_obj_t *status_label = NULL;
@@ -19,11 +19,11 @@ static lv_obj_t *next_btn_label = NULL;
 static lv_obj_t *cancel_btn = NULL;
 static lv_timer_t *level_macro_timer = NULL;
 static deneb_buildplate_level_workflow_t level_workflow;
-static volatile int level_macro_running = 0;
-static volatile int level_macro_done = 0;
-static volatile int level_macro_rc = 0;
-static volatile int level_macro_cancelled = 0;
-static const char *level_macro_name = NULL;
+static int level_macro_running = 0;
+static uint64_t level_operation_id = 0;
+static uint32_t level_operation_started;
+static int level_macro_rc = 0;
+static int level_macro_cancelled = 0;
 
 static int level_backend_ready(void)
 {
@@ -49,7 +49,7 @@ static const char *level_step_locale_key(deneb_buildplate_level_step_t step)
 
 static const char *level_status_text(void)
 {
-    if (!level_backend_ready())
+    if (!backend_is_ready())
         return locale_get("level.busy");
     switch (level_workflow.state) {
         case DENEB_BUILDPLATE_LEVEL_STATE_MOVING:
@@ -128,37 +128,30 @@ static int level_prepare_if_needed(void)
     return 0;
 }
 
-static void *level_macro_thread(void *arg)
-{
-    const char *macro = (const char *)arg;
-
-    level_macro_rc = backend_send_macro(macro);
-    level_macro_done = 1;
-    level_macro_running = 0;
-    return NULL;
-}
-
 static void level_macro_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-    if (!level_macro_done)
+    const printer_state_t *state = backend_get_state();
+    deneb_manual_state_t result = deneb_status_state_manual_result(
+        state, level_operation_id, lv_tick_get() - level_operation_started);
+    if (result == DENEB_MANUAL_ERROR) {
+        level_macro_rc = -1;
+    } else if (result == DENEB_MANUAL_RUNNING || result == DENEB_MANUAL_CANCELLING) {
+        level_update();
         return;
-
-    level_macro_done = 0;
+    } else {
+        level_macro_rc = result == DENEB_MANUAL_COMPLETE ||
+                         (level_macro_cancelled && result == DENEB_MANUAL_CANCELLED) ? 0 : -1;
+    }
+    level_macro_running = 0;
     if (level_macro_timer) {
         lv_timer_delete(level_macro_timer);
         level_macro_timer = NULL;
     }
-
-    if (level_macro_cancelled) {
-        level_macro_rc = 0;
+    if (level_macro_cancelled || level_macro_rc != 0)
         deneb_buildplate_level_workflow_cancel(&level_workflow);
-    } else if (level_macro_rc == 0) {
+    else
         deneb_buildplate_level_workflow_complete_move(&level_workflow);
-    } else if (level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING) {
-        deneb_buildplate_level_workflow_cancel(&level_workflow);
-    }
-    level_macro_name = NULL;
     level_macro_cancelled = 0;
     level_update();
 }
@@ -168,7 +161,6 @@ static void level_next_cb(lv_event_t *e)
     deneb_buildplate_level_step_t next;
     deneb_buildplate_level_plan_t plan;
     int transition_rc;
-    pthread_t tid;
 
     (void)e;
     if (!level_backend_ready() || level_macro_running) {
@@ -193,23 +185,18 @@ static void level_next_cb(lv_event_t *e)
         return;
     }
 
-    level_macro_name = plan.macro;
-    level_macro_rc = 0;
-    level_macro_done = 0;
+    level_macro_rc = backend_send_macro(plan.macro);
+    level_operation_id = backend_get_last_operation();
+    level_operation_started = lv_tick_get();
     level_macro_cancelled = 0;
-    level_macro_running = 1;
-    level_update();
-
-    if (pthread_create(&tid, NULL, level_macro_thread,
-                       (void *)level_macro_name) != 0) {
-        level_macro_running = 0;
-        level_macro_done = 0;
+    if (level_macro_rc != 0 || level_operation_id <= 0) {
         level_macro_rc = -1;
         deneb_buildplate_level_workflow_cancel(&level_workflow);
         level_update();
         return;
     }
-    pthread_detach(tid);
+    level_macro_running = 1;
+    level_update();
     if (!level_macro_timer)
         level_macro_timer = lv_timer_create(level_macro_timer_cb, 100, NULL);
 }
@@ -218,10 +205,15 @@ static void level_cancel_cb(lv_event_t *e)
 {
     (void)e;
     if (level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING) {
-        level_macro_cancelled = 1;
+        if (backend_abort_print() == 0)
+            level_macro_cancelled = 1;
+        else
+            level_macro_rc = -1;
         level_update();
         return;
     }
+    /* Completed steps have already drained. Reset the wizard; the next start
+     * homes before moving to step one. */
     deneb_buildplate_level_workflow_cancel(&level_workflow);
     level_update();
 }
@@ -305,6 +297,8 @@ static lv_obj_t *level_create(void)
 
 static void level_destroy(void)
 {
+    if (level_macro_running && !level_macro_cancelled && backend_abort_print() == 0)
+        level_macro_cancelled = 1;
     if (level_macro_timer && !level_macro_running) {
         lv_timer_delete(level_macro_timer);
         level_macro_timer = NULL;

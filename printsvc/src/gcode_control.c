@@ -6,10 +6,20 @@
 #include "motion_send_error.h"
 #include "motion_sender.h"
 #include "print_state_rules.h"
+#include "job_lifecycle.h"
+#include <inttypes.h>
+#include <time.h>
 
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+
+static long long manual_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 static int parse_heater_target(const char *line, int *is_bed, float *target)
 {
@@ -135,6 +145,17 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
     if (!svc || !svc->gcode_queue_active)
         return 0;
 
+    if (svc->status.fault || svc->status.state == DENEB_PRINT_STATE_ERROR ||
+        manual_now_ms() >= svc->manual_deadline_ms) {
+        clear_queue(svc);
+        svc->heater_wait.active = 0;
+        svc->status.manual_state = DENEB_MANUAL_ERROR;
+        if (!svc->status.fault)
+            deneb_job_lifecycle_error(&svc->status,
+                deneb_error_make(DENEB_ERROR_SERIAL, "manual operation timed out"));
+        return -1;
+    }
+
     if (svc->heater_wait.active) {
         if (!deneb_heater_wait_ready(&svc->heater_wait, &svc->status)) {
             deneb_heater_wait_apply_status(&svc->heater_wait, &svc->status);
@@ -159,14 +180,15 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
             if (rc == DENEB_MOTION_SEND_FLOW_FULL)
                 return 0;
             clear_queue(svc);
+            svc->status.manual_state = DENEB_MANUAL_ERROR;
             svc->heater_wait.active = 0;
-            svc->status.error =
-                deneb_error_make(deneb_motion_send_error_code(rc),
-                                 "gcode failed");
+            deneb_job_lifecycle_error(&svc->status,
+                deneb_error_make(deneb_motion_send_error_code(rc), "gcode failed"));
             return -1;
         }
         apply_accepted_heater_target(svc, svc->gcode_queue[index]);
         svc->gcode_queue_index++;
+        svc->manual_deadline_ms = manual_now_ms() + 600000;
 
         if (svc->gcode_queue_wait_bed[index]) {
             deneb_heater_wait_start_bed(&svc->heater_wait,
@@ -184,49 +206,137 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
         }
     }
 
+    if (deneb_flow_inflight(&svc->flow) != 0)
+        return 0;
     clear_queue(svc);
+    svc->status.manual_state = DENEB_MANUAL_COMPLETE;
     deneb_gcode_control_refresh_manual_status(svc);
     return 1;
+}
+
+static int manual_admit(deneb_print_service_t *svc, char *reply, size_t reply_sz)
+{
+    if (svc->status.fault || svc->status.state == DENEB_PRINT_STATE_ERROR ||
+        service_has_lifecycle_work(svc) || svc->gcode_queue_active ||
+        svc->pause_position_probe_pending || svc->pause_policy_pending ||
+        svc->resume_policy_pending) {
+        deneb_command_reply_error(reply, reply_sz, "printer busy or faulted");
+        return -1;
+    }
+    clear_queue(svc);
+    return 0;
+}
+
+static int manual_accept(deneb_print_service_t *svc, char *reply, size_t reply_sz)
+{
+    deneb_gcode_rewrite_t drain;
+    if (deneb_gcode_rewrite_line("M400", &drain) < 0 ||
+        enqueue_rewrite(svc, &drain) != 0) {
+        clear_queue(svc);
+        deneb_command_reply_error(reply, reply_sz, "gcode queue full");
+        return -1;
+    }
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        clear_queue(svc);
+        deneb_command_reply_error(reply, reply_sz, "operation clock unavailable");
+        return -1;
+    }
+    /* Kernel monotonic time survives service restarts; a process-local
+     * counter could match a different operation still awaited by the UI. */
+    uint64_t id = (uint64_t)now.tv_sec * UINT64_C(1000000000) + now.tv_nsec;
+    svc->status.manual_id = id > svc->status.manual_id ? id : svc->status.manual_id + 1;
+    svc->status.manual_state = DENEB_MANUAL_RUNNING;
+    svc->manual_deadline_ms = manual_now_ms() + 600000;
+    apply_queued_heater_targets(svc);
+    svc->gcode_queue_active = 1;
+    /* Reply is acceptance, never completion. Publish terminal state only after
+     * poll has drained the barrier. No commands execute inside dispatch. */
+    int n = snprintf(reply, reply_sz,
+                     "{\"status\":\"ok\",\"message\":\"gcode accepted\",\"operation\":\"%" PRIu64 "\"}",
+                     svc->status.manual_id);
+    return n >= 0 && (size_t)n < reply_sz ? 0 : -1;
 }
 
 int deneb_gcode_control_run(deneb_print_service_t *svc,
                             const deneb_command_t *cmd,
                             char *reply, size_t reply_sz)
 {
-    if (!svc || !cmd || !reply || reply_sz == 0)
+    if (!svc || !cmd || !reply || !reply_sz)
         return -1;
 
-    if (svc->gcode_queue_active) {
-        deneb_command_reply_error(reply, reply_sz, "gcode already active");
-        return -1;
+    /* Live non-motion adjustments do not take ownership of the job's heater
+     * wait or manual sequence. Never interleave new movement with that owner. */
+    if (cmd->gcode_count == 1 && !svc->status.fault &&
+        svc->status.state != DENEB_PRINT_STATE_ERROR &&
+        !svc->abort_cleanup_pending && !svc->finish_cleanup_pending &&
+        !svc->pause_position_probe_pending && !svc->pause_policy_pending &&
+        !svc->resume_policy_pending) {
+        char letter;
+        int code;
+        if (sscanf(cmd->gcode[0], " %c%d", &letter, &code) == 2 &&
+            toupper((unsigned char)letter) == 'M' &&
+            (code == 104 || code == 140 || code == 106 || code == 107 || code == 142)) {
+            int rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
+                                                     svc->serial_ready, cmd->gcode[0]);
+            if (rc != 0) {
+                deneb_command_reply_error(reply, reply_sz, "adjustment not accepted");
+                return -1;
+            }
+            apply_accepted_heater_target(svc, cmd->gcode[0]);
+            deneb_gcode_control_refresh_manual_status(svc);
+            deneb_command_reply_ok(reply, reply_sz, "gcode accepted");
+            return 0;
+        }
     }
 
-    clear_queue(svc);
-    for (size_t i = 0; i < cmd->gcode_count; i++) {
+    if (manual_admit(svc, reply, reply_sz) != 0)
+        return -1;
+    for (size_t i = 0; i < cmd->gcode_count; ++i) {
         deneb_gcode_rewrite_t rewrite;
-        if (deneb_gcode_rewrite_line(cmd->gcode[i], &rewrite) < 0) {
-            deneb_command_reply_error(reply, reply_sz, "gcode failed");
-            return -1;
-        }
-        if (enqueue_rewrite(svc, &rewrite) != 0) {
+        if (deneb_gcode_rewrite_line(cmd->gcode[i], &rewrite) < 0 ||
+            enqueue_rewrite(svc, &rewrite) != 0) {
             clear_queue(svc);
-            deneb_command_reply_error(reply, reply_sz, "gcode queue full");
-            return -1;
-        }
-    }
-    apply_queued_heater_targets(svc);
-
-    if (svc->gcode_queue_count > 0) {
-        int rc;
-        svc->gcode_queue_active = 1;
-        rc = deneb_gcode_control_poll(svc);
-        if (rc < 0) {
             deneb_command_reply_error(reply, reply_sz, "gcode failed");
             return -1;
         }
     }
-    deneb_gcode_control_refresh_manual_status(svc);
+    return manual_accept(svc, reply, reply_sz);
+}
 
-    deneb_command_reply_ok(reply, reply_sz, "gcode accepted");
-    return 0;
+int deneb_gcode_control_run_file(deneb_print_service_t *svc, const char *path,
+                                 char *reply, size_t reply_sz)
+{
+    deneb_gcode_stream_t stream;
+    char line[DENEB_PRINTSVC_MAX_GCODE_LINE];
+    int rc;
+    if (!svc || !path || !reply || !reply_sz)
+        return -1;
+    if (manual_admit(svc, reply, reply_sz) != 0)
+        return -1;
+    if (deneb_gcode_stream_open(&stream, path) != 0) {
+        deneb_command_reply_error(reply, reply_sz, "macro failed");
+        return -1;
+    }
+    while ((rc = deneb_gcode_stream_next(&stream, line, sizeof(line))) > 0) {
+        size_t index = svc->gcode_queue_count;
+        if (index >= DENEB_PRINTSVC_GCODE_QUEUE_COMMANDS - 1) {
+            rc = -1;
+            break;
+        }
+        snprintf(svc->gcode_queue[index], sizeof(svc->gcode_queue[index]), "%s", line);
+        svc->gcode_queue_wait_bed[index] = 0;
+        svc->gcode_queue_wait_nozzle[index] = 0;
+        deneb_gcode_stream_last_wait(&stream, &svc->gcode_queue_wait_bed[index],
+                                      &svc->gcode_queue_wait_nozzle[index],
+                                      &svc->gcode_queue_wait_target[index]);
+        svc->gcode_queue_count++;
+    }
+    deneb_gcode_stream_close(&stream);
+    if (rc < 0) {
+        clear_queue(svc);
+        deneb_command_reply_error(reply, reply_sz, "macro failed or too large");
+        return -1;
+    }
+    return manual_accept(svc, reply, reply_sz);
 }

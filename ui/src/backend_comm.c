@@ -27,6 +27,9 @@
 #define BACKEND_RPC_TIMEOUT_MS 1000
 #define BACKEND_MACRO_RPC_TIMEOUT_MS 360000
 
+static uint64_t last_operation_id;
+uint64_t backend_get_last_operation(void) { return last_operation_id; }
+
 #ifdef BACKEND_COMM_STUB
 
 /* ========== STUB IMPLEMENTATION (for host testing without ZMQ) ========== */
@@ -80,19 +83,23 @@ const char *backend_get_print_backend_command_url(void) { return backend_route.c
 int backend_is_ready(void) { return state.connected && !state.has_error; }
 int backend_print_start_allowed(void)
 {
-    return deneb_print_start_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_start_allowed(state.connected, state.has_error,
                                      state.is_paused, state.is_printing);
 }
 int backend_manual_action_allowed(void)
 {
-    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_manual_action_allowed(state.connected, state.has_error,
                                              state.is_paused,
                                              state.is_printing);
 }
 int backend_is_stop_print_inflight(void) { return 0; }
 int backend_send_gcode(const char *gcode) { (void)gcode; return 0; }
-int backend_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; return 0; }
-int backend_send_macro(const char *macro) { (void)macro; return 0; }
+int backend_send_gcodes(const char *const *gcodes, size_t count) { (void)gcodes; (void)count; state.manual_id = ++last_operation_id; state.manual_state = DENEB_MANUAL_COMPLETE; return 0; }
+int backend_send_macro(const char *macro) { (void)macro; state.manual_id = ++last_operation_id; state.manual_state = DENEB_MANUAL_COMPLETE; return 0; }
 int backend_send_job(const char *path, const char *source, const char *uuid,
                      float bed_target, float head_target)
 {
@@ -317,6 +324,9 @@ int backend_init(void)
 
 void backend_poll(void)
 {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    deneb_status_state_expire(&state, (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000));
     if (!status_socket)
         return;
 
@@ -478,13 +488,17 @@ int backend_is_ready(void)
 
 int backend_print_start_allowed(void)
 {
-    return deneb_print_start_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_start_allowed(state.connected, state.has_error,
                                      state.is_paused, state.is_printing);
 }
 
 int backend_manual_action_allowed(void)
 {
-    return deneb_print_manual_action_allowed(state.connected, state.has_error,
+    return state.manual_state != DENEB_MANUAL_RUNNING &&
+        state.manual_state != DENEB_MANUAL_CANCELLING &&
+        deneb_print_manual_action_allowed(state.connected, state.has_error,
                                              state.is_paused,
                                              state.is_printing);
 }
@@ -534,8 +548,24 @@ static int send_rpc_timeout(const char *msg, size_t len, int timeout_ms)
     if (rc > 0) {
         zmq_msg_t reply;
         zmq_msg_init(&reply);
-        zmq_msg_recv(&reply, socket, 0);
+        rc = zmq_msg_recv(&reply, socket, 0);
+        int accepted = rc >= 0 && deneb_command_reply_accepted(
+            zmq_msg_data(&reply), zmq_msg_size(&reply));
+        last_operation_id = 0;
+        if (accepted) {
+            char json[1025];
+            size_t size = zmq_msg_size(&reply);
+            memcpy(json, zmq_msg_data(&reply), size);
+            json[size] = '\0';
+            char id[32] = {0};
+            if (deneb_json_get_value(json, "operation", id, sizeof(id)) == 0)
+                last_operation_id = deneb_manual_id_parse(id);
+        }
         zmq_msg_close(&reply);
+        if (!accepted) {
+            zmq_close(socket);
+            return -1;
+        }
     } else {
         if (rc == 0)
             fprintf(stderr, "backend: rpc reply timeout after %d ms\n",
@@ -604,16 +634,17 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
     char msg[1024];
     int len;
 
-    if (path && *path) {
+    len = deneb_command_format_job(path, source, uuid, NULL, bed_target,
+                                   head_target, msg, sizeof(msg));
+    int rc = send_formatted_rpc(msg, len, sizeof(msg));
+    if (rc == 0 && path && *path) {
         retain_print_filename(path);
         set_filename_or_none(state.filename, path);
         fprintf(stderr, "backend: job command path retained as active filename=%s\n",
                 state.filename[0] ? state.filename : "(none)");
     }
 
-    len = deneb_command_format_job(path, source, uuid, NULL, bed_target,
-                                   head_target, msg, sizeof(msg));
-    return send_formatted_rpc(msg, len, sizeof(msg));
+    return rc;
 }
 
 static int pending_dispatch_start_allowed(void *ctx)
@@ -663,13 +694,14 @@ int backend_send_command(const char *cmd, const char *args_json)
 
     fprintf(stderr, "backend: command send cmd=%s args=%s\n", cmd, args_json ? args_json : "{}");
     len = deneb_command_plan_frame(cmd, args_json, msg, sizeof(msg), &plan);
-    if (plan.has_job_path) {
+    int rc = send_formatted_rpc(msg, len, sizeof(msg));
+    if (rc == 0 && plan.has_job_path) {
         retain_print_filename(plan.job_path);
         set_filename_or_none(state.filename, plan.job_path);
         fprintf(stderr, "backend: job command path retained as active filename=%s\n",
                 state.filename[0] ? state.filename : "(none)");
     }
-    return send_formatted_rpc(msg, len, sizeof(msg));
+    return rc;
 }
 
 int backend_abort_print(void)

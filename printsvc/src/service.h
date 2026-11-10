@@ -18,6 +18,7 @@ typedef struct {
     deneb_flow_control_t flow;
     deneb_gcode_stream_t job_stream;
     deneb_heater_wait_t heater_wait;
+    deneb_heater_wait_t paused_heater_wait;
     char gcode_queue[DENEB_PRINTSVC_GCODE_QUEUE_COMMANDS][DENEB_PRINTSVC_MAX_GCODE_LINE];
     int gcode_queue_wait_bed[DENEB_PRINTSVC_GCODE_QUEUE_COMMANDS];
     int gcode_queue_wait_nozzle[DENEB_PRINTSVC_GCODE_QUEUE_COMMANDS];
@@ -25,7 +26,9 @@ typedef struct {
     size_t gcode_queue_count;
     size_t gcode_queue_index;
     int gcode_queue_active;
+    long long manual_deadline_ms;
     int serial_ready;
+    int fault_shutdown_started;
     int job_active;
     time_t job_started_at;
     int job_elapsed_seconds;
@@ -52,6 +55,9 @@ typedef struct {
     size_t pause_policy_index;
     int pause_position_probe_pending;
     int pause_position_probe_sent;
+    long long pause_probe_deadline_ms;
+    long long pause_policy_deadline_ms;
+    long long resume_deadline_ms;
     unsigned int pause_position_report_start;
     int resume_policy_pending;
     deneb_motion_policy_t resume_policy;
@@ -77,6 +83,7 @@ int deneb_print_service_open_motion(deneb_print_service_t *svc);
 int deneb_print_service_handle_command(deneb_print_service_t *svc,
                                        const deneb_command_t *cmd,
                                        char *reply, size_t reply_sz);
+int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc);
 int deneb_print_service_poll_motion(deneb_print_service_t *svc);
 int deneb_print_service_poll_job(deneb_print_service_t *svc);
 void deneb_print_service_refresh_diagnostics(deneb_print_service_t *svc);

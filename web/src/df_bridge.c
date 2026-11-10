@@ -553,6 +553,17 @@ out:
     return rc;
 }
 
+static int bridge_action_complete(const char *action, bool has_accepted,
+                                  bool accepted, bool has_state, int state,
+                                  const char *pin)
+{
+    if (strcmp(action, "status") == 0)
+        return has_state;
+    return has_accepted && accepted && has_state &&
+        (strcmp(action, "disconnect") == 0 ? state == DF_STATE_DISCONNECTED :
+         (state == DF_STATE_CONNECTED || (pin && pin[0])));
+}
+
 int deneb_df_bridge_run(const char *action, int timeout_seconds,
                         char *out, size_t out_size)
 {
@@ -685,11 +696,12 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
                 }
                 if (read_map_value(&data_msg, "pin", &val) == 0)
                     (void)mp_read_str(&val, pin, sizeof(pin));
-                if (pin[0] || state == DF_STATE_CONNECTED)
-                    deadline = 0;
             }
         }
 
+        if ((has_accepted && !accepted) ||
+            bridge_action_complete(action, has_accepted, accepted, has_state, state, pin))
+            deadline = 0;
         zmq_msg_close(&key_msg);
         zmq_msg_close(&data_msg);
     }
@@ -700,14 +712,19 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
         state = DF_STATE_DISCONNECTED;
     }
 
-    write_result(out, out_size, has_accepted, accepted, has_state, state, pin);
+    int completed = bridge_action_complete(action, has_accepted, accepted, has_state, state, pin);
+    if (completed)
+        write_result(out, out_size, has_accepted, accepted, has_state, state, pin);
+    else
+        snprintf(out, out_size, "status=error reason=%s",
+                 has_accepted && !accepted ? "rejected" : "timeout");
 #if !defined(_WIN32)
     syslog(LOG_INFO, "digital_factory action=%s result=%s", action, out);
 #endif
     zmq_close(sub);
     zmq_close(pub);
     zmq_ctx_destroy(ctx);
-    return 0;
+    return completed ? 0 : -1;
 }
 
 #endif /* BACKEND_ZMQ_STUB */

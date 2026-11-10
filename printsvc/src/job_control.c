@@ -38,6 +38,11 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
     if (!svc || !cmd || !reply || reply_sz == 0)
         return -1;
 
+    if (svc->status.fault || svc->status.state == DENEB_PRINT_STATE_ERROR) {
+        deneb_command_reply_error(reply, reply_sz, "controller recovery required");
+        return -1;
+    }
+
     if (!cmd->file[0]) {
         deneb_command_reply_error(reply, reply_sz, "missing job file");
         return -1;
@@ -71,7 +76,6 @@ int deneb_job_control_accept(deneb_print_service_t *svc,
         }
     }
 
-    deneb_flow_clear_inflight(&svc->flow);
     svc->abort_requested = 0;
     svc->abort_cleanup_pending = 0;
     svc->pause_policy_pending = 0;
@@ -127,13 +131,39 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     if (!svc || !reply || reply_sz == 0)
         return -1;
 
+    if (svc->status.fault || svc->status.state == DENEB_PRINT_STATE_ERROR) {
+        deneb_print_service_stop_faulted_work(svc);
+        deneb_command_reply_ok(reply, reply_sz, "host work stopped; controller recovery required");
+        return 0;
+    }
+    if (svc->abort_cleanup_pending) {
+        deneb_command_reply_ok(reply, reply_sz, "abort already accepted");
+        return 0;
+    }
     if (!job_control_abortable(svc)) {
         svc->abort_requested = 0;
         deneb_command_reply_error(reply, reply_sz, "no active print to abort");
         return -1;
     }
 
-    deneb_motion_policy_abort(&abort_policy);
+    if (svc->job_active) {
+        deneb_motion_policy_abort(&abort_policy);
+    } else {
+        /* Manual cancellation must not run the print parking/homing policy.
+         * Quick-stop is queued on Connect; this is not an emergency parser. */
+        static const char *commands[] = {
+            "M401", "G90", "M82", "G92 E0", "M104 S0", "M140 S0", "M400"
+        };
+        memset(&abort_policy, 0, sizeof(abort_policy));
+        for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i)
+            snprintf(abort_policy.commands[abort_policy.count++],
+                     DENEB_PRINTSVC_MAX_GCODE_LINE, "%s", commands[i]);
+    }
+    /* Stop can race the last movement ACK while manual heat is still active.
+     * Publish the accepted cleanup even when COMPLETE was not yet observed. */
+    if (!svc->job_active && (svc->status.manual_state == DENEB_MANUAL_RUNNING ||
+                            svc->status.manual_state == DENEB_MANUAL_COMPLETE))
+        svc->status.manual_state = DENEB_MANUAL_CANCELLING;
     if (svc->job_active) {
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;
@@ -177,6 +207,8 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         svc->abort_cleanup_index = 0;
         svc->job_stream.line_number = 0;
         deneb_job_lifecycle_abort(&svc->status);
+        if (svc->status.manual_state == DENEB_MANUAL_CANCELLING)
+            svc->status.manual_state = DENEB_MANUAL_CANCELLED;
         svc->job_started_at = 0;
         svc->job_elapsed_seconds = 0;
         svc->job_progress_started = 0;
@@ -226,6 +258,8 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     deneb_flow_clear_inflight(&svc->flow);
     svc->job_stream.line_number = 0;
     deneb_job_lifecycle_abort(&svc->status);
+    if (svc->status.manual_state == DENEB_MANUAL_CANCELLING)
+        svc->status.manual_state = DENEB_MANUAL_CANCELLED;
     svc->job_started_at = 0;
     svc->job_elapsed_seconds = 0;
     svc->job_progress_started = 0;
