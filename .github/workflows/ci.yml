@@ -412,10 +412,11 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 1
+          filter: blob:none
           submodules: false
 
       - name: Check out native submodules
-        run: git submodule update --init --recursive
+        run: git submodule update --init --recursive --depth 1 --filter=blob:none
 
       - name: Install native host libraries
         run: |
