@@ -200,6 +200,10 @@ if(SH_EXECUTABLE)
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-cli-selftest.sh"
                 "$<TARGET_FILE:deneb-printsvc>"
     )
+    # Both binaries exercise the lifecycle code that clears the active
+    # thumbnail in /tmp.
+    set_tests_properties(deneb-printsvc-tests deneb-printsvc-cli-selftest
+        PROPERTIES RESOURCE_LOCK deneb-active-thumbnail)
     add_test(
         NAME deneb-printsvc-init-selftest
         COMMAND "${SH_EXECUTABLE}"
