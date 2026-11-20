@@ -241,7 +241,15 @@ int deneb_status_state_expire(deneb_backend_status_state_t *state, uint32_t now_
 deneb_manual_state_t deneb_status_state_manual_result(
     const deneb_backend_status_state_t *state, uint64_t operation_id, uint32_t elapsed_ms)
 {
-    if (!state || !state->connected || state->has_error || operation_id == 0)
+    if (!state || operation_id == 0)
+        return DENEB_MANUAL_ERROR;
+    /* Lost status is not evidence that the operation ended. Keep it pending,
+     * and cancellable by its token, until the operation's own bound expires;
+     * recovery then reports the service's actual result. */
+    if (!state->connected)
+        return elapsed_ms >= DENEB_MANUAL_TIMEOUT_MS + 10000U ? DENEB_MANUAL_ERROR :
+                                                                DENEB_MANUAL_RUNNING;
+    if (state->has_error)
         return DENEB_MANUAL_ERROR;
     if (state->manual_id != operation_id) {
         /* Allow publications already in transit when the ACK arrived, then

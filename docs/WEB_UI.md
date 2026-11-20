@@ -108,7 +108,10 @@ updates/rollback, accessibility, and hardware-backed browser workflows. See
 Implemented local API surface:
 - `GET /api/v1/printer/status` — printer status string
 - `GET /api/v1/printer` — full printer state, including Deneb-native
-  `native_active` and `native_stop_allowed` flags from `deneb-printsvc`
+  `native_active` and `native_stop_allowed` flags from `deneb-printsvc` and
+  `manual_action_allowed`, which is false whenever the API would reject manual
+  motion, including while a manual operation is still running (also published on
+  the SSE status stream)
 - `GET /api/v1/print_job` — current print job
 - `GET /api/v1/system` — system information
 - `POST /api/v1/print_job` — initial multipart upload and start handler

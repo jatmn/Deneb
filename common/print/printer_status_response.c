@@ -446,6 +446,7 @@ int deneb_printer_status_response_format_um_root(
         "\"status\":\"%s\",\"connected\":%s,\"is_printing\":%s,"
         "\"is_paused\":%s,\"has_error\":%s,\"progress\":%.1f,"
         "\"native_active\":%s,\"native_stop_allowed\":%s,"
+        "\"manual_action_allowed\":%s,"
         "\"time_total\":%d,\"time_left\":%d,\"filename\":\"%s\","
         "\"diagnostics\":{\"error_key\":\"%s\","
         "\"error_category\":\"%s\",\"error_detail\":\"%s\","
@@ -466,6 +467,7 @@ int deneb_printer_status_response_format_um_root(
         bool_text(status->has_native_active && status->native_active),
         bool_text(status->has_native_stop_allowed &&
                   status->native_stop_allowed),
+        bool_text(status->manual_action_allowed),
         status->time_total, status->time_left, filename,
         error_key, error_category, error_detail, flow_last_response,
         status->flow_inflight, status->flow_sent, status->flow_ack,

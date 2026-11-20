@@ -86,6 +86,7 @@ void backend_zmq_get_printer_status_response(
     status->native_stop_allowed = state.native_stop_allowed;
     status->has_native_active = state.has_native_active;
     status->has_native_stop_allowed = state.has_native_stop_allowed;
+    status->manual_action_allowed = backend_zmq_manual_action_allowed();
     status->topcap_present = state.topcap_present;
     status->topcap_temp_cur = state.topcap_temp_cur;
     status->firmware = state.firmware;
@@ -343,7 +344,7 @@ static void update_status_cache(void)
         "\"pcb_id\":%d,\"pcb_id_valid\":%s,"
         "\"is_printing\":%s,\"is_paused\":%s,\"has_error\":%s,"
         "\"connected\":%s,\"native_active\":%s,"
-        "\"native_stop_allowed\":%s,%s}",
+        "\"native_stop_allowed\":%s,\"manual_action_allowed\":%s,%s}",
         state.nozzle_temp_cur, state.nozzle_temp_set,
         state.bed_temp_cur, state.bed_temp_set,
         state.topcap_temp_cur, state.topcap_present ? "true" : "false",
@@ -362,6 +363,7 @@ static void update_status_cache(void)
         state.has_native_active && state.native_active ? "true" : "false",
         state.has_native_stop_allowed && state.native_stop_allowed ?
             "true" : "false",
+        backend_zmq_manual_action_allowed() ? "true" : "false",
         route_fields);
 
     p += n; rem -= n;
@@ -524,6 +526,7 @@ void backend_zmq_get_printer_status_response(
     status->native_stop_allowed = state.native_stop_allowed;
     status->has_native_active = state.has_native_active;
     status->has_native_stop_allowed = state.has_native_stop_allowed;
+    status->manual_action_allowed = backend_zmq_manual_action_allowed();
     status->topcap_present = state.topcap_present;
     status->topcap_temp_cur = state.topcap_temp_cur;
     status->firmware = state.firmware;

@@ -301,6 +301,8 @@ Deneb.ui = {
         if (status === 'offline' || status === 'printing' || status === 'paused' || status === 'error') {
             return false;
         }
+        /* The backend owns manual admission, including queued manual work. */
+        if (data.manual_action_allowed === false) return false;
 
         if (typeof data.connected !== 'undefined' || typeof data.is_printing !== 'undefined' ||
             typeof data.is_paused !== 'undefined' || typeof data.has_error !== 'undefined' || data.status) {

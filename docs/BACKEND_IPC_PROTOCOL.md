@@ -235,5 +235,7 @@ an immediate physical-stop guarantee.
 
 UI/Web readiness expires after five seconds without a status publication.
 Expiration retains the last observation for display but marks it disconnected;
-it never manufactures a print-completed event. Fault handling is described in
+it never manufactures a print-completed event or a manual-operation result. An
+awaited operation stays cancellable by its token until status returns or the
+operation deadline passes. Fault handling is described in
 [FAULT_POLICY.md](FAULT_POLICY.md).

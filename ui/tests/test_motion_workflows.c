@@ -180,16 +180,19 @@ static void test_material_stop_race_keeps_cooldown(int route)
         assert(strcmp(shown_status, "material.stop_unconfirmed") != 0);
 }
 
-static void test_material_status_outage_keeps_cooldown(bool leaving_screen)
+enum { OUTAGE_STOP_RUNNING, OUTAGE_LEAVE_RUNNING, OUTAGE_STOP_COMPLETE, OUTAGE_LEAVE_COMPLETE };
+
+static void test_material_status_outage_keeps_ownership(int route)
 {
-    /* Lost status is not backend evidence that the heater cleanup ran. */
+    /* Lost status is not backend evidence that the move or its heater
+     * cleanup ended: the operation token and accepted target stay owned. */
     workflow_status_label = (lv_obj_t *)&timer_handle;
     observed.nozzle_temp_cur = 190;
     deneb_material_workflow_init(&workflow_state);
     assert(deneb_material_workflow_prepare(
         &workflow_state, DENEB_MATERIAL_WORKFLOW_OP_CHANGE) == 0);
     deneb_material_workflow_set_target(&workflow_state, 190, 1);
-    admitted_operation = 30 + (uint64_t)leaving_screen;
+    admitted_operation = 30 + (uint64_t)route;
     observed.manual_state = DENEB_MANUAL_NONE;
     workflow_load_cb(NULL);
     observed.manual_id = admitted_operation;
@@ -198,20 +201,41 @@ static void test_material_status_outage_keeps_cooldown(bool leaving_screen)
     assert(workflow_state.moving);
 
     sent_gcode[0] = '\0';
+    cancel_requested = 0;
+    abort_rc = 0;
     observed.connected = false;
     workflow_update();
-    assert(!workflow_state.moving && workflow_state.target_sent);
-    assert(workflow_state.accepted_target_temp_c == 190);
-    assert(strcmp(shown_status, "material.move_unconfirmed") == 0);
+    assert(workflow_state.moving && workflow_operation_id == admitted_operation);
+    assert(workflow_state.target_sent && workflow_state.accepted_target_temp_c == 190);
 
     observed.connected = true;
+    if (route == OUTAGE_STOP_RUNNING || route == OUTAGE_LEAVE_RUNNING) {
+        /* The service is still running the same operation after recovery. */
+        workflow_update();
+        assert(workflow_state.moving);
+        if (route == OUTAGE_LEAVE_RUNNING)
+            material_workflow_destroy();
+        else
+            workflow_stop_cb(NULL);
+        assert(cancel_requested == admitted_operation);
+        assert(sent_gcode[0] == '\0');
+        if (route == OUTAGE_LEAVE_RUNNING)
+            return;
+        observed.manual_state = DENEB_MANUAL_CANCELLED;
+        workflow_update();
+        assert(!workflow_state.moving && !workflow_state.target_sent);
+        return;
+    }
+
     observed.manual_state = DENEB_MANUAL_COMPLETE;
     workflow_update();
+    assert(!workflow_state.moving);
     assert(workflow_state.target_sent && sent_gcode[0] == '\0');
-    if (leaving_screen)
+    if (route == OUTAGE_LEAVE_COMPLETE)
         material_workflow_destroy();
     else
         workflow_stop_cb(NULL);
+    assert(cancel_requested == 0);
     assert(strcmp(sent_gcode, "M104 S0") == 0);
     assert(!workflow_state.target_sent);
 }
@@ -238,8 +262,10 @@ int main(void)
     test_material_stop_race_keeps_cooldown(STOP_RETRY);
     test_material_stop_race_keeps_cooldown(LEAVE_AFTER_COMPLETE);
     test_material_stop_race_keeps_cooldown(LEAVE_BEFORE_COMPLETE);
-    test_material_status_outage_keeps_cooldown(false);
-    test_material_status_outage_keeps_cooldown(true);
+    test_material_status_outage_keeps_ownership(OUTAGE_STOP_RUNNING);
+    test_material_status_outage_keeps_ownership(OUTAGE_LEAVE_RUNNING);
+    test_material_status_outage_keeps_ownership(OUTAGE_STOP_COMPLETE);
+    test_material_status_outage_keeps_ownership(OUTAGE_LEAVE_COMPLETE);
     test_jog_rejection_feedback();
     return 0;
 }

@@ -115,8 +115,8 @@ static void workflow_update(void)
             workflow_cancelling = 0;
         } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR) {
             /* Only a confirmed cancellation ran the backend heater cleanup.
-             * An error or lost status retires the move, not the accepted
-             * target: Stop and exit cooldown still own it. */
+             * A backend error retires the move, not the accepted target:
+             * Stop and exit cooldown still own it. */
             int owned_target = result == DENEB_MANUAL_ERROR && workflow_state.target_sent ?
                                    workflow_state.accepted_target_temp_c : 0;
             if (result == DENEB_MANUAL_CANCELLED)

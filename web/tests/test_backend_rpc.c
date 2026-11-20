@@ -14,6 +14,53 @@ static const char *replies[] = {
     "{\"status\":\"ok\"", "", "garbage",
     "{\"status\":\"ok\",\"operation\":\"18446744073709551615\"}"
 };
+#ifdef TEST_WEB_BACKEND
+static void publish_until(void *pub, deneb_manual_state_t manual_state)
+{
+    char frame[128];
+    int n = snprintf(frame, sizeof(frame),
+                     "10001<{\"manualId\":\"9\",\"manualState\":%d}", (int)manual_state);
+    for (int i = 0; i < 400; ++i) {
+        assert(zmq_send(pub, frame, (size_t)n, 0) == n);
+        backend_zmq_poll();
+        if (state.connected && state.manual_id == 9 && state.manual_state == manual_state)
+            return;
+        struct timespec pause = {0, 5000000};
+        nanosleep(&pause, NULL);
+    }
+    assert(!"status publication was not observed");
+}
+
+/* SSE and polled status must show the same manual ownership the motion gate
+ * enforces, from the real status subscription path. */
+static void test_status_projects_manual_ownership(void)
+{
+    void *pub = zmq_socket(zmq_ctx, ZMQ_PUB);
+    assert(pub && zmq_bind(pub, "inproc://deneb-status-regression") == 0);
+    status_sock = zmq_socket(zmq_ctx, ZMQ_SUB);
+    assert(status_sock);
+    configure_status_socket(status_sock);
+    assert(zmq_connect(status_sock, "inproc://deneb-status-regression") == 0);
+    assert(zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) == 0);
+    const deneb_manual_state_t states[] = {
+        DENEB_MANUAL_RUNNING, DENEB_MANUAL_CANCELLING, DENEB_MANUAL_COMPLETE};
+    for (size_t i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
+        publish_until(pub, states[i]);
+        int allowed = states[i] == DENEB_MANUAL_COMPLETE;
+        assert(backend_zmq_manual_action_allowed() == allowed);
+        deneb_printer_status_response_t response;
+        backend_zmq_get_printer_status_response(&response);
+        assert(response.manual_action_allowed == allowed);
+        assert(strstr(backend_zmq_get_status_json(),
+                      allowed ? "\"manual_action_allowed\":true" :
+                                "\"manual_action_allowed\":false"));
+    }
+    zmq_close(status_sock);
+    status_sock = NULL;
+    zmq_close(pub);
+}
+#endif
+
 static void *serve(void *socket)
 {
     for (size_t i = 0; i < sizeof(replies) / sizeof(replies[0]); ++i) {
@@ -54,6 +101,9 @@ int main(void)
     zmq_close(rpc_sock);
 #endif
     assert(pthread_join(thread, NULL) == 0);
+#ifdef TEST_WEB_BACKEND
+    test_status_projects_manual_ownership();
+#endif
 #ifndef TEST_WEB_BACKEND
     /* Use a bound, silent peer to exercise the real macro admission timeout. */
     backend_route.command_url = "inproc://deneb-rpc-silent";

@@ -2777,6 +2777,7 @@ static void test_printer_status_response(void)
     assert(strstr(json, "\"has_error\":false") != NULL);
     assert(strstr(json, "\"native_active\":true") != NULL);
     assert(strstr(json, "\"native_stop_allowed\":true") != NULL);
+    assert(strstr(json, "\"manual_action_allowed\":false") != NULL);
     assert(strstr(json, "\"progress\":42.5") != NULL);
     assert(strstr(json, "\"time_total\":1200") != NULL);
     assert(strstr(json, "\"time_left\":690") != NULL);
@@ -6783,7 +6784,12 @@ static void test_operation_observation(void)
     assert(!deneb_status_state_expire(&state, 1000));
     assert(deneb_status_state_expire(&state, 5000));
     assert(!state.connected);
-    assert(deneb_status_state_manual_result(&state, 4, 100) == DENEB_MANUAL_ERROR);
+    /* Lost observation keeps the operation pending within its own bound. */
+    assert(deneb_status_state_manual_result(&state, 4, 100) == DENEB_MANUAL_RUNNING);
+    state.manual_id = 5;
+    assert(deneb_status_state_manual_result(&state, 4, 5000) == DENEB_MANUAL_RUNNING);
+    assert(deneb_status_state_manual_result(&state, 4, DENEB_MANUAL_TIMEOUT_MS + 10000) ==
+           DENEB_MANUAL_ERROR);
 }
 
 static void test_fault_never_replays_motion(void)
