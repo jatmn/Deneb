@@ -144,7 +144,7 @@ This produces:
 
 ### Native Debian/Linux
 
-Host packages needed for the bootstrap package (Python 3.10 or newer):
+Host packages needed for the bootstrap package (CPython 3.11 or newer):
 
 ```sh
 sudo apt-get update
@@ -163,7 +163,7 @@ DENEB_BOOTSTRAP_PYTHON="$PWD/build/bootstrap-python/bin/python" \
 
 ### Windows with Debian WSL 2 or native PowerShell tooling
 
-Python 3.10 or newer with Pillow is required on the Windows side for the
+CPython 3.11 or newer with Pillow is required on the Windows side for the
 splash conversion:
 
 ```powershell

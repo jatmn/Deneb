@@ -19,12 +19,12 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 
 ### Pillow bootstrap host tool
 
-- Pillow 12.3.0 is used only on the build host to convert the Deneb splash to
+- Pillow 13.0.0 is used only on the build host to convert the Deneb splash to
   RGB565. It is installed from repository-locked wheel hashes and is not
   included in target packages.
 - Upstream: https://github.com/python-pillow/Pillow at commit
-  `bb1d8e8ab8d29048624d96e3ee53cecf7c13d13d`
-- License: MIT-CMU, retained in `notices/PILLOW-12.3.0-LICENSE.txt`
+  `293218ad059d994baf1777d882911bed6a49704a`
+- License: MIT-CMU, retained in `notices/PILLOW-13.0.0-LICENSE.txt`
 
 ### ESLint host checker
 
