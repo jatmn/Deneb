@@ -164,6 +164,23 @@ jobs:
           npm ci --ignore-scripts --prefix tools/eslint
           bash tools/eslint-web-selftest.sh
 
+      - name: Test Pullfrog command authorization
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            changes=$(git diff --no-renames --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" -- \
+              .github/workflows/ci.yml .github/workflows/pullfrog.yml \
+              scripts/pullfrog-command-check.mjs scripts/pullfrog-command-check.test.mjs)
+            if [ -z "$changes" ]; then
+              echo "No Pullfrog authorization inputs changed"
+              exit 0
+            fi
+          fi
+          node --test scripts/pullfrog-command-check.test.mjs
+
       - name: Check changed-file whitespace
         env:
           EVENT_NAME: ${{ github.event_name }}
