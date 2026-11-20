@@ -22,6 +22,8 @@
 #include "job_control.h"
 #include "job_lifecycle.h"
 #include "job_streamer.h"
+#include "background_action.h"
+#include <sys/socket.h>
 #include "macro_control.h"
 #include "macro_registry.h"
 #include "macro_runner.h"
@@ -66,6 +68,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -237,7 +240,8 @@ static void test_command_dispatch_policy(void)
     assert(deneb_command_parse("GCODE<[\"M105\",\"G28 X Y\"]", &cmd) == 0);
     assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(strstr(reply, "\"status\":\"ok\"") != NULL);
-    assert(deneb_flow_inflight(&svc.flow) == 2);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_RUNNING);
 
     assert(deneb_command_parse("PAUSE<{}", &cmd) == 0);
     assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
@@ -246,6 +250,15 @@ static void test_command_dispatch_policy(void)
     assert(deneb_command_parse("JOB<{}", &cmd) == 0);
     assert(deneb_command_dispatch_handle(&svc, &cmd, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "missing job file") != NULL);
+}
+
+static void drain_manual_queue(deneb_print_service_t *svc)
+{
+    for (int i = 0; i < 128 && svc->gcode_queue_active; ++i) {
+        deneb_flow_clear_inflight(&svc->flow);
+        assert(deneb_gcode_control_poll(svc) >= 0);
+    }
+    assert(!svc->gcode_queue_active);
 }
 
 static void test_gcode_control_policy(void)
@@ -258,12 +271,14 @@ static void test_gcode_control_policy(void)
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M105\",\"G28 X Y\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(strstr(reply, "\"status\":\"ok\"") != NULL);
     assert(deneb_flow_inflight(&svc.flow) == 2);
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M140 S40\",\"M104 S50\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(strstr(reply, "\"status\":\"ok\"") != NULL);
     assert(svc.status.bed_t_set == 40.0f);
     assert(svc.status.head_t_set == 50.0f);
@@ -274,10 +289,13 @@ static void test_gcode_control_policy(void)
     assert(strstr(payload, "\"denebActive\":true") != NULL);
     assert(strstr(payload, "\"denebStopAllowed\":true") != NULL);
 
+    drain_manual_queue(&svc);
     assert(deneb_command_parse("GCODE<[\"M140 S0\",\"M104 S0\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(svc.status.bed_t_set == 0.0f);
     assert(svc.status.head_t_set == 0.0f);
+    drain_manual_queue(&svc);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     assert(deneb_status_serialize_payload(&svc.status, payload,
                                           sizeof(payload)) > 0);
@@ -312,11 +330,12 @@ static void test_gcode_control_policy(void)
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     assert(deneb_command_parse("GCODE<[\"M140 S0\",\"M104 S0\",\"M105\",\"M105\",\"M105\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(svc.gcode_queue_active);
     assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     deneb_flow_clear_inflight(&svc.flow);
-    assert(deneb_gcode_control_poll(&svc) == 1);
+    drain_manual_queue(&svc);
     assert(!svc.gcode_queue_active);
     assert(svc.status.bed_t_set == 0.0f);
     assert(svc.status.head_t_set == 0.0f);
@@ -325,21 +344,27 @@ static void test_gcode_control_policy(void)
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M190 S55\",\"G1 X2\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(svc.gcode_queue_active);
     assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
     assert(svc.status.bed_t_set == 55.0f);
+    assert(deneb_command_parse("GCODE<[\"M140 S0\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(svc.status.bed_t_set == 55.0f && svc.heater_wait.active);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(deneb_command_parse("ABORT<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply,
-                                              sizeof(reply)) == 0);
+                                              sizeof(reply)) < 0);
     assert(!svc.gcode_queue_active);
     assert(svc.gcode_queue_count == 0);
-    assert(svc.status.bed_t_set == 0.0f);
-    assert(svc.status.head_t_set == 0.0f);
-    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(svc.status.bed_t_set == 55.0f);
+    assert(svc.status.fault && svc.status.manual_state == DENEB_MANUAL_ERROR);
+    assert(!svc.abort_cleanup_pending && deneb_flow_inflight(&svc.flow) == 0);
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M117 hello\",\"M190 S55\",\"M109 S205\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(strstr(reply, "\"status\":\"ok\"") != NULL);
     assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(svc.gcode_queue_active);
@@ -357,28 +382,29 @@ static void test_gcode_control_policy(void)
     assert(!svc.heater_wait.wait_bed);
     assert(svc.heater_wait.wait_head);
     svc.status.head_t_cur = 205.0f;
-    assert(deneb_gcode_control_poll(&svc) == 1);
+    drain_manual_queue(&svc);
     assert(!svc.gcode_queue_active);
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M190 S55\",\"G1 X2\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) >= 0);
     assert(svc.gcode_queue_active);
     assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(svc.gcode_queue_index == 1);
     assert(deneb_gcode_control_poll(&svc) == 0);
     assert(svc.gcode_queue_index == 1);
     svc.status.bed_t_cur = 55.0f;
-    assert(deneb_gcode_control_poll(&svc) == 1);
+    drain_manual_queue(&svc);
     assert(!svc.gcode_queue_active);
-    assert(deneb_flow_inflight(&svc.flow) == 2);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M105\"]", &cmd) == 0);
     svc.serial_ready = 1;
     svc.serial.fd = -1;
-    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
-    assert(strstr(reply, "gcode failed") != NULL);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_gcode_control_poll(&svc) < 0);
     assert(svc.status.error.code == DENEB_ERROR_SERIAL);
 }
 
@@ -391,19 +417,15 @@ static void test_pause_resume_control_policy(void)
     assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) < 0);
     assert(strstr(reply, "no active print to pause") != NULL);
 
-    svc.status.state = DENEB_PRINT_STATE_PRINTING;
-    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) == 0);
-    assert(strstr(reply, "pause accepted") != NULL);
-    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
-    assert(!svc.pause_policy_pending);
-
+    svc.status.state = DENEB_PRINT_STATE_PREPARING;
     svc.heater_wait.active = 1;
-    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
-    assert(strstr(reply, "resume accepted") != NULL);
-    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
-
+    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) < 0);
+    svc.status.state = DENEB_PRINT_STATE_PAUSED;
     assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) < 0);
-    assert(strstr(reply, "print is not paused") != NULL);
+    svc.job_active = 1;
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
+    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) < 0);
 
     deneb_print_service_init(&svc);
     svc.job_active = 1;
@@ -873,16 +895,14 @@ static void test_job_control_policy(void)
     assert(deneb_flow_inflight(&svc.flow) == 7);
     assert(seq == 6);
     svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_MARLIN_FAULT, "stale fault");
+    svc.status.error = deneb_error_make(DENEB_ERROR_MARLIN_FAULT, "latched fault");
+    assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(deneb_flow_inflight(&svc.flow) == 7);
+    assert(svc.status.fault);
+    assert(svc.status.error.code == DENEB_ERROR_MARLIN_FAULT);
+    /* A separately recovered controller starts a new service context. */
+    deneb_print_service_init(&svc);
     assert(deneb_job_control_accept(&svc, &cmd, reply, sizeof(reply)) == 0);
-    assert(deneb_flow_inflight(&svc.flow) == 0);
-    assert(deneb_flow_prepare_packet(&svc.flow, "M105", packet,
-                                     sizeof(packet), &written, &seq) == 0);
-    assert(seq == 7);
-    assert(deneb_flow_inflight(&svc.flow) == 1);
-    assert(!svc.status.fault);
-    assert(svc.status.error.code == DENEB_ERROR_NONE);
-    assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
 
     deneb_flow_init(&svc.flow);
@@ -893,6 +913,7 @@ static void test_job_control_policy(void)
     assert(deneb_flow_inflight(&svc.flow) == DENEB_FLOW_WINDOW);
     assert(seq == DENEB_FLOW_WINDOW - 1);
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    svc.job_active = 1;
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
     assert(deneb_flow_inflight(&svc.flow) == 0);
     assert(!flow_has_retained_slot_text(&svc.flow));
@@ -1512,6 +1533,28 @@ static int macro_runner_fake_heater_wait(void *ctx, int wait_bed,
     return fake->fail_heater_wait ? -1 : 0;
 }
 
+
+static void test_native_reply_acceptance(void)
+{
+    char reply[256];
+    assert(deneb_command_reply_ok(reply, sizeof(reply), "accepted") == 0);
+    assert(deneb_command_reply_accepted(reply, strlen(reply)));
+    assert(!deneb_command_reply_accepted(reply, strlen(reply) - 1));
+    assert(deneb_command_reply_error(reply, sizeof(reply), "job already active") == 0);
+    assert(!deneb_command_reply_accepted(reply, strlen(reply)));
+    const char *valid = " { \"message\": \"escaped \\\"ok\\\"\", \"status\": \"ok\" }\n";
+    assert(deneb_command_reply_accepted(valid, strlen(valid)));
+    const char *bad[] = {
+        "", "ok", "{}", "{\"status\":ok}", "{\"status\" \"ok\"}",
+        "{\"message\":\"ok\"}", "{\"status\":\"ok\",}",
+        "{\"status\":\"ok\"}garbage", "{\"status\":\"ok\",\"status\":\"error\"}",
+        "{\"nested\":{\"status\":\"ok\"}}", "{\"status\":\"ok\",\"message\":\"bad\\q\"}"
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i)
+        assert(!deneb_command_reply_accepted(bad[i], strlen(bad[i])));
+    assert(!deneb_command_reply_accepted(NULL, 0));
+}
+
 static void test_motion_observer_policy(void)
 {
     deneb_status_t status;
@@ -1556,6 +1599,16 @@ static void test_motion_observer_policy(void)
                &resend) == 3);
     assert(strcmp(status.flow_last_response,
                   "Error:ProtoError:Sequence number is unexpected (received, expected): 0,7") == 0);
+
+    /* A subordinate heat wait must never hide a controller fault. */
+    deneb_heater_wait_start_head(&wait, 200.0f, 1.0f);
+    status.head_t_cur = 20.0f;
+    deneb_motion_observer_handle_line(&status, &wait, &flow,
+                                     "Error:Thermal runaway", &resend);
+    assert(status.fault);
+    assert(status.state == DENEB_PRINT_STATE_ERROR);
+    deneb_heater_wait_apply_status(&wait, &status);
+    assert(status.state == DENEB_PRINT_STATE_ERROR);
 }
 
 static void test_serial_transport_buffers_partial_lines(void)
@@ -2724,6 +2777,7 @@ static void test_printer_status_response(void)
     assert(strstr(json, "\"has_error\":false") != NULL);
     assert(strstr(json, "\"native_active\":true") != NULL);
     assert(strstr(json, "\"native_stop_allowed\":true") != NULL);
+    assert(strstr(json, "\"manual_action_allowed\":false") != NULL);
     assert(strstr(json, "\"progress\":42.5") != NULL);
     assert(strstr(json, "\"time_total\":1200") != NULL);
     assert(strstr(json, "\"time_left\":690") != NULL);
@@ -4799,6 +4853,7 @@ static void test_abort_clears_status(void)
     char reply[256];
 
     deneb_print_service_init(&svc);
+    svc.job_active = 1;
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     snprintf(svc.status.file, sizeof(svc.status.file), "cube.gcode");
     svc.abort_requested = 1;
@@ -4972,7 +5027,8 @@ static void test_service_command_policy(void)
     assert(deneb_service_command_handle(&svc, &cmd, NULL, sizeof(reply)) < 0);
     assert(deneb_service_command_handle(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(strstr(reply, "gcode accepted") != NULL);
-    assert(deneb_flow_inflight(&svc.flow) == 1);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_RUNNING);
 
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = DENEB_COMMAND_UNKNOWN;
@@ -4994,7 +5050,8 @@ static void test_ipc_frame_policy(void)
     assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"M105\"]",
                                            reply, sizeof(reply)) == 0);
     assert(strstr(reply, "gcode accepted") != NULL);
-    assert(deneb_flow_inflight(&svc.flow) == 1);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_RUNNING);
 
     assert(deneb_printsvc_ipc_handle_frame(&svc, "BOGUS<{}",
                                            reply, sizeof(reply)) < 0);
@@ -6407,77 +6464,525 @@ static void test_buildplate_level_workflow(void)
 
 static void test_fault_auto_abort_policy(void)
 {
-    deneb_print_service_t svc;
-    char reply[128];
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 1;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_THERMAL, "thermal runaway");
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(!svc.job_active);
-    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 1;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_ENDSTOP, "homing failed");
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(!svc.job_active);
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 1;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_MARLIN_FAULT, "halted");
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(!svc.job_active);
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 1;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_STORAGE, "file error");
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(!svc.job_active);
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 1;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_SERIAL, "resend line 42");
-    (void)reply;
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(svc.job_active);
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 1;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_COMMAND, "unknown command");
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(svc.job_active);
-
-    deneb_print_service_init(&svc);
-    svc.job_active = 0;
-    svc.serial_ready = 0;
-    svc.status.state = DENEB_PRINT_STATE_ERROR;
-    svc.status.fault = true;
-    svc.status.error = deneb_error_make(DENEB_ERROR_THERMAL, "thermal runaway");
-    assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(!svc.job_active);
+    const deneb_error_code_t errors[] = {DENEB_ERROR_THERMAL, DENEB_ERROR_ENDSTOP,
+        DENEB_ERROR_MARLIN_FAULT, DENEB_ERROR_STORAGE, DENEB_ERROR_SERIAL,
+        DENEB_ERROR_COMMAND};
+    for (size_t i = 0; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+        deneb_print_service_t svc;
+        char reply[128];
+        deneb_print_service_init(&svc);
+        svc.job_active = 1;
+        svc.pause_policy_pending = 1;
+        svc.finish_cleanup_pending = 1;
+        svc.gcode_queue_active = 1;
+        svc.status.manual_state = DENEB_MANUAL_RUNNING;
+        svc.status.state = DENEB_PRINT_STATE_ERROR;
+        svc.status.fault = true;
+        svc.status.error = deneb_error_make(errors[i], "latched fault");
+        assert(deneb_print_service_poll_motion(&svc) < 0);
+        assert(!svc.job_active && !svc.gcode_queue_active);
+        assert(!svc.pause_policy_pending && !svc.finish_cleanup_pending);
+        assert(!svc.abort_cleanup_pending);
+        assert(svc.status.state == DENEB_PRINT_STATE_ERROR && svc.status.fault);
+        assert(svc.status.manual_state == DENEB_MANUAL_ERROR);
+        assert(svc.status.error.code == errors[i]);
+        assert(deneb_print_service_poll_job(&svc) < 0);
+        assert(deneb_flow_inflight(&svc.flow) == 0);
+        assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+        assert(svc.status.fault);
+    }
 }
 
-int main(void)
+static uint64_t manual_id_from_new_process(const char *path)
 {
+    int output[2];
+    assert(pipe(output) == 0);
+    pid_t child = fork();
+    assert(child >= 0);
+    if (child == 0) {
+        close(output[0]);
+        if (dup2(output[1], STDOUT_FILENO) < 0)
+            _exit(126);
+        close(output[1]);
+        execl("/proc/self/exe", "deneb-printsvc-tests", "--manual-operation-id",
+              path, (char *)NULL);
+        _exit(127);
+    }
+    close(output[1]);
+    FILE *result = fdopen(output[0], "r");
+    assert(result);
+    uint64_t id = 0;
+    assert(fscanf(result, "%" SCNu64, &id) == 1 && id > 0);
+    fclose(result);
+    int status;
+    assert(waitpid(child, &status, 0) == child);
+    assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    return id;
+}
+
+static void drain_manual_abort(deneb_print_service_t *svc)
+{
+    for (int guard = 0; svc->abort_cleanup_pending && guard < 20; ++guard) {
+        assert(deneb_job_control_poll_abort_cleanup(svc) >= 0);
+        uint8_t resend = 0;
+        while (deneb_flow_inflight(&svc->flow))
+            assert(deneb_flow_handle_response(&svc->flow, "ok", &resend) == 1);
+    }
+    assert(!svc->abort_cleanup_pending);
+}
+
+static void test_manual_operation_boundaries(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256], path[256];
+    snprintf(path, sizeof(path), "%s/manual-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+    const char *macro = "G90\nG1 X10\nM400\n";
+    assert(write(fd, macro, strlen(macro)) == (ssize_t)strlen(macro));
+    close(fd);
+    deneb_print_service_init(&svc);
+    int wire[2];
+    assert(pipe(wire) == 0);
+    svc.serial.fd = wire[1];
+    svc.serial_ready = 1;
+    assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
+    uint64_t first_id = svc.status.manual_id;
+    assert(first_id > 0 && svc.status.manual_state == DENEB_MANUAL_RUNNING);
+    assert(deneb_flow_inflight(&svc.flow) == 0);
+    assert(deneb_command_parse("GCODE<[\"G1 X20\"]", &cmd) == 0);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) < 0);
+    /* Make a small distinguishable time adjustment without a real wait. */
+    svc.manual_deadline_ms -= 5000;
+    long long deadline = svc.manual_deadline_ms;
+    for (int guard = 0; svc.gcode_queue_active && guard < 20; ++guard) {
+        assert(deneb_gcode_control_poll(&svc) >= 0);
+        assert(svc.manual_deadline_ms == deadline);
+        if (deneb_flow_inflight(&svc.flow)) {
+            assert(svc.status.manual_state == DENEB_MANUAL_RUNNING);
+            assert(deneb_gcode_control_poll(&svc) == 0);
+            uint8_t resend = 0;
+            while (deneb_flow_inflight(&svc.flow))
+                assert(deneb_flow_handle_response(&svc.flow, "ok", &resend) == 1);
+        }
+    }
+    assert(!svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_COMPLETE);
+    assert(deneb_command_parse("GCODE<[\"M104 S180\"]", &cmd) == 0);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    assert(svc.status.manual_id == first_id && svc.status.manual_state == DENEB_MANUAL_COMPLETE);
+    drain_manual_abort(&svc);
+    assert(svc.status.manual_id == first_id && svc.status.manual_state == DENEB_MANUAL_COMPLETE);
+    assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
+    assert(svc.status.manual_id != first_id);
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLING);
+    assert(deneb_job_control_poll_abort_cleanup(&svc) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLING);
+    drain_manual_abort(&svc);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLED);
+    for (size_t i = 0; i < svc.abort_cleanup_policy.count; ++i)
+        assert(strncmp(svc.abort_cleanup_policy.commands[i], "G28", 3) != 0);
+    assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
+    svc.manual_deadline_ms = 1;
+    assert(deneb_gcode_control_poll(&svc) < 0);
+    assert(svc.status.fault && svc.status.manual_state == DENEB_MANUAL_ERROR);
+    assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) < 0);
+    close(wire[0]);
+    deneb_print_service_close(&svc);
+
+    /* A transport loss after cleanup acceptance must fail even while a
+     * barrier is still in flight. */
+    deneb_print_service_init(&svc);
+    assert(pipe(wire) == 0);
+    svc.serial.fd = wire[1];
+    svc.serial_ready = 1;
+    assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    assert(deneb_job_control_poll_abort_cleanup(&svc) == 0);
+    assert(deneb_flow_inflight(&svc.flow) > 0);
+    close(wire[0]);
+    close(wire[1]);
+    svc.serial_ready = 0;
+    assert(deneb_job_control_poll_abort_cleanup(&svc) < 0);
+    assert(!svc.abort_cleanup_pending && svc.status.manual_state == DENEB_MANUAL_ERROR);
+
+    uint64_t first_process_id = manual_id_from_new_process(path);
+    assert(manual_id_from_new_process(path) != first_process_id);
+    unlink(path);
+}
+
+static void test_manual_controller_failure(void)
+{
+    for (int cancelling = 0; cancelling <= 1; ++cancelling) {
+        deneb_print_service_t svc;
+        deneb_print_service_init(&svc);
+        int wire[2];
+        assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, wire) == 0);
+        svc.serial.fd = wire[0];
+        svc.serial_ready = 1;
+        char reply[256];
+        assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X10\"]",
+                                               reply, sizeof(reply)) == 0);
+        if (cancelling) {
+            assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+            assert(deneb_print_service_poll_motion(&svc) == 0);
+            svc.manual_deadline_ms = 1;
+        } else {
+            assert(deneb_print_service_poll_job(&svc) == 0);
+            const char *rejected =
+                "Error:ProtoError:Sequence number is unexpected (received, expected): 1,7\n";
+            assert(write(wire[1], rejected, strlen(rejected)) == (ssize_t)strlen(rejected));
+        }
+        assert(deneb_flow_inflight(&svc.flow) > 0 && svc.flow.ack_count == 0);
+        deneb_print_service_poll_motion(&svc);
+        assert(svc.status.manual_state == DENEB_MANUAL_ERROR);
+        assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+        assert(!svc.gcode_queue_active && !svc.abort_cleanup_pending);
+        assert(svc.flow.ack_count == 0);
+        close(wire[1]);
+        deneb_print_service_close(&svc);
+    }
+}
+
+static void test_manual_cancel_never_replays_motion(void)
+{
+    /* The controller asks for a resend of motion it never accepted after the
+     * cancel was admitted. Replaying it would move after Cancel. */
+    deneb_print_service_t svc;
+    char reply[256], cancel[80], moved[DENEB_PRINTSVC_MAX_GCODE_LINE];
+    char wire[1024], resend[32];
+    uint8_t moved_sequence = 0;
+    int sockets[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets) == 0);
+    deneb_print_service_init(&svc);
+    svc.serial.fd = sockets[0];
+    svc.serial_ready = 1;
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X10\"]",
+                                           reply, sizeof(reply)) == 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(deneb_flow_inflight(&svc.flow) > 0 && svc.flow.ack_count == 0);
+    moved[0] = '\0';
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; ++i) {
+        if (svc.flow.slots[i].occupied && svc.flow.slots[i].send_order == 0) {
+            snprintf(moved, sizeof(moved), "%s", svc.flow.slots[i].command);
+            moved_sequence = svc.flow.slots[i].sequence;
+        }
+    }
+    assert(strncmp(moved, "G1 ", 3) == 0);
+    snprintf(cancel, sizeof(cancel), "CANCEL_MANUAL<{\"operation\":\"%" PRIu64 "\"}",
+             svc.status.manual_id);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLING);
+    while (read(sockets[1], wire, sizeof(wire)) > 0) {
+    }
+
+    snprintf(resend, sizeof(resend), "Resend: %u\n", (unsigned)moved_sequence);
+    assert(write(sockets[1], resend, strlen(resend)) == (ssize_t)strlen(resend));
+    assert(deneb_print_service_poll_motion(&svc) < 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_ERROR);
+    assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(!svc.gcode_queue_active && !svc.abort_cleanup_pending);
+    ssize_t n = read(sockets[1], wire, sizeof(wire));
+    assert(n > 0); /* best-effort heater shutdown only */
+    size_t moved_len = strlen(moved);
+    for (ssize_t i = 0; i + (ssize_t)moved_len <= n; ++i)
+        assert(memcmp(wire + i, moved, moved_len) != 0);
+    close(sockets[1]);
+    deneb_print_service_close(&svc);
+}
+
+static void test_scoped_manual_cancel(void)
+{
+    deneb_print_service_t svc;
+    char reply[256], cancel[80];
+    deneb_print_service_init(&svc);
+    int wire[2];
+    assert(pipe(wire) == 0);
+    svc.serial.fd = wire[1];
+    svc.serial_ready = 1;
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X10\"]",
+                                           reply, sizeof(reply)) == 0);
+    snprintf(cancel, sizeof(cancel), "CANCEL_MANUAL<{\"operation\":\"%" PRIu64 "\"}",
+             svc.status.manual_id);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "CANCEL_MANUAL<{}",
+                                           reply, sizeof(reply)) < 0);
+    assert(svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_RUNNING);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) == 0);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) == 0);
+    drain_manual_abort(&svc);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLED);
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X20\"]",
+                                           reply, sizeof(reply)) == 0);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) < 0);
+    assert(svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_RUNNING);
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    drain_manual_abort(&svc);
+    snprintf(cancel, sizeof(cancel), "CANCEL_MANUAL<{\"operation\":\"%" PRIu64 "\"}",
+             svc.status.manual_id);
+    svc.job_active = 1;
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) < 0);
+    assert(svc.job_active && !svc.abort_cleanup_pending);
+
+    close(wire[0]);
+    deneb_print_service_close(&svc);
+}
+
+static void test_oversized_manual_payload(void)
+{
+    deneb_print_service_t svc;
+    deneb_print_service_init(&svc);
+    char reply[256], frame[1024];
+    /* This fits the REP buffer but the old parser truncated it at 511
+     * payload bytes and admitted its first command. */
+    snprintf(frame, sizeof(frame), "GCODE<[\"G1 X10\"%520s,\"G1 X20\"]", "");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) < 0);
+    snprintf(frame, sizeof(frame), "GCODE<[\"G1 X10%256s\"]", "");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) < 0);
+    strcpy(frame, "GCODE<[\"G1 X10\"");
+    for (int i = 0; i < DENEB_PRINTSVC_MAX_COMMANDS; ++i)
+        strcat(frame, ",\"G1 X10\"");
+    strcat(frame, "]");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) < 0);
+    assert(!svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_NONE);
+}
+
+static void test_operation_observation(void)
+{
+    assert(deneb_manual_id_parse("18446744073709551615") == UINT64_MAX);
+    assert(deneb_manual_id_parse("18446744073709551616") == 0);
+    assert(deneb_manual_id_parse("-1") == 0);
+    assert(deneb_manual_id_parse("1x") == 0);
+    deneb_status_payload_t payload;
+    assert(deneb_status_payload_parse("{\"manualId\":\"18446744073709551615\"}", &payload) == 0);
+    assert(payload.manual_id == UINT64_MAX);
+    deneb_backend_status_state_t state;
+    deneb_status_state_init(&state);
+    state.connected = true;
+    state.manual_id = 4;
+    state.manual_state = DENEB_MANUAL_RUNNING;
+    assert(deneb_status_state_manual_result(&state, 4, 0) == DENEB_MANUAL_RUNNING);
+    assert(deneb_status_state_manual_result(&state, 4, DENEB_MANUAL_TIMEOUT_MS + 10000) ==
+           DENEB_MANUAL_ERROR);
+    state.manual_state = DENEB_MANUAL_COMPLETE;
+    assert(deneb_status_state_manual_result(&state, 4, 100) == DENEB_MANUAL_COMPLETE);
+    assert(deneb_status_state_manual_result(&state, 4, DENEB_MANUAL_TIMEOUT_MS + 10000) ==
+           DENEB_MANUAL_COMPLETE);
+    state.manual_id = 5;
+    assert(deneb_status_state_manual_result(&state, 4, 5000) == DENEB_MANUAL_ERROR);
+    state.manual_id = 0;
+    assert(deneb_status_state_manual_result(&state, 4, 5000) == DENEB_MANUAL_ERROR);
+    state.manual_id = 4;
+    state.has_error = true;
+    assert(deneb_status_state_manual_result(&state, 4, 100) == DENEB_MANUAL_ERROR);
+    state.has_error = false;
+    state.last_update_ms = UINT32_MAX - 1000;
+    assert(!deneb_status_state_expire(&state, 1000));
+    assert(deneb_status_state_expire(&state, 5000));
+    assert(!state.connected);
+    /* Lost observation keeps the operation pending within its own bound. */
+    assert(deneb_status_state_manual_result(&state, 4, 100) == DENEB_MANUAL_RUNNING);
+    state.manual_id = 5;
+    assert(deneb_status_state_manual_result(&state, 4, 5000) == DENEB_MANUAL_RUNNING);
+    assert(deneb_status_state_manual_result(&state, 4, DENEB_MANUAL_TIMEOUT_MS + 10000) ==
+           DENEB_MANUAL_ERROR);
+}
+
+static void test_fault_never_replays_motion(void)
+{
+    deneb_print_service_t svc;
+    int sockets[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+    assert(fcntl(sockets[0], F_SETFL, O_NONBLOCK) == 0);
+    assert(fcntl(sockets[1], F_SETFL, O_NONBLOCK) == 0);
+    deneb_print_service_init(&svc);
+    svc.serial_ready = 1;
+    svc.serial.fd = sockets[0];
+    svc.status.head_t_set = 180;
+    assert(deneb_motion_sender_send_gcode(&svc.flow, &svc.serial, 1, "G1 X9") == 0);
+    const char *input = "Error:Thermal runaway\nResend: 0\n";
+    assert(write(sockets[1], input, strlen(input)) == (ssize_t)strlen(input));
+    assert(deneb_print_service_poll_motion(&svc) < 0);
+    assert(svc.status.fault && svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(svc.status.head_t_set == 180); /* submission is not cooling evidence */
+    assert(svc.flow.sent_count == 4 && svc.flow.next_sequence == 4);
+    assert(deneb_flow_inflight(&svc.flow) == 3);
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; ++i) {
+        if (svc.flow.slots[i].occupied)
+            assert(svc.flow.slots[i].command[0] == 'M');
+    }
+    assert(deneb_print_service_poll_motion(&svc) < 0);
+    assert(svc.flow.sent_count == 4);
+    close(sockets[1]);
+    deneb_print_service_close(&svc);
+}
+
+static void test_live_heater_adjustment_keeps_heat_wait_owner(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.status.state = DENEB_PRINT_STATE_PREPARING;
+    svc.status.bed_t_set = 60;
+    svc.status.head_t_set = 200;
+    deneb_heater_wait_start_bed(&svc.heater_wait, 60, 1);
+    unsigned int sent = svc.flow.sent_count;
+
+    /* The heat gate keeps testing its own target, so the controller must
+     * not be given a different one for that heater. */
+    assert(deneb_command_parse("GCODE<[\"M140 S40\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(svc.flow.sent_count == sent && svc.status.bed_t_set == 60.0f);
+    assert(svc.heater_wait.active && svc.heater_wait.bed_target == 60.0f);
+
+    /* A heater the wait does not hold remains adjustable. */
+    assert(deneb_command_parse("GCODE<[\"M104 S190\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(svc.flow.sent_count == sent + 1 && svc.status.head_t_set == 190.0f);
+
+    /* Resume restores a paused wait, so it still owns its heater. */
+    svc.heater_wait.active = 0;
+    deneb_heater_wait_start_bed(&svc.paused_heater_wait, 60, 1);
+    svc.status.state = DENEB_PRINT_STATE_PAUSED;
+    assert(deneb_command_parse("GCODE<[\"M140 S0\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(svc.flow.sent_count == sent + 1 && svc.status.bed_t_set == 60.0f);
+
+    /* Once printing again, the saved copy no longer owns anything. */
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    assert(deneb_command_parse("GCODE<[\"M140 S55\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(svc.flow.sent_count == sent + 2 && svc.status.bed_t_set == 55.0f);
+}
+
+static void test_pause_preparation_and_timeout(void)
+{
+    deneb_print_service_t svc;
+    char reply[256];
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.job_prepare_stage = 1;
+    svc.status.state = DENEB_PRINT_STATE_PREPARING;
+    svc.status.bed_t_set = 50;
+    svc.status.head_t_set = 180;
+    deneb_heater_wait_start(&svc.heater_wait, 50, 180, 1);
+    assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) == 0);
+    assert(!svc.heater_wait.active && svc.paused_heater_wait.wait_bed);
+    svc.pause_probe_deadline_ms = 1;
+    assert(deneb_pause_resume_control_poll(&svc) < 0);
+    assert(svc.status.fault && !svc.pause_position_probe_pending);
+
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.status.state = DENEB_PRINT_STATE_PAUSED;
+    svc.job_prepare_stage = 3; /* HEAT: resume must preserve the cold-bed gate. */
+    svc.paused_position_valid = 1;
+    svc.paused_nozzle_setpoint = 180;
+    svc.status.head_t_cur = 180;
+    svc.status.bed_t_cur = 20;
+    deneb_heater_wait_start(&svc.paused_heater_wait, 50, 180, 1);
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
+    for (int i = 0; i < 64 && svc.resume_policy_pending; ++i) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!svc.resume_policy_pending);
+    assert(svc.heater_wait.active && svc.heater_wait.wait_bed);
+    assert(!deneb_heater_wait_ready(&svc.heater_wait, &svc.status));
+    deneb_flow_clear_inflight(&svc.flow);
+    unsigned long sent = svc.flow.sent_count;
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_prepare_stage == 3 && svc.flow.sent_count == sent);
+    svc.status.bed_t_cur = 50;
+    assert(deneb_heater_wait_ready(&svc.heater_wait, &svc.status));
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_prepare_stage == 4); /* STARTUP only after both targets. */
+
+    /* An in-file M190 wait has the same obligation after preparation ended. */
+    svc.job_prepare_stage = 0;
+    svc.status.state = DENEB_PRINT_STATE_PAUSED;
+    svc.paused_position_valid = 1;
+    svc.status.bed_t_cur = 20;
+    assert(deneb_pause_resume_control_resume(&svc, reply, sizeof(reply)) == 0);
+    for (int i = 0; i < 64 && svc.resume_policy_pending; ++i) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!svc.resume_policy_pending && svc.heater_wait.wait_bed);
+    assert(!deneb_heater_wait_ready(&svc.heater_wait, &svc.status));
+}
+
+static void test_background_action_ownership(void)
+{
+    char dir[256], lock[sizeof(dir) + 16], log[sizeof(dir) + 16];
+    const char *tmp = getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp";
+    int length = snprintf(dir, sizeof(dir), "%s/deneb-action-XXXXXX", tmp);
+    assert(length >= 0 && (size_t)length < sizeof(dir) && mkdtemp(dir));
+    snprintf(lock, sizeof(lock), "%s/action.lock", dir);
+    snprintf(log, sizeof(log), "%s/action.log", dir);
+    pid_t pid = 0, other = 0;
+    assert(deneb_background_action_start(lock, "sleep 0.1; exit 0", log, &pid) == 0);
+    assert(deneb_background_action_running(lock));
+    assert(deneb_background_action_start(lock, "exit 0", log, &other) < 0);
+    int rc = 0;
+    for (int i = 0; i < 2000 && rc == 0; ++i) {
+        rc = deneb_background_action_poll(&pid);
+        if (rc == 0) usleep(1000);
+    }
+    assert(rc == 1 && !deneb_background_action_running(lock));
+    assert(unlink(log) == 0);
+    char retained[sizeof(dir) + 16];
+    snprintf(retained, sizeof(retained), "%s/retained.log", dir);
+    int saved = open(retained, O_RDWR | O_CREAT | O_EXCL, 0600);
+    assert(saved >= 0 && write(saved, "keep", 4) == 4);
+    assert(symlink("retained.log", log) == 0);
+    assert(deneb_background_action_start(lock, "exit 0", log, &pid) < 0);
+    struct stat st;
+    char contents[4];
+    assert(fstat(saved, &st) == 0 && st.st_size == 4);
+    assert(pread(saved, contents, sizeof(contents), 0) == sizeof(contents));
+    assert(memcmp(contents, "keep", sizeof(contents)) == 0);
+    assert(close(saved) == 0);
+    assert(unlink(log) == 0 && unlink(retained) == 0);
+    assert(deneb_background_action_start(lock, "exit 7", log, &pid) == 0);
+    rc = 0;
+    for (int i = 0; i < 2000 && rc == 0; ++i) {
+        rc = deneb_background_action_poll(&pid);
+        if (rc == 0) usleep(1000);
+    }
+    assert(rc == -1);
+    unlink(lock);
+    unlink(log);
+    assert(rmdir(dir) == 0);
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 3 && strcmp(argv[1], "--manual-operation-id") == 0) {
+        deneb_print_service_t svc;
+        char reply[256];
+        deneb_print_service_init(&svc);
+        if (deneb_gcode_control_run_file(&svc, argv[2], reply, sizeof(reply)) != 0)
+            return 1;
+        printf("%" PRIu64 "\n", svc.status.manual_id);
+        return 0;
+    }
+    test_manual_operation_boundaries();
+    test_manual_controller_failure();
+    test_manual_cancel_never_replays_motion();
+    test_scoped_manual_cancel();
+    test_oversized_manual_payload();
+    test_operation_observation();
+    test_fault_never_replays_motion();
+    test_pause_preparation_and_timeout();
+    test_live_heater_adjustment_keeps_heat_wait_owner();
+    test_background_action_ownership();
     test_command_parse();
     test_command_format_round_trip();
     test_command_reply_helpers();
@@ -6494,6 +6999,7 @@ int main(void)
     test_gcode_stream_rewrite_policy();
     test_runtime_diagnostics_policy();
     test_motion_sender_policy();
+    test_native_reply_acceptance();
     test_motion_observer_policy();
     test_serial_transport_buffers_partial_lines();
     test_serial_transport_retries_nonblocking_writes();

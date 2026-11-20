@@ -20,6 +20,7 @@ typedef struct {
     int native_stop_allowed;
     int has_native_active;
     int has_native_stop_allowed;
+    int manual_action_allowed;
     int topcap_present;
     float topcap_temp_cur;
     const char *firmware;

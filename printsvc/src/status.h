@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include "manual_operation.h"
 
 #include "error_map.h"
 
@@ -57,6 +58,8 @@ typedef struct {
     unsigned int position_report_count;
     unsigned int finish_drain_ticks;
     unsigned int finish_stable_reports;
+    uint64_t manual_id;
+    deneb_manual_state_t manual_state;
     int time_total;
     int time_left;
     bool fault;

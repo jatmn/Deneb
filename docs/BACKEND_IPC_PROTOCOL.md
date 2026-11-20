@@ -56,6 +56,9 @@ Frame format: "10001<{json_payload}"
 
 Frame format: "COMMAND<json_payload"
 
+The native service rejects oversized frames, payloads, and G-code lists or
+lines that exceed the parser's bounds before dispatch.
+
 ### Commands
 - GCODE<["M140 S70"]                    - Send raw G-code
 - GCODE<["G28 X Y", "M18"]              - Multiple G-code commands
@@ -183,3 +186,58 @@ transient macro, and idle cleanup transitions so LCD and web/API clients do not
 drift separately. The native `deneb-printsvc`
 milestone should keep collapsing remaining direct clients toward shared Deneb
 print-control helpers or a single native service API.
+
+## Native command and manual-operation results
+
+A received RPC frame is successful only when the complete native JSON reply
+contains `"status":"ok"`. Rejection, malformed/truncated replies and transport
+failures return failure to both clients. Job display context and pending-job
+handoff advance only after acceptance.
+
+`MACRO` and queued `GCODE` replies acknowledge admission, not completed motion.
+They include an `operation` decimal string containing a positive 64-bit
+monotonic-clock token, so service restarts do not restart the counter at one.
+The service publishes the same decimal string as `manualId` and a numeric
+`manualState` in status. State values are
+0 (none), 1 (running), 2 (complete), 3 (cancelled), 4 (cancelling), and 5 (error).
+A terminal result remains until the next operation is accepted, even if a
+later ABORT cleans up standalone heater activity. Clients must
+handle a superseding operation or service restart instead of waiting forever
+for a lost result.
+
+Macros use the same bounded 64-command manual queue as G-code, reserving a slot
+for a final `M400`. Dispatch remains available while the poll loop executes
+commands. Completion requires the final barrier and all outstanding ACKs;
+it does not constitute independent sensor proof of physical stability.
+Manual execution is bounded to ten minutes from admission. The touchscreen
+follows operation results for leveling and material movement instead of an RPC
+return or estimated movement duration.
+
+Manual motion and macros are rejected while a print or its lifecycle cleanup
+owns execution. Single heater, fan and light adjustments remain available
+outside manual queues and pause/resume/cleanup transitions. A heater held by a
+print heat wait, including a wait saved across Pause, rejects target changes
+until that wait is satisfied. Pause and Resume
+require an active print. Position probing and pause parking have 60-second
+deadlines; resume has a ten-minute deadline. Preparation and in-file heater
+prerequisites survive Pause.
+
+Leveling and material send `CANCEL_MANUAL<{"operation":"<id>"}` to cancel
+the operation they admitted. The print service checks the token against the
+active operation before stopping work. General print controls still use ABORT.
+Manual cancellation stops further submission and queues Connect's `M401`, restores
+coordinate/extruder modes, turns heaters off and drains. It does not run the
+print parking/homing policy. A new leveling run starts with its homing step.
+Manual cancellation reaches CANCELLED only after the cleanup drains within the
+operation deadline. If serial is unavailable, recovery discards outstanding work,
+the controller requests a resend of commands submitted before the cancel, or the
+deadline expires, host work stops and the service reports an error.
+`M401` is an ordinary queued Connect command, so cancellation acceptance is not
+an immediate physical-stop guarantee.
+
+UI/Web readiness expires after five seconds without a status publication.
+Expiration retains the last observation for display but marks it disconnected;
+it never manufactures a print-completed event or a manual-operation result. An
+awaited operation stays cancellable by its token until status returns or the
+operation deadline passes. Fault handling is described in
+[FAULT_POLICY.md](FAULT_POLICY.md).

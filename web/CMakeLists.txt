@@ -159,3 +159,60 @@ if(BUILD_HOST_STUB)
 endif()
 
 install(TARGETS deneb-api deneb-mdns DESTINATION /usr/bin)
+
+# Host-only connection regressions exercise production server/client code.
+if(NOT CMAKE_CROSSCOMPILING)
+enable_testing()
+add_executable(deneb-sse-tests tests/test_sse.c)
+target_include_directories(deneb-sse-tests PRIVATE src ../common/print)
+target_compile_options(deneb-sse-tests PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(deneb-sse-tests PRIVATE -Wl,--gc-sections)
+add_test(NAME deneb-sse-tests COMMAND deneb-sse-tests)
+find_program(NODE_EXECUTABLE node)
+if(NODE_EXECUTABLE)
+    add_test(NAME deneb-browser-sse-tests
+        COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_api_sse.cjs")
+    add_test(NAME deneb-browser-motion-tests
+        COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_ui_motion.cjs")
+endif()
+
+find_path(ZMQ_TEST_INCLUDE_DIR zmq.h)
+find_library(ZMQ_TEST_LIBRARY zmq)
+if(ZMQ_TEST_INCLUDE_DIR AND ZMQ_TEST_LIBRARY)
+    foreach(client ui web)
+        add_executable(deneb-${client}-rpc-tests tests/test_backend_rpc.c
+            ../common/print/command_format.c ../common/print/json_field.c)
+        target_include_directories(deneb-${client}-rpc-tests PRIVATE
+            src ../ui/src ../common/print "${ZMQ_TEST_INCLUDE_DIR}")
+        target_compile_options(deneb-${client}-rpc-tests PRIVATE -ffunction-sections -fdata-sections)
+        target_link_options(deneb-${client}-rpc-tests PRIVATE -Wl,--gc-sections)
+        target_link_libraries(deneb-${client}-rpc-tests PRIVATE "${ZMQ_TEST_LIBRARY}" pthread)
+        if(client STREQUAL "web")
+            target_compile_definitions(deneb-${client}-rpc-tests PRIVATE TEST_WEB_BACKEND)
+            # The status projection regression drives the real subscription path.
+            target_sources(deneb-${client}-rpc-tests PRIVATE
+                ../common/print/json_string.c
+                ../common/print/pending_job_file.c
+                ../common/print/print_backend_route.c
+                ../common/print/print_history.c
+                ../common/print/print_state_rules.c
+                ../common/print/print_string.c
+                ../common/print/print_timing_rules.c
+                ../common/print/printer_status_response.c
+                ../common/print/status_payload.c
+                ../common/print/status_state.c)
+        endif()
+        add_test(NAME deneb-${client}-rpc-tests COMMAND deneb-${client}-rpc-tests)
+        set_tests_properties(deneb-${client}-rpc-tests PROPERTIES TIMEOUT 10)
+    endforeach()
+endif()
+if(ZMQ_TEST_INCLUDE_DIR AND ZMQ_TEST_LIBRARY)
+    add_executable(deneb-df-bridge-tests tests/test_df_bridge.c)
+    target_include_directories(deneb-df-bridge-tests PRIVATE src "${ZMQ_TEST_INCLUDE_DIR}")
+    target_compile_options(deneb-df-bridge-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-df-bridge-tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(deneb-df-bridge-tests PRIVATE "${ZMQ_TEST_LIBRARY}")
+    add_test(NAME deneb-df-bridge-tests COMMAND deneb-df-bridge-tests)
+endif()
+
+endif()

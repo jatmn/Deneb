@@ -12,6 +12,7 @@ static deneb_command_type_t command_type_from_verb(const char *verb)
     if (strcmp(verb, DENEB_COMMAND_VERB_MACRO) == 0) return DENEB_COMMAND_MACRO;
     if (strcmp(verb, DENEB_COMMAND_VERB_JOB) == 0) return DENEB_COMMAND_JOB;
     if (strcmp(verb, DENEB_COMMAND_VERB_ABORT) == 0) return DENEB_COMMAND_ABORT;
+    if (strcmp(verb, DENEB_COMMAND_VERB_CANCEL_MANUAL) == 0) return DENEB_COMMAND_CANCEL_MANUAL;
     if (strcmp(verb, DENEB_COMMAND_VERB_PAUSE) == 0) return DENEB_COMMAND_PAUSE;
     if (strcmp(verb, DENEB_COMMAND_VERB_RESUME) == 0) return DENEB_COMMAND_RESUME;
     return DENEB_COMMAND_UNKNOWN;
@@ -24,6 +25,7 @@ const char *deneb_command_type_name(deneb_command_type_t type)
         case DENEB_COMMAND_MACRO: return DENEB_COMMAND_VERB_MACRO;
         case DENEB_COMMAND_JOB: return DENEB_COMMAND_VERB_JOB;
         case DENEB_COMMAND_ABORT: return DENEB_COMMAND_VERB_ABORT;
+        case DENEB_COMMAND_CANCEL_MANUAL: return DENEB_COMMAND_VERB_CANCEL_MANUAL;
         case DENEB_COMMAND_PAUSE: return DENEB_COMMAND_VERB_PAUSE;
         case DENEB_COMMAND_RESUME: return DENEB_COMMAND_VERB_RESUME;
         default: return "UNKNOWN";
@@ -43,8 +45,9 @@ static int parse_gcode_array(const char *payload, deneb_command_t *out)
 {
     const char *p = payload;
 
-    while ((p = strchr(p, '"')) != NULL &&
-           out->gcode_count < DENEB_PRINTSVC_MAX_COMMANDS) {
+    while ((p = strchr(p, '"')) != NULL) {
+        if (out->gcode_count == DENEB_PRINTSVC_MAX_COMMANDS)
+            return -1;
         const char *start = ++p;
         const char *end = start;
         size_t len;
@@ -59,7 +62,7 @@ static int parse_gcode_array(const char *payload, deneb_command_t *out)
 
         len = (size_t)(end - start);
         if (len >= DENEB_PRINTSVC_MAX_GCODE_LINE)
-            len = DENEB_PRINTSVC_MAX_GCODE_LINE - 1;
+            return -1;
         memcpy(out->gcode[out->gcode_count], start, len);
         out->gcode[out->gcode_count][len] = '\0';
         out->gcode_count++;
@@ -93,7 +96,7 @@ int deneb_command_parse(const char *frame, deneb_command_t *out)
 
     payload_len = strlen(sep + 1);
     if (payload_len >= sizeof(out->payload))
-        payload_len = sizeof(out->payload) - 1;
+        return -1;
     memcpy(out->payload, sep + 1, payload_len);
     out->payload[payload_len] = '\0';
 

@@ -188,6 +188,7 @@ set(DENEB_SOURCES
     src/fonts/deneb_font_i18n_12.c
     src/fonts/deneb_font_i18n_14.c
     src/fonts/deneb_font_i18n_16.c
+    ../common/print/background_action.c
     ../common/print/buildplate_level.c
     ../common/print/command_format.c
     ../common/print/diagnostics_export.c
@@ -232,6 +233,25 @@ target_include_directories(deneb-ui PRIVATE
 )
 
 target_link_libraries(deneb-ui PRIVATE m pthread)
+
+if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+    add_executable(deneb-touchscreen-motion-tests
+        tests/test_motion_workflows.c
+        ../common/print/buildplate_level.c
+        ../common/print/gcode_command.c
+        ../common/print/manual_motion.c
+        ../common/print/material_workflow.c
+        ../common/print/print_state_rules.c
+        ../common/print/status_state.c)
+    target_include_directories(deneb-touchscreen-motion-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-ui,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(deneb-touchscreen-motion-tests PRIVATE LV_DISABLE_API_MAPPING)
+    target_compile_options(deneb-touchscreen-motion-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-touchscreen-motion-tests PRIVATE -Wl,--gc-sections)
+    target_link_libraries(deneb-touchscreen-motion-tests PRIVATE m)
+    add_test(NAME deneb-touchscreen-motion-tests COMMAND deneb-touchscreen-motion-tests)
+endif()
 
 # Link ZMQ when not using stub
 if(NOT BACKEND_COMM_STUB AND NOT WIN32)

@@ -10,6 +10,14 @@
 #include "print_control.h"
 
 #include <stdio.h>
+#include <time.h>
+
+static long long pause_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 static void set_phase(deneb_status_t *status, deneb_print_phase_t phase)
 {
@@ -49,6 +57,7 @@ static void begin_pause_cleanup_from_current_position(deneb_print_service_t *svc
                                   svc->paused_y, svc->paused_z);
         svc->pause_policy_index = 0;
         svc->pause_policy_pending = 1;
+        svc->pause_policy_deadline_ms = pause_now_ms() + 60000;
     }
 }
 
@@ -59,6 +68,14 @@ static int poll_pause_position_probe(deneb_print_service_t *svc)
     if (!svc || !svc->pause_position_probe_pending)
         return 0;
 
+    if (pause_now_ms() >= svc->pause_probe_deadline_ms) {
+        svc->pause_position_probe_pending = 0;
+        svc->pause_position_probe_sent = 0;
+        svc->heater_wait.active = 0;
+        deneb_job_lifecycle_error(&svc->status,
+            deneb_error_make(DENEB_ERROR_SERIAL, "pause position probe timed out"));
+        return -1;
+    }
     if (!svc->pause_position_probe_sent) {
         if (deneb_flow_has_pending_barrier(&svc->flow) ||
             !deneb_flow_can_send(&svc->flow) ||
@@ -82,7 +99,7 @@ static int poll_pause_position_probe(deneb_print_service_t *svc)
 
     if (deneb_flow_inflight(&svc->flow) != 0)
         return 0;
-    if (svc->status.position_report_count <= svc->pause_position_report_start)
+    if (svc->status.position_report_count == svc->pause_position_report_start)
         return 0;
 
     svc->pause_position_probe_pending = 0;
@@ -172,6 +189,12 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
 {
     if (!svc || !reply || reply_sz == 0)
         return -1;
+    if (!svc->job_active || svc->gcode_queue_active || svc->abort_cleanup_pending ||
+        svc->finish_cleanup_pending || svc->status.fault) {
+        deneb_command_reply_error(reply, reply_sz, "no active print to pause");
+        return -1;
+    }
+
 
     if (svc->pause_position_probe_pending || svc->pause_policy_pending ||
         svc->resume_policy_pending) {
@@ -188,6 +211,9 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
             svc->job_nozzle_resume_setpoint = svc->status.head_t_set;
         set_phase(&svc->status, DENEB_PRINT_PHASE_PAUSING);
         svc->pause_position_probe_pending = 1;
+        svc->pause_probe_deadline_ms = pause_now_ms() + 60000;
+        svc->paused_heater_wait = svc->heater_wait;
+        svc->heater_wait.active = 0;
         svc->pause_position_probe_sent = 0;
         svc->pause_position_report_start = svc->status.position_report_count;
         deneb_command_reply_ok(reply, reply_sz, "pause accepted");
@@ -204,6 +230,9 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
         svc->job_nozzle_resume_setpoint = svc->status.head_t_set;
     if (svc->job_active && svc->status.state == DENEB_PRINT_STATE_PAUSED) {
         svc->pause_position_probe_pending = 1;
+        svc->pause_probe_deadline_ms = pause_now_ms() + 60000;
+        svc->paused_heater_wait = svc->heater_wait;
+        svc->heater_wait.active = 0;
         svc->pause_position_probe_sent = 0;
         svc->pause_position_report_start = svc->status.position_report_count;
     } else {
@@ -219,6 +248,12 @@ int deneb_pause_resume_control_resume(deneb_print_service_t *svc,
 {
     if (!svc || !reply || reply_sz == 0)
         return -1;
+    if (!svc->job_active || svc->gcode_queue_active || svc->abort_cleanup_pending ||
+        svc->finish_cleanup_pending || svc->status.fault) {
+        deneb_command_reply_error(reply, reply_sz, "no active print to resume");
+        return -1;
+    }
+
 
     if (svc->pause_position_probe_pending || svc->pause_policy_pending ||
         svc->resume_policy_pending) {
@@ -247,6 +282,7 @@ int deneb_pause_resume_control_resume(deneb_print_service_t *svc,
                                svc->paused_r0, svc->paused_nozzle_setpoint);
     svc->resume_policy_index = 0;
     svc->resume_policy_pending = 1;
+    svc->resume_deadline_ms = pause_now_ms() + 600000;
     svc->status.head_t_set = svc->paused_nozzle_setpoint;
     if (deneb_pause_resume_resume(&svc->status,
                                   svc->paused_nozzle_setpoint > 0.0f) < 0) {
@@ -268,6 +304,15 @@ int deneb_pause_resume_control_poll(deneb_print_service_t *svc)
     if (!svc)
         return -1;
 
+    if ((svc->pause_policy_pending && pause_now_ms() >= svc->pause_policy_deadline_ms) ||
+        (svc->resume_policy_pending && pause_now_ms() >= svc->resume_deadline_ms)) {
+        svc->pause_policy_pending = 0;
+        svc->resume_policy_pending = 0;
+        svc->heater_wait.active = 0;
+        deneb_job_lifecycle_error(&svc->status,
+            deneb_error_make(DENEB_ERROR_SERIAL, "pause/resume timed out"));
+        return -1;
+    }
     if (svc->pause_position_probe_pending) {
         rc = poll_pause_position_probe(svc);
         if (rc <= 0)
@@ -306,6 +351,7 @@ int deneb_pause_resume_control_poll(deneb_print_service_t *svc)
         return rc;
     if (rc > 0) {
         svc->paused_position_valid = 0;
+        svc->heater_wait = svc->paused_heater_wait;
         deneb_job_lifecycle_streaming(&svc->status);
     }
     return rc;

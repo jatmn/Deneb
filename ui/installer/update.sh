@@ -770,7 +770,8 @@ restart_live_deneb_ui() {
 
 # Main
 log "starting Deneb Touchscreen UI installation"
-trap schedule_reboot EXIT
+# Failure leaves the current system available for diagnosis/recovery. Only the
+# successful completion path below schedules a reboot.
 
 validate_package
 cleanup_tmp_deneb_packages

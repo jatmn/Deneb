@@ -5,6 +5,7 @@ separate from current status and planning.
 
 | Evidence | Purpose |
 | --- | --- |
+| [STATE_MACHINE_REPAIRS_2026-11-09.md](STATE_MACHINE_REPAIRS_2026-11-09.md) | State-transition source repairs, host regression boundaries and dispositions for all 49 audited workflows |
 | [TARGET_AUTOMATION_2026-07-10.md](TARGET_AUTOMATION_2026-07-10.md) | Latest bounded target automation, safety limits, passes, blocked tests, and discovered defects |
 | [BASELINE_MEASUREMENTS.md](BASELINE_MEASUREMENTS.md) | Historical stock and Deneb resource measurements |
 | [FIRMWARE_AUDIT.md](FIRMWARE_AUDIT.md) | Stock firmware/platform inventory and dated device snapshots |

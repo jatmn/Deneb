@@ -65,6 +65,7 @@ void backend_clear_print_display_context_if_idle(void);
  */
 int backend_send_gcode(const char *gcode);
 int backend_send_gcodes(const char *const *gcodes, size_t count);
+uint64_t backend_get_last_operation(void);
 int backend_send_macro(const char *macro);
 int backend_send_job(const char *path, const char *source, const char *uuid,
                      float bed_target, float head_target);
@@ -81,6 +82,7 @@ int backend_send_command(const char *cmd, const char *args_json);
  * Abort the current print.
  */
 int backend_abort_print(void);
+int backend_cancel_manual(uint64_t operation);
 
 /**
  * Force-stop the current print, cool down nozzle/bed, and home axes.

@@ -17,6 +17,7 @@ typedef struct {
     int occupied;
     int acknowledged;
     int barrier;
+    int cancelled;
     unsigned int send_order;
     unsigned int resend_attempts;
 } deneb_flow_slot_t;
@@ -47,5 +48,7 @@ int deneb_flow_get_resend_packet(deneb_flow_control_t *flow, uint8_t sequence,
 size_t deneb_flow_inflight(const deneb_flow_control_t *flow);
 int deneb_flow_can_send(deneb_flow_control_t *flow);
 int deneb_flow_has_pending_barrier(const deneb_flow_control_t *flow);
+void deneb_flow_cancel_inflight(deneb_flow_control_t *flow);
+int deneb_flow_has_pending_cancelled(const deneb_flow_control_t *flow);
 
 #endif

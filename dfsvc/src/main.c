@@ -833,12 +833,6 @@ static int mp_write(mp_buf_t *mp, const void *data, size_t len)
 
 static int mp_put_u8(mp_buf_t *mp, uint8_t v) { return mp_write(mp, &v, 1); }
 
-static int mp_put_u16(mp_buf_t *mp, uint16_t v)
-{
-    uint8_t d[3] = {0xcd, (uint8_t)(v >> 8), (uint8_t)v};
-    return mp_write(mp, d, sizeof(d));
-}
-
 static int mp_put_i64(mp_buf_t *mp, int64_t v)
 {
     uint8_t d[9] = {0xd3, (uint8_t)(v >> 56), (uint8_t)(v >> 48),
@@ -860,7 +854,9 @@ static int mp_put_str(mp_buf_t *mp, const char *s)
         if (mp_put_u8(mp, (uint8_t)(0xa0 | len)) < 0)
             return -1;
     } else if (len <= 65535) {
-        if (mp_put_u8(mp, 0xda) < 0 || mp_put_u16(mp, (uint16_t)len) < 0)
+        /* str16 has a raw big-endian length after its tag. */
+        const uint8_t header[] = {0xda, (uint8_t)(len >> 8), (uint8_t)len};
+        if (mp_write(mp, header, sizeof(header)) < 0)
             return -1;
     } else {
         return -1;
@@ -868,14 +864,14 @@ static int mp_put_str(mp_buf_t *mp, const char *s)
     return mp_write(mp, s, len);
 }
 
-static int mp_encode_rpc_key(mp_buf_t *mp, const char *source,
+static int mp_encode_rpc_key(mp_buf_t *mp, const char *action, const char *source,
                              const char *target)
 {
     if (mp_put_u8(mp, 0x84) < 0)
         return -1;
     if (mp_put_str(mp, "ts") < 0 || mp_put_i64(mp, monotonic_ms()) < 0)
         return -1;
-    if (mp_put_str(mp, "action") < 0 || mp_put_str(mp, "rpc-request") < 0)
+    if (mp_put_str(mp, "action") < 0 || mp_put_str(mp, action) < 0)
         return -1;
     if (mp_put_str(mp, "source") < 0 || mp_put_str(mp, source) < 0)
         return -1;
@@ -1816,7 +1812,7 @@ static int publish_update_firmware_request(void *pub, const char *msg)
     snprintf(target, sizeof(target), "%s@execute|D%u",
              DF_HANDLING_SERVICE, update_trackcount);
 
-    if (mp_encode_rpc_key(&key, "connector", target) < 0)
+    if (mp_encode_rpc_key(&key, "rpc-request", "connector", target) < 0)
         goto out;
     if (mp_put_u8(&data, 0x84) < 0 ||
         mp_put_str(&data, "tracker") < 0 || mp_put_u8(&data, 0) < 0 ||
@@ -2338,13 +2334,30 @@ static void handle_cloud_message(void *pub, ws_client_t *ws, const char *msg,
     }
 }
 
-static bool poll_connector_commands(void *sub, bool *want_connect,
+static void reply_bridge_accepted(void *pub, const char *source)
+{
+    if (strncmp(source, "deneb/df-bridge/", sizeof("deneb/df-bridge/") - 1) != 0)
+        return;
+
+    char target[160];
+    snprintf(target, sizeof(target), "%s/rpc@reply|D1", source);
+    mp_buf_t key = {0};
+    mp_buf_t data = {0};
+    if (mp_encode_rpc_key(&key, "rpc-reply", SOURCE, target) == 0 &&
+        mp_put_u8(&data, 0x81) == 0 &&
+        mp_put_str(&data, "accepted") == 0 &&
+        mp_put_bool(&data, true) == 0 &&
+        zmq_send(pub, key.buf, key.len, ZMQ_SNDMORE) >= 0)
+        (void)zmq_send(pub, data.buf, data.len, 0);
+    free(key.buf);
+    free(data.buf);
+}
+
+static bool poll_connector_commands(void *sub, void *pub, bool *want_connect,
                                     bool *connect_requested)
 {
     bool handled = false;
-    if (connect_requested)
-        *connect_requested = false;
-    while (true) {
+    for (unsigned batch = 0; batch < 32 && !g_stop; ++batch) {
         zmq_pollitem_t items[] = {{sub, 0, ZMQ_POLLIN, 0}};
         if (zmq_poll(items, 1, 0) <= 0)
             break;
@@ -2359,6 +2372,7 @@ static bool poll_connector_commands(void *sub, bool *want_connect,
         if (zmq_msg_more(&key_msg))
             (void)zmq_msg_recv(&data_msg, sub, 0);
         char action[32] = "", source[128] = "", target[160] = "";
+        bool command_handled = false;
         if (read_key_parts(&key_msg, action, sizeof(action), source, sizeof(source),
                            target, sizeof(target)) == 0 &&
             strcmp(action, "rpc-request") == 0) {
@@ -2366,17 +2380,40 @@ static bool poll_connector_commands(void *sub, bool *want_connect,
                 *want_connect = true;
                 if (connect_requested)
                     *connect_requested = true;
-                handled = true;
+                command_handled = true;
             } else if (strncmp(target, DISCONNECT_SERVICE, strlen(DISCONNECT_SERVICE)) == 0) {
                 *want_connect = false;
+                if (connect_requested)
+                    *connect_requested = false;
                 uci_set_option("cluster_id", NULL);
-                handled = true;
+                command_handled = true;
             }
+        }
+        if (command_handled) {
+            reply_bridge_accepted(pub, source);
+            handled = true;
         }
         zmq_msg_close(&key_msg);
         zmq_msg_close(&data_msg);
     }
     return handled;
+}
+
+/* Only connector intent can interrupt the retry deadline. */
+static void wait_for_retry(void *sub, void *pub, int seconds, bool *want_connect,
+                           bool *connect_requested)
+{
+    int64_t deadline = monotonic_ms() + (int64_t)seconds * 1000;
+    while (!g_stop) {
+        int64_t remaining = deadline - monotonic_ms();
+        if (remaining <= 0)
+            return;
+        zmq_pollitem_t item = {sub, 0, ZMQ_POLLIN, 0};
+        int rc = zmq_poll(&item, 1, remaining > 1000 ? 1000 : (long)remaining);
+        if (rc < 0 || (rc > 0 &&
+                       poll_connector_commands(sub, pub, want_connect, connect_requested)))
+            return;
+    }
 }
 
 int main(void)
@@ -2417,10 +2454,11 @@ int main(void)
         pairing_requested = true;
     publish_status(pub, current_state, current_pin);
 
+    bool connect_requested = false;
     while (!g_stop) {
-        bool connect_requested = false;
-        poll_connector_commands(sub, &want_connect, &connect_requested);
+        poll_connector_commands(sub, pub, &want_connect, &connect_requested);
         if (connect_requested) {
+            connect_requested = false;
             pairing_requested = true;
             create_pair_request();
         }
@@ -2428,7 +2466,7 @@ int main(void)
             current_state = DF_STATE_DISCONNECTED;
             current_pin[0] = '\0';
             publish_status(pub, current_state, current_pin);
-            sleep(1);
+            wait_for_retry(sub, pub, 1, &want_connect, &connect_requested);
             continue;
         }
 
@@ -2439,7 +2477,7 @@ int main(void)
                 url_s, sizeof(url_s));
         if (parse_url(url_s, &url) < 0) {
             log_line("error", "invalid digitalfactory_url");
-            sleep(10);
+            wait_for_retry(sub, pub, 10, &want_connect, &connect_requested);
             continue;
         }
 
@@ -2453,7 +2491,7 @@ int main(void)
             current_state = DF_STATE_RECONNECTING;
             current_pin[0] = '\0';
             publish_status(pub, current_state, current_pin);
-            sleep(reconnect_wait_seconds);
+            wait_for_retry(sub, pub, reconnect_wait_seconds, &want_connect, &connect_requested);
             reconnect_wait_seconds *= 2;
             if (reconnect_wait_seconds > 120)
                 reconnect_wait_seconds = 120;
@@ -2471,7 +2509,7 @@ int main(void)
         bool reconnect_requested = false;
         while (!g_stop && want_connect) {
             bool connect_requested = false;
-            poll_connector_commands(sub, &want_connect, &connect_requested);
+            poll_connector_commands(sub, pub, &want_connect, &connect_requested);
             if (connect_requested) {
                 pairing_requested = true;
                 create_pair_request();
@@ -2486,6 +2524,8 @@ int main(void)
                 last_status_request = 0;
                 log_line("info", "Digital Factory cloud status is stale");
                 publish_status(pub, current_state, current_pin);
+                reconnect_requested = true;
+                break;
             }
             if (now >= next_status_publish) {
                 publish_status(pub, current_state, current_pin);
@@ -2540,7 +2580,7 @@ int main(void)
             current_state = DF_STATE_RECONNECTING;
             current_pin[0] = '\0';
             publish_status(pub, current_state, current_pin);
-            sleep(reconnect_wait_seconds);
+            wait_for_retry(sub, pub, reconnect_wait_seconds, &want_connect, &connect_requested);
             reconnect_wait_seconds *= 2;
             if (reconnect_wait_seconds > 120)
                 reconnect_wait_seconds = 120;

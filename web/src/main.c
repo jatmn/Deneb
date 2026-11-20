@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/statvfs.h>
 #include <poll.h>
 #if !defined(_WIN32)
@@ -39,6 +40,7 @@
 static volatile int running = 1;
 static int listen_fd = -1;
 static int epoll_fd = -1;
+static int owner_lock_fd = -1;
 
 /* SSE client tracking */
 static int sse_clients[MAX_SSE_CLIENTS];
@@ -73,17 +75,30 @@ static int write_all(int fd, const char *data, size_t len)
     return 0;
 }
 
-static int create_listen_socket(void)
+static int create_listen_socket_at(const char *path)
 {
+    char lock_path[sizeof(((struct sockaddr_un *)0)->sun_path) + 8];
+    int length = snprintf(lock_path, sizeof(lock_path), "%s.lock", path);
+    if (length < 0 || (size_t)length >= sizeof(lock_path))
+        return -1;
+    int lock_fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+    if (lock_fd < 0)
+        return -1;
+    if (flock(lock_fd, LOCK_EX | LOCK_NB) != 0) {
+        close(lock_fd);
+        return -1;
+    }
+    owner_lock_fd = lock_fd;
+
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) { perror("socket"); return -1; }
 
-    unlink(SOCKET_PATH);
+    unlink(path);
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
@@ -97,7 +112,7 @@ static int create_listen_socket(void)
         return -1;
     }
 
-    chmod(SOCKET_PATH, 0660);
+    chmod(path, 0660);
     set_nonblocking(fd);
     return fd;
 }
@@ -107,6 +122,8 @@ void sse_register_client(int fd)
 {
     if (sse_client_count >= MAX_SSE_CLIENTS) {
         fprintf(stderr, "deneb-api: SSE client limit reached\n");
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+        close(fd);
         return;
     }
     sse_clients[sse_client_count++] = fd;
@@ -141,9 +158,9 @@ static void sse_push_status(void)
     for (int i = 0; i < sse_client_count; i++) {
         int fd = sse_clients[i];
         ssize_t nw = write(fd, event, (size_t)n);
-        if (nw < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
-            /* Client disconnected */
+        if (nw != n) {
+            /* A slow reader must reconnect rather than receive a truncated
+             * event or retain a slot indefinitely. No per-client buffers. */
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
             close(fd);
             sse_remove_client(fd);
@@ -282,7 +299,7 @@ static void handle_client(int fd)
     int total_written = 0;
     while (total_written < out_len) {
         ssize_t nw = write(fd, out_buf + total_written, (size_t)(out_len - total_written));
-        if (nw < 0) {
+        if (nw <= 0) {
             if (errno == EINTR) continue;
             break;
         }
@@ -291,13 +308,18 @@ static void handle_client(int fd)
 
     if (resp.body) free(resp.body);
 
-    if (resp.is_sse) {
+    if (out_len <= 0 || total_written != out_len) {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+        close(fd);
+    } else if (resp.is_sse) {
         /* Re-register fd to only detect disconnection, not incoming data */
         struct epoll_event sev;
-        sev.events = EPOLLHUP | EPOLLERR;
+        sev.events = EPOLLRDHUP | EPOLLHUP | EPOLLERR;
         sev.data.fd = fd;
-        epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &sev);
-        sse_register_client(fd);
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &sev) == 0)
+            sse_register_client(fd);
+        else
+            close(fd);
     } else if (!resp.keep_alive) {
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
         close(fd);
@@ -350,7 +372,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    listen_fd = create_listen_socket();
+    listen_fd = create_listen_socket_at(SOCKET_PATH);
     if (listen_fd < 0) {
         fprintf(stderr, "deneb-api: failed to create listen socket\n");
         backend_zmq_deinit();
@@ -394,10 +416,16 @@ int main(int argc, char *argv[])
                 handle_accept();
             } else if (fd == zmq_fd) {
                 backend_zmq_poll();
+            } else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+                sse_remove_client(fd);
+                close(fd);
             } else if (events[i].events & EPOLLIN) {
                 handle_client(fd);
             }
         }
+
+        backend_zmq_poll();
 
         /* Push SSE updates at 250 ms cadence */
         struct timespec ts;
@@ -419,5 +447,6 @@ int main(int argc, char *argv[])
     close(listen_fd);
     unlink(SOCKET_PATH);
     backend_zmq_deinit();
+    close(owner_lock_fd);
     return 0;
 }

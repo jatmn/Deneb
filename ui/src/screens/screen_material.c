@@ -26,7 +26,11 @@ static lv_obj_t *workflow_unload_btn = NULL;
 static lv_obj_t *workflow_stop_btn = NULL;
 static lv_timer_t *workflow_timer = NULL;
 static deneb_material_workflow_t workflow_state;
-static uint32_t workflow_move_done_at = 0;
+static uint64_t workflow_operation_id = 0;
+static uint32_t workflow_operation_started;
+static int workflow_cancelling = 0;
+static int workflow_move_unconfirmed = 0;
+static int workflow_stop_unconfirmed = 0;
 
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
@@ -97,10 +101,35 @@ static void workflow_update(void)
     int motion_allowed = material_motion_allowed();
     int ready = material_temp_ready(s);
 
-    if (workflow_state.moving && workflow_move_done_at &&
-        (int32_t)(lv_tick_get() - workflow_move_done_at) >= 0) {
-        deneb_material_workflow_complete_move(&workflow_state);
-        workflow_move_done_at = 0;
+    if (workflow_state.moving) {
+        deneb_manual_state_t result = deneb_status_state_manual_result(
+            s, workflow_operation_id, lv_tick_get() - workflow_operation_started);
+        if (result == DENEB_MANUAL_COMPLETE) {
+            /* A Stop that lost the race to completion was rejected, so its
+             * heater cleanup never ran. Keep the accepted target: Stop retry
+             * and exit cooldown still own it. */
+            if (workflow_cancelling)
+                workflow_stop_unconfirmed = 1;
+            deneb_material_workflow_complete_move(&workflow_state);
+            workflow_operation_id = 0;
+            workflow_cancelling = 0;
+        } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR) {
+            /* Only a confirmed cancellation ran the backend heater cleanup.
+             * A backend error retires the move, not the accepted target:
+             * Stop and exit cooldown still own it. */
+            int owned_target = result == DENEB_MANUAL_ERROR && workflow_state.target_sent ?
+                                   workflow_state.accepted_target_temp_c : 0;
+            if (result == DENEB_MANUAL_CANCELLED)
+                workflow_stop_unconfirmed = 0;
+            else
+                workflow_move_unconfirmed = 1;
+            deneb_material_workflow_cancel(&workflow_state);
+            deneb_material_workflow_finalize(&workflow_state);
+            deneb_material_workflow_prepare(&workflow_state, DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
+            deneb_material_workflow_set_target(&workflow_state, owned_target, owned_target > 0);
+            workflow_operation_id = 0;
+            workflow_cancelling = 0;
+        }
     }
 
     if (workflow_temp_label && s)
@@ -113,7 +142,9 @@ static void workflow_update(void)
     if (workflow_status_label)
         lv_label_set_text(
             workflow_status_label,
-            locale_get(workflow_status_locale_key(
+            locale_get(workflow_stop_unconfirmed ? "material.stop_unconfirmed" :
+                       workflow_move_unconfirmed ? "material.move_unconfirmed" :
+                       workflow_status_locale_key(
                 deneb_material_workflow_status_for_state(
                     &workflow_state, backend_ready, ready))));
 
@@ -165,44 +196,41 @@ static void workflow_set_temp_cb(lv_event_t *e)
     workflow_update();
 }
 
-static void workflow_load_cb(lv_event_t *e)
+static void workflow_send_move(deneb_material_workflow_op_t op)
 {
-    (void)e;
     const printer_state_t *s = backend_get_state();
     deneb_gcode_material_move_sequence_t seq;
-    if (!material_motion_allowed() || !material_temp_ready(s)) {
+    if (workflow_state.moving || !material_motion_allowed() || !material_temp_ready(s)) {
         workflow_update();
         return;
     }
 
-    if (deneb_gcode_build_material_move_sequence(0, &seq) < 0)
-        return;
-    if (backend_send_gcodes(seq.lines, 2) == 0) {
-        deneb_material_workflow_begin_move(&workflow_state,
-                                           DENEB_MATERIAL_WORKFLOW_OP_LOAD);
-        workflow_move_done_at = lv_tick_get() + seq.duration_ms;
+    uint64_t operation = 0;
+    if (deneb_gcode_build_material_move_sequence(
+            op == DENEB_MATERIAL_WORKFLOW_OP_UNLOAD, &seq) == 0 &&
+        backend_send_gcodes(seq.lines, 2) == 0)
+        operation = backend_get_last_operation();
+    workflow_move_unconfirmed = operation == 0;
+    workflow_stop_unconfirmed = 0;
+    if (!workflow_move_unconfirmed) {
+        deneb_material_workflow_begin_move(&workflow_state, op);
+        workflow_operation_id = operation;
+        workflow_operation_started = lv_tick_get();
+        workflow_cancelling = 0;
     }
     workflow_update();
+}
+
+static void workflow_load_cb(lv_event_t *e)
+{
+    (void)e;
+    workflow_send_move(DENEB_MATERIAL_WORKFLOW_OP_LOAD);
 }
 
 static void workflow_unload_cb(lv_event_t *e)
 {
     (void)e;
-    const printer_state_t *s = backend_get_state();
-    deneb_gcode_material_move_sequence_t seq;
-    if (!material_motion_allowed() || !material_temp_ready(s)) {
-        workflow_update();
-        return;
-    }
-
-    if (deneb_gcode_build_material_move_sequence(1, &seq) < 0)
-        return;
-    if (backend_send_gcodes(seq.lines, 2) == 0) {
-        deneb_material_workflow_begin_move(&workflow_state,
-                                           DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
-        workflow_move_done_at = lv_tick_get() + seq.duration_ms;
-    }
-    workflow_update();
+    workflow_send_move(DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
 }
 
 static void workflow_cooldown_nozzle(int update_ui)
@@ -223,12 +251,23 @@ static void workflow_stop_material(int update_ui)
     deneb_material_workflow_stop_plan_t plan;
     int cooldown_sent = 0;
 
+    if (workflow_state.moving) {
+        if (!workflow_cancelling || workflow_stop_unconfirmed) {
+            workflow_stop_unconfirmed = backend_cancel_manual(workflow_operation_id) != 0;
+            workflow_cancelling = 1;
+        }
+        if (update_ui)
+            workflow_update();
+        return;
+    }
+
     if (deneb_material_workflow_stop_plan(workflow_state.moving, &plan) == 0) {
         if (plan.stop_gcode)
             backend_send_gcode(plan.stop_gcode);
         cooldown_sent = backend_send_gcode(plan.cooldown_gcode) == 0;
     }
     if (cooldown_sent) {
+        workflow_stop_unconfirmed = 0;
         deneb_material_workflow_set_target(&workflow_state, 0, 0);
         if (workflow_state.state != DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED)
             deneb_material_workflow_cancel(&workflow_state);
@@ -236,7 +275,7 @@ static void workflow_stop_material(int update_ui)
         deneb_material_workflow_prepare(&workflow_state,
                                         DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
         deneb_material_workflow_set_target(&workflow_state, 0, 0);
-        workflow_move_done_at = 0;
+        workflow_operation_id = 0;
     }
     if (update_ui && workflow_slider)
         lv_slider_set_value(workflow_slider, workflow_state.target_temp_c, LV_ANIM_ON);
@@ -346,7 +385,9 @@ static lv_obj_t *material_workflow_create(void)
     deneb_material_workflow_init(&workflow_state);
     deneb_material_workflow_prepare(&workflow_state,
                                     DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
-    workflow_move_done_at = 0;
+    workflow_operation_id = 0;
+    workflow_move_unconfirmed = 0;
+    workflow_stop_unconfirmed = 0;
 
     workflow_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(workflow_screen, 320, 208);
@@ -454,7 +495,10 @@ static void material_workflow_destroy(void)
 {
     if (workflow_state.moving)
         workflow_stop_material(0);
-    else if (workflow_state.target_sent)
+    /* An unconfirmed Stop carried no heater cleanup, and this screen is the
+     * last owner of its accepted target. */
+    if (workflow_state.target_sent &&
+        (!workflow_state.moving || workflow_stop_unconfirmed))
         workflow_cooldown_nozzle(0);
 
     if (workflow_timer) {
