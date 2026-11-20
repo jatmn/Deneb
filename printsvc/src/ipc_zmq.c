@@ -145,16 +145,16 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
             int n = zmq_recv(rep, buf, sizeof(buf) - 1, 0);
             if (n < 0)
                 continue;
-            /* libzmq returns the original frame size, even after truncation. */
+            /* libzmq returns the original frame size, even after truncation.
+             * A rejected frame still falls through to the service tick. */
             if ((size_t)n >= sizeof(buf)) {
                 const char *error = "{\"status\":\"error\",\"message\":\"request too large\"}";
                 zmq_send(rep, error, strlen(error), 0);
-                continue;
+            } else {
+                buf[n] = '\0';
+                deneb_printsvc_ipc_handle_frame(svc, buf, reply, sizeof(reply));
+                zmq_send(rep, reply, strlen(reply), 0);
             }
-            buf[n] = '\0';
-
-            deneb_printsvc_ipc_handle_frame(svc, buf, reply, sizeof(reply));
-            zmq_send(rep, reply, strlen(reply), 0);
         }
 
         deneb_print_service_poll_motion(svc);
