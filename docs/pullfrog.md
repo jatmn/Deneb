@@ -46,3 +46,13 @@ node scripts/pullfrog-command-check.test.mjs
 actionlint
 git diff --check
 ```
+
+GitHub loads this `issue_comment` workflow from the default branch. After a
+change to the workflow, Pullfrog version, or provider access, have **jatmn**
+post a new top-level `@pullfrog` command once any workflow changes are on the
+default branch. In GitHub Actions, confirm that **Run Pullfrog** succeeds and
+check that Pullfrog posts the requested response.
+
+The local checks cover command authorization, workflow syntax, and whitespace.
+The live run verifies that Pullfrog can use its stored credentials to reach the
+configured model provider.
