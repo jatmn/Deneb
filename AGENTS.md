@@ -31,7 +31,7 @@ unsafe motion, heating, flashing, update, and recovery behavior.
   and `/images/` links in `website/content` are checked by
   `website/scripts/check-site-links.sh` from publication-boundary (source)
   and again after Hugo via `website/scripts/build.sh` in
-  `policy-validation` when the diff touches website-related paths.
+  `policy-validation` on website-impacting PRs and on every full CI run.
 - `docs/WSL_BUILD_ENVIRONMENT.md` defines the supported native Debian/Linux
   and Windows/WSL release build lanes. Do not mix their dependency paths or
   wrappers.
@@ -147,6 +147,8 @@ splits host validation across `policy-validation`, conditional shell/bootstrap
 producers aggregated by `shell-validation`, and `native-validation`. Branch
 protection requires those three stable jobs plus `select-validation`; the shell
 aggregate fails when any selected Linux or Windows bootstrap producer fails.
+CI uses diff selection for PR feedback. Merge groups, main pushes and manual
+CI dispatches run all host lanes and the full site build.
 Title or body edits do not start CI, so they cannot replace a live required
 result on the same commit. Retargeting a PR base does not start a new run;
 re-run the checks or push a commit.

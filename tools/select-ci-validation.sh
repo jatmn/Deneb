@@ -8,18 +8,11 @@ set -euo pipefail
 : "${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY must be set}"
 : "${RUNNER_TEMP:?RUNNER_TEMP must be set}"
 
-BEFORE_SHA="${BEFORE_SHA:-}"
 changed_files="${RUNNER_TEMP}/changed-files"
 full_validation=false
 
-if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-    full_validation=true
-elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+if [[ "$EVENT_NAME" == "pull_request" ]]; then
     git diff --no-renames --name-only -z HEAD^1 HEAD > "$changed_files"
-elif [[ -n "$BEFORE_SHA" &&
-        "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] &&
-     git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-    git diff --no-renames --name-only -z "$BEFORE_SHA" HEAD > "$changed_files"
 else
     full_validation=true
 fi
