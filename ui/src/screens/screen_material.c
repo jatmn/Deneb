@@ -29,6 +29,7 @@ static deneb_material_workflow_t workflow_state;
 static uint64_t workflow_operation_id = 0;
 static uint32_t workflow_operation_started;
 static int workflow_cancelling = 0;
+static int workflow_move_unconfirmed = 0;
 
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
@@ -105,7 +106,8 @@ static void workflow_update(void)
         if (result == DENEB_MANUAL_COMPLETE && !workflow_cancelling) {
             deneb_material_workflow_complete_move(&workflow_state);
             workflow_operation_id = 0;
-        } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR) {
+        } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR ||
+                   (workflow_cancelling && result == DENEB_MANUAL_COMPLETE)) {
             deneb_material_workflow_cancel(&workflow_state);
             deneb_material_workflow_finalize(&workflow_state);
             deneb_material_workflow_prepare(&workflow_state, DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
@@ -125,7 +127,8 @@ static void workflow_update(void)
     if (workflow_status_label)
         lv_label_set_text(
             workflow_status_label,
-            locale_get(workflow_status_locale_key(
+            locale_get(workflow_move_unconfirmed ? "material.move_unconfirmed" :
+                       workflow_status_locale_key(
                 deneb_material_workflow_status_for_state(
                     &workflow_state, backend_ready, ready))));
 
@@ -177,48 +180,40 @@ static void workflow_set_temp_cb(lv_event_t *e)
     workflow_update();
 }
 
-static void workflow_load_cb(lv_event_t *e)
+static void workflow_send_move(deneb_material_workflow_op_t op)
 {
-    (void)e;
     const printer_state_t *s = backend_get_state();
     deneb_gcode_material_move_sequence_t seq;
-    if (!material_motion_allowed() || !material_temp_ready(s)) {
+    if (workflow_state.moving || !material_motion_allowed() || !material_temp_ready(s)) {
         workflow_update();
         return;
     }
 
-    if (deneb_gcode_build_material_move_sequence(0, &seq) < 0)
-        return;
-    if (backend_send_gcodes(seq.lines, 2) == 0) {
-        deneb_material_workflow_begin_move(&workflow_state,
-                                           DENEB_MATERIAL_WORKFLOW_OP_LOAD);
-        workflow_operation_id = backend_get_last_operation();
+    uint64_t operation = 0;
+    if (deneb_gcode_build_material_move_sequence(
+            op == DENEB_MATERIAL_WORKFLOW_OP_UNLOAD, &seq) == 0 &&
+        backend_send_gcodes(seq.lines, 2) == 0)
+        operation = backend_get_last_operation();
+    workflow_move_unconfirmed = operation == 0;
+    if (!workflow_move_unconfirmed) {
+        deneb_material_workflow_begin_move(&workflow_state, op);
+        workflow_operation_id = operation;
         workflow_operation_started = lv_tick_get();
         workflow_cancelling = 0;
     }
     workflow_update();
 }
 
+static void workflow_load_cb(lv_event_t *e)
+{
+    (void)e;
+    workflow_send_move(DENEB_MATERIAL_WORKFLOW_OP_LOAD);
+}
+
 static void workflow_unload_cb(lv_event_t *e)
 {
     (void)e;
-    const printer_state_t *s = backend_get_state();
-    deneb_gcode_material_move_sequence_t seq;
-    if (!material_motion_allowed() || !material_temp_ready(s)) {
-        workflow_update();
-        return;
-    }
-
-    if (deneb_gcode_build_material_move_sequence(1, &seq) < 0)
-        return;
-    if (backend_send_gcodes(seq.lines, 2) == 0) {
-        deneb_material_workflow_begin_move(&workflow_state,
-                                           DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
-        workflow_operation_id = backend_get_last_operation();
-        workflow_operation_started = lv_tick_get();
-        workflow_cancelling = 0;
-    }
-    workflow_update();
+    workflow_send_move(DENEB_MATERIAL_WORKFLOW_OP_UNLOAD);
 }
 
 static void workflow_cooldown_nozzle(int update_ui)
@@ -371,6 +366,7 @@ static lv_obj_t *material_workflow_create(void)
     deneb_material_workflow_prepare(&workflow_state,
                                     DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
     workflow_operation_id = 0;
+    workflow_move_unconfirmed = 0;
 
     workflow_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(workflow_screen, 320, 208);

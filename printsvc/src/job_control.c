@@ -146,6 +146,14 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         return -1;
     }
 
+    if (!svc->job_active && !svc->serial_ready) {
+        deneb_job_lifecycle_error(&svc->status, deneb_error_make(
+            DENEB_ERROR_SERIAL, "manual abort cleanup unavailable"));
+        deneb_print_service_stop_faulted_work(svc);
+        deneb_command_reply_error(reply, reply_sz, "manual abort cleanup unavailable");
+        return -1;
+    }
+
     if (svc->job_active) {
         deneb_motion_policy_abort(&abort_policy);
     } else {
@@ -159,10 +167,7 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
             snprintf(abort_policy.commands[abort_policy.count++],
                      DENEB_PRINTSVC_MAX_GCODE_LINE, "%s", commands[i]);
     }
-    /* Stop can race the last movement ACK while manual heat is still active.
-     * Publish the accepted cleanup even when COMPLETE was not yet observed. */
-    if (!svc->job_active && (svc->status.manual_state == DENEB_MANUAL_RUNNING ||
-                            svc->status.manual_state == DENEB_MANUAL_COMPLETE))
+    if (svc->gcode_queue_active && svc->status.manual_state == DENEB_MANUAL_RUNNING)
         svc->status.manual_state = DENEB_MANUAL_CANCELLING;
     if (svc->job_active) {
         deneb_gcode_stream_close(&svc->job_stream);
@@ -207,8 +212,6 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
         svc->abort_cleanup_index = 0;
         svc->job_stream.line_number = 0;
         deneb_job_lifecycle_abort(&svc->status);
-        if (svc->status.manual_state == DENEB_MANUAL_CANCELLING)
-            svc->status.manual_state = DENEB_MANUAL_CANCELLED;
         svc->job_started_at = 0;
         svc->job_elapsed_seconds = 0;
         svc->job_progress_started = 0;
@@ -218,10 +221,21 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     return 0;
 }
 
+static int fail_abort_cleanup(deneb_print_service_t *svc, deneb_error_code_t code)
+{
+    svc->abort_cleanup_index = 0;
+    deneb_job_lifecycle_error(&svc->status,
+                              deneb_error_make(code, "abort cleanup failed"));
+    deneb_print_service_stop_faulted_work(svc);
+    return -1;
+}
+
 int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
 {
     if (!svc || !svc->abort_cleanup_pending)
         return 0;
+    if (!svc->serial_ready)
+        return fail_abort_cleanup(svc, DENEB_ERROR_SERIAL);
 
     while (svc->abort_cleanup_index < svc->abort_cleanup_policy.count) {
         int send_rc;
@@ -235,15 +249,7 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
         if (send_rc != 0) {
             if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
                 return 0;
-            svc->abort_requested = 0;
-            svc->abort_cleanup_pending = 0;
-            svc->abort_cleanup_index = 0;
-            svc->heater_wait.active = 0;
-            deneb_job_lifecycle_error(&svc->status,
-                                      deneb_error_make(
-                                          deneb_motion_send_error_code(send_rc),
-                                          "abort cleanup failed"));
-            return -1;
+            return fail_abort_cleanup(svc, deneb_motion_send_error_code(send_rc));
         }
         svc->abort_cleanup_index++;
     }

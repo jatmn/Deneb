@@ -26,6 +26,7 @@ static lv_obj_t *x_pos_label = NULL;
 static lv_obj_t *y_pos_label = NULL;
 static lv_obj_t *z_pos_label = NULL;
 static lv_obj_t *step_label = NULL;
+static lv_obj_t *jog_status_label = NULL;
 static lv_timer_t *pos_timer = NULL;
 
 static const int step_sizes[] = {1, 10, 50};
@@ -33,7 +34,15 @@ static int current_step_idx = 1;
 
 static int motion_allowed(void)
 {
-    return backend_manual_action_allowed();
+    if (backend_manual_action_allowed())
+        return 1;
+    lv_label_set_text(jog_status_label, locale_get("jog.busy"));
+    return 0;
+}
+
+static void show_command_result(int rc)
+{
+    lv_label_set_text(jog_status_label, rc == 0 ? "" : locale_get("jog.unconfirmed"));
 }
 
 static void set_position_label(lv_obj_t *label, const char *axis, float pos)
@@ -74,7 +83,7 @@ static void jog_btn_cb(lv_event_t *e)
 
     if (deneb_gcode_build_jog_sequence(axis, (float)(step * sign), &seq) < 0)
         return;
-    backend_send_gcodes(seq.lines, 3);
+    show_command_result(backend_send_gcodes(seq.lines, 3));
 }
 
 static void home_xy_btn_cb(lv_event_t *e)
@@ -87,7 +96,7 @@ static void home_xy_btn_cb(lv_event_t *e)
     if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_HOME,
                                         &plan) == 0 &&
         plan.kind == DENEB_MANUAL_MOTION_MACRO)
-        backend_send_macro(plan.command);
+        show_command_result(backend_send_macro(plan.command));
 }
 
 static void home_z_btn_cb(lv_event_t *e)
@@ -100,7 +109,7 @@ static void home_z_btn_cb(lv_event_t *e)
     if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_Z_HOME,
                                         &plan) == 0 &&
         plan.kind == DENEB_MANUAL_MOTION_GCODE)
-        backend_send_gcode(plan.command);
+        show_command_result(backend_send_gcode(plan.command));
 }
 
 static void step_btn_cb(lv_event_t *e)
@@ -120,7 +129,7 @@ static void bed_up_btn_cb(lv_event_t *e)
     if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_BED_UP,
                                         &plan) == 0 &&
         plan.kind == DENEB_MANUAL_MOTION_MACRO)
-        backend_send_macro(plan.command);
+        show_command_result(backend_send_macro(plan.command));
 }
 
 static void bed_down_btn_cb(lv_event_t *e)
@@ -133,7 +142,7 @@ static void bed_down_btn_cb(lv_event_t *e)
     if (deneb_manual_motion_plan_action(DENEB_MANUAL_MOTION_ACTION_BED_DOWN,
                                         &plan) == 0 &&
         plan.kind == DENEB_MANUAL_MOTION_MACRO)
-        backend_send_macro(plan.command);
+        show_command_result(backend_send_macro(plan.command));
 }
 
 static lv_obj_t *create_jog_btn(lv_obj_t *parent, const char *symbol,
@@ -249,6 +258,11 @@ static lv_obj_t *jog_create(void)
     lv_obj_center(bd_lbl);
     lv_obj_align(bed_down_btn, LV_ALIGN_TOP_LEFT, 250, 104);
 
+    jog_status_label = lv_label_create(jog_screen);
+    lv_label_set_text(jog_status_label, "");
+    lv_obj_set_style_text_font(jog_status_label, &deneb_font_12, 0);
+    lv_obj_align(jog_status_label, LV_ALIGN_BOTTOM_MID, 0, -23);
+
     /* Position display */
     lv_obj_t *pos_row = lv_obj_create(jog_screen);
     lv_obj_set_size(pos_row, 300, 20);
@@ -291,6 +305,7 @@ static void jog_destroy(void)
     y_pos_label = NULL;
     z_pos_label = NULL;
     step_label = NULL;
+    jog_status_label = NULL;
 }
 
 const screen_ops_t screen_jog = {

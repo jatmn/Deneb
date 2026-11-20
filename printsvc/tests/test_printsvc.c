@@ -68,6 +68,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -347,14 +348,18 @@ static void test_gcode_control_policy(void)
     assert(svc.gcode_queue_active);
     assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
     assert(svc.status.bed_t_set == 55.0f);
+    assert(deneb_command_parse("GCODE<[\"M140 S0\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(svc.status.bed_t_set == 55.0f && svc.heater_wait.active);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(deneb_command_parse("ABORT<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply,
-                                              sizeof(reply)) == 0);
+                                              sizeof(reply)) < 0);
     assert(!svc.gcode_queue_active);
     assert(svc.gcode_queue_count == 0);
-    assert(svc.status.bed_t_set == 0.0f);
-    assert(svc.status.head_t_set == 0.0f);
-    assert(svc.status.state == DENEB_PRINT_STATE_IDLE);
+    assert(svc.status.bed_t_set == 55.0f);
+    assert(svc.status.fault && svc.status.manual_state == DENEB_MANUAL_ERROR);
+    assert(!svc.abort_cleanup_pending && deneb_flow_inflight(&svc.flow) == 0);
 
     deneb_print_service_init(&svc);
     assert(deneb_command_parse("GCODE<[\"M117 hello\",\"M190 S55\",\"M109 S205\"]", &cmd) == 0);
@@ -908,6 +913,7 @@ static void test_job_control_policy(void)
     assert(deneb_flow_inflight(&svc.flow) == DENEB_FLOW_WINDOW);
     assert(seq == DENEB_FLOW_WINDOW - 1);
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    svc.job_active = 1;
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
     assert(deneb_flow_inflight(&svc.flow) == 0);
     assert(!flow_has_retained_slot_text(&svc.flow));
@@ -4846,6 +4852,7 @@ static void test_abort_clears_status(void)
     char reply[256];
 
     deneb_print_service_init(&svc);
+    svc.job_active = 1;
     svc.status.state = DENEB_PRINT_STATE_PRINTING;
     snprintf(svc.status.file, sizeof(svc.status.file), "cube.gcode");
     svc.abort_requested = 1;
@@ -6485,6 +6492,44 @@ static void test_fault_auto_abort_policy(void)
     }
 }
 
+static uint64_t manual_id_from_new_process(const char *path)
+{
+    int output[2];
+    assert(pipe(output) == 0);
+    pid_t child = fork();
+    assert(child >= 0);
+    if (child == 0) {
+        close(output[0]);
+        if (dup2(output[1], STDOUT_FILENO) < 0)
+            _exit(126);
+        close(output[1]);
+        execl("/proc/self/exe", "deneb-printsvc-tests", "--manual-operation-id",
+              path, (char *)NULL);
+        _exit(127);
+    }
+    close(output[1]);
+    FILE *result = fdopen(output[0], "r");
+    assert(result);
+    uint64_t id = 0;
+    assert(fscanf(result, "%" SCNu64, &id) == 1 && id > 0);
+    fclose(result);
+    int status;
+    assert(waitpid(child, &status, 0) == child);
+    assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    return id;
+}
+
+static void drain_manual_abort(deneb_print_service_t *svc)
+{
+    for (int guard = 0; svc->abort_cleanup_pending && guard < 20; ++guard) {
+        assert(deneb_job_control_poll_abort_cleanup(svc) >= 0);
+        uint8_t resend = 0;
+        while (deneb_flow_inflight(&svc->flow))
+            assert(deneb_flow_handle_response(&svc->flow, "ok", &resend) == 1);
+    }
+    assert(!svc->abort_cleanup_pending);
+}
+
 static void test_manual_operation_boundaries(void)
 {
     deneb_print_service_t svc;
@@ -6497,6 +6542,10 @@ static void test_manual_operation_boundaries(void)
     assert(write(fd, macro, strlen(macro)) == (ssize_t)strlen(macro));
     close(fd);
     deneb_print_service_init(&svc);
+    int wire[2];
+    assert(pipe(wire) == 0);
+    svc.serial.fd = wire[1];
+    svc.serial_ready = 1;
     assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
     uint64_t first_id = svc.status.manual_id;
     assert(first_id > 0 && svc.status.manual_state == DENEB_MANUAL_RUNNING);
@@ -6504,8 +6553,12 @@ static void test_manual_operation_boundaries(void)
     assert(deneb_command_parse("GCODE<[\"G1 X20\"]", &cmd) == 0);
     assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) < 0);
     assert(deneb_pause_resume_control_pause(&svc, reply, sizeof(reply)) < 0);
+    /* Make a small distinguishable time adjustment without a real wait. */
+    svc.manual_deadline_ms -= 5000;
+    long long deadline = svc.manual_deadline_ms;
     for (int guard = 0; svc.gcode_queue_active && guard < 20; ++guard) {
         assert(deneb_gcode_control_poll(&svc) >= 0);
+        assert(svc.manual_deadline_ms == deadline);
         if (deneb_flow_inflight(&svc.flow)) {
             assert(svc.status.manual_state == DENEB_MANUAL_RUNNING);
             assert(deneb_gcode_control_poll(&svc) == 0);
@@ -6515,12 +6568,19 @@ static void test_manual_operation_boundaries(void)
         }
     }
     assert(!svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_COMPLETE);
-    svc.status.head_t_set = 180; /* Stop races COMPLETE publication. */
+    assert(deneb_command_parse("GCODE<[\"M104 S180\"]", &cmd) == 0);
+    assert(deneb_gcode_control_run(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
-    assert(svc.status.manual_id == first_id && svc.status.manual_state == DENEB_MANUAL_CANCELLED);
+    assert(svc.status.manual_id == first_id && svc.status.manual_state == DENEB_MANUAL_COMPLETE);
+    drain_manual_abort(&svc);
+    assert(svc.status.manual_id == first_id && svc.status.manual_state == DENEB_MANUAL_COMPLETE);
     assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
     assert(svc.status.manual_id != first_id);
     assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLING);
+    assert(deneb_job_control_poll_abort_cleanup(&svc) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLING);
+    drain_manual_abort(&svc);
     assert(svc.status.manual_state == DENEB_MANUAL_CANCELLED);
     for (size_t i = 0; i < svc.abort_cleanup_policy.count; ++i)
         assert(strncmp(svc.abort_cleanup_policy.commands[i], "G28", 3) != 0);
@@ -6529,13 +6589,27 @@ static void test_manual_operation_boundaries(void)
     assert(deneb_gcode_control_poll(&svc) < 0);
     assert(svc.status.fault && svc.status.manual_state == DENEB_MANUAL_ERROR);
     assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) < 0);
-    /* A new service must not reuse the first ID still awaited by a client. */
+    close(wire[0]);
+    deneb_print_service_close(&svc);
+
+    /* A transport loss after cleanup acceptance must fail even while a
+     * barrier is still in flight. */
     deneb_print_service_init(&svc);
+    assert(pipe(wire) == 0);
+    svc.serial.fd = wire[1];
+    svc.serial_ready = 1;
     assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
-    uint64_t old_id = svc.status.manual_id;
-    deneb_print_service_init(&svc);
-    assert(deneb_gcode_control_run_file(&svc, path, reply, sizeof(reply)) == 0);
-    assert(svc.status.manual_id != old_id);
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    assert(deneb_job_control_poll_abort_cleanup(&svc) == 0);
+    assert(deneb_flow_inflight(&svc.flow) > 0);
+    close(wire[0]);
+    close(wire[1]);
+    svc.serial_ready = 0;
+    assert(deneb_job_control_poll_abort_cleanup(&svc) < 0);
+    assert(!svc.abort_cleanup_pending && svc.status.manual_state == DENEB_MANUAL_ERROR);
+
+    uint64_t first_process_id = manual_id_from_new_process(path);
+    assert(manual_id_from_new_process(path) != first_process_id);
     unlink(path);
 }
 
@@ -6554,8 +6628,12 @@ static void test_operation_observation(void)
     state.manual_id = 4;
     state.manual_state = DENEB_MANUAL_RUNNING;
     assert(deneb_status_state_manual_result(&state, 4, 0) == DENEB_MANUAL_RUNNING);
+    assert(deneb_status_state_manual_result(&state, 4, DENEB_MANUAL_TIMEOUT_MS + 10000) ==
+           DENEB_MANUAL_ERROR);
     state.manual_state = DENEB_MANUAL_COMPLETE;
     assert(deneb_status_state_manual_result(&state, 4, 100) == DENEB_MANUAL_COMPLETE);
+    assert(deneb_status_state_manual_result(&state, 4, DENEB_MANUAL_TIMEOUT_MS + 10000) ==
+           DENEB_MANUAL_COMPLETE);
     state.manual_id = 5;
     assert(deneb_status_state_manual_result(&state, 4, 5000) == DENEB_MANUAL_ERROR);
     state.manual_id = 0;
@@ -6673,6 +6751,17 @@ static void test_background_action_ownership(void)
         if (rc == 0) usleep(1000);
     }
     assert(rc == 1 && !deneb_background_action_running(lock));
+    char retained[256];
+    snprintf(retained, sizeof(retained), "%s/action-retained-%ld", tmp, (long)getpid());
+    assert(rename(log, retained) == 0);
+    int saved = open(retained, O_WRONLY);
+    assert(saved >= 0 && write(saved, "keep", 4) == 4);
+    close(saved);
+    assert(symlink(retained, log) == 0);
+    assert(deneb_background_action_start(lock, "exit 0", log, &pid) < 0);
+    struct stat st;
+    assert(stat(retained, &st) == 0 && st.st_size == 4);
+    assert(unlink(log) == 0 && unlink(retained) == 0);
     assert(deneb_background_action_start(lock, "exit 7", log, &pid) == 0);
     rc = 0;
     for (int i = 0; i < 2000 && rc == 0; ++i) {
@@ -6684,8 +6773,17 @@ static void test_background_action_ownership(void)
     unlink(log);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc == 3 && strcmp(argv[1], "--manual-operation-id") == 0) {
+        deneb_print_service_t svc;
+        char reply[256];
+        deneb_print_service_init(&svc);
+        if (deneb_gcode_control_run_file(&svc, argv[2], reply, sizeof(reply)) != 0)
+            return 1;
+        printf("%" PRIu64 "\n", svc.status.manual_id);
+        return 0;
+    }
     test_manual_operation_boundaries();
     test_operation_observation();
     test_fault_never_replays_motion();

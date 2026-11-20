@@ -3,12 +3,27 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+static int open_action_file(const char *path, int access_mode)
+{
+    int fd = open(path, O_CREAT | O_NOFOLLOW | O_NONBLOCK | access_mode, 0600);
+    if (fd < 0)
+        return -1;
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        st.st_uid != geteuid() || st.st_nlink != 1) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
 int deneb_background_action_running(const char *lock_path)
 {
-    int fd = open(lock_path, O_CREAT | O_RDWR, 0600);
+    int fd = open_action_file(lock_path, O_RDWR);
     if (fd < 0)
         return 1; /* Unknown ownership fails closed. */
     int busy = flock(fd, LOCK_EX | LOCK_NB) != 0;
@@ -21,15 +36,17 @@ int deneb_background_action_start(const char *lock_path, const char *command,
 {
     if (!lock_path || !command || !log_path || !pid)
         return -1;
-    int fd = open(lock_path, O_CREAT | O_RDWR, 0600);
+    int fd = open_action_file(lock_path, O_RDWR);
     if (fd < 0)
         return -1;
     if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
         close(fd);
         return -1;
     }
-    int log_fd = open(log_path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
-    if (log_fd < 0) {
+    int log_fd = open_action_file(log_path, O_WRONLY);
+    if (log_fd < 0 || ftruncate(log_fd, 0) != 0) {
+        if (log_fd >= 0)
+            close(log_fd);
         close(fd);
         return -1;
     }

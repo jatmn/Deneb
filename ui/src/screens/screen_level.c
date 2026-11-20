@@ -49,6 +49,9 @@ static const char *level_step_locale_key(deneb_buildplate_level_step_t step)
 
 static const char *level_status_text(void)
 {
+    if (level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED &&
+        level_macro_rc != 0)
+        return locale_get("level.failed");
     if (!backend_is_ready())
         return locale_get("level.busy");
     switch (level_workflow.state) {
@@ -61,8 +64,6 @@ static const char *level_status_text(void)
         case DENEB_BUILDPLATE_LEVEL_STATE_FINAL:
             return locale_get("level.done");
         case DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED:
-            if (level_macro_rc != 0)
-                return locale_get("level.failed");
             return locale_get("level.cancelled");
         case DENEB_BUILDPLATE_LEVEL_STATE_PREPARED:
         case DENEB_BUILDPLATE_LEVEL_STATE_NONE:
@@ -128,22 +129,11 @@ static int level_prepare_if_needed(void)
     return 0;
 }
 
-static void level_macro_timer_cb(lv_timer_t *timer)
+static void level_finish_move(int rc)
 {
-    (void)timer;
-    const printer_state_t *state = backend_get_state();
-    deneb_manual_state_t result = deneb_status_state_manual_result(
-        state, level_operation_id, lv_tick_get() - level_operation_started);
-    if (result == DENEB_MANUAL_ERROR) {
-        level_macro_rc = -1;
-    } else if (result == DENEB_MANUAL_RUNNING || result == DENEB_MANUAL_CANCELLING) {
-        level_update();
-        return;
-    } else {
-        level_macro_rc = result == DENEB_MANUAL_COMPLETE ||
-                         (level_macro_cancelled && result == DENEB_MANUAL_CANCELLED) ? 0 : -1;
-    }
+    level_macro_rc = rc;
     level_macro_running = 0;
+    level_operation_id = 0;
     if (level_macro_timer) {
         lv_timer_delete(level_macro_timer);
         level_macro_timer = NULL;
@@ -154,6 +144,19 @@ static void level_macro_timer_cb(lv_timer_t *timer)
         deneb_buildplate_level_workflow_complete_move(&level_workflow);
     level_macro_cancelled = 0;
     level_update();
+}
+
+static void level_macro_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    deneb_manual_state_t result = deneb_status_state_manual_result(
+        backend_get_state(), level_operation_id, lv_tick_get() - level_operation_started);
+    if (result == DENEB_MANUAL_RUNNING || result == DENEB_MANUAL_CANCELLING) {
+        level_update();
+        return;
+    }
+    level_finish_move(result == DENEB_MANUAL_COMPLETE ||
+                      (level_macro_cancelled && result == DENEB_MANUAL_CANCELLED) ? 0 : -1);
 }
 
 static void level_next_cb(lv_event_t *e)
@@ -189,10 +192,8 @@ static void level_next_cb(lv_event_t *e)
     level_operation_id = backend_get_last_operation();
     level_operation_started = lv_tick_get();
     level_macro_cancelled = 0;
-    if (level_macro_rc != 0 || level_operation_id <= 0) {
-        level_macro_rc = -1;
-        deneb_buildplate_level_workflow_cancel(&level_workflow);
-        level_update();
+    if (level_macro_rc != 0 || level_operation_id == 0) {
+        level_finish_move(-1);
         return;
     }
     level_macro_running = 1;
@@ -205,10 +206,11 @@ static void level_cancel_cb(lv_event_t *e)
 {
     (void)e;
     if (level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING) {
-        if (backend_abort_print() == 0)
-            level_macro_cancelled = 1;
-        else
-            level_macro_rc = -1;
+        if (backend_abort_print() != 0) {
+            level_finish_move(-1);
+            return;
+        }
+        level_macro_cancelled = 1;
         level_update();
         return;
     }
@@ -297,17 +299,13 @@ static lv_obj_t *level_create(void)
 
 static void level_destroy(void)
 {
-    if (level_macro_running && !level_macro_cancelled && backend_abort_print() == 0)
-        level_macro_cancelled = 1;
-    if (level_macro_timer && !level_macro_running) {
-        lv_timer_delete(level_macro_timer);
-        level_macro_timer = NULL;
-    }
     level_screen = NULL;
     status_label = NULL;
     next_btn = NULL;
     next_btn_label = NULL;
     cancel_btn = NULL;
+    if (level_macro_running && !level_macro_cancelled)
+        level_cancel_cb(NULL);
 }
 
 const screen_ops_t screen_level = {

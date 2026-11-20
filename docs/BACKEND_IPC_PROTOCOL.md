@@ -197,9 +197,8 @@ monotonic-clock token, so service restarts do not restart the counter at one.
 The service publishes the same decimal string as `manualId` and a numeric
 `manualState` in status. State values are
 0 (none), 1 (running), 2 (complete), 3 (cancelled), 4 (cancelling), and 5 (error).
-A terminal result remains until the next operation is accepted. An accepted
-manual/heater ABORT can move COMPLETE to CANCELLING and then CANCELLED when Stop
-races the final movement publication. Clients must
+A terminal result remains until the next operation is accepted, even if a
+later ABORT cleans up standalone heater activity. Clients must
 handle a superseding operation or service restart instead of waiting forever
 for a lost result.
 
@@ -207,19 +206,22 @@ Macros use the same bounded 64-command manual queue as G-code, reserving a slot
 for a final `M400`. Dispatch remains available while the poll loop executes
 commands. Completion requires the final barrier and all outstanding ACKs;
 it does not constitute independent sensor proof of physical stability.
-Manual progress waits are bounded to ten minutes. The touchscreen follows
-operation results for leveling and material movement instead of an RPC return
-or estimated movement duration.
+Manual execution is bounded to ten minutes from admission. The touchscreen
+follows operation results for leveling and material movement instead of an RPC
+return or estimated movement duration.
 
 Manual motion and macros are rejected while a print or its lifecycle cleanup
 owns execution. Single heater, fan and light adjustments remain available
-outside pause/resume/cleanup transitions. Pause and Resume require an active
-print. Position probing and pause parking have 60-second deadlines; resume
-has a ten-minute deadline. Preparation and in-file heater prerequisites survive Pause.
+outside manual queues and pause/resume/cleanup transitions. Pause and Resume
+require an active print. Position probing and pause parking have 60-second
+deadlines; resume has a ten-minute deadline. Preparation and in-file heater
+prerequisites survive Pause.
 
 Manual ABORT stops further submission and queues Connect's `M401`, restores
 coordinate/extruder modes, turns heaters off and drains. It does not run the
 print parking/homing policy. A new leveling run starts with its homing step.
+Manual cancellation reaches CANCELLED only after the cleanup drains. If serial
+is unavailable, host work stops and the service reports an error.
 `M401` is an ordinary queued Connect command, so cancellation acceptance is not
 an immediate physical-stop guarantee.
 

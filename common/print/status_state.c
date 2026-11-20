@@ -241,15 +241,17 @@ int deneb_status_state_expire(deneb_backend_status_state_t *state, uint32_t now_
 deneb_manual_state_t deneb_status_state_manual_result(
     const deneb_backend_status_state_t *state, uint64_t operation_id, uint32_t elapsed_ms)
 {
-    if (!state || !state->connected || state->has_error || operation_id <= 0 ||
-        elapsed_ms >= 610000U)
+    if (!state || !state->connected || state->has_error || operation_id == 0)
         return DENEB_MANUAL_ERROR;
     if (state->manual_id != operation_id) {
         /* Allow publications already in transit when the ACK arrived, then
          * fail closed on restart, supersession or missing operation status. */
         return elapsed_ms >= DENEB_STATUS_STALE_MS ? DENEB_MANUAL_ERROR : DENEB_MANUAL_RUNNING;
     }
-    if (state->manual_state == DENEB_MANUAL_NONE)
+    if (state->manual_state == DENEB_MANUAL_NONE ||
+        ((state->manual_state == DENEB_MANUAL_RUNNING ||
+          state->manual_state == DENEB_MANUAL_CANCELLING) &&
+         elapsed_ms >= DENEB_MANUAL_TIMEOUT_MS + 10000U))
         return DENEB_MANUAL_ERROR;
     return state->manual_state;
 }

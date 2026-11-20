@@ -19,7 +19,9 @@ for result in 0 1; do
         done
         printf 'schedule_reboot() { touch "%s/reboot-%s"; }\n' "$TASK_TMP" "$result"
         printf 'reboot_now() { touch "%s/reboot-%s"; }\n' "$TASK_TMP" "$result"
-        sed -n '/^# Main/,$p' "$ROOT/ui/installer/update.sh"
+        # Include pre-main trap registration while leaving device functions mocked.
+        sed -n -e '1,/^# Main/{ /^trap[[:space:]]/p; }' \
+               -e '/^# Main/,$p' "$ROOT/ui/installer/update.sh"
     } > "$script"
     if sh "$script"; then
         [ "$result" -eq 0 ] || exit 1

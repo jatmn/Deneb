@@ -2342,9 +2342,7 @@ static bool poll_connector_commands(void *sub, bool *want_connect,
                                     bool *connect_requested)
 {
     bool handled = false;
-    if (connect_requested)
-        *connect_requested = false;
-    while (true) {
+    for (unsigned batch = 0; batch < 32 && !g_stop; ++batch) {
         zmq_pollitem_t items[] = {{sub, 0, ZMQ_POLLIN, 0}};
         if (zmq_poll(items, 1, 0) <= 0)
             break;
@@ -2369,6 +2367,8 @@ static bool poll_connector_commands(void *sub, bool *want_connect,
                 handled = true;
             } else if (strncmp(target, DISCONNECT_SERVICE, strlen(DISCONNECT_SERVICE)) == 0) {
                 *want_connect = false;
+                if (connect_requested)
+                    *connect_requested = false;
                 uci_set_option("cluster_id", NULL);
                 handled = true;
             }
@@ -2379,9 +2379,9 @@ static bool poll_connector_commands(void *sub, bool *want_connect,
     return handled;
 }
 
-/* Wait for retry time while allowing local disconnect/connect intent to wake
- * the main loop. The loop consumes and acknowledges the actual command. */
-static void wait_for_retry(void *sub, int seconds)
+/* Only connector intent can interrupt the retry deadline. */
+static void wait_for_retry(void *sub, int seconds, bool *want_connect,
+                           bool *connect_requested)
 {
     int64_t deadline = monotonic_ms() + (int64_t)seconds * 1000;
     while (!g_stop) {
@@ -2390,7 +2390,8 @@ static void wait_for_retry(void *sub, int seconds)
             return;
         zmq_pollitem_t item = {sub, 0, ZMQ_POLLIN, 0};
         int rc = zmq_poll(&item, 1, remaining > 1000 ? 1000 : (long)remaining);
-        if (rc != 0)
+        if (rc < 0 || (rc > 0 &&
+                       poll_connector_commands(sub, want_connect, connect_requested)))
             return;
     }
 }
@@ -2433,10 +2434,11 @@ int main(void)
         pairing_requested = true;
     publish_status(pub, current_state, current_pin);
 
+    bool connect_requested = false;
     while (!g_stop) {
-        bool connect_requested = false;
         poll_connector_commands(sub, &want_connect, &connect_requested);
         if (connect_requested) {
+            connect_requested = false;
             pairing_requested = true;
             create_pair_request();
         }
@@ -2444,7 +2446,7 @@ int main(void)
             current_state = DF_STATE_DISCONNECTED;
             current_pin[0] = '\0';
             publish_status(pub, current_state, current_pin);
-            wait_for_retry(sub, 1);
+            wait_for_retry(sub, 1, &want_connect, &connect_requested);
             continue;
         }
 
@@ -2455,7 +2457,7 @@ int main(void)
                 url_s, sizeof(url_s));
         if (parse_url(url_s, &url) < 0) {
             log_line("error", "invalid digitalfactory_url");
-            wait_for_retry(sub, 10);
+            wait_for_retry(sub, 10, &want_connect, &connect_requested);
             continue;
         }
 
@@ -2469,7 +2471,7 @@ int main(void)
             current_state = DF_STATE_RECONNECTING;
             current_pin[0] = '\0';
             publish_status(pub, current_state, current_pin);
-            wait_for_retry(sub, reconnect_wait_seconds);
+            wait_for_retry(sub, reconnect_wait_seconds, &want_connect, &connect_requested);
             reconnect_wait_seconds *= 2;
             if (reconnect_wait_seconds > 120)
                 reconnect_wait_seconds = 120;
@@ -2558,7 +2560,7 @@ int main(void)
             current_state = DF_STATE_RECONNECTING;
             current_pin[0] = '\0';
             publish_status(pub, current_state, current_pin);
-            wait_for_retry(sub, reconnect_wait_seconds);
+            wait_for_retry(sub, reconnect_wait_seconds, &want_connect, &connect_requested);
             reconnect_wait_seconds *= 2;
             if (reconnect_wait_seconds > 120)
                 reconnect_wait_seconds = 120;

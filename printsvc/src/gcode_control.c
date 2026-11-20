@@ -188,7 +188,6 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
         }
         apply_accepted_heater_target(svc, svc->gcode_queue[index]);
         svc->gcode_queue_index++;
-        svc->manual_deadline_ms = manual_now_ms() + 600000;
 
         if (svc->gcode_queue_wait_bed[index]) {
             deneb_heater_wait_start_bed(&svc->heater_wait,
@@ -247,7 +246,8 @@ static int manual_accept(deneb_print_service_t *svc, char *reply, size_t reply_s
     uint64_t id = (uint64_t)now.tv_sec * UINT64_C(1000000000) + now.tv_nsec;
     svc->status.manual_id = id > svc->status.manual_id ? id : svc->status.manual_id + 1;
     svc->status.manual_state = DENEB_MANUAL_RUNNING;
-    svc->manual_deadline_ms = manual_now_ms() + 600000;
+    svc->manual_deadline_ms = (long long)(id / UINT64_C(1000000)) +
+                              DENEB_MANUAL_TIMEOUT_MS;
     apply_queued_heater_targets(svc);
     svc->gcode_queue_active = 1;
     /* Reply is acceptance, never completion. Publish terminal state only after
@@ -265,10 +265,10 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
     if (!svc || !cmd || !reply || !reply_sz)
         return -1;
 
-    /* Live non-motion adjustments do not take ownership of the job's heater
-     * wait or manual sequence. Never interleave new movement with that owner. */
+    /* Allow live print adjustments while keeping the manual queue exclusive. */
     if (cmd->gcode_count == 1 && !svc->status.fault &&
         svc->status.state != DENEB_PRINT_STATE_ERROR &&
+        !svc->gcode_queue_active &&
         !svc->abort_cleanup_pending && !svc->finish_cleanup_pending &&
         !svc->pause_position_probe_pending && !svc->pause_policy_pending &&
         !svc->resume_policy_pending) {

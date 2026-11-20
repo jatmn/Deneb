@@ -3,6 +3,8 @@
 #define DENEB_MANUAL_OPERATION_H
 #include <stdint.h>
 
+#define DENEB_MANUAL_TIMEOUT_MS 600000U
+
 /* Decimal wire tokens avoid precision loss in JSON number consumers. */
 static inline uint64_t deneb_manual_id_parse(const char *text)
 {
@@ -20,9 +22,8 @@ static inline uint64_t deneb_manual_id_parse(const char *text)
     return value;
 }
 
-/* Token identifies the accepted operation; terminal state is retained until
- * another operation or manual ABORT is accepted. COMPLETE requires the final
- * M400 ACK. */
+/* Token identifies the accepted operation; its terminal state is retained until
+ * another operation is accepted. COMPLETE requires the final M400 ACK. */
 typedef enum {
     DENEB_MANUAL_NONE = 0,
     DENEB_MANUAL_RUNNING,

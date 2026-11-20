@@ -459,6 +459,7 @@ jobs:
           ctest --test-dir build/ci-web --output-on-failure
           cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-ui --parallel
+          ctest --test-dir build/ci-ui --output-on-failure
 
       - name: Build native Digital Factory service
         run: |
