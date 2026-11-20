@@ -14,11 +14,13 @@
 #include <stdio.h>
 #include <string.h>
 
-static long long manual_now_ms(void)
+int deneb_gcode_control_manual_expired(const deneb_print_service_t *svc)
 {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 1;
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000 >=
+           svc->manual_deadline_ms;
 }
 
 static int parse_heater_target(const char *line, int *is_bed, float *target)
@@ -146,7 +148,7 @@ int deneb_gcode_control_poll(deneb_print_service_t *svc)
         return 0;
 
     if (svc->status.fault || svc->status.state == DENEB_PRINT_STATE_ERROR ||
-        manual_now_ms() >= svc->manual_deadline_ms) {
+        deneb_gcode_control_manual_expired(svc)) {
         clear_queue(svc);
         svc->heater_wait.active = 0;
         svc->status.manual_state = DENEB_MANUAL_ERROR;

@@ -19,13 +19,13 @@
 #include "print_state_rules.h"
 #include "status_state.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #define BACKEND_RPC_TIMEOUT_MS 1000
-#define BACKEND_MACRO_RPC_TIMEOUT_MS 360000
 
 static uint64_t last_operation_id;
 uint64_t backend_get_last_operation(void) { return last_operation_id; }
@@ -109,6 +109,10 @@ int backend_send_job(const char *path, const char *source, const char *uuid,
 int backend_send_pending_instruction(const char *instruction) { (void)instruction; return 0; }
 int backend_send_command(const char *cmd, const char *args) { (void)cmd; (void)args; return 0; }
 int backend_abort_print(void) { return 0; }
+int backend_cancel_manual(uint64_t operation)
+{
+    return operation && operation == state.manual_id ? 0 : -1;
+}
 int backend_stop_print(void) { return 0; }
 int backend_pause_print(void) { return 0; }
 int backend_resume_print(void) { return 0; }
@@ -515,7 +519,7 @@ int backend_is_stop_print_inflight(void)
         deneb_status_state_has_print_context(&state));
 }
 
-static int send_rpc_timeout(const char *msg, size_t len, int timeout_ms)
+static int send_rpc(const char *msg, size_t len)
 {
     void *socket;
     int rc;
@@ -544,7 +548,7 @@ static int send_rpc_timeout(const char *msg, size_t len, int timeout_ms)
     }
 
     zmq_pollitem_t items[] = {{socket, 0, ZMQ_POLLIN, 0}};
-    rc = zmq_poll(items, 1, timeout_ms);
+    rc = zmq_poll(items, 1, BACKEND_RPC_TIMEOUT_MS);
     if (rc > 0) {
         zmq_msg_t reply;
         zmq_msg_init(&reply);
@@ -569,7 +573,7 @@ static int send_rpc_timeout(const char *msg, size_t len, int timeout_ms)
     } else {
         if (rc == 0)
             fprintf(stderr, "backend: rpc reply timeout after %d ms\n",
-                    timeout_ms);
+                    BACKEND_RPC_TIMEOUT_MS);
         else
             fprintf(stderr, "backend: rpc poll failed: %s\n",
                     zmq_strerror(errno));
@@ -579,22 +583,6 @@ static int send_rpc_timeout(const char *msg, size_t len, int timeout_ms)
 
     zmq_close(socket);
     return 0;
-}
-
-static int send_rpc(const char *msg, size_t len)
-{
-    return send_rpc_timeout(msg, len, BACKEND_RPC_TIMEOUT_MS);
-}
-
-static int send_formatted_rpc_timeout(const char *msg, int len,
-                                      size_t msg_size, int timeout_ms)
-{
-    if (len < 0 || (size_t)len >= msg_size) {
-        fprintf(stderr, "backend: rpc payload too large\n");
-        return -1;
-    }
-
-    return send_rpc_timeout(msg, (size_t)len, timeout_ms);
 }
 
 static int send_formatted_rpc(const char *msg, int len, size_t msg_size)
@@ -624,8 +612,7 @@ int backend_send_macro(const char *macro)
 {
     char msg[256];
     int len = deneb_command_format_macro(macro, msg, sizeof(msg));
-    return send_formatted_rpc_timeout(msg, len, sizeof(msg),
-                                      BACKEND_MACRO_RPC_TIMEOUT_MS);
+    return send_formatted_rpc(msg, len, sizeof(msg));
 }
 
 int backend_send_job(const char *path, const char *source, const char *uuid,
@@ -707,6 +694,15 @@ int backend_send_command(const char *cmd, const char *args_json)
 int backend_abort_print(void)
 {
     return backend_send_command(DENEB_COMMAND_VERB_ABORT, "{}");
+}
+
+int backend_cancel_manual(uint64_t operation)
+{
+    if (!operation)
+        return -1;
+    char payload[48];
+    snprintf(payload, sizeof(payload), "{\"operation\":\"%" PRIu64 "\"}", operation);
+    return backend_send_command(DENEB_COMMAND_VERB_CANCEL_MANUAL, payload);
 }
 
 int backend_pause_print(void)

@@ -32,6 +32,7 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
 
 #else
 
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -524,7 +525,7 @@ static int ensure_native_connector_started_for_connect(void)
     return -1;
 }
 
-static int send_request(void *pub, const char *action)
+static int send_request(void *pub, const char *action, const char *source)
 {
     int instr = strcmp(action, "connect") == 0 ? DF_INSTR_CONNECT
                                                : DF_INSTR_DISCONNECT;
@@ -537,7 +538,7 @@ static int send_request(void *pub, const char *action)
     if (strcmp(action, "connect") == 0)
         create_pair_request_file();
 
-    if (mp_encode_key(&key, monotonic_ms(), "rpc-request", SOURCE, target) < 0)
+    if (mp_encode_key(&key, monotonic_ms(), "rpc-request", source, target) < 0)
         goto out;
     if (mp_encode_df_request(&data, instr) < 0)
         goto out;
@@ -561,8 +562,12 @@ static int bridge_action_complete(const char *action, bool has_accepted,
         return has_state;
     return has_accepted && accepted && has_state &&
         (strcmp(action, "disconnect") == 0 ? state == DF_STATE_DISCONNECTED :
-         (state == DF_STATE_CONNECTED || (pin && pin[0])));
+         (state == DF_STATE_CONNECTED ||
+          (state == DF_STATE_ENTER_PIN && pin && pin[0])));
 }
+
+static int wait_for_action(void *sub, const char *action, const char *reply_target,
+                           int timeout_seconds, char *out, size_t out_size);
 
 int deneb_df_bridge_run(const char *action, int timeout_seconds,
                         char *out, size_t out_size)
@@ -633,7 +638,11 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
     struct timespec sleep_ts = {1, 0};
     nanosleep(&sleep_ts, NULL);
 
-    if (strcmp(action, "status") != 0 && send_request(pub, action) < 0) {
+    bool status_only = strcmp(action, "status") == 0;
+    char source[64], reply_target[96];
+    snprintf(source, sizeof(source), "%s/%" PRId64, SOURCE, monotonic_ms());
+    snprintf(reply_target, sizeof(reply_target), "%s/rpc@reply|D1", source);
+    if (!status_only && send_request(pub, action, source) < 0) {
         snprintf(out, out_size, "status=error reason=send-failed");
         zmq_close(sub);
         zmq_close(pub);
@@ -641,6 +650,20 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
         return -1;
     }
 
+    int rc = wait_for_action(sub, action, reply_target, timeout_seconds, out, out_size);
+#if !defined(_WIN32)
+    syslog(LOG_INFO, "digital_factory action=%s result=%s", action, out);
+#endif
+    zmq_close(sub);
+    zmq_close(pub);
+    zmq_ctx_destroy(ctx);
+    return rc;
+}
+
+static int wait_for_action(void *sub, const char *action, const char *reply_target,
+                           int timeout_seconds, char *out, size_t out_size)
+{
+    bool status_only = strcmp(action, "status") == 0;
     bool has_accepted = false;
     bool accepted = false;
     bool has_state = false;
@@ -674,9 +697,6 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
         char key_target[128] = "";
         if (read_key_parts(&key_msg, key_action, sizeof(key_action),
                            key_target, sizeof(key_target)) == 0) {
-            char reply_target[128];
-            snprintf(reply_target, sizeof(reply_target), "%s/rpc@reply|D1",
-                     SOURCE);
             if (strcmp(key_action, "rpc-reply") == 0 &&
                 strcmp(key_target, reply_target) == 0) {
                 mp_reader_t val;
@@ -685,6 +705,7 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
                     has_accepted = true;
                 }
             } else if (strcmp(key_action, "drop") == 0 &&
+                       (status_only || (has_accepted && accepted)) &&
                        strcmp(key_target,
                               "coordinator::digitalfactory::status") == 0) {
                 mp_reader_t val;
@@ -693,9 +714,10 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
                     mp_read_int(&val, &i) == 0) {
                     has_state = true;
                     state = (int)i;
+                    pin[0] = '\0';
+                    if (read_map_value(&data_msg, "pin", &val) == 0)
+                        (void)mp_read_str(&val, pin, sizeof(pin));
                 }
-                if (read_map_value(&data_msg, "pin", &val) == 0)
-                    (void)mp_read_str(&val, pin, sizeof(pin));
             }
         }
 
@@ -706,7 +728,7 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
         zmq_msg_close(&data_msg);
     }
 
-    if (strcmp(action, "status") == 0 && !has_state &&
+    if (status_only && !has_state &&
         digital_factory_is_unpaired_disabled()) {
         has_state = true;
         state = DF_STATE_DISCONNECTED;
@@ -718,12 +740,6 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
     else
         snprintf(out, out_size, "status=error reason=%s",
                  has_accepted && !accepted ? "rejected" : "timeout");
-#if !defined(_WIN32)
-    syslog(LOG_INFO, "digital_factory action=%s result=%s", action, out);
-#endif
-    zmq_close(sub);
-    zmq_close(pub);
-    zmq_ctx_destroy(ctx);
     return completed ? 0 : -1;
 }
 

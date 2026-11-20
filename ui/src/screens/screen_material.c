@@ -30,6 +30,7 @@ static uint64_t workflow_operation_id = 0;
 static uint32_t workflow_operation_started;
 static int workflow_cancelling = 0;
 static int workflow_move_unconfirmed = 0;
+static int workflow_stop_unconfirmed = 0;
 
 extern const screen_ops_t screen_set_material;
 extern const screen_ops_t screen_material_workflow;
@@ -108,6 +109,8 @@ static void workflow_update(void)
             workflow_operation_id = 0;
         } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR ||
                    (workflow_cancelling && result == DENEB_MANUAL_COMPLETE)) {
+            if (result == DENEB_MANUAL_CANCELLED)
+                workflow_stop_unconfirmed = 0;
             deneb_material_workflow_cancel(&workflow_state);
             deneb_material_workflow_finalize(&workflow_state);
             deneb_material_workflow_prepare(&workflow_state, DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
@@ -127,7 +130,8 @@ static void workflow_update(void)
     if (workflow_status_label)
         lv_label_set_text(
             workflow_status_label,
-            locale_get(workflow_move_unconfirmed ? "material.move_unconfirmed" :
+            locale_get(workflow_stop_unconfirmed ? "material.stop_unconfirmed" :
+                       workflow_move_unconfirmed ? "material.move_unconfirmed" :
                        workflow_status_locale_key(
                 deneb_material_workflow_status_for_state(
                     &workflow_state, backend_ready, ready))));
@@ -195,6 +199,7 @@ static void workflow_send_move(deneb_material_workflow_op_t op)
         backend_send_gcodes(seq.lines, 2) == 0)
         operation = backend_get_last_operation();
     workflow_move_unconfirmed = operation == 0;
+    workflow_stop_unconfirmed = 0;
     if (!workflow_move_unconfirmed) {
         deneb_material_workflow_begin_move(&workflow_state, op);
         workflow_operation_id = operation;
@@ -235,8 +240,10 @@ static void workflow_stop_material(int update_ui)
     int cooldown_sent = 0;
 
     if (workflow_state.moving) {
-        if (!workflow_cancelling && backend_abort_print() == 0)
+        if (!workflow_cancelling || workflow_stop_unconfirmed) {
+            workflow_stop_unconfirmed = backend_cancel_manual(workflow_operation_id) != 0;
             workflow_cancelling = 1;
+        }
         if (update_ui)
             workflow_update();
         return;
@@ -248,6 +255,7 @@ static void workflow_stop_material(int update_ui)
         cooldown_sent = backend_send_gcode(plan.cooldown_gcode) == 0;
     }
     if (cooldown_sent) {
+        workflow_stop_unconfirmed = 0;
         deneb_material_workflow_set_target(&workflow_state, 0, 0);
         if (workflow_state.state != DENEB_MATERIAL_WORKFLOW_STATE_CANCELLED)
             deneb_material_workflow_cancel(&workflow_state);
@@ -367,6 +375,7 @@ static lv_obj_t *material_workflow_create(void)
                                     DENEB_MATERIAL_WORKFLOW_OP_CHANGE);
     workflow_operation_id = 0;
     workflow_move_unconfirmed = 0;
+    workflow_stop_unconfirmed = 0;
 
     workflow_screen = lv_obj_create(lv_screen_active());
     lv_obj_set_size(workflow_screen, 320, 208);

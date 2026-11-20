@@ -11,6 +11,7 @@ static printer_state_t observed;
 static uint64_t admitted_operation;
 static int macro_rc;
 static int abort_rc;
+static uint64_t cancel_requested;
 static lv_timer_cb_t active_timer;
 static int timer_handle;
 static const char *shown_status;
@@ -26,9 +27,14 @@ int backend_send_gcodes(const char *const *lines, size_t count)
     assert(lines && count == 2);
     return 0;
 }
+int backend_send_gcode(const char *line) { (void)line; assert(0); return -1; }
 int backend_send_macro(const char *macro) { assert(macro && *macro); return macro_rc; }
 uint64_t backend_get_last_operation(void) { return admitted_operation; }
-int backend_abort_print(void) { return abort_rc; }
+int backend_cancel_manual(uint64_t operation)
+{
+    cancel_requested = operation;
+    return abort_rc;
+}
 const char *locale_get(const char *key) { return key; }
 uint32_t lv_tick_get(void) { return 100; }
 void lv_obj_add_state(lv_obj_t *obj, lv_state_t state) { (void)obj; (void)state; }
@@ -42,6 +48,12 @@ void lv_label_set_text_fmt(lv_obj_t *obj, const char *fmt, ...)
 {
     (void)obj;
     (void)fmt;
+}
+void lv_slider_set_value(lv_obj_t *obj, int32_t value, lv_anim_enable_t anim)
+{
+    (void)obj;
+    (void)value;
+    (void)anim;
 }
 lv_timer_t *lv_timer_create(lv_timer_cb_t cb, uint32_t period, void *data)
 {
@@ -71,6 +83,7 @@ static void test_level_failed_abort(bool leaving_screen)
         level_destroy();
     else
         level_cancel_cb(NULL);
+    assert(cancel_requested == admitted_operation);
     assert(level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED);
     assert(!level_workflow.moving && !active_timer);
     observed.manual_state = DENEB_MANUAL_COMPLETE;
@@ -100,6 +113,13 @@ static void test_material_ack_requires_token(void)
         observed.manual_state = DENEB_MANUAL_RUNNING;
         workflow_update();
         assert(workflow_state.moving && workflow_operation_id == admitted_operation);
+        if (i == 1) {
+            observed.manual_id++;
+            workflow_stop_cb(NULL);
+            assert(cancel_requested == admitted_operation);
+            assert(strcmp(shown_status, "material.stop_unconfirmed") == 0);
+            observed.manual_id = admitted_operation;
+        }
         observed.manual_state = DENEB_MANUAL_COMPLETE;
         workflow_update();
         assert(!workflow_state.moving);

@@ -145,6 +145,7 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
             int n = zmq_recv(rep, buf, sizeof(buf) - 1, 0);
             if (n < 0)
                 continue;
+            /* libzmq returns the original frame size, even after truncation. */
             if ((size_t)n >= sizeof(buf)) {
                 const char *error = "{\"status\":\"error\",\"message\":\"request too large\"}";
                 zmq_send(rep, error, strlen(error), 0);

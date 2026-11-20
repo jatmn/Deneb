@@ -206,7 +206,7 @@ static void level_cancel_cb(lv_event_t *e)
 {
     (void)e;
     if (level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING) {
-        if (backend_abort_print() != 0) {
+        if (backend_cancel_manual(level_operation_id) != 0) {
             level_finish_move(-1);
             return;
         }

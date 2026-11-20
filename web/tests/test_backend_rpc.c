@@ -44,7 +44,7 @@ int main(void)
 #ifdef TEST_WEB_BACKEND
         int rc = backend_zmq_send_frame("GCODE<[\"M105\"]", strlen("GCODE<[\"M105\"]"));
 #else
-        int rc = send_rpc_timeout("GCODE<[\"M105\"]", strlen("GCODE<[\"M105\"]"), 2000);
+        int rc = send_rpc("GCODE<[\"M105\"]", strlen("GCODE<[\"M105\"]"));
 #endif
         assert(rc == expected[i]);
     }
@@ -54,6 +54,20 @@ int main(void)
     zmq_close(rpc_sock);
 #endif
     assert(pthread_join(thread, NULL) == 0);
+#ifndef TEST_WEB_BACKEND
+    /* Use a bound, silent peer to exercise the real macro admission timeout. */
+    backend_route.command_url = "inproc://deneb-rpc-silent";
+    server = zmq_socket(zmq_ctx, ZMQ_REP);
+    assert(server && zmq_bind(server, backend_route.command_url) == 0);
+    struct timespec start, end;
+    assert(clock_gettime(CLOCK_MONOTONIC, &start) == 0);
+    assert(backend_send_macro("home") == -1);
+    assert(clock_gettime(CLOCK_MONOTONIC, &end) == 0);
+    long elapsed_ms = (end.tv_sec - start.tv_sec) * 1000 +
+                      (end.tv_nsec - start.tv_nsec) / 1000000;
+    assert(elapsed_ms < 3000);
+    zmq_close(server);
+#endif
     zmq_ctx_term(zmq_ctx);
     return 0;
 }

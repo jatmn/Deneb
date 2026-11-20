@@ -13,7 +13,8 @@ typedef enum {
     DENEB_COMMAND_JOB,
     DENEB_COMMAND_ABORT,
     DENEB_COMMAND_PAUSE,
-    DENEB_COMMAND_RESUME
+    DENEB_COMMAND_RESUME,
+    DENEB_COMMAND_CANCEL_MANUAL
 } deneb_command_type_t;
 
 typedef struct {

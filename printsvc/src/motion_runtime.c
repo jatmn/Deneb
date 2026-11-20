@@ -12,11 +12,6 @@ static int runtime_valid(const deneb_motion_runtime_t *runtime)
            runtime->flow && runtime->serial && runtime->serial_ready;
 }
 
-static int runtime_sequence_fault_is_fatal(const deneb_motion_runtime_t *runtime)
-{
-    return deneb_status_has_active_print(runtime->status);
-}
-
 int deneb_motion_runtime_open(deneb_motion_runtime_t *runtime)
 {
     if (!runtime_valid(runtime))
@@ -43,10 +38,19 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
     if (!*runtime->serial_ready)
         return 0;
 
+    int manual_pending = runtime->status->manual_state == DENEB_MANUAL_RUNNING ||
+                         runtime->status->manual_state == DENEB_MANUAL_CANCELLING;
     for (;;) {
         int n = deneb_serial_read_line(runtime->serial, line, sizeof(line));
-        if (n < 0)
+        if (n < 0) {
+            if (manual_pending && !runtime->status->fault &&
+                runtime->status->state != DENEB_PRINT_STATE_ERROR) {
+                runtime->status->state = DENEB_PRINT_STATE_ERROR;
+                runtime->status->error = deneb_error_make(DENEB_ERROR_SERIAL,
+                                                          "manual serial read failed");
+            }
             return -1;
+        }
         if (n == 0)
             break;
 
@@ -58,12 +62,13 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
          * in this same read batch. ACKs/temperatures may still be observed. */
         if (runtime->status->fault || runtime->status->state == DENEB_PRINT_STATE_ERROR)
             continue;
+        int fatal = manual_pending || deneb_status_has_active_print(runtime->status);
         if (flow_rc == 2) {
             (void)resend_sequence;
             if (deneb_motion_sender_resend_pending(runtime->flow,
                                                    runtime->serial,
                                                    *runtime->serial_ready) != 0) {
-                if (!runtime_sequence_fault_is_fatal(runtime))
+                if (!fatal)
                     continue;
                 runtime->status->state = DENEB_PRINT_STATE_ERROR;
                 runtime->status->error = deneb_error_make(DENEB_ERROR_SERIAL,
@@ -71,15 +76,19 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
                 return -1;
             }
         } else if (flow_rc == 3) {
-            deneb_flow_resync_to_expected(runtime->flow);
-            if (runtime_sequence_fault_is_fatal(runtime) &&
-                !runtime->allow_sequence_resync) {
+            /* Resync discards pending packets. That cannot be mistaken for
+             * acknowledgment of a manual command or its drain barrier. */
+            int would_drop_manual_work = manual_pending &&
+                                         deneb_flow_inflight(runtime->flow) != 0;
+            if (!would_drop_manual_work)
+                deneb_flow_resync_to_expected(runtime->flow);
+            if (would_drop_manual_work || (fatal && !runtime->allow_sequence_resync)) {
                 runtime->status->state = DENEB_PRINT_STATE_ERROR;
                 runtime->status->error = deneb_error_make(
                     DENEB_ERROR_SERIAL, "flow control sequence desync");
                 return -1;
             }
-        } else if (flow_rc < 0 && runtime_sequence_fault_is_fatal(runtime)) {
+        } else if (flow_rc < 0 && fatal) {
             runtime->status->state = DENEB_PRINT_STATE_ERROR;
             runtime->status->error = deneb_error_make(
                 DENEB_ERROR_SERIAL, "flow control rejected response");

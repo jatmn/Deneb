@@ -27,6 +27,15 @@ int deneb_command_dispatch_handle(deneb_print_service_t *svc,
         case DENEB_COMMAND_ABORT:
             return deneb_job_control_abort(svc, reply, reply_sz);
 
+        case DENEB_COMMAND_CANCEL_MANUAL: {
+            char operation[32];
+            if (deneb_command_extract_json_string(cmd->payload, "operation",
+                                                   operation, sizeof(operation)) != 0)
+                operation[0] = '\0';
+            return deneb_job_control_cancel_manual(svc, deneb_manual_id_parse(operation),
+                                                   reply, reply_sz);
+        }
+
         case DENEB_COMMAND_PAUSE:
             return deneb_pause_resume_control_pause(svc, reply, reply_sz);
 

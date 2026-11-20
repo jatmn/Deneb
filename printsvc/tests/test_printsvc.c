@@ -6613,6 +6613,96 @@ static void test_manual_operation_boundaries(void)
     unlink(path);
 }
 
+static void test_manual_controller_failure(void)
+{
+    for (int cancelling = 0; cancelling <= 1; ++cancelling) {
+        deneb_print_service_t svc;
+        deneb_print_service_init(&svc);
+        int wire[2];
+        assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, wire) == 0);
+        svc.serial.fd = wire[0];
+        svc.serial_ready = 1;
+        char reply[256];
+        assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X10\"]",
+                                               reply, sizeof(reply)) == 0);
+        if (cancelling) {
+            assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+            assert(deneb_print_service_poll_motion(&svc) == 0);
+            svc.manual_deadline_ms = 1;
+        } else {
+            assert(deneb_print_service_poll_job(&svc) == 0);
+            const char *rejected =
+                "Error:ProtoError:Sequence number is unexpected (received, expected): 1,7\n";
+            assert(write(wire[1], rejected, strlen(rejected)) == (ssize_t)strlen(rejected));
+        }
+        assert(deneb_flow_inflight(&svc.flow) > 0 && svc.flow.ack_count == 0);
+        deneb_print_service_poll_motion(&svc);
+        assert(svc.status.manual_state == DENEB_MANUAL_ERROR);
+        assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+        assert(!svc.gcode_queue_active && !svc.abort_cleanup_pending);
+        assert(svc.flow.ack_count == 0);
+        close(wire[1]);
+        deneb_print_service_close(&svc);
+    }
+}
+
+static void test_scoped_manual_cancel(void)
+{
+    deneb_print_service_t svc;
+    char reply[256], cancel[80];
+    deneb_print_service_init(&svc);
+    int wire[2];
+    assert(pipe(wire) == 0);
+    svc.serial.fd = wire[1];
+    svc.serial_ready = 1;
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X10\"]",
+                                           reply, sizeof(reply)) == 0);
+    snprintf(cancel, sizeof(cancel), "CANCEL_MANUAL<{\"operation\":\"%" PRIu64 "\"}",
+             svc.status.manual_id);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "CANCEL_MANUAL<{}",
+                                           reply, sizeof(reply)) < 0);
+    assert(svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_RUNNING);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) == 0);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) == 0);
+    drain_manual_abort(&svc);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLED);
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X20\"]",
+                                           reply, sizeof(reply)) == 0);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) < 0);
+    assert(svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_RUNNING);
+    assert(deneb_job_control_abort(&svc, reply, sizeof(reply)) == 0);
+    drain_manual_abort(&svc);
+    snprintf(cancel, sizeof(cancel), "CANCEL_MANUAL<{\"operation\":\"%" PRIu64 "\"}",
+             svc.status.manual_id);
+    svc.job_active = 1;
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) < 0);
+    assert(svc.job_active && !svc.abort_cleanup_pending);
+
+    close(wire[0]);
+    deneb_print_service_close(&svc);
+}
+
+static void test_oversized_manual_payload(void)
+{
+    deneb_print_service_t svc;
+    deneb_print_service_init(&svc);
+    char reply[256], frame[1024];
+    /* This fits the REP buffer but the old parser truncated it at 511
+     * payload bytes and admitted its first command. */
+    snprintf(frame, sizeof(frame), "GCODE<[\"G1 X10\"%520s,\"G1 X20\"]", "");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) < 0);
+    snprintf(frame, sizeof(frame), "GCODE<[\"G1 X10%256s\"]", "");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) < 0);
+    strcpy(frame, "GCODE<[\"G1 X10\"");
+    for (int i = 0; i < DENEB_PRINTSVC_MAX_COMMANDS; ++i)
+        strcat(frame, ",\"G1 X10\"");
+    strcat(frame, "]");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) < 0);
+    assert(!svc.gcode_queue_active && svc.status.manual_state == DENEB_MANUAL_NONE);
+}
+
 static void test_operation_observation(void)
 {
     assert(deneb_manual_id_parse("18446744073709551615") == UINT64_MAX);
@@ -6791,6 +6881,9 @@ int main(int argc, char **argv)
         return 0;
     }
     test_manual_operation_boundaries();
+    test_manual_controller_failure();
+    test_scoped_manual_cancel();
+    test_oversized_manual_payload();
     test_operation_observation();
     test_fault_never_replays_motion();
     test_pause_preparation_and_timeout();

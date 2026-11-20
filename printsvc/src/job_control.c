@@ -3,6 +3,7 @@
 
 #include "command_reply.h"
 #include "error_map.h"
+#include "gcode_control.h"
 #include "job_lifecycle.h"
 #include "motion_policy.h"
 #include "motion_send_error.h"
@@ -221,11 +222,24 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     return 0;
 }
 
-static int fail_abort_cleanup(deneb_print_service_t *svc, deneb_error_code_t code)
+int deneb_job_control_cancel_manual(deneb_print_service_t *svc, uint64_t operation,
+                                    char *reply, size_t reply_sz)
+{
+    if (!operation || operation != svc->status.manual_id || svc->job_active ||
+        !((svc->gcode_queue_active && svc->status.manual_state == DENEB_MANUAL_RUNNING) ||
+          (svc->abort_cleanup_pending && svc->status.manual_state == DENEB_MANUAL_CANCELLING))) {
+        deneb_command_reply_error(reply, reply_sz, "manual operation is not active");
+        return -1;
+    }
+    return deneb_job_control_abort(svc, reply, reply_sz);
+}
+
+static int fail_abort_cleanup(deneb_print_service_t *svc, deneb_error_code_t code,
+                               const char *message)
 {
     svc->abort_cleanup_index = 0;
     deneb_job_lifecycle_error(&svc->status,
-                              deneb_error_make(code, "abort cleanup failed"));
+                              deneb_error_make(code, message));
     deneb_print_service_stop_faulted_work(svc);
     return -1;
 }
@@ -235,7 +249,10 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     if (!svc || !svc->abort_cleanup_pending)
         return 0;
     if (!svc->serial_ready)
-        return fail_abort_cleanup(svc, DENEB_ERROR_SERIAL);
+        return fail_abort_cleanup(svc, DENEB_ERROR_SERIAL, "abort cleanup failed");
+    if (svc->status.manual_state == DENEB_MANUAL_CANCELLING &&
+        deneb_gcode_control_manual_expired(svc))
+        return fail_abort_cleanup(svc, DENEB_ERROR_SERIAL, "manual abort cleanup timed out");
 
     while (svc->abort_cleanup_index < svc->abort_cleanup_policy.count) {
         int send_rc;
@@ -249,7 +266,8 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
         if (send_rc != 0) {
             if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
                 return 0;
-            return fail_abort_cleanup(svc, deneb_motion_send_error_code(send_rc));
+            return fail_abort_cleanup(svc, deneb_motion_send_error_code(send_rc),
+                                      "abort cleanup failed");
         }
         svc->abort_cleanup_index++;
     }

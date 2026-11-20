@@ -56,6 +56,9 @@ Frame format: "10001<{json_payload}"
 
 Frame format: "COMMAND<json_payload"
 
+The native service rejects oversized frames, payloads, and G-code lists or
+lines that exceed the parser's bounds before dispatch.
+
 ### Commands
 - GCODE<["M140 S70"]                    - Send raw G-code
 - GCODE<["G28 X Y", "M18"]              - Multiple G-code commands
@@ -217,11 +220,15 @@ require an active print. Position probing and pause parking have 60-second
 deadlines; resume has a ten-minute deadline. Preparation and in-file heater
 prerequisites survive Pause.
 
-Manual ABORT stops further submission and queues Connect's `M401`, restores
+Leveling and material send `CANCEL_MANUAL<{"operation":"<id>"}` to cancel
+the operation they admitted. The print service checks the token against the
+active operation before stopping work. General print controls still use ABORT.
+Manual cancellation stops further submission and queues Connect's `M401`, restores
 coordinate/extruder modes, turns heaters off and drains. It does not run the
 print parking/homing policy. A new leveling run starts with its homing step.
-Manual cancellation reaches CANCELLED only after the cleanup drains. If serial
-is unavailable, host work stops and the service reports an error.
+Manual cancellation reaches CANCELLED only after the cleanup drains within the
+operation deadline. If serial is unavailable, recovery discards outstanding work,
+or the deadline expires, host work stops and the service reports an error.
 `M401` is an ordinary queued Connect command, so cancellation acceptance is not
 an immediate physical-stop guarantee.
 
