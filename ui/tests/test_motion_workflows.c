@@ -85,15 +85,35 @@ static void test_level_failed_abort(bool leaving_screen)
 
     observed.manual_state = DENEB_MANUAL_RUNNING;
     abort_rc = -1;
+    cancel_requested = 0;
     if (leaving_screen)
         level_destroy();
     else
         level_cancel_cb(NULL);
+    /* A failed Cancel RPC is not evidence that the move ended. */
     assert(cancel_requested == admitted_operation);
+    assert(level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING);
+    assert(level_operation_id == admitted_operation && active_timer);
+    assert(strcmp(level_status_text(), "level.cancel_unconfirmed") == 0);
+    active_timer(NULL);
+    assert(level_workflow.moving && level_operation_id == admitted_operation);
+
+    if (!leaving_screen) {
+        /* The same token is still RUNNING: a scoped retry is available. */
+        abort_rc = 0;
+        cancel_requested = 0;
+        level_cancel_cb(NULL);
+        assert(cancel_requested == admitted_operation);
+        assert(strcmp(level_status_text(), "level.cancelling") == 0);
+        observed.manual_state = DENEB_MANUAL_CANCELLED;
+    } else {
+        /* The move finished after the lost Cancel; it must not advance. */
+        observed.manual_state = DENEB_MANUAL_COMPLETE;
+    }
+    active_timer(NULL);
     assert(level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_CANCELLED);
-    assert(!level_workflow.moving && !active_timer);
-    observed.manual_state = DENEB_MANUAL_COMPLETE;
-    assert(strcmp(level_status_text(), "level.failed") == 0);
+    assert(!level_workflow.moving && !active_timer && level_operation_id == 0);
+    assert(strcmp(level_status_text(), "level.cancelled") == 0);
     assert(level_workflow.step_count == 0);
 }
 

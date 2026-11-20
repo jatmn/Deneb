@@ -24,6 +24,7 @@ static uint64_t level_operation_id = 0;
 static uint32_t level_operation_started;
 static int level_macro_rc = 0;
 static int level_macro_cancelled = 0;
+static int level_cancel_unconfirmed = 0;
 
 static int level_backend_ready(void)
 {
@@ -57,7 +58,8 @@ static const char *level_status_text(void)
     switch (level_workflow.state) {
         case DENEB_BUILDPLATE_LEVEL_STATE_MOVING:
             if (level_macro_cancelled)
-                return locale_get("level.cancelling");
+                return locale_get(level_cancel_unconfirmed ? "level.cancel_unconfirmed" :
+                                                             "level.cancelling");
             return locale_get("level.moving");
         case DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET:
             return locale_get("level.ready_next");
@@ -116,7 +118,7 @@ static void level_update(void)
                          DENEB_BUILDPLATE_LEVEL_STATE_AT_TARGET ||
                      level_workflow.state ==
                          DENEB_BUILDPLATE_LEVEL_STATE_MOVING) &&
-                    !level_macro_cancelled);
+                    (!level_macro_cancelled || level_cancel_unconfirmed));
 }
 
 
@@ -143,6 +145,7 @@ static void level_finish_move(int rc)
     else
         deneb_buildplate_level_workflow_complete_move(&level_workflow);
     level_macro_cancelled = 0;
+    level_cancel_unconfirmed = 0;
     level_update();
 }
 
@@ -192,6 +195,7 @@ static void level_next_cb(lv_event_t *e)
     level_operation_id = backend_get_last_operation();
     level_operation_started = lv_tick_get();
     level_macro_cancelled = 0;
+    level_cancel_unconfirmed = 0;
     if (level_macro_rc != 0 || level_operation_id == 0) {
         level_finish_move(-1);
         return;
@@ -206,10 +210,11 @@ static void level_cancel_cb(lv_event_t *e)
 {
     (void)e;
     if (level_workflow.state == DENEB_BUILDPLATE_LEVEL_STATE_MOVING) {
-        if (backend_cancel_manual(level_operation_id) != 0) {
-            level_finish_move(-1);
-            return;
-        }
+        /* A failed Cancel RPC is not evidence that the move ended: keep the
+         * token, keep observing it and allow a scoped retry. The wizard does
+         * not advance once cancellation was requested. */
+        if (!level_macro_cancelled || level_cancel_unconfirmed)
+            level_cancel_unconfirmed = backend_cancel_manual(level_operation_id) != 0;
         level_macro_cancelled = 1;
         level_update();
         return;
@@ -304,7 +309,7 @@ static void level_destroy(void)
     next_btn = NULL;
     next_btn_label = NULL;
     cancel_btn = NULL;
-    if (level_macro_running && !level_macro_cancelled)
+    if (level_macro_running && (!level_macro_cancelled || level_cancel_unconfirmed))
         level_cancel_cb(NULL);
 }
 

@@ -6821,6 +6821,46 @@ static void test_fault_never_replays_motion(void)
     deneb_print_service_close(&svc);
 }
 
+static void test_live_heater_adjustment_keeps_heat_wait_owner(void)
+{
+    deneb_print_service_t svc;
+    deneb_command_t cmd;
+    char reply[256];
+    deneb_print_service_init(&svc);
+    svc.job_active = 1;
+    svc.status.state = DENEB_PRINT_STATE_PREPARING;
+    svc.status.bed_t_set = 60;
+    svc.status.head_t_set = 200;
+    deneb_heater_wait_start_bed(&svc.heater_wait, 60, 1);
+    unsigned int sent = svc.flow.sent_count;
+
+    /* The heat gate keeps testing its own target, so the controller must
+     * not be given a different one for that heater. */
+    assert(deneb_command_parse("GCODE<[\"M140 S40\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(svc.flow.sent_count == sent && svc.status.bed_t_set == 60.0f);
+    assert(svc.heater_wait.active && svc.heater_wait.bed_target == 60.0f);
+
+    /* A heater the wait does not hold remains adjustable. */
+    assert(deneb_command_parse("GCODE<[\"M104 S190\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(svc.flow.sent_count == sent + 1 && svc.status.head_t_set == 190.0f);
+
+    /* Resume restores a paused wait, so it still owns its heater. */
+    svc.heater_wait.active = 0;
+    deneb_heater_wait_start_bed(&svc.paused_heater_wait, 60, 1);
+    svc.status.state = DENEB_PRINT_STATE_PAUSED;
+    assert(deneb_command_parse("GCODE<[\"M140 S0\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(svc.flow.sent_count == sent + 1 && svc.status.bed_t_set == 60.0f);
+
+    /* Once printing again, the saved copy no longer owns anything. */
+    svc.status.state = DENEB_PRINT_STATE_PRINTING;
+    assert(deneb_command_parse("GCODE<[\"M140 S55\"]", &cmd) == 0);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(svc.flow.sent_count == sent + 2 && svc.status.bed_t_set == 55.0f);
+}
+
 static void test_pause_preparation_and_timeout(void)
 {
     deneb_print_service_t svc;
@@ -6941,6 +6981,7 @@ int main(int argc, char **argv)
     test_operation_observation();
     test_fault_never_replays_motion();
     test_pause_preparation_and_timeout();
+    test_live_heater_adjustment_keeps_heat_wait_owner();
     test_background_action_ownership();
     test_command_parse();
     test_command_format_round_trip();

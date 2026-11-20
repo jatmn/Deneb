@@ -237,6 +237,7 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"level.done", "Build plate leveling complete."},
     {"level.cancelled", "Build plate leveling cancelled."},
     {"level.cancelling", "Cancelling after current move..."},
+    {"level.cancel_unconfirmed", "Cancel could not be confirmed. Tap Cancel to retry."},
     {"level.failed", "Build plate leveling move failed."},
     {"level.step1", "Level Step 1"},
     {"level.step2", "Level Step 2"},

@@ -215,7 +215,9 @@ return or estimated movement duration.
 
 Manual motion and macros are rejected while a print or its lifecycle cleanup
 owns execution. Single heater, fan and light adjustments remain available
-outside manual queues and pause/resume/cleanup transitions. Pause and Resume
+outside manual queues and pause/resume/cleanup transitions. A heater held by a
+print heat wait, including a wait saved across Pause, rejects target changes
+until that wait is satisfied. Pause and Resume
 require an active print. Position probing and pause parking have 60-second
 deadlines; resume has a ten-minute deadline. Preparation and in-file heater
 prerequisites survive Pause.

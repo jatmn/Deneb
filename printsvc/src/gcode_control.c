@@ -69,6 +69,22 @@ static void apply_accepted_heater_target(deneb_print_service_t *svc,
         svc->status.head_t_set = target;
 }
 
+/* A heat wait keeps testing its own target, and Resume restores a paused one,
+ * so a live change to that heater would leave the wait unsatisfiable. */
+static int heater_held_by_wait(const deneb_print_service_t *svc, int is_bed)
+{
+    const deneb_heater_wait_t *waits[] = {
+        &svc->heater_wait,
+        svc->status.state == DENEB_PRINT_STATE_PAUSED ? &svc->paused_heater_wait : NULL
+    };
+    for (size_t i = 0; i < sizeof(waits) / sizeof(waits[0]); ++i) {
+        if (waits[i] && waits[i]->active &&
+            (is_bed ? waits[i]->wait_bed : waits[i]->wait_head))
+            return 1;
+    }
+    return 0;
+}
+
 static int service_has_lifecycle_work(const deneb_print_service_t *svc)
 {
     return svc && (svc->job_active || svc->abort_cleanup_pending ||
@@ -279,6 +295,13 @@ int deneb_gcode_control_run(deneb_print_service_t *svc,
         if (sscanf(cmd->gcode[0], " %c%d", &letter, &code) == 2 &&
             toupper((unsigned char)letter) == 'M' &&
             (code == 104 || code == 140 || code == 106 || code == 107 || code == 142)) {
+            int is_bed;
+            float target;
+            if (parse_heater_target(cmd->gcode[0], &is_bed, &target) &&
+                heater_held_by_wait(svc, is_bed)) {
+                deneb_command_reply_error(reply, reply_sz, "heater held by print heat wait");
+                return -1;
+            }
             int rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
                                                      svc->serial_ready, cmd->gcode[0]);
             if (rc != 0) {
