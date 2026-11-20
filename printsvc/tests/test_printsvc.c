@@ -6737,10 +6737,12 @@ static void test_pause_preparation_and_timeout(void)
 
 static void test_background_action_ownership(void)
 {
-    char lock[256], log[256];
+    char dir[256], lock[sizeof(dir) + 16], log[sizeof(dir) + 16];
     const char *tmp = getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp";
-    snprintf(lock, sizeof(lock), "%s/action-%ld.lock", tmp, (long)getpid());
-    snprintf(log, sizeof(log), "%s/action-%ld.log", tmp, (long)getpid());
+    int length = snprintf(dir, sizeof(dir), "%s/deneb-action-XXXXXX", tmp);
+    assert(length >= 0 && (size_t)length < sizeof(dir) && mkdtemp(dir));
+    snprintf(lock, sizeof(lock), "%s/action.lock", dir);
+    snprintf(log, sizeof(log), "%s/action.log", dir);
     pid_t pid = 0, other = 0;
     assert(deneb_background_action_start(lock, "sleep 0.1; exit 0", log, &pid) == 0);
     assert(deneb_background_action_running(lock));
@@ -6751,16 +6753,19 @@ static void test_background_action_ownership(void)
         if (rc == 0) usleep(1000);
     }
     assert(rc == 1 && !deneb_background_action_running(lock));
-    char retained[256];
-    snprintf(retained, sizeof(retained), "%s/action-retained-%ld", tmp, (long)getpid());
-    assert(rename(log, retained) == 0);
-    int saved = open(retained, O_WRONLY);
+    assert(unlink(log) == 0);
+    char retained[sizeof(dir) + 16];
+    snprintf(retained, sizeof(retained), "%s/retained.log", dir);
+    int saved = open(retained, O_RDWR | O_CREAT | O_EXCL, 0600);
     assert(saved >= 0 && write(saved, "keep", 4) == 4);
-    close(saved);
-    assert(symlink(retained, log) == 0);
+    assert(symlink("retained.log", log) == 0);
     assert(deneb_background_action_start(lock, "exit 0", log, &pid) < 0);
     struct stat st;
-    assert(stat(retained, &st) == 0 && st.st_size == 4);
+    char contents[4];
+    assert(fstat(saved, &st) == 0 && st.st_size == 4);
+    assert(pread(saved, contents, sizeof(contents), 0) == sizeof(contents));
+    assert(memcmp(contents, "keep", sizeof(contents)) == 0);
+    assert(close(saved) == 0);
     assert(unlink(log) == 0 && unlink(retained) == 0);
     assert(deneb_background_action_start(lock, "exit 7", log, &pid) == 0);
     rc = 0;
@@ -6771,6 +6776,7 @@ static void test_background_action_ownership(void)
     assert(rc == -1);
     unlink(lock);
     unlink(log);
+    assert(rmdir(dir) == 0);
 }
 
 int main(int argc, char **argv)
