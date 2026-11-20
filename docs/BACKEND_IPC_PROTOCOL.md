@@ -228,7 +228,8 @@ coordinate/extruder modes, turns heaters off and drains. It does not run the
 print parking/homing policy. A new leveling run starts with its homing step.
 Manual cancellation reaches CANCELLED only after the cleanup drains within the
 operation deadline. If serial is unavailable, recovery discards outstanding work,
-or the deadline expires, host work stops and the service reports an error.
+the controller requests a resend of commands submitted before the cancel, or the
+deadline expires, host work stops and the service reports an error.
 `M401` is an ordinary queued Connect command, so cancellation acceptance is not
 an immediate physical-stop guarantee.
 

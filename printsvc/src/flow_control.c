@@ -225,6 +225,34 @@ int deneb_flow_has_pending_barrier(const deneb_flow_control_t *flow)
     return 0;
 }
 
+/* Unacknowledged packets keep their sequence numbers, but motion retired by
+ * an admitted cancel must never be written again on a resend request. */
+void deneb_flow_cancel_inflight(deneb_flow_control_t *flow)
+{
+    if (!flow)
+        return;
+
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; i++) {
+        deneb_flow_slot_t *slot = &flow->slots[i];
+        if (slot->occupied && !slot->acknowledged)
+            slot->cancelled = 1;
+    }
+}
+
+int deneb_flow_has_pending_cancelled(const deneb_flow_control_t *flow)
+{
+    if (!flow)
+        return 0;
+
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; i++) {
+        const deneb_flow_slot_t *slot = &flow->slots[i];
+        if (slot->occupied && !slot->acknowledged && slot->cancelled)
+            return 1;
+    }
+
+    return 0;
+}
+
 int deneb_flow_prepare_packet(deneb_flow_control_t *flow, const char *command,
                               uint8_t *out, size_t out_sz, size_t *written,
                               uint8_t *sequence)

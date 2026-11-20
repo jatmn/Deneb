@@ -168,8 +168,12 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
             snprintf(abort_policy.commands[abort_policy.count++],
                      DENEB_PRINTSVC_MAX_GCODE_LINE, "%s", commands[i]);
     }
-    if (svc->gcode_queue_active && svc->status.manual_state == DENEB_MANUAL_RUNNING)
+    if (svc->gcode_queue_active && svc->status.manual_state == DENEB_MANUAL_RUNNING) {
         svc->status.manual_state = DENEB_MANUAL_CANCELLING;
+        /* Pre-cancel packets may still await ACK. A resend must not replay
+         * them ahead of cleanup; motion_runtime faults instead. */
+        deneb_flow_cancel_inflight(&svc->flow);
+    }
     if (svc->job_active) {
         deneb_gcode_stream_close(&svc->job_stream);
         svc->job_active = 0;

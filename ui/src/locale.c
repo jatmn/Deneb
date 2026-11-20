@@ -102,6 +102,7 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"material.change_started", "Change material: unload started"},
     {"material.moving", "Moving material..."},
     {"material.move_unconfirmed", "Material move could not be confirmed."},
+    {"material.stop_unconfirmed", "Material stop could not be confirmed."},
     {"material.current_fmt", "Current material: %s"},
     {"material.current_unknown", "Unknown"},
     {"material.move_finished", "Material move finished"},

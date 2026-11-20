@@ -65,6 +65,14 @@ int deneb_motion_runtime_poll(deneb_motion_runtime_t *runtime)
         int fatal = manual_pending || deneb_status_has_active_print(runtime->status);
         if (flow_rc == 2) {
             (void)resend_sequence;
+            /* A resend rewrites every unacknowledged packet. Cancelled manual
+             * motion cannot be replayed, so the cancellation is unconfirmed. */
+            if (deneb_flow_has_pending_cancelled(runtime->flow)) {
+                runtime->status->state = DENEB_PRINT_STATE_ERROR;
+                runtime->status->error = deneb_error_make(
+                    DENEB_ERROR_SERIAL, "cancelled motion resend refused");
+                return -1;
+            }
             if (deneb_motion_sender_resend_pending(runtime->flow,
                                                    runtime->serial,
                                                    *runtime->serial_ready) != 0) {

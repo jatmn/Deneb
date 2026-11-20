@@ -104,11 +104,16 @@ static void workflow_update(void)
     if (workflow_state.moving) {
         deneb_manual_state_t result = deneb_status_state_manual_result(
             s, workflow_operation_id, lv_tick_get() - workflow_operation_started);
-        if (result == DENEB_MANUAL_COMPLETE && !workflow_cancelling) {
+        if (result == DENEB_MANUAL_COMPLETE) {
+            /* A Stop that lost the race to completion was rejected, so its
+             * heater cleanup never ran. Keep the accepted target: Stop retry
+             * and exit cooldown still own it. */
+            if (workflow_cancelling)
+                workflow_stop_unconfirmed = 1;
             deneb_material_workflow_complete_move(&workflow_state);
             workflow_operation_id = 0;
-        } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR ||
-                   (workflow_cancelling && result == DENEB_MANUAL_COMPLETE)) {
+            workflow_cancelling = 0;
+        } else if (result == DENEB_MANUAL_CANCELLED || result == DENEB_MANUAL_ERROR) {
             if (result == DENEB_MANUAL_CANCELLED)
                 workflow_stop_unconfirmed = 0;
             deneb_material_workflow_cancel(&workflow_state);
@@ -483,7 +488,10 @@ static void material_workflow_destroy(void)
 {
     if (workflow_state.moving)
         workflow_stop_material(0);
-    else if (workflow_state.target_sent)
+    /* An unconfirmed Stop carried no heater cleanup, and this screen is the
+     * last owner of its accepted target. */
+    if (workflow_state.target_sent &&
+        (!workflow_state.moving || workflow_stop_unconfirmed))
         workflow_cooldown_nozzle(0);
 
     if (workflow_timer) {

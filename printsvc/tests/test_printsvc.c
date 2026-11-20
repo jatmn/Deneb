@@ -6646,6 +6646,53 @@ static void test_manual_controller_failure(void)
     }
 }
 
+static void test_manual_cancel_never_replays_motion(void)
+{
+    /* The controller asks for a resend of motion it never accepted after the
+     * cancel was admitted. Replaying it would move after Cancel. */
+    deneb_print_service_t svc;
+    char reply[256], cancel[80], moved[DENEB_PRINTSVC_MAX_GCODE_LINE];
+    char wire[1024], resend[32];
+    uint8_t moved_sequence = 0;
+    int sockets[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets) == 0);
+    deneb_print_service_init(&svc);
+    svc.serial.fd = sockets[0];
+    svc.serial_ready = 1;
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "GCODE<[\"G1 X10\"]",
+                                           reply, sizeof(reply)) == 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(deneb_flow_inflight(&svc.flow) > 0 && svc.flow.ack_count == 0);
+    moved[0] = '\0';
+    for (size_t i = 0; i < DENEB_FLOW_WINDOW; ++i) {
+        if (svc.flow.slots[i].occupied && svc.flow.slots[i].send_order == 0) {
+            snprintf(moved, sizeof(moved), "%s", svc.flow.slots[i].command);
+            moved_sequence = svc.flow.slots[i].sequence;
+        }
+    }
+    assert(strncmp(moved, "G1 ", 3) == 0);
+    snprintf(cancel, sizeof(cancel), "CANCEL_MANUAL<{\"operation\":\"%" PRIu64 "\"}",
+             svc.status.manual_id);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, cancel, reply, sizeof(reply)) == 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_CANCELLING);
+    while (read(sockets[1], wire, sizeof(wire)) > 0) {
+    }
+
+    snprintf(resend, sizeof(resend), "Resend: %u\n", (unsigned)moved_sequence);
+    assert(write(sockets[1], resend, strlen(resend)) == (ssize_t)strlen(resend));
+    assert(deneb_print_service_poll_motion(&svc) < 0);
+    assert(svc.status.manual_state == DENEB_MANUAL_ERROR);
+    assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(!svc.gcode_queue_active && !svc.abort_cleanup_pending);
+    ssize_t n = read(sockets[1], wire, sizeof(wire));
+    assert(n > 0); /* best-effort heater shutdown only */
+    size_t moved_len = strlen(moved);
+    for (ssize_t i = 0; i + (ssize_t)moved_len <= n; ++i)
+        assert(memcmp(wire + i, moved, moved_len) != 0);
+    close(sockets[1]);
+    deneb_print_service_close(&svc);
+}
+
 static void test_scoped_manual_cancel(void)
 {
     deneb_print_service_t svc;
@@ -6882,6 +6929,7 @@ int main(int argc, char **argv)
     }
     test_manual_operation_boundaries();
     test_manual_controller_failure();
+    test_manual_cancel_never_replays_motion();
     test_scoped_manual_cancel();
     test_oversized_manual_payload();
     test_operation_observation();
