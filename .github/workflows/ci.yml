@@ -15,7 +15,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # A delayed main push must not cancel validation for a different commit.
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -193,7 +194,7 @@ jobs:
           if [ "$EVENT_NAME" = "pull_request" ]; then
             log_opts="${PR_BASE_SHA}..${PR_HEAD_SHA}"
           elif [ "$EVENT_NAME" = "merge_group" ]; then
-            log_opts="${MERGE_BASE_SHA:?missing merge group base}..HEAD"
+            log_opts="--diff-merges=first-parent ${MERGE_BASE_SHA:?missing merge group base}..HEAD"
           elif [ "$EVENT_NAME" = "push" ] &&
                [ -n "$BEFORE_SHA" ] &&
                [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
