@@ -10,10 +10,13 @@ on:
     # kept starting those runs. Title/body edits must not start CI at
     # all, so they cannot replace a required result on the same SHA.
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # A delayed main push must not cancel validation for a different commit.
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -41,7 +44,6 @@ jobs:
         id: changes
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
         run: bash tools/select-ci-validation.sh
 
   policy-validation:
@@ -83,7 +85,6 @@ jobs:
         id: site
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
@@ -98,26 +99,14 @@ jobs:
             esac
             return 1
           }
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            needs=true
-          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-            while IFS= read -r path; do
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            changed_files=$(mktemp)
+            trap 'rm -f "$changed_files"' EXIT
+            git diff --no-renames --name-only -z "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_files"
+            while IFS= read -r -d '' path; do
               [[ -n "$path" ]] || continue
               if public_site_path "$path"; then needs=true; break; fi
-            done < <(git diff --no-renames --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA")
-          elif [[ "$EVENT_NAME" == "push" ]] &&
-               [[ -n "$BEFORE_SHA" ]] &&
-               [[ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]] &&
-               git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            while IFS= read -r path; do
-              [[ -n "$path" ]] || continue
-              if public_site_path "$path"; then needs=true; break; fi
-            done < <(git diff --no-renames --name-only "$BEFORE_SHA" HEAD)
-          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-            while IFS= read -r path; do
-              [[ -n "$path" ]] || continue
-              if public_site_path "$path"; then needs=true; break; fi
-            done < <(git diff --no-renames --name-only HEAD^ HEAD)
+            done < "$changed_files"
           else
             needs=true
           fi
@@ -170,9 +159,12 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
             diff_range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            diff_range="${MERGE_BASE_SHA:?missing merge group base}..HEAD"
           elif [ "$EVENT_NAME" = "push" ] &&
                [ -n "$BEFORE_SHA" ] &&
                [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
@@ -193,6 +185,7 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl --fail --location --output "$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
@@ -200,6 +193,8 @@ jobs:
           tar xzf "$archive" gitleaks
           if [ "$EVENT_NAME" = "pull_request" ]; then
             log_opts="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            log_opts="--diff-merges=first-parent ${MERGE_BASE_SHA:?missing merge group base}..HEAD"
           elif [ "$EVENT_NAME" = "push" ] &&
                [ -n "$BEFORE_SHA" ] &&
                [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] &&
