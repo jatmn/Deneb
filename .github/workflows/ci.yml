@@ -451,7 +451,8 @@ jobs:
         run: |
           cmake -S printsvc -B build/ci-printsvc -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-printsvc --parallel
-          ctest --test-dir build/ci-printsvc --output-on-failure
+          ctest --test-dir build/ci-printsvc --output-on-failure --no-tests=error \
+            --parallel "$(nproc)" --schedule-random
 
       - name: Build host API and UI stubs
         run: |
