@@ -204,6 +204,10 @@ if(SH_EXECUTABLE)
     # thumbnail in /tmp.
     set_tests_properties(deneb-printsvc-tests deneb-printsvc-cli-selftest
         PROPERTIES RESOURCE_LOCK deneb-active-thumbnail)
+    # The stability selftest samples RSS by process name and can pick up
+    # the CLI selftest's deneb-printsvc process.
+    set_property(TEST deneb-printsvc-stability-selftest deneb-printsvc-cli-selftest
+        APPEND PROPERTY RESOURCE_LOCK deneb-printsvc-rss)
     add_test(
         NAME deneb-printsvc-init-selftest
         COMMAND "${SH_EXECUTABLE}"
