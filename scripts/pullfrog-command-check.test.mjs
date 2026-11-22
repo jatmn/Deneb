@@ -208,7 +208,8 @@ test('requires verified author on the automatic review step', () => {
   const [, automatic] = workflow.split('\n  auto-review:\n');
   assert.ok(automatic, 'Expected the automatic review job');
   const job = automatic.split(/^ {2}\S/m, 1)[0];
-  assert.ok(job.includes("github.repository == 'jatmn/Deneb' &&"));
+  const condition = job.match(/^ {4}if: >-\n((?: {6}\S[^\n]*\n)+)/m)?.[1];
+  assert.ok(condition?.split('\n').includes("      github.repository == 'jatmn/Deneb' &&"));
   const steps = job.split(/^ {6}- /m);
   const authorize = steps.find((step) => step.startsWith('name: Verify the pull request author\n'));
   const review = steps.find((step) => step.startsWith('name: Review the pull request\n'));
