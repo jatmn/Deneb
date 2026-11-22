@@ -53,9 +53,11 @@ jobs:
         # ChatGPT subscription credentials come from Pullfrog's encrypted store.
         # No provider API keys are passed from GitHub secrets.
 
+  # If author verification exhausts its retries, jatmn can request a fresh review with @pullfrog.
   auto-review:
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      github.repository == 'jatmn/Deneb' &&
       !github.event.repository.private &&
       github.actor == 'pullfrog[bot]' &&
       github.actor_id == '226033991' &&
