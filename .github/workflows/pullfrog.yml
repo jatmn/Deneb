@@ -1,10 +1,17 @@
-name: Pullfrog owner command
-
-# Only a new owner command can run the agent. Dashboard dispatch, automatic
-# reviews, pushes, edited comments and schedules are deliberately absent.
+name: Pullfrog
+run-name: ${{ inputs.name || github.workflow }}
 on:
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        type: string
+        description: Pullfrog dispatch payload
+        required: true
+      name:
+        type: string
+        description: Run name
 
 permissions:
   contents: read
@@ -12,6 +19,8 @@ permissions:
 jobs:
   pullfrog:
     if: >-
+      github.event_name == 'issue_comment' &&
+      !github.event.repository.private &&
       github.run_attempt == 1 &&
       github.actor == 'jatmn' &&
       github.triggering_actor == 'jatmn' &&
@@ -43,3 +52,39 @@ jobs:
           shell: restricted
         # ChatGPT subscription credentials come from Pullfrog's encrypted store.
         # No provider API keys are passed from GitHub secrets.
+
+  auto-review:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      !github.event.repository.private &&
+      github.actor == 'pullfrog[bot]' &&
+      github.actor_id == '226033991' &&
+      github.triggering_actor == 'pullfrog[bot]' &&
+      github.run_attempt == 1 &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout trusted default branch commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the pull request author
+        id: authorize
+        run: node scripts/pullfrog-command-check.mjs --review
+        env:
+          PULLFROG_PROMPT: ${{ inputs.prompt }}
+          GH_TOKEN: ${{ github.token }}
+      - name: Review the pull request
+        if: steps.authorize.outputs.authorized == 'true'
+        # Keep this pin and PULLFROG_VERSION in the command helper in sync.
+        uses: pullfrog/pullfrog@0613df0079954102a9727e833b1e4da229b8f440 # v0.1.122
+        with:
+          prompt: ${{ inputs.prompt }}
+          push: disabled
+          shell: restricted

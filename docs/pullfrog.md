@@ -1,6 +1,6 @@
-# Pullfrog owner commands
+# Pullfrog owner commands and reviews
 
-Pullfrog runs only after **jatmn** creates a new top-level issue or PR comment
+For manual commands, **jatmn** creates a new top-level issue or PR comment
 whose first line begins with `@pullfrog` and a visible instruction:
 
 ```text
@@ -12,17 +12,22 @@ inline review comments and workflow reruns cannot run the agent. Post a new
 command to retry. GitHub supplies the actor and commenter identity; the workflow
 also checks jatmn's account ID, `12479882`, and checks out the trusted default
 branch. The Node.js helper verifies the event before the agent step receives
-credentials. This follows the owner-command configuration in
-[yuoki-quinityn](https://github.com/jatmn/yuoki-quinityn/blob/main/docs/pullfrog.md).
+credentials.
 
-The workflow has no PR, push, schedule or `workflow_dispatch` trigger. Opening
-a PR does not request a review, and Pullfrog's dashboard and managed mention
-dispatcher cannot launch this workflow. Do not replace it with the console's
-generated workflow. Existing CI stays independent.
+## Automatic reviews
+
+Pullfrog reviews new PRs, drafts, and updated diffs in this public repository
+when GitHub identifies `jatmn` as the PR author. The person pushing an update
+can be a different account. The GitHub App dispatches the workflow on the
+default branch and the author check must pass before the agent starts.
+In Pullfrog settings, enable PR reviews, draft reviews, and re-reviews on new
+commits, and disable managed mentions and external-contributor reviews.
+Use a fresh owner-authored draft and push an update after the workflow is
+merged to verify live automatic dispatch.
 
 ## Model and permissions
 
-The workflow explicitly selects `openai/gpt-sol` (Pullfrog's GPT Sol alias),
+The manual command job explicitly selects `openai/gpt-sol` (Pullfrog's GPT Sol alias),
 using the connected ChatGPT subscription. No GitHub provider API keys are passed to this workflow. A matching API
 key stored in Pullfrog can still be a fallback when subscription quota is
 exhausted; omit that fallback if API billing is unwanted.
