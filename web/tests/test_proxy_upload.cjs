@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 
-const [apiBinary, lighttpd, packagedConfig, cmake] = process.argv.slice(2);
+const [apiBinary, lighttpd, packagedConfig, cmake, unzip] = process.argv.slice(2);
 const DEADLINE_MS = 2000;
 const SSE_CLIENTS = 4;
 const STATUS_PATH = '/api/v1/printer/status';
@@ -40,8 +40,8 @@ async function unusedPort() {
     return port;
 }
 
-function startService(binary, args, cwd) {
-    const process = spawn(binary, args, { cwd, stdio: ['ignore', 'ignore', 'pipe'] });
+function startService(binary, args, cwd, env) {
+    const process = spawn(binary, args, { cwd, env, stdio: ['ignore', 'ignore', 'pipe'] });
     const service = { process, log: '', stopped: false };
     process.stderr.setEncoding('utf8').on('data', (chunk) => { service.log += chunk; });
     process.on('error', (error) => { service.log += error.message + '\n'; });
@@ -70,11 +70,13 @@ function request(port, pathname, options, onResponse) {
     const req = http.request({
         host: '127.0.0.1', port, path: pathname, agent: false, ...options
     }, onResponse);
-    req.on('socket', (socket) => {
-        sockets.add(socket);
-        socket.once('close', () => sockets.delete(socket));
-    });
+    req.on('socket', trackSocket);
     return req;
+}
+
+function trackSocket(socket) {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
 }
 
 function collect(response, resolve, reject) {
@@ -122,14 +124,18 @@ function liveStatus(port) {
     return client;
 }
 
-function startUpload(port, body, filename, { chunked = false, declaredLength } = {}) {
-    const payload = Buffer.concat([
+function multipartPayload(body, filename) {
+    return Buffer.concat([
         Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="owner"\r\n\r\nCura\r\n' +
             '--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + filename +
             '"\r\nContent-Type: application/octet-stream\r\n\r\n'),
         body,
         Buffer.from('\r\n--' + boundary + '--\r\n')
     ]);
+}
+
+function startUpload(port, body, filename, { chunked = false, declaredLength } = {}) {
+    const payload = multipartPayload(body, filename);
     const split = Math.floor(payload.length / 2);
     let req;
     const result = new Promise((resolve, reject) => {
@@ -152,8 +158,29 @@ function startUpload(port, body, filename, { chunked = false, declaredLength } =
             req.end(payload.subarray(split));
             return result;
         },
-        cancel: () => req.destroy()
+        cancel: () => req.destroy(),
+        reset: () => req.socket.resetAndDestroy()
     };
+}
+
+function halfClosedUpload(apiSocket, archive, filename) {
+    return new Promise((resolve, reject) => {
+        const payload = multipartPayload(archive, filename);
+        const socket = net.createConnection({ path: apiSocket, allowHalfOpen: true });
+        trackSocket(socket);
+        socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error('Half-closed upload reply timed out')));
+        socket.on('error', reject);
+        let response = '';
+        socket.setEncoding('utf8').on('data', (chunk) => { response += chunk; });
+        socket.once('end', () => resolve(response));
+        socket.once('connect', () => {
+            const headers = 'POST ' + UPLOAD_PATH + ' HTTP/1.1\r\n' +
+                'Host: localhost\r\nConnection: close\r\n' +
+                'Content-Type: multipart/form-data; boundary=' + boundary + '\r\n' +
+                'Content-Length: ' + payload.length + '\r\n\r\n';
+            socket.end(Buffer.concat([Buffer.from(headers), payload]));
+        });
+    });
 }
 
 function countDescriptors(pid) {
@@ -173,17 +200,47 @@ async function assertResponsive(port, clients, phase) {
             assert.equal(JSON.parse(result.data), 'idle');
         }
     });
-    await Promise.all([replies, freshEvents]);
+    const checks = await Promise.allSettled([replies, freshEvents]);
+    const failures = checks.filter((check) => check.status === 'rejected').map((check) => check.reason);
+    if (failures.length) throw new AggregateError(failures, 'Status stalled ' + phase);
 }
 
 async function main() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'du-'));
+    const extractionStarted = path.join(root, 'extraction-started');
+    const releaseExtraction = path.join(root, 'release-extraction');
+    const delayExtraction = path.join(root, 'delay-extraction');
+    let releaseFd;
+    function armExtraction() {
+        fs.rmSync(extractionStarted, { force: true });
+        fs.writeFileSync(delayExtraction, '');
+    }
+    async function blockedExtractor() {
+        await withinDeadline('UFP extraction did not start', () =>
+            fs.statSync(extractionStarted, { throwIfNoEntry: false })?.size > 0);
+        const pid = Number(fs.readFileSync(extractionStarted, 'utf8'));
+        assert.ok(pid > 1 && fs.existsSync('/proc/' + pid));
+        return pid;
+    }
     try {
         const temp = path.join(root, 'tmp');
         const pendingJob = path.join(temp, 'deneb-cluster-print-job.json');
         const spool = path.join(root, 'spool');
         const apiSocket = path.join(root, 'api.sock');
         fs.mkdirSync(temp);
+        execFileSync('mkfifo', [releaseExtraction]);
+        releaseFd = fs.openSync(releaseExtraction, fs.constants.O_RDWR | fs.constants.O_NONBLOCK);
+        const bin = path.join(root, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'unzip'), [
+            '#!/bin/sh',
+            'if [ "$3" = "3D/model.gcode" ] && [ -f "$DENEB_DELAY_EXTRACTION" ]; then',
+            '    printf "%s\\n" "$$" > "$DENEB_EXTRACTION_STARTED"',
+            '    IFS= read -r release < "$DENEB_RELEASE_EXTRACTION" || exit 1',
+            'fi',
+            'exec "$DENEB_REAL_UNZIP" "$@"',
+            ''
+        ].join('\n'), { mode: 0o700 });
         fs.mkdirSync(path.join(root, '3D'));
         fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
         // Keep the compressed upload larger than the API's receive chunk.
@@ -205,7 +262,14 @@ async function main() {
             .replaceAll('"/var/run/deneb-api.sock"', JSON.stringify(apiSocket));
         fs.writeFileSync(config, isolatedConfig + '\nserver.upload-dirs = (' + JSON.stringify(temp) + ')\n');
 
-        const api = startService(apiBinary, [], root).process;
+        const api = startService(apiBinary, [], root, {
+            ...process.env,
+            PATH: bin + path.delimiter + process.env.PATH,
+            DENEB_REAL_UNZIP: unzip,
+            DENEB_DELAY_EXTRACTION: delayExtraction,
+            DENEB_EXTRACTION_STARTED: extractionStarted,
+            DENEB_RELEASE_EXTRACTION: releaseExtraction
+        }).process;
         await withinDeadline('deneb-api socket did not start', () => fs.existsSync(apiSocket));
         const proxy = startService(lighttpd, ['-D', '-f', config], root).process;
         await withinDeadline('lighttpd did not start listening', () => children[1].log.includes('server started'));
@@ -240,10 +304,30 @@ async function main() {
         assert.equal(fs.existsSync(pendingJob), false);
         assert.equal(fs.existsSync(spool), false, 'An interrupted upload reached print storage');
 
+        armExtraction();
+        const cancelled = startUpload(port, archive, 'cancelled-finalization.ufp');
+        void cancelled.finish();
+        const cancelledPid = await blockedExtractor();
+        await assertResponsive(port, clients, 'while a later-cancelled UFP is extracted');
+        // A TCP FIN after the full body is also a valid write-side half-close.
+        // Send a reset so the proxy recognizes that the client discarded its reply.
+        cancelled.reset();
+        await withinDeadline('Finalization cancellation did not release its child and temp files', () =>
+            !fs.existsSync('/proc/' + cancelledPid) && fs.readdirSync(temp).length === 0 &&
+            countDescriptors(api.pid) === active[0] && countDescriptors(proxy.pid) === active[1]);
+        assert.equal(fs.existsSync(pendingJob), false);
+        assert.equal(fs.existsSync(spool), false);
+
         const complete = startUpload(port, archive, 'completed.ufp');
         await withinDeadline('Second partial upload did not reach the API', uploadedBodyExists);
         await assertResponsive(port, clients, 'during the subsequent upload');
-        const result = await complete.finish();
+        armExtraction();
+        const completing = complete.finish();
+        await blockedExtractor();
+        await assertResponsive(port, clients, 'while UFP extraction is blocked');
+        fs.writeSync(releaseFd, 'continue\n');
+        const result = await completing;
+        fs.rmSync(delayExtraction);
         assert.equal(result.code, 201, result.data);
         const response = JSON.parse(result.data);
         assert.equal(response.message, 'Print job accepted');
@@ -261,14 +345,33 @@ async function main() {
         assert.equal(duplicate.code, 200, duplicate.data);
         assert.equal(JSON.parse(duplicate.data).message, 'Print job already queued');
 
+        const halfClosed = await halfClosedUpload(apiSocket, archive, 'completed.ufp');
+        assert.match(halfClosed, /^HTTP\/1\.1 200 OK\r\n/);
+        assert.match(halfClosed, /Print job already queued/);
+
         for (const client of clients) client.close();
         await withinDeadline('Client, API, or lighttpd descriptors did not return to idle', () =>
             sockets.size === 0 &&
             [process.pid, api.pid, proxy.pid].every((pid, index) => countDescriptors(pid) === baseline[index]));
+
+        armExtraction();
+        const terminating = startUpload(port, archive, 'shutdown-finalization.ufp');
+        void terminating.finish();
+        const terminatingPid = await blockedExtractor();
+        api.kill('SIGTERM');
+        await withinDeadline('API shutdown left an active extractor', () =>
+            children[0].stopped && !fs.existsSync('/proc/' + terminatingPid));
+        assert.equal(api.exitCode, 0);
+        assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
+        assert.deepEqual(fs.readdirSync(spool), ['completed.gcode']);
     } catch (error) {
         for (const child of children) process.stderr.write(child.log);
         throw error;
     } finally {
+        if (releaseFd !== undefined) {
+            fs.writeSync(releaseFd, 'continue\n');
+            fs.closeSync(releaseFd);
+        }
         for (const socket of sockets) socket.destroy();
         await Promise.all(children.map(stopService));
         fs.rmSync(root, { recursive: true, force: true });

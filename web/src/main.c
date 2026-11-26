@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
+#include <pthread.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -27,6 +29,7 @@
 
 #include "api_http.h"
 #include "api_multipart.h"
+#include "api_print_job.h"
 #include "backend_zmq.h"
 #include "df_bridge.h"
 #include "print_string.h"
@@ -41,7 +44,9 @@
 #define MAX_PENDING_UPLOADS 8 /* The packaged proxy accepts eight clients. */
 #define UPLOAD_IDLE_TIMEOUT_MS 30000
 
-static volatile int running = 1;
+/* The signal handler may run on the upload worker thread. */
+_Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "Signal flag must be lock-free");
+static atomic_bool running = 1;
 static int listen_fd = -1;
 static int epoll_fd = -1;
 static int owner_lock_fd = -1;
@@ -55,10 +60,20 @@ typedef struct {
     int client_fd;
     int temp_fd;
     uint64_t last_progress_ms;
+    uint64_t preparation_order;
     http_request_t *request;
 } upload_t;
 
 static upload_t uploads[MAX_PENDING_UPLOADS];
+static uint64_t next_preparation_order;
+static struct {
+    upload_t *upload;
+    pthread_t thread;
+    atomic_bool cancelled;
+    int prepared;
+    api_print_upload_t files;
+    http_response_t response;
+} preparation;
 
 static void signal_handler(int sig)
 {
@@ -110,7 +125,7 @@ static int create_listen_socket_at(const char *path)
     }
     owner_lock_fd = lock_fd;
 
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) { perror("socket"); return -1; }
 
     unlink(path);
@@ -191,16 +206,10 @@ static void sse_push_status(void)
 
 static void handle_accept(void)
 {
-    int client_fd = accept(listen_fd, NULL, NULL);
+    int client_fd = accept4(listen_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (client_fd < 0) {
         if (errno != EAGAIN && errno != EWOULDBLOCK)
             perror("accept");
-        return;
-    }
-    if (set_nonblocking(client_fd) < 0 ||
-        fcntl(client_fd, F_SETFD, FD_CLOEXEC) < 0) {
-        perror("fcntl client");
-        close(client_fd);
         return;
     }
     struct epoll_event ev;
@@ -233,8 +242,12 @@ static void release_upload(upload_t *upload)
 static void close_client(int fd)
 {
     upload_t *upload = find_upload(fd);
-    if (upload)
+    if (upload && upload == preparation.upload) {
+        upload->client_fd = -1;
+        atomic_store(&preparation.cancelled, 1);
+    } else if (upload) {
         release_upload(upload);
+    }
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
     sse_remove_client(fd);
     close(fd);
@@ -269,6 +282,77 @@ static void set_upload_failed(http_response_t *resp)
     api_http_set_body_str(resp, "{\"message\":\"Upload failed\"}");
 }
 
+static int upload_peer_gone(int fd)
+{
+    /* A write-side half-close still allows the upstream to read our reply. */
+    struct pollfd peer = { .fd = fd };
+    return poll(&peer, 1, 0) > 0 && (peer.revents & (POLLHUP | POLLERR | POLLNVAL));
+}
+
+static void *prepare_print_upload(void *unused)
+{
+    (void)unused;
+    preparation.prepared = api_print_job_prepare_upload(
+        preparation.upload->request, &preparation.files, &preparation.response,
+        &preparation.cancelled) == 0;
+    return NULL;
+}
+
+static void collect_print_upload(void)
+{
+    upload_t *upload = preparation.upload;
+    int fd = upload->client_fd;
+    int respond = running && fd >= 0 && !upload_peer_gone(fd);
+    if (respond && preparation.prepared) {
+        backend_zmq_poll();
+        api_print_job_commit_upload(&preparation.files, &preparation.response);
+    }
+    api_print_job_release_upload(&preparation.files);
+    release_upload(upload);
+    preparation.upload = NULL;
+    if (respond) {
+        send_response(fd, &preparation.response);
+    } else {
+        free(preparation.response.body);
+        if (fd >= 0)
+            close_client(fd);
+    }
+}
+
+static void poll_print_uploads(void)
+{
+    if (preparation.upload) {
+        /* A successful join publishes the results and never waits for disk work. */
+        if (pthread_tryjoin_np(preparation.thread, NULL) != 0)
+            return;
+        collect_print_upload();
+    }
+
+    upload_t *next = NULL;
+    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+        upload_t *upload = &uploads[i];
+        if (upload->request && upload->preparation_order &&
+            (!next || upload->preparation_order < next->preparation_order))
+            next = upload;
+    }
+    if (!next || !running)
+        return;
+    if (upload_peer_gone(next->client_fd)) {
+        close_client(next->client_fd);
+        return;
+    }
+
+    preparation.upload = next;
+    memset(&preparation.files, 0, sizeof(preparation.files));
+    atomic_store(&preparation.cancelled, 0);
+    api_http_response_init(&preparation.response);
+    if (pthread_create(&preparation.thread, NULL, prepare_print_upload, NULL) != 0) {
+        set_upload_failed(&preparation.response);
+        preparation.prepared = 0;
+        collect_print_upload();
+    }
+}
+
 static void finish_upload(upload_t *upload, int complete)
 {
     int fd = upload->client_fd;
@@ -283,6 +367,16 @@ static void finish_upload(upload_t *upload, int complete)
                 upload->request->upload_size, upload->request->upload_path);
         backend_zmq_poll();
         api_http_route(upload->request, &resp);
+        if (resp.prepare_print_upload) {
+            /* Only receive full disconnects while waiting to send the reply. */
+            struct epoll_event ev = { .data.fd = fd };
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) < 0) {
+                set_upload_failed(&resp);
+            } else {
+                upload->preparation_order = ++next_preparation_order;
+                return;
+            }
+        }
     } else {
         set_upload_failed(&resp);
     }
@@ -441,7 +535,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    epoll_fd = epoll_create1(0);
+    epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd < 0) {
         perror("epoll_create1");
         close(listen_fd);
@@ -472,7 +566,7 @@ int main(int argc, char *argv[])
             perror("epoll_wait");
             break;
         }
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; running && i < n; i++) {
             int fd = events[i].data.fd;
             if (fd == listen_fd) {
                 handle_accept();
@@ -481,12 +575,13 @@ int main(int argc, char *argv[])
             } else {
                 uint32_t ready = events[i].events;
                 upload_t *upload = find_upload(fd);
-                if (upload && (ready & EPOLLIN) && !(ready & EPOLLERR)) {
+                if (upload && !upload->preparation_order &&
+                    (ready & EPOLLIN) && !(ready & EPOLLERR)) {
                     /* A hangup can accompany the last readable body bytes. */
                     receive_upload(upload);
                 } else if (ready & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                     close_client(fd);
-                } else if (ready & EPOLLIN) {
+                } else if (!upload && (ready & EPOLLIN)) {
                     handle_client(fd);
                 }
             }
@@ -501,15 +596,20 @@ int main(int argc, char *argv[])
             sse_last_push_ms = now_ms;
         }
         for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
-            if (uploads[i].request &&
+            if (uploads[i].request && !uploads[i].preparation_order &&
                 now_ms - uploads[i].last_progress_ms >= UPLOAD_IDLE_TIMEOUT_MS)
                 finish_upload(&uploads[i], 0);
         }
+        poll_print_uploads();
     }
 
     for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
-        if (uploads[i].request)
+        if (uploads[i].request && uploads[i].client_fd >= 0)
             close_client(uploads[i].client_fd);
+    }
+    if (preparation.upload) {
+        pthread_join(preparation.thread, NULL);
+        collect_print_upload();
     }
 
     /* Cleanup SSE clients */

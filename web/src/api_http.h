@@ -44,6 +44,7 @@ typedef struct {
     size_t body_len;
     size_t body_cap;
     int keep_alive;
+    int prepare_print_upload;
     /* For SSE */
     int is_sse;
     /* For Digest auth challenge */

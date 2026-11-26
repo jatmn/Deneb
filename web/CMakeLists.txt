@@ -193,7 +193,7 @@ if(NODE_EXECUTABLE)
         add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
             "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}")
+            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}")
         set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
     endif()
 endif()
