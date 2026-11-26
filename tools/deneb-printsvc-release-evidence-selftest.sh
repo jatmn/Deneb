@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+#
+# Exercise both release wrappers and stop the package builder at its evidence
+# comparator. Build tools and evidence checks are fixture doubles.
+
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+fixture="$scratch/repo"
+build="$scratch/cross"
+mkdir -p "$fixture"/{tools,ui,web,printsvc,dfsvc} "$scratch/bin" "$scratch/evidence with spaces"
+cp "$repo_root"/tools/*.sh "$fixture/tools/"
+cp "$repo_root/ui/build-package.sh" "$fixture/ui/"
+cp "$repo_root/web/lighttpd.conf" "$fixture/web/"
+for component in web printsvc dfsvc; do
+    cp -r "$repo_root/$component/init" "$fixture/$component/"
+done
+# Adapt only the checkout location on Linux. Supplemental paths are already WSL paths.
+# shellcheck disable=SC2016
+sed 's/^\$repoWsl = ConvertTo-WslPath \$repoRoot$/\$repoWsl = \$repoRoot/' \
+    "$repo_root/tools/build-update-release.ps1" > "$fixture/tools/build-update-release.ps1"
+
+mkdir -p "$build/mipsel-linux-musl-cross/bin" \
+    "$build/zeromq-4.3.5/build-musl/lib" "$build/zeromq-4.3.5/include" \
+    "$build/lighttpd-1.4.76/src" "$build/lighttpd-1.4.76/build-musl-static/build" \
+    "$fixture"/{ui,web,printsvc,dfsvc}/build-musl
+touch "$build/zeromq-4.3.5/build-musl/lib/libzmq.a"
+for binary in "$build/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc" \
+    "$build/lighttpd-1.4.76/build-musl-static/build/lighttpd" \
+    "$fixture/ui/build-musl/deneb-ui" "$fixture/web/build-musl/deneb-api" \
+    "$fixture/web/build-musl/deneb-mdns" "$fixture/printsvc/build-musl/deneb-printsvc" \
+    "$fixture/dfsvc/build-musl/deneb-dfsvc" "$scratch/bin/cmake" "$scratch/bin/make"; do
+    printf '#!/bin/sh\nexit 0\n' > "$binary"
+    chmod +x "$binary"
+done
+
+cat > "$scratch/bin/wsl" <<'EOF'
+#!/bin/sh
+set -eu
+[ "$#" -eq 8 ] && [ "$5" = -- ] && [ "$6" = bash ] && [ "$7" = -lc ] || exit 2
+case "$8" in
+    *'bash ui/build-package.sh '*) exec bash -c "$8" ;;
+esac
+EOF
+cat > "$fixture/tools/deneb-printsvc-smoke-verify.sh" <<'EOF'
+#!/bin/sh
+set -eu
+printf 'verify:%s\n' "$@" >> "$EVIDENCE_CALLS"
+for arg do
+    if [ "$arg" = "${INVALID_EVIDENCE:-}" ]; then
+        echo "Rejected invalid fixture evidence: $arg" >&2
+        exit 23
+    fi
+done
+EOF
+cat > "$fixture/tools/deneb-printsvc-smoke-compare.sh" <<'EOF'
+#!/bin/sh
+set -eu
+printf 'compare:%s\n' "$@" >> "$EVIDENCE_CALLS"
+echo 'Stopped at fixture comparator' >&2
+exit 23
+EOF
+chmod +x "$scratch/bin/wsl"
+export PATH="$scratch/bin:$PATH"
+unset DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
+export DENEB_BUILD_ROOT="$build"
+export EVIDENCE_CALLS="$scratch/calls"
+export FIXTURE_REPO="$fixture"
+export FIXTURE_BUILD="$build"
+export STOCK_SUMMARY="$scratch/stock.summary"
+export NATIVE_SUMMARY="$scratch/native.summary"
+export FIRST_EVIDENCE="$scratch/evidence with spaces/first.summary"
+export SECOND_EVIDENCE="$scratch/second's.summary"
+touch "$STOCK_SUMMARY" "$NATIVE_SUMMARY" "$FIRST_EVIDENCE" "$SECOND_EVIDENCE"
+
+run_linux() {
+    local -a evidence_args=()
+    local summary
+    for summary; do
+        evidence_args+=(--printsvc-native-evidence-summary "$summary")
+    done
+    bash "$fixture/tools/build-update-release.sh" --release-channel nightly \
+        --printsvc-stock-summary "$STOCK_SUMMARY" --printsvc-native-summary "$NATIVE_SUMMARY" \
+        "${evidence_args[@]}"
+}
+
+run_powershell() {
+    # shellcheck disable=SC2016
+    pwsh -NoProfile -Command '
+        & "$env:FIXTURE_REPO/tools/build-update-release.ps1" -ReleaseChannel stable `
+            -ZmqRoot "$env:FIXTURE_BUILD/zeromq-4.3.5" -LighttpdRoot "$env:FIXTURE_BUILD/lighttpd-1.4.76" `
+            -PrintsvcStockSummary $env:STOCK_SUMMARY -PrintsvcNativeSummary $env:NATIVE_SUMMARY `
+            -PrintsvcNativeEvidenceSummary @($env:FIRST_EVIDENCE, $env:SECOND_EVIDENCE)
+    '
+}
+
+check_failure() {
+    local marker=$1
+    shift
+    : > "$EVIDENCE_CALLS"
+    if "$@" > "$scratch/output" 2>&1 || ! grep -Fq -- "$marker" "$scratch/output"; then
+        cat "$scratch/output" >&2
+        printf 'Expected package builder to stop at %s\n' "$marker" >&2
+        exit 1
+    fi
+    test -z "$(find "$fixture" -name '*.deneb' -print -quit)"
+    diff -u "$scratch/expected" "$EVIDENCE_CALLS"
+}
+
+with_evidence() {
+    printf 'verify:%s\n' --stock --resources "$STOCK_SUMMARY"
+    printf 'verify:%s\n' --native --idle --restart --boot-sync --client-proof \
+        --firmware-proof --complete-job --resources "$NATIVE_SUMMARY"
+    printf 'verify:%s\n' --native "$FIRST_EVIDENCE" --native "$SECOND_EVIDENCE"
+}
+
+{
+    with_evidence
+    printf 'compare:%s\n' --require-reduction "$STOCK_SUMMARY" "$NATIVE_SUMMARY" \
+        "$FIRST_EVIDENCE" "$SECOND_EVIDENCE"
+} > "$scratch/expected"
+check_failure 'Stopped at fixture comparator' run_linux "$FIRST_EVIDENCE" "$SECOND_EVIDENCE"
+echo 'PASS: Linux wrapper preserves supplemental verifier and comparator arguments'
+check_failure 'Stopped at fixture comparator' run_powershell
+echo 'PASS: PowerShell wrapper preserves supplemental verifier and comparator arguments'
+
+with_evidence > "$scratch/expected"
+INVALID_EVIDENCE=$SECOND_EVIDENCE check_failure "Rejected invalid fixture evidence: $SECOND_EVIDENCE" \
+    run_linux "$FIRST_EVIDENCE" "$SECOND_EVIDENCE"
+: > "$scratch/expected"
+missing="$scratch/evidence with spaces/missing.summary"
+check_failure "native printsvc evidence summary not found: $missing" run_linux "$FIRST_EVIDENCE" "$missing"
+DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES=$FIRST_EVIDENCE \
+    check_failure 'pass supplemental native evidence paths as arguments after the six binaries' run_linux
+
+{
+    printf 'verify:%s\n' --stock --resources "$STOCK_SUMMARY" --full "$NATIVE_SUMMARY"
+    printf 'compare:%s\n' --require-reduction "$STOCK_SUMMARY" "$NATIVE_SUMMARY"
+} > "$scratch/expected"
+check_failure 'Stopped at fixture comparator' run_linux
+echo 'PASS: missing, invalid, empty, and legacy supplemental evidence handling'

@@ -298,8 +298,8 @@ audit_source() {
         'DENEB_PRINTSVC_NATIVE_SUMMARY' \
         "package builder requires native smoke summary input"
     require_pattern "${repo}/ui/build-package.sh" \
-        'DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES' \
-        "package builder accepts split native evidence summaries"
+        'deneb-printsvc-smoke-compare" --require-reduction .* "\$@"' \
+        "package builder compares supplemental native evidence as separate arguments"
     require_pattern "${repo}/ui/build-package.sh" \
         'deneb-printsvc-smoke-verify" --native --idle --restart --boot-sync --client-proof --firmware-proof --complete-job --resources' \
         "package builder verifies primary native resource summary"
@@ -325,8 +325,8 @@ audit_source() {
         'DENEB_PRINTSVC_NATIVE_SUMMARY=' \
         "release wrapper forwards native smoke summary"
     require_pattern "${repo}/tools/build-update-release.ps1" \
-        'DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES=' \
-        "release wrapper forwards split native evidence summaries"
+        'ui/build-package\.sh .*\$\{buildPackageEvidenceArgs\}' \
+        "release wrapper forwards supplemental native evidence arguments"
     require_pattern "${repo}/tools/build-update-release.ps1" \
         'deneb-printsvc-release-gate-selftest' \
         "release wrapper runs release gate selftest"

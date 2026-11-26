@@ -6,6 +6,7 @@
 #
 # Usage:
 #   ./ui/build-package.sh <path-to-compiled-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]
+#   Optional supplemental evidence paths follow all six binary paths.
 #
 # Produces:
 #   dist/Deneb_Update_<version>.deneb
@@ -20,10 +21,14 @@ LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-
 MDNS_BINARY="${4:-$(dirname "$WEB_API_BINARY")/deneb-mdns}"
 PRINTSVC_BINARY="${5:-$(dirname "$WEB_API_BINARY")/../../printsvc/build-musl/deneb-printsvc}"
 DFSVC_BINARY="${6:-$(dirname "$WEB_API_BINARY")/../../dfsvc/build-musl/deneb-dfsvc}"
+if [ "$#" -ge 6 ]; then
+    shift 6
+else
+    set --
+fi
 DENEB_RELEASE_CHANNEL="${DENEB_RELEASE_CHANNEL:-experimental}"
 PRINTSVC_STOCK_SUMMARY="${DENEB_PRINTSVC_STOCK_SUMMARY:-}"
 PRINTSVC_NATIVE_SUMMARY="${DENEB_PRINTSVC_NATIVE_SUMMARY:-}"
-PRINTSVC_NATIVE_EVIDENCE_SUMMARIES="${DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES:-}"
 PRINTSVC_RELEASE_GATE="non-experimental packages require verified stock/native smoke summaries with strict resource reduction"
 
 if [ ! -f "$BINARY" ]; then
@@ -146,6 +151,10 @@ chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-
 chmod 0755 "${STAGING_DIR}/deneb-runtime-inventory"
 
 if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
+    if [ -n "${DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES:-}" ]; then
+        echo "ERROR: pass supplemental native evidence paths as arguments after the six binaries" >&2
+        exit 1
+    fi
     if [ -z "$PRINTSVC_STOCK_SUMMARY" ] || [ -z "$PRINTSVC_NATIVE_SUMMARY" ]; then
         echo "ERROR: non-experimental native printsvc builds require DENEB_PRINTSVC_STOCK_SUMMARY and DENEB_PRINTSVC_NATIVE_SUMMARY" >&2
         exit 1
@@ -158,19 +167,19 @@ if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
         echo "ERROR: native printsvc smoke summary not found: $PRINTSVC_NATIVE_SUMMARY" >&2
         exit 1
     fi
-    for evidence_summary in $PRINTSVC_NATIVE_EVIDENCE_SUMMARIES; do
+    for evidence_summary in "$@"; do
         if [ ! -f "$evidence_summary" ]; then
             echo "ERROR: native printsvc evidence summary not found: $evidence_summary" >&2
             exit 1
         fi
     done
     "${STAGING_DIR}/deneb-printsvc-smoke-verify" --stock --resources "$PRINTSVC_STOCK_SUMMARY"
-    if [ -n "$PRINTSVC_NATIVE_EVIDENCE_SUMMARIES" ]; then
+    if [ "$#" -gt 0 ]; then
         "${STAGING_DIR}/deneb-printsvc-smoke-verify" --native --idle --restart --boot-sync --client-proof --firmware-proof --complete-job --resources "$PRINTSVC_NATIVE_SUMMARY"
-        for evidence_summary in $PRINTSVC_NATIVE_EVIDENCE_SUMMARIES; do
+        for evidence_summary in "$@"; do
             "${STAGING_DIR}/deneb-printsvc-smoke-verify" --native "$evidence_summary"
         done
-        "${STAGING_DIR}/deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY" $PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
+        "${STAGING_DIR}/deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY" "$@"
     else
         "${STAGING_DIR}/deneb-printsvc-smoke-verify" --full "$PRINTSVC_NATIVE_SUMMARY"
         "${STAGING_DIR}/deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY"

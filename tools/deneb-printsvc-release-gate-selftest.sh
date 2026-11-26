@@ -77,6 +77,9 @@ if [ ! -f "$BUILD_PACKAGE" ]; then
     exit 0
 fi
 
+# Each host fixture supplies the evidence it needs.
+unset DENEB_PRINTSVC_STOCK_SUMMARY DENEB_PRINTSVC_NATIVE_SUMMARY DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
+
 cleanup() {
     rm -rf "$PACKAGE_STAGING"
     rm -f "$PACKAGE_ARCHIVE"

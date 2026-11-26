@@ -131,8 +131,10 @@ configure_component "$repo_root/ui" "$repo_root/ui/$build_directory" "$repo_root
 package_env=("DENEB_RELEASE_CHANNEL=$release_channel" "STRIP=$toolchain_root/bin/mipsel-linux-musl-strip")
 [ -z "$printsvc_stock_summary" ] || package_env+=("DENEB_PRINTSVC_STOCK_SUMMARY=$printsvc_stock_summary")
 [ -z "$printsvc_native_summary" ] || package_env+=("DENEB_PRINTSVC_NATIVE_SUMMARY=$printsvc_native_summary")
-[ "${#printsvc_native_evidence_summaries[@]}" -eq 0 ] || package_env+=("DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES=${printsvc_native_evidence_summaries[*]}")
-(cd "$repo_root" && env "${package_env[@]}" bash ui/build-package.sh "ui/$build_directory/deneb-ui" "web/$web_build_directory/deneb-api" "$lighttpd_binary" "web/$web_build_directory/deneb-mdns" "printsvc/$build_directory/deneb-printsvc" "dfsvc/$build_directory/deneb-dfsvc")
+(cd "$repo_root" && env "${package_env[@]}" bash ui/build-package.sh \
+    "ui/$build_directory/deneb-ui" "web/$web_build_directory/deneb-api" "$lighttpd_binary" \
+    "web/$web_build_directory/deneb-mdns" "printsvc/$build_directory/deneb-printsvc" "dfsvc/$build_directory/deneb-dfsvc" \
+    "${printsvc_native_evidence_summaries[@]}")
 
 package_version=${DENEB_PACKAGE_VERSION_OVERRIDE:-$(git -C "$repo_root" describe --tags --always 2>/dev/null || echo dev)}
 package="$repo_root/dist/Deneb_Update_$package_version.deneb"
