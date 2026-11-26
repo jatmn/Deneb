@@ -8,6 +8,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
+const { deflateSync } = require('node:zlib');
 
 const [apiBinary, lighttpd, packagedConfig, cmake, unzip] = process.argv.slice(2);
 const DEADLINE_MS = 2000;
@@ -134,6 +135,41 @@ function multipartPayload(body, filename) {
     ]);
 }
 
+function solidRgbaPng(width, height, rgba) {
+    function chunk(type, data) {
+        const body = Buffer.concat([Buffer.from(type), data]);
+        const result = Buffer.alloc(body.length + 8);
+        let crc = -1;
+        for (const byte of body) {
+            crc ^= byte;
+            for (let bit = 0; bit < 8; bit++) {
+                crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+            }
+        }
+        result.writeUInt32BE(data.length);
+        body.copy(result, 4);
+        result.writeUInt32BE((~crc) >>> 0, result.length - 4);
+        return result;
+    }
+
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 6;
+    const stride = width * 4 + 1;
+    const row = Buffer.alloc(stride);
+    for (let offset = 1; offset < stride; offset += 4) row.writeUInt32BE(rgba, offset);
+    const scanlines = Buffer.alloc(stride * height);
+    for (let offset = 0; offset < scanlines.length; offset += stride) row.copy(scanlines, offset);
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        chunk('IHDR', header),
+        chunk('IDAT', deflateSync(scanlines)),
+        chunk('IEND', Buffer.alloc(0))
+    ]);
+}
+
 function startUpload(port, body, filename, { chunked = false, declaredLength } = {}) {
     const payload = multipartPayload(body, filename);
     const split = Math.floor(payload.length / 2);
@@ -225,6 +261,7 @@ async function main() {
     try {
         const temp = path.join(root, 'tmp');
         const pendingJob = path.join(temp, 'deneb-cluster-print-job.json');
+        const thumbnailPath = path.join(temp, 'deneb-active-thumb.rgb565');
         const spool = path.join(root, 'spool');
         const apiSocket = path.join(root, 'api.sock');
         fs.mkdirSync(temp);
@@ -242,14 +279,21 @@ async function main() {
             ''
         ].join('\n'), { mode: 0o700 });
         fs.mkdirSync(path.join(root, '3D'));
+        fs.mkdirSync(path.join(root, 'Metadata'));
         fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
         // Keep the compressed upload larger than the API's receive chunk.
         const comments = Array.from({ length: 512 }, (_, index) =>
             ';' + createHash('sha256').update(String(index)).digest('hex') + '\n');
         const gcode = ';TIME:12\nG28\n' + comments.join('');
         fs.writeFileSync(path.join(root, '3D', 'model.gcode'), gcode);
-        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip', '3D/model.gcode'], { cwd: root });
-        const archive = fs.readFileSync(path.join(root, 'job.ufp'));
+        function makeArchive(image) {
+            fs.writeFileSync(path.join(root, 'Metadata', 'thumbnail.png'), image);
+            execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip',
+                '3D/model.gcode', 'Metadata/thumbnail.png'], { cwd: root });
+            return fs.readFileSync(path.join(root, 'job.ufp'));
+        }
+        const archive = makeArchive(solidRgbaPng(2, 1, 0xff000080));
+        const overBudgetArchive = makeArchive(solidRgbaPng(1024, 1025, 0xff000080));
         const uploadedBodyExists = () => fs.readdirSync(temp).some((file) =>
             file.startsWith('deneb-upload-') && fs.statSync(path.join(temp, file), { throwIfNoEntry: false })?.size > 0);
 
@@ -274,6 +318,13 @@ async function main() {
         const proxy = startService(lighttpd, ['-D', '-f', config], root).process;
         await withinDeadline('lighttpd did not start listening', () => children[1].log.includes('server started'));
         assert.equal((await status(port)).code, 200);
+
+        const previewSkipped = await startUpload(port, overBudgetArchive, 'large-preview.ufp').finish();
+        assert.equal(previewSkipped.code, 201, previewSkipped.data);
+        assert.equal(fs.existsSync(thumbnailPath), false);
+        assert.equal(fs.readFileSync(path.join(spool, 'large-preview.gcode'), 'utf8'), gcode);
+        fs.rmSync(pendingJob);
+        fs.rmSync(spool, { recursive: true });
         await withinDeadline('REST client socket did not close', () => sockets.size === 0);
         const baseline = [process.pid, api.pid, proxy.pid].map(countDescriptors);
 
@@ -336,7 +387,14 @@ async function main() {
         const pending = JSON.parse(fs.readFileSync(pendingJob, 'utf8'));
         assert.equal(pending.length, 1);
         assert.equal(pending[0].path, 'spool/completed.gcode');
-        assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
+        const expectedPreview = Buffer.alloc(116 * 116 * 2);
+        for (let pixel = 0; pixel < 116 * 116; pixel++) {
+            const y = Math.floor(pixel / 116);
+            expectedPreview.writeUInt16LE(y >= 29 && y < 87 ? 0x8021 : 0x0843, pixel * 2);
+        }
+        assert.deepEqual(fs.readFileSync(thumbnailPath), expectedPreview);
+        const expectedTempFiles = ['deneb-active-thumb.rgb565', 'deneb-cluster-print-job.json'];
+        assert.deepEqual(fs.readdirSync(temp).sort(), expectedTempFiles);
 
         // The proxy still translates chunked requests for the Content-Length API.
         const chunkedRetry = startUpload(port, archive, 'completed.ufp', { chunked: true });
@@ -354,7 +412,7 @@ async function main() {
             assert.equal(failedStage.code, 500, failedStage.data);
             assert.equal(JSON.parse(failedStage.data).message, 'Failed to save file');
             assert.deepEqual(JSON.parse(fs.readFileSync(pendingJob, 'utf8')), pending);
-            assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
+            assert.deepEqual(fs.readdirSync(temp).sort(), expectedTempFiles);
         } finally {
             fs.rmSync(spool, { force: true });
             fs.renameSync(savedSpool, spool);
@@ -378,7 +436,7 @@ async function main() {
         await withinDeadline('API shutdown left an active extractor', () =>
             children[0].stopped && !fs.existsSync('/proc/' + terminatingPid));
         assert.equal(api.exitCode, 0);
-        assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
+        assert.deepEqual(fs.readdirSync(temp).sort(), expectedTempFiles);
         assert.deepEqual(fs.readdirSync(spool), ['completed.gcode']);
     } catch (error) {
         for (const child of children) process.stderr.write(child.log);

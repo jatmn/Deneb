@@ -27,6 +27,8 @@
 #define DENEB_UFP_THUMB_MAX_CANDIDATES 16
 #define DENEB_UFP_MEMBER_MAX 256
 #define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
+/* Filter bytes included: keep a 1024 x 1024 RGBA preview within budget. */
+#define DENEB_THUMB_MAX_SCANLINE_BYTES ((1024U * 4U + 1U) * 1024U)
 
 typedef struct {
     char name[DENEB_UFP_MEMBER_MAX];
@@ -465,7 +467,7 @@ static int read_png_dimensions_data(const unsigned char *data, size_t size,
     return 0;
 }
 
-static int thumbnail_score(int width, int height)
+static unsigned thumbnail_score(int width, int height)
 {
     int dw = width - DENEB_THUMB_TARGET_SIZE;
     int dh = height - DENEB_THUMB_TARGET_SIZE;
@@ -474,7 +476,7 @@ static int thumbnail_score(int width, int height)
         dw = -dw;
     if (dh < 0)
         dh = -dh;
-    return dw + dh;
+    return (unsigned)dw + (unsigned)dh;
 }
 
 static int inflate_zip_deflate(const unsigned char *compressed,
@@ -776,17 +778,14 @@ static int append_png_chunk(unsigned char **buf, size_t *size, size_t *cap,
     return 0;
 }
 
-static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
-                             unsigned char **out_rgba, unsigned *out_width,
-                             unsigned *out_height)
+static int inflate_png_scanlines(const unsigned char *png_data, size_t png_size,
+                                 unsigned char **out_raw, unsigned *out_width,
+                                 unsigned *out_height, unsigned *out_bpp)
 {
     static const unsigned char png_sig[8] =
         {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
     unsigned char *idat = NULL;
     unsigned char *raw = NULL;
-    unsigned char *rgba = NULL;
-    unsigned char *prev = NULL;
-    unsigned char *cur = NULL;
     size_t idat_size = 0;
     size_t idat_cap = 0;
     size_t raw_size = 0;
@@ -801,8 +800,7 @@ static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
     int saw_iend = 0;
     int rc = -1;
 
-    if (!png_data || png_size < 33 || !out_rgba || !out_width ||
-        !out_height || memcmp(png_data, png_sig, sizeof(png_sig)) != 0)
+    if (png_size < 33 || memcmp(png_data, png_sig, sizeof(png_sig)) != 0)
         return -1;
 
     while (pos + 12U <= png_size) {
@@ -843,7 +841,7 @@ static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
         goto done;
 
     stride = (size_t)width * bpp;
-    if (height > SIZE_MAX / (stride + 1U))
+    if (height > DENEB_THUMB_MAX_SCANLINE_BYTES / (stride + 1U))
         goto done;
     expected_raw_size = (stride + 1U) * height;
 
@@ -858,64 +856,44 @@ static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
             goto done;
     }
 
-    if ((size_t)width > SIZE_MAX / height ||
-        (size_t)width * height > SIZE_MAX / 4U)
-        goto done;
-    rgba = malloc((size_t)width * height * 4U);
-    prev = calloc(1, stride);
-    cur = malloc(stride);
-    if (!rgba || !prev || !cur)
-        goto done;
-
-    pos = 0;
-    for (unsigned y = 0; y < height; y++) {
-        unsigned filter = raw[pos++];
-        const unsigned char *scanline = raw + pos;
-
-        if (filter > 4U)
-            goto done;
-        for (size_t i = 0; i < stride; i++) {
-            int x = scanline[i];
-            int left = i >= bpp ? cur[i - bpp] : 0;
-            int up = prev[i];
-            int upper_left = i >= bpp ? prev[i - bpp] : 0;
-
-            if (filter == 1U)
-                x += left;
-            else if (filter == 2U)
-                x += up;
-            else if (filter == 3U)
-                x += (left + up) / 2;
-            else if (filter == 4U)
-                x += paeth_predictor(left, up, upper_left);
-            cur[i] = (unsigned char)(x & 0xff);
-        }
-        for (unsigned x = 0; x < width; x++) {
-            const unsigned char *src = cur + (size_t)x * bpp;
-            unsigned char *dst = rgba + (((size_t)y * width + x) * 4U);
-
-            dst[0] = src[0];
-            dst[1] = src[1];
-            dst[2] = src[2];
-            dst[3] = bpp == 4U ? src[3] : 255U;
-        }
-        memcpy(prev, cur, stride);
-        pos += stride;
-    }
-
-    *out_rgba = rgba;
+    *out_raw = raw;
     *out_width = width;
     *out_height = height;
-    rgba = NULL;
+    *out_bpp = bpp;
+    raw = NULL;
     rc = 0;
 
 done:
-    free(cur);
-    free(prev);
-    free(rgba);
     free(raw);
     free(idat);
     return rc;
+}
+
+static int unfilter_png_scanline(unsigned char *row, const unsigned char *prev,
+                                 size_t stride, unsigned bpp, unsigned filter)
+{
+    if (filter > 4U)
+        return -1;
+    if (filter == 0U)
+        return 0;
+
+    for (size_t i = 0; i < stride; i++) {
+        int left = i >= bpp ? row[i - bpp] : 0;
+        int up = prev ? prev[i] : 0;
+        int upper_left = prev && i >= bpp ? prev[i - bpp] : 0;
+        int x = row[i];
+
+        if (filter == 1U)
+            x += left;
+        else if (filter == 2U)
+            x += up;
+        else if (filter == 3U)
+            x += (left + up) / 2;
+        else
+            x += paeth_predictor(left, up, upper_left);
+        row[i] = (unsigned char)(x & 0xff);
+    }
+    return 0;
 }
 
 static int write_png_thumbnail_rgb565(const unsigned char *png_data,
@@ -925,10 +903,13 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     static const unsigned char bg_r = 10;
     static const unsigned char bg_g = 10;
     static const unsigned char bg_b = 26;
-    unsigned char *rgba = NULL;
+    unsigned char *raw = NULL;
+    unsigned char *prev = NULL;
     unsigned char *rgb565 = NULL;
     unsigned width = 0;
     unsigned height = 0;
+    unsigned bpp = 0;
+    size_t stride;
     unsigned scaled_w;
     unsigned scaled_h;
     unsigned offset_x;
@@ -941,8 +922,10 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     if (!png_data || png_size == 0 || !target_path || !*target_path)
         return -1;
 
-    if (decode_png_rgba32(png_data, png_size, &rgba, &width, &height) < 0)
+    if (inflate_png_scanlines(png_data, png_size, &raw, &width, &height,
+                              &bpp) < 0)
         goto done;
+    stride = (size_t)width * bpp;
 
     rgb565 = malloc(DENEB_THUMB_RGB565_BYTES);
     if (!rgb565)
@@ -975,36 +958,33 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     offset_x = (DENEB_THUMB_TARGET_SIZE - scaled_w) / 2U;
     offset_y = (DENEB_THUMB_TARGET_SIZE - scaled_h) / 2U;
 
-    for (y = 0; y < scaled_h; y++) {
-        unsigned src_y = (unsigned)(((uint64_t)y * height) / scaled_h);
+    y = 0;
+    for (unsigned src_y = 0; src_y < height; src_y++) {
+        unsigned char *scanline = raw + (size_t)src_y * (stride + 1U);
+        unsigned char *row = scanline + 1U;
 
-        if (src_y >= height)
-            src_y = height - 1U;
-        for (x = 0; x < scaled_w; x++) {
-            unsigned src_x = (unsigned)(((uint64_t)x * width) / scaled_w);
-            const unsigned char *src;
-            unsigned alpha;
-            unsigned r;
-            unsigned g;
-            unsigned b;
+        if (unfilter_png_scanline(row, prev, stride, bpp, scanline[0]) < 0)
+            goto done;
+        prev = row;
 
-            if (src_x >= width)
-                src_x = width - 1U;
-            src = rgba + (((size_t)src_y * width + src_x) * 4U);
-            alpha = src[3];
-            r = ((unsigned)src[0] * alpha + (unsigned)bg_r * (255U - alpha)) /
-                255U;
-            g = ((unsigned)src[1] * alpha + (unsigned)bg_g * (255U - alpha)) /
-                255U;
-            b = ((unsigned)src[2] * alpha + (unsigned)bg_b * (255U - alpha)) /
-                255U;
-            write_rgb565_pixel(rgb565,
-                               (size_t)(y + offset_y) *
-                                   DENEB_THUMB_TARGET_SIZE +
+        /* A source row may be skipped or sampled more than once. */
+        for (; y < scaled_h && y * height / scaled_h == src_y; y++) {
+            for (x = 0; x < scaled_w; x++) {
+                unsigned src_x = x * width / scaled_w;
+                const unsigned char *src = row + (size_t)src_x * bpp;
+                unsigned alpha = bpp == 4U ? src[3] : 255U;
+                unsigned r = (src[0] * alpha + bg_r * (255U - alpha)) / 255U;
+                unsigned g = (src[1] * alpha + bg_g * (255U - alpha)) / 255U;
+                unsigned b = (src[2] * alpha + bg_b * (255U - alpha)) / 255U;
+
+                write_rgb565_pixel(rgb565,
+                                   (size_t)(y + offset_y) *
+                                       DENEB_THUMB_TARGET_SIZE +
                                    (x + offset_x),
-                               rgb_to_rgb565((unsigned char)r,
-                                             (unsigned char)g,
-                                             (unsigned char)b));
+                                   rgb_to_rgb565((unsigned char)r,
+                                                 (unsigned char)g,
+                                                 (unsigned char)b));
+            }
         }
     }
 
@@ -1012,7 +992,7 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
 
 done:
     free(rgb565);
-    free(rgba);
+    free(raw);
     return rc;
 }
 
@@ -1039,7 +1019,7 @@ int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
     deneb_ufp_thumb_candidate_t candidates[DENEB_UFP_THUMB_MAX_CANDIDATES];
     unsigned char *best_data = NULL;
     size_t best_size = 0;
-    int best_score = 0;
+    unsigned best_score = 0;
     int best_ready = 0;
     size_t candidate_count;
     size_t i;
@@ -1060,7 +1040,7 @@ int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
         size_t data_size = 0;
         int width = 0;
         int height = 0;
-        int score;
+        unsigned score;
 
         if (extract_zip_candidate(ufp_path, &candidates[i], &data,
                                   &data_size) != 0 ||
@@ -1076,6 +1056,8 @@ int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
             best_size = data_size;
             best_score = score;
             best_ready = 1;
+            if (best_score == 0U)
+                break;
             continue;
         }
         free(data);
