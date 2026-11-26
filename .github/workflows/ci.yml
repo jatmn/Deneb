@@ -453,6 +453,7 @@ jobs:
         run: |
           bash tools/deneb-compile-all-selftest.sh
           bash tools/deneb-stock-menu-prune-selftest.sh
+          bash tools/deneb-stock-menu-import-check-selftest.sh
           bash tools/deneb-printsvc-smoke-selftest.sh
           bash tools/deneb-printsvc-stability.sh --selftest
           bash tools/deneb-printsvc-init-selftest.sh

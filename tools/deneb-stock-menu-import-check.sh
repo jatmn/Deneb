@@ -70,7 +70,7 @@ if [ -z "$IMPORTING_FILES" ]; then
 fi
 
 while IFS= read -r f; do
-    rel="${f#$ROOTFS_PYTHON/}"
+    rel="${f#"$ROOTFS_PYTHON"/}"
     # Determine if this is a surviving service or pruned UI file
     surviving=0
     for dir in $(echo "$SURVIVING_DIRS" | tr '|' ' '); do
@@ -97,11 +97,11 @@ echo
 
 echo "--- Constants accessed per file ---"
 
-declare -A SURVIVING_CONSTANTS
-declare -A PRUNED_CONSTANTS
+declare -A SURVIVING_CONSTANTS=()
+declare -A PRUNED_CONSTANTS=()
 
 while IFS= read -r f; do
-    rel="${f#$ROOTFS_PYTHON/}"
+    rel="${f#"$ROOTFS_PYTHON"/}"
     consts=$(
         {
             grep -oE 'menu_settings\.[A-Za-z_][A-Za-z0-9_]*' "$f" 2>/dev/null |
