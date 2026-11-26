@@ -836,16 +836,51 @@ EOF
 expect_failure rejects_source_print_on_buildplate "$AUDIT" --source "$SOURCE_PRINT_ON_BUILDPLATE"
 
 RUNTIME_SELFTEST_INIT="$TMP_DIR/runtime-inventory-init"
-mkdir -p "$RUNTIME_SELFTEST_INIT"
+RUNTIME_SELFTEST_PROC="$TMP_DIR/runtime-inventory-proc"
+RUNTIME_SELFTEST_BIN="$TMP_DIR/runtime-inventory-bin"
+mkdir -p "$RUNTIME_SELFTEST_INIT" "$RUNTIME_SELFTEST_PROC" "$RUNTIME_SELFTEST_BIN"
 cat > "$RUNTIME_SELFTEST_INIT/coordinator" <<'EOF'
 #!/bin/sh
 # DENEB_COORDINATOR_DISABLED
 exit 0
 EOF
 chmod +x "$RUNTIME_SELFTEST_INIT/coordinator"
-DENEB_RUNTIME_INVENTORY_INIT_DIR="$RUNTIME_SELFTEST_INIT" \
-    DENEB_PYTHON_RUNTIME_SUMMARY="$TMP_DIR/runtime-inventory.md" \
-    sh "$RUNTIME_INVENTORY" > "$TMP_DIR/runtime-inventory.out"
+cat > "$RUNTIME_SELFTEST_BIN/wget" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$RUNTIME_SELFTEST_BIN/wget"
+
+write_runtime_process() {
+    local pid="$1" exe="$2" state="$3" flags="$4" proc="$RUNTIME_SELFTEST_PROC/$1"
+    shift 4
+    mkdir -p "$proc/fd"
+    [ -z "$exe" ] || ln -s "$exe" "$proc/exe"
+    printf '%s (fixture ) process) %s 1 1 1 0 -1 %s 0 0 0 0 0 0 0 0 20 0 1 0 12345 0\n' \
+        "$pid" "$state" "$flags" > "$proc/stat"
+    printf '%s\000' "$@" > "$proc/cmdline"
+    printf 'VmSize: 2048 kB\nVmRSS: 1024 kB\nVmData: 256 kB\nThreads: 2\n' > "$proc/status"
+    printf 'Private_Dirty: 20 kB\nPrivate_Clean: 4 kB\n' > "$proc/smaps"
+}
+
+capture_runtime_inventory() {
+    PATH="$RUNTIME_SELFTEST_BIN:$PATH" \
+        DENEB_RUNTIME_INVENTORY_INIT_DIR="$RUNTIME_SELFTEST_INIT" \
+        DENEB_RUNTIME_INVENTORY_PROC_DIR="$RUNTIME_SELFTEST_PROC" \
+        DENEB_PYTHON_RUNTIME_SUMMARY="$TMP_DIR/runtime-inventory.md" \
+        sh "$RUNTIME_INVENTORY" > "$TMP_DIR/runtime-inventory.out"
+}
+
+write_runtime_process 100 /usr/bin/dash S 0 sh unrelated-python /tmp/connector.py compileall
+write_runtime_process 101 /usr/bin/python3.13 S 0 /tmp/interpreter-alias -u /home/cygnus/coordinator/coordinator.py
+write_runtime_process 102 '/usr/bin/python3.13t (deleted)' S 0 python3 -m compileall '/tmp/folder with spaces'
+write_runtime_process 103 /usr/bin/python3.13 S 0 /usr/bin/python3 -W 'ignore' -- /home/cygnus/menu/executor.py
+write_runtime_process 104 /usr/bin/python3.13 S 0 python3 '/unrelated path/example.py' /tmp/print_service.py compileall
+write_runtime_process 105 /usr/bin/python3.13 S 0 python3 /home/cygnus/connector.py
+write_runtime_process 106 /usr/bin/python3.13 S 0 python3 /home/cygnus/marlindriver/print_service.py
+write_runtime_process 107 /usr/bin/python3-helper S 0 python3-helper /tmp/connector.py
+write_runtime_process 108 "" S 0 unknown
+capture_runtime_inventory
 grep -F '| `coordinator` | disabled shim | disabled shim |' "$TMP_DIR/runtime-inventory.out" >/dev/null
 if grep -F '| `coordinator` | rc 0 | rc 0 |' "$TMP_DIR/runtime-inventory.out" >/dev/null; then
     cat "$TMP_DIR/runtime-inventory.out"
@@ -853,4 +888,31 @@ if grep -F '| `coordinator` | rc 0 | rc 0 |' "$TMP_DIR/runtime-inventory.out" >/
     exit 1
 fi
 echo "PASS: runtime inventory reports disabled coordinator shim"
+
+grep -E '^\| `101` \| .* stock coordinator fallback/.* \| 2048 \| 1024 \| 256 \| 2 \| 0 \| 24 \|$' "$TMP_DIR/runtime-inventory.out" >/dev/null
+grep -E '^\| `102` \| .* stock startup work' "$TMP_DIR/runtime-inventory.out" >/dev/null
+grep -E '^\| `103` \| .* stock UI fallback' "$TMP_DIR/runtime-inventory.out" >/dev/null
+grep -E '^\| `104` \| .* unclassified Python runtime' "$TMP_DIR/runtime-inventory.out" >/dev/null
+grep -E '^\| `105` \| .* unexpected regression in Deneb-native DF path' "$TMP_DIR/runtime-inventory.out" >/dev/null
+grep -E '^\| `106` \| .* unexpected regression in Deneb-native print-service path' "$TMP_DIR/runtime-inventory.out" >/dev/null
+grep -F 'Inventory incomplete. Could not inspect all live processes (1 unresolved).' "$TMP_DIR/runtime-inventory.out" >/dev/null
+if grep -Eq '^\| `(100|107|108)` \|' "$TMP_DIR/runtime-inventory.out"; then
+    echo "FAIL: runtime inventory listed a non-Python or uninspectable executable" >&2
+    exit 1
+fi
+echo "PASS: runtime inventory identifies interpreters and classifies their structured arguments"
+
+RUNTIME_SELFTEST_PROC="$TMP_DIR/runtime-inventory-no-python"
+write_runtime_process 201 "" Z 0 dead
+write_runtime_process 202 "" I 2097152 kworker
+capture_runtime_inventory
+grep -F '| none | none | no live Python process found |' "$TMP_DIR/runtime-inventory.out" >/dev/null
+write_runtime_process 203 "" S 0 unknown
+capture_runtime_inventory
+grep -F 'Inventory incomplete. Could not inspect all live processes (1 unresolved).' "$TMP_DIR/runtime-inventory.out" >/dev/null
+if grep -Fq 'no live Python process found' "$TMP_DIR/runtime-inventory.out"; then
+    echo "FAIL: runtime inventory reported absence when an executable could not be inspected" >&2
+    exit 1
+fi
+echo "PASS: runtime inventory distinguishes complete scans from unreadable processes"
 echo "deneb-printsvc native audit selftest passed"

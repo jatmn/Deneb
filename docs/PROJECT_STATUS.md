@@ -90,7 +90,7 @@ These successes do not make the complete firmware, UI, or print service stable.
 | **Incorrect state** | Manual heat reports the printer as printing | Separate heater activity from job activity in shared status classification |
 | **Missing target function** | Diagnostics export source/formatter exists but is not installed on the tested target | Package, install, and target-test bounded redacted export/download behavior |
 | **Incorrect identity** | Printer API reports missing/invalid firmware, machine, and PCB identity | Populate identity from authoritative device/config sources |
-| **Test tooling defect** | Runtime inventory can false-positive on shell command text containing `python` | Classify by `/proc/<pid>/exe` and structured argv instead of substring alone |
+| **Tooling target proof** | Runtime inventory used to count shells mentioning `python` | Host tests cover executable identity, structured arguments, and incomplete scans. Confirm on the next target inventory run. |
 | **Source/behavior mismatch** | Frame-light source now sends the Connect-required lowercase `M142 w...` form, but native startup/prime paths still emit removed `G10` | Remove or translate the remaining G10 path, host-test it, then verify physical behavior under the safety contract |
 | **UX blocker** | Update screen overflowed, appeared stuck, and lacked a dedicated updating state | Source now owns an update/reset lock and displays observed or unknown outcome; target layout, reboot and rollback presentation remain unproven |
 
