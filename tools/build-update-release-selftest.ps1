@@ -15,6 +15,9 @@ function wsl {
     # replace the MIPS build steps, and the checkout is already a Linux path.
     $command = $args[-1]
     if ($command.Contains(' bash ui/build-package.sh ')) {
+        if ([Console]::OutputEncoding.CodePage -ne [Text.Encoding]::Latin1.CodePage) {
+            throw "The release wrapper changed the console encoding before launching the packager."
+        }
         $checkoutCommand = "; cd '$fixtureRepo'; "
         $packageStart = $command.LastIndexOf($checkoutCommand, [StringComparison]::Ordinal)
         if ($packageStart -lt 0) {
@@ -49,6 +52,9 @@ function Assert-VerifiedPackage {
     }
     finally {
         [Console]::OutputEncoding = $originalEncoding
+    }
+    if ($output -cnotcontains "Package: $archive") {
+        throw "The wrapper did not display the packager's archive path during the build."
     }
     if ($output[-1] -cne "Verified native-only print service package: $archive") {
         throw "The wrapper did not report the newly built archive: $($output[-1])"
@@ -93,6 +99,7 @@ try {
     $wrapper = Get-Content -LiteralPath "$sourceRepo/tools/build-update-release.ps1" -Raw
     $wrapper = $wrapper -creplace '(?m)^\$repoWsl = ConvertTo-WslPath \$repoRoot\r?$', '$repoWsl = $repoRoot'
     Set-Content -LiteralPath "$fixtureRepo/tools/build-update-release.ps1" -Value $wrapper
+    Copy-Item -LiteralPath "$sourceRepo/ui/build-package.sh" -Destination "$fixtureRepo/ui/build-package.sh"
 
     $short = (& git -C $fixtureRepo rev-parse --short HEAD).Trim()
     $shortHash = Assert-VerifiedPackage $short

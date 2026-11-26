@@ -338,6 +338,11 @@ if grep -Ei '(^|/).*\.py$|(^|/).*python.*|(^|/)print_service\.py$' "${STAGING_DI
 fi
 rm -f "${STAGING_DIR}/package-files.txt" "${STAGING_DIR}/package-manifest.txt"
 
-echo "Package: ${OUTPUT_IMG}"
+if [ "${DENEB_PACKAGE_PATH_ENCODING:-}" = base64 ]; then
+    encoded_package_path=$(printf '%s' "$OUTPUT_IMG" | base64 -w 0)
+    printf 'Package path (base64): %s\n' "$encoded_package_path"
+else
+    echo "Package: ${OUTPUT_IMG}"
+fi
 echo "Size: $(wc -c < "$OUTPUT_IMG") bytes"
 echo "Install: Copy to USB, use Deneb Maintenance > Update Firmware"

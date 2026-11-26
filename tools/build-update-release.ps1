@@ -67,7 +67,7 @@ foreach ($summary in $PrintsvcNativeEvidenceSummary) {
     }
 }
 
-$buildPackageEnv = "DENEB_RELEASE_CHANNEL='$ReleaseChannel'"
+$buildPackageEnv = "DENEB_RELEASE_CHANNEL='$ReleaseChannel' DENEB_PACKAGE_PATH_ENCODING=base64"
 if ($printsvcStockSummaryWsl) {
     $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 }
@@ -229,23 +229,21 @@ $buildUi = "set -euo pipefail; " +
            "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc${buildPackageEvidenceArgs}"
 
 $packagePaths = @()
-$previousOutputEncoding = [Console]::OutputEncoding
-try {
-    # WSL relays the Linux UTF-8 bytes before PowerShell decodes the lines.
-    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-    # Start Bash directly so the default WSL shell cannot expand evidence filenames.
-    & wsl -d $Distro -u root --exec bash -lc $buildUi | ForEach-Object {
-        if ($_ -cmatch '^Package: (.*)$') {
-            $packagePaths += $Matches[1]
-        }
+# The packager sends the UTF-8 path as ASCII so it can pass through any console code page.
+$packagePathEncoding = [Text.UTF8Encoding]::new($false, $true)
+# Start Bash directly so the default WSL shell cannot expand evidence filenames.
+& wsl -d $Distro -u root --exec bash -lc $buildUi | ForEach-Object {
+    if ($_ -cmatch '^Package path \(base64\): (.+)$') {
+        $reportedPath = $packagePathEncoding.GetString([Convert]::FromBase64String($Matches[1]))
+        $packagePaths += $reportedPath
+        "Package: $reportedPath"
+    }
+    else {
         $_
     }
-    if ($LASTEXITCODE -ne 0) {
-        throw "update release build failed with exit code $LASTEXITCODE"
-    }
 }
-finally {
-    [Console]::OutputEncoding = $previousOutputEncoding
+if ($LASTEXITCODE -ne 0) {
+    throw "update release build failed with exit code $LASTEXITCODE"
 }
 
 $packagePattern = "^$([regex]::Escape($repoWsl))/dist/(Deneb_Update_[^/\\]+\.deneb)$"
