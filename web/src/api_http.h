@@ -12,6 +12,7 @@
 #define HTTP_MAX_PATH    256
 #define HTTP_MAX_HEADERS 16
 #define HTTP_MAX_BODY    4096
+#define HTTP_MAX_CONTENT_LENGTH (50 * 1024 * 1024)
 
 /* Parsed HTTP request */
 typedef struct {

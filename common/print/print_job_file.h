@@ -6,8 +6,12 @@
 
 #define DENEB_PRINT_JOB_USB_SCAN_DIR "/mnt/sda1"
 #define DENEB_PRINT_JOB_LOCAL_SCAN_DIR "/home/3D"
+#ifndef DENEB_PRINT_JOB_SPOOL_DIR
 #define DENEB_PRINT_JOB_SPOOL_DIR "/home/3D/deneb-uploads"
+#endif
+#ifndef DENEB_ACTIVE_THUMB_PATH
 #define DENEB_ACTIVE_THUMB_PATH "/tmp/deneb-active-thumb.rgb565"
+#endif
 
 #define DENEB_BUILD_VOLUME_X_MIN_MM 0.0f
 #define DENEB_BUILD_VOLUME_X_MAX_MM 223.0f

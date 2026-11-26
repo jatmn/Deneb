@@ -111,8 +111,7 @@ set_source_files_properties(
     COMPILE_DEFINITIONS "LODEPNG_NO_COMPILE_PNG;LODEPNG_NO_COMPILE_ENCODER;LODEPNG_NO_COMPILE_DISK;LODEPNG_NO_COMPILE_ERROR_TEXT"
 )
 
-add_executable(deneb-api ${DENEB_API_SOURCES})
-target_include_directories(deneb-api PRIVATE
+set(DENEB_API_INCLUDE_DIRS
     src
     ../common/print
     ../printsvc/src
@@ -122,6 +121,8 @@ target_include_directories(deneb-api PRIVATE
     ../ui/lib/lvgl/src
     ../ui/lib/lvgl/src/libs/lodepng
 )
+add_executable(deneb-api ${DENEB_API_SOURCES})
+target_include_directories(deneb-api PRIVATE ${DENEB_API_INCLUDE_DIRS})
 target_compile_definitions(deneb-api PRIVATE
     LV_CONF_INCLUDE_SIMPLE
     LV_DISABLE_API_MAPPING
@@ -174,6 +175,27 @@ if(NODE_EXECUTABLE)
         COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_api_sse.cjs")
     add_test(NAME deneb-browser-motion-tests
         COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_ui_motion.cjs")
+    find_program(LIGHTTPD_EXECUTABLE lighttpd)
+    find_program(UNZIP_EXECUTABLE unzip)
+    if(BUILD_HOST_STUB AND LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
+        # Use the normal API code with an isolated, per-test working directory.
+        add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES})
+        target_include_directories(deneb-api-upload-fixture PRIVATE ${DENEB_API_INCLUDE_DIRS})
+        target_compile_definitions(deneb-api-upload-fixture PRIVATE
+            LV_CONF_INCLUDE_SIMPLE LV_DISABLE_API_MAPPING BACKEND_ZMQ_STUB
+            DENEB_API_SOCKET_PATH="api.sock"
+            DENEB_API_AUTH_CONFIG_PATH="web-auth.conf"
+            DENEB_UPLOAD_TEMP_DIR="tmp"
+            DENEB_PRINT_JOB_SPOOL_DIR="spool"
+            DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"
+            DENEB_ACTIVE_THUMB_PATH="tmp/deneb-active-thumb.rgb565")
+        target_link_libraries(deneb-api-upload-fixture PRIVATE m pthread crypt)
+        add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
+            "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}")
+        set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
+    endif()
 endif()
 
 find_path(ZMQ_TEST_INCLUDE_DIR zmq.h)

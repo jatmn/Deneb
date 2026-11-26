@@ -445,7 +445,7 @@ jobs:
 
       - name: Install native host libraries
         run: |
-          packages=(libmbedtls-dev libzmq3-dev)
+          packages=(libmbedtls-dev libzmq3-dev lighttpd unzip)
           if ! command -v cmake >/dev/null; then
             packages+=(cmake)
           fi
@@ -488,6 +488,7 @@ jobs:
         run: |
           cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-web --parallel
+          ctest --test-dir build/ci-web -N -R '^deneb-proxy-upload-tests$' | grep -F deneb-proxy-upload-tests
           ctest --test-dir build/ci-web --output-on-failure
           cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-ui --parallel

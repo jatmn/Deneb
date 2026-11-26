@@ -345,7 +345,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
      *   - jobname: display name (optional)
      *   - owner: who started the print (optional)
      *
-     * The main.c stream_upload() has already saved the full multipart body
+     * The API receive loop has already saved the full multipart body
      * to req->upload_path. We need to extract the file content, move it
      * to internal printer storage, and send a ZMQ JOB command.
      */
@@ -365,7 +365,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     int ufp_normalized = 0;
     char validation_message[256] = "";
     int validation_status_code = 0;
-    char ufp_thumbnail_path[] = "/tmp/deneb-ufp-thumb-upload-XXXXXX";
+    char ufp_thumbnail_path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-thumb-upload-XXXXXX";
     int ufp_thumbnail_ready = 0;
     deneb_print_job_upload_storage_plan_t storage;
 
@@ -397,7 +397,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     }
 
     if (deneb_print_job_file_has_extension(filename, ".ufp")) {
-        char extracted_path[] = "/tmp/deneb-ufp-model-XXXXXX";
+        char extracted_path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-model-XXXXXX";
         char extracted_name[sizeof(filename)];
         int fd = mkstemp(extracted_path);
 

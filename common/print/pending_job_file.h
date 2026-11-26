@@ -4,7 +4,9 @@
 
 #include <stddef.h>
 
+#ifndef DENEB_PENDING_JOB_PATH
 #define DENEB_PENDING_JOB_PATH "/tmp/deneb-cluster-print-job.json"
+#endif
 
 typedef struct {
     char path[1024];

@@ -174,7 +174,7 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
         content_end--;
 
     content_len = (size_t)(content_end - content_start);
-    snprintf(out_path, (size_t)out_sz, "/tmp/deneb-gcode-XXXXXX");
+    snprintf(out_path, (size_t)out_sz, DENEB_UPLOAD_TEMP_DIR "/deneb-gcode-XXXXXX");
     out_fd = mkstemp(out_path);
     if (out_fd < 0) {
         munmap(data, (size_t)st.st_size);
