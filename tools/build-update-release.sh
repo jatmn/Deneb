@@ -100,9 +100,7 @@ if "$rebuild_lighttpd"; then
 fi
 
 uses_pinned_compiler() {
-    local build=$1 version compiler
-    # Select the compiler record for the CMake version that wrote this cache.
-    # Other version directories may still contain earlier configurations.
+    local build=$1 version active_version compiler
     version=$(awk -F= '
         /^CMAKE_CACHE_MAJOR_VERSION:INTERNAL=[0-9]+$/ { major = $2 }
         /^CMAKE_CACHE_MINOR_VERSION:INTERNAL=[0-9]+$/ { minor = $2 }
@@ -110,6 +108,14 @@ uses_pinned_compiler() {
         END { if (major != "" && minor != "" && patch != "") print major "." minor "." patch }
     ' "$build/CMakeCache.txt")
     [ -n "$version" ] || return 1
+    active_version=$(cmake --version | sed -n '1s/^cmake version //p') || return 1
+    [ -n "$active_version" ] || return 1
+    # A different CMake version can load a stale compiler record on configure.
+    if [ "$version" != "$active_version" ]; then
+        printf 'CMake version mismatch in %s: configured with %s, running %s. Use CMake %s to reuse it.\n' \
+            "$build" "$version" "$active_version" "$version" >&2
+        return 1
+    fi
     local record="$build/CMakeFiles/$version/CMakeCCompiler.cmake"
     [ -f "$record" ] || return 1
     compiler=$(sed -n 's/^set(CMAKE_C_COMPILER "\(.*\)")$/\1/p' "$record") || return 1

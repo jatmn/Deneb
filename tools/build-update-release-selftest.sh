@@ -111,3 +111,15 @@ cmake -S "$wrong_lighttpd" -B "$wrong_lighttpd/build-musl-static" \
 release --build-directory make --web-build-directory make --lighttpd-root "$wrong_lighttpd"
 expect_result 1 'Existing lighttpd build directory is not configured for the pinned mipsel musl compiler'
 printf '%s\n' 'Compiler reuse rejected the native and alternate compiler directories.'
+
+# Simulate a cache last written by another CMake version with its own pinned
+# record. The running version's record names the alternate compiler.
+mixed_build="$repo/web/make"
+active_record=$(find "$mixed_build/CMakeFiles" -name CMakeCCompiler.cmake)
+mkdir -p "$mixed_build/CMakeFiles/0.0.0"
+cp "$active_record" "$mixed_build/CMakeFiles/0.0.0/"
+cp "$wrong_lighttpd/build-musl-static"/CMakeFiles/*/CMakeCCompiler.cmake "$active_record"
+sed -i 's/^\(CMAKE_CACHE_\(MAJOR\|MINOR\|PATCH\)_VERSION:INTERNAL=\).*/\10/' "$mixed_build/CMakeCache.txt"
+release --build-directory make --web-build-directory make --lighttpd-root "$fixture/lighttpd-make"
+expect_result 1 'CMake version mismatch'
+printf '%s\n' 'Compiler reuse rejected conflicting records from different CMake versions.'
