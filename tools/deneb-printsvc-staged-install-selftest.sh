@@ -48,7 +48,7 @@ MANIFEST
 # Load only the exercised installer functions and redirect their paths.
 # The original update.sh remains in staging for the init ownership audit.
 awk '
-    /^(validate_package|install_web_runtime|smoke_test_printsvc_tools|smoke_test_printsvc_init_handoff|remove_legacy_install_tool)\(\) \{$/ { copy = 1 }
+    /^(validate_package|install_web_runtime|smoke_test_printsvc_tools|smoke_test_printsvc_init_handoff|remove_legacy_install_tool|remove_legacy_validation_tools)\(\) \{$/ { copy = 1 }
     copy { print }
     /^\}$/ { copy = 0 }
 ' "$stage/update.sh" | sed \
@@ -91,23 +91,26 @@ mv verify.saved "$stage/deneb-printsvc-smoke-verify"
 # A clean old copy can go. Keep an edited copy, a permission override, and
 # an operator-owned link even when the name belongs to Deneb.
 legacy='usr/bin/deneb-printsvc-cli-selftest'
-cp "$stage/deneb-printsvc-cli-selftest" "$legacy"
+# Exact packaged bytes from the previous installer at baea878df665.
+legacy_fixture="$repo/tools/fixtures/deneb-printsvc-cli-selftest.legacy"
+cp "$legacy_fixture" "$legacy"
 chmod 0755 "$legacy"
-digest="$(sha256sum "$legacy")"
-digest="${digest%% *}"
-remove_legacy_install_tool deneb-printsvc-cli-selftest "$digest"
-test ! -e "$legacy"
-cp "$stage/deneb-printsvc-cli-selftest" "$legacy"
+remove_legacy_validation_tools
+if [ -e "$legacy" ]; then
+    echo "FAIL: installer kept the known previous CLI selftest" >&2
+    exit 1
+fi
+cp "$legacy_fixture" "$legacy"
 chmod 0700 "$legacy"
-remove_legacy_install_tool deneb-printsvc-cli-selftest "$digest"
+remove_legacy_validation_tools
 test -f "$legacy"
 chmod 0755 "$legacy"
 printf '\n# operator change\n' >> "$legacy"
-remove_legacy_install_tool deneb-printsvc-cli-selftest "$digest"
+remove_legacy_validation_tools
 grep -Fq '# operator change' "$legacy"
 rm "$legacy"
-ln -s "../../$stage/deneb-printsvc-cli-selftest" "$legacy"
-remove_legacy_install_tool deneb-printsvc-cli-selftest "$digest"
+ln -s "$legacy_fixture" "$legacy"
+remove_legacy_validation_tools
 test -L "$legacy"
 
 echo "deneb-printsvc staged install selftest passed"
