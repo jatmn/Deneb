@@ -24,14 +24,20 @@ inside the WSL distribution.
 
 ## Lane 1: native Debian/Linux
 
-Install Git, clone the repository, and initialize its pinned submodules:
+Install Git, clone the repository, and initialize the pinned LVGL submodule:
 
 ```sh
 sudo apt-get update
 sudo apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils
-git clone --recurse-submodules https://github.com/jatmn/Deneb.git
+git clone https://github.com/jatmn/Deneb.git
 cd Deneb
+sh tools/setup-lvgl.sh
 ```
+
+Native CI uses the same command. In a fresh checkout it fetches LVGL's pinned
+`src/` and `include/` trees plus root files, including the license notices.
+Rerun it after updating Deneb to select the new recorded pin. Existing full
+LVGL checkouts can also use the command and keep their layout.
 
 Prepare the pinned cross-toolchain and mbedTLS dependency, then create and audit an experimental package:
 
