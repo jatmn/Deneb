@@ -73,6 +73,16 @@ test "$(cat "$module/src/source.c")" = second
 
 git -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'Record LVGL pin'
 git submodule deinit -- "$module"
+test ! -e "$module/.git"
+mkdir -p "$module/src"
+echo local > "$module/src/source.c"
+if sh "$setup"; then
+    echo "Expected local files to block LVGL reconnection" >&2
+    exit 1
+fi
+test "$(cat "$module/src/source.c")" = local
+rm "$module/src/source.c"
+rmdir "$module/src"
 sh "$setup"
 verify_sparse "$second"
 

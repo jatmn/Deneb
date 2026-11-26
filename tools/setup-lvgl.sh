@@ -27,17 +27,20 @@ if [ -e "$path/.git" ] &&
     exit
 fi
 
-# Git can update a populated checkout or reconnect a deinitialized submodule
-# without changing the user's sparse-checkout configuration.
+# Git can retain submodule metadata after the worktree was deinitialized.
+if [ ! -e "$path/.git" ]; then
+    mkdir -p "$path"
+    existing_entry=$(find "$path" -mindepth 1 -maxdepth 1 -print -quit)
+    if [ -n "$existing_entry" ]; then
+        echo "Refusing to initialize LVGL in a nonempty directory: $path" >&2
+        exit 1
+    fi
+fi
+
+# Keep the user's sparse-checkout configuration when Git already manages LVGL.
 if [ -e "$path/.git" ] || [ -d "$(git rev-parse --git-path "modules/$path")" ]; then
     git submodule update --init --checkout --depth 1 --filter=blob:none -- "$path"
     exit
-fi
-
-mkdir -p "$path"
-if [ -n "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-    echo "Refusing to initialize LVGL in a nonempty directory: $path" >&2
-    exit 1
 fi
 
 git submodule init -- "$path"
