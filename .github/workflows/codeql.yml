@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MPL-2.0
+name: CodeQL (build-backed)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '24 5 * * 2'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Build-backed (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: c-cpp
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Prepare native build dependencies
+        if: matrix.language == 'c-cpp'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends libmbedtls-dev libzmq3-dev
+          sh tools/setup-lvgl.sh
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - name: Compile Deneb with real backends
+        if: matrix.language == 'c-cpp'
+        run: |
+          cmake -S ui -B build/codeql/ui -DCMAKE_BUILD_TYPE=MinSizeRel -DBACKEND_COMM_STUB=OFF
+          cmake --build build/codeql/ui --parallel --target deneb-ui
+          cmake -S web -B build/codeql/web -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_HOST_STUB=OFF
+          cmake --build build/codeql/web --parallel --target deneb-api deneb-mdns
+          cmake -S printsvc -B build/codeql/printsvc -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_HOST_STUB=OFF
+          cmake --build build/codeql/printsvc --parallel --target deneb-printsvc
+          cmake -S dfsvc -B build/codeql/dfsvc -DCMAKE_BUILD_TYPE=MinSizeRel
+          cmake --build build/codeql/dfsvc --parallel --target deneb-dfsvc
+
+      - name: Analyze
+        id: codeql
+        uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          category: "/language:${{ matrix.language }}"
+          # GitHub rejects advanced uploads while default setup is enabled.
+          upload: ${{ vars.DENEB_CODEQL_UPLOAD == 'true' && 'always' || 'never' }}
+
+      - name: Verify Deneb source extraction
+        if: matrix.language == 'c-cpp' || matrix.language == 'javascript-typescript'
+        env:
+          DATABASES: ${{ steps.codeql.outputs.db-locations }}
+          LANGUAGE: ${{ matrix.language }}
+        run: |
+          if [[ "$LANGUAGE" == c-cpp ]]; then
+            db=$(jq -er '.cpp' <<< "$DATABASES")
+            sources=(ui/config/lv_conf.h ui/src/main.c web/src/main.c web/src/mdns_advertiser.c printsvc/src/main.c dfsvc/src/main.c)
+          else
+            db=$(jq -er '.javascript' <<< "$DATABASES")
+            sources=(web/www/index.html)
+            while IFS= read -r -d '' source; do
+              sources+=("$source")
+            done < <(git ls-files -z -- ':(glob)web/www/**/*.[jt]s' ':(glob)website/**/*.[jt]s')
+          fi
+          archive_list="$RUNNER_TEMP/deneb-codeql-sources"
+          unzip -Z1 "$db/src.zip" > "$archive_list"
+          for source in "${sources[@]}"; do
+            if ! grep -Fxq -- "${GITHUB_WORKSPACE#/}/$source" "$archive_list"; then
+              echo "::error::CodeQL did not extract $source"
+              exit 1
+            fi
+          done

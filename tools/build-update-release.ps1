@@ -300,10 +300,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }
 
-$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
+$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl' && " +
+                 "sh '$repoWsl/tools/write-native-sbom.sh' '$packageWsl'"
 & wsl -d $Distro -u root --exec bash -lc $writeChecksum
 if ($LASTEXITCODE -ne 0) {
-    throw "release package checksum publication failed with exit code $LASTEXITCODE"
+    throw "release package checksum or SBOM generation failed with exit code $LASTEXITCODE"
 }
 
 $package = Join-Path $repoRoot "dist/$packageName"

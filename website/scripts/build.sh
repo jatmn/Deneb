@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# Build the public Deneb site. Requires Hugo extended and Go (for Hugo modules).
+# Build the public Deneb site with Hugo extended, Go and npm.
 
 set -euo pipefail
 

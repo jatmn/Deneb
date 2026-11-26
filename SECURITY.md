@@ -28,3 +28,34 @@ Report vulnerabilities privately through a GitHub Security Advisory for this
 repository when available, or contact the repository owner privately through
 their GitHub profile. Do not publish an exploitable printer-control issue in a
 public issue before a fix and disclosure plan exist.
+
+## Dependency and Code Scanning Maintenance
+
+Check dependency update PRs against `docs/SOURCE_PROVENANCE.md` and update
+the matching notices, hashes, and lockfiles in the same PR. Review upstream
+advisories for native sources alongside the release SBOM.
+
+Dependabot covers the website's Hextra Go module and FlexSearch npm lockfile,
+the ESLint tooling used by both web surfaces, the bootstrap Python pin, and
+GitHub Actions. The printer Web UI uses first-party browser scripts. Review
+the standalone Hugo binary pin separately when checking website dependencies.
+
+- [ZeroMQ security advisories](https://github.com/zeromq/libzmq/security/advisories)
+- [Mbed TLS security advisories](https://mbed-tls.readthedocs.io/en/latest/security-advisories/)
+- [lighttpd release notes](https://www.lighttpd.net/releases/)
+- [LVGL security advisories](https://github.com/lvgl/lvgl/security/advisories)
+
+The build-backed CodeQL workflow compiles the real Linux backends with host
+compilers. The pinned MIPS compiler finished its build in the pilot, but its
+first-party compilation units were absent from the resulting CodeQL database.
+The workflow also scans Python, Actions, and JavaScript/TypeScript, and checks
+that CodeQL extracted the tracked scripts under `web/www` and `website`.
+The website's Hugo templates, deployment configuration, and Markdown content
+have separate build and link checks.
+
+While GitHub default setup is active, the build-backed workflow runs without
+uploading results. Once all four jobs pass on `main`, switch the repository's
+CodeQL setting to advanced, set the repository Actions variable
+`DENEB_CODEQL_UPLOAD` to `true`, and dispatch the workflow on `main`. Confirm
+that GitHub receives results for each language. If uploads fail and coverage
+cannot be restored promptly, remove the variable and re-enable default setup.

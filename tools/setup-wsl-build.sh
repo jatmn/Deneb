@@ -3,10 +3,12 @@
 
 set -eu
 
+# shellcheck source=tools/native-dependency-pins.sh
+# shellcheck disable=SC1091
+. "$(dirname "$0")/native-dependency-pins.sh"
+
 TOOLCHAIN_URL=https://musl.cc/mipsel-linux-musl-cross.tgz
 TOOLCHAIN_SHA256=82626533bf7e677c225e7cbedf1d5b0d6bc60c3daaf28249e54f0eb805d89b13
-MBEDTLS_URL=https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v2.28.8.tar.gz
-MBEDTLS_SHA256=4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213
 
 if [ "${DENEB_SKIP_SYSTEM_PACKAGES:-0}" != 1 ] && [ "$(id -u)" -ne 0 ]; then
     echo "Run this WSL setup as root." >&2
@@ -42,9 +44,11 @@ if [ ! -x "$toolchain_root/bin/mipsel-linux-musl-gcc" ]; then
     mv "$work/mipsel-linux-musl-cross" "$toolchain_root"
 fi
 
-prefix="$build_root/mbedtls-2.28.8-mipsel"
+mbedtls_source="$build_root/mbedtls-$MBEDTLS_VERSION"
+mbedtls_build="$mbedtls_source-build"
+prefix="$mbedtls_source-mipsel"
 if [ ! -f "$prefix/lib/libmbedtls.a" ]; then
-    for path in "$build_root/mbedtls-2.28.8" "$build_root/mbedtls-2.28.8-build" "$prefix"; do
+    for path in "$mbedtls_source" "$mbedtls_build" "$prefix"; do
         if [ -e "$path" ]; then
             echo "Refusing to overwrite incomplete dependency path: $path" >&2
             exit 1
@@ -54,14 +58,14 @@ if [ ! -f "$prefix/lib/libmbedtls.a" ]; then
     curl --fail --location --output "$work/mbedtls.tar.gz" "$MBEDTLS_URL"
     printf '%s  %s\n' "$MBEDTLS_SHA256" "$work/mbedtls.tar.gz" | sha256sum -c -
     tar xzf "$work/mbedtls.tar.gz" -C "$build_root"
-    cmake -S "$build_root/mbedtls-2.28.8" -B "$build_root/mbedtls-2.28.8-build" \
+    cmake -S "$mbedtls_source" -B "$mbedtls_build" \
       -DCMAKE_TOOLCHAIN_FILE="$repo/ui/cmake/mipsel-musl-toolchain.cmake" \
       -DMUSL_CROSS="$toolchain_root" \
       -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX="$prefix" \
       -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF \
       -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON
-    cmake --build "$build_root/mbedtls-2.28.8-build" --parallel
-    cmake --install "$build_root/mbedtls-2.28.8-build"
+    cmake --build "$mbedtls_build" --parallel
+    cmake --install "$mbedtls_build"
 fi
 
 "$toolchain_root/bin/mipsel-linux-musl-gcc" --version

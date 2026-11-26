@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: MPL-2.0
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      workflow-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /tools/eslint
+    schedule:
+      interval: monthly
+    groups:
+      eslint-tooling:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /website
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: pip
+    directory: /tools
+    schedule:
+      interval: monthly

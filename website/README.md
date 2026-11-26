@@ -7,8 +7,8 @@ This tree is not a printer runtime.
 
 ## Build
 
-Requires Hugo extended 0.166.0 (see `vendor-pins/hugo.version`) and Go for
-Hugo modules. Python is not used.
+Requires Hugo extended 0.166.0 (see `vendor-pins/hugo.version`), Go for Hugo
+modules, and Node.js 22 with npm to stage FlexSearch.
 
 Run from this directory (`website/`):
 
@@ -19,8 +19,10 @@ bash scripts/build.sh
 
 From the repository root, use `bash website/scripts/build.sh` instead.
 
-`scripts/prepare-assets.sh` downloads pinned FlexSearch into
-`assets/js/vendor/` (gitignored) after checking the SHA-256 pin.
+`scripts/prepare-assets.sh` installs FlexSearch from `package-lock.json`
+without lifecycle scripts, verifies the bundle's SHA-256, and copies it to
+the ignored `assets/js/vendor/` directory. Update the bundle hash and source
+provenance with any FlexSearch version bump.
 
 `scripts/check-site-links.sh` fails if a site-root `/docs/` or
 `/images/` target in `content/` does not map onto a content page or
