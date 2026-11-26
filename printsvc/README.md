@@ -59,8 +59,9 @@ identity.
   host/lab debugging only and must not be used by packaged init scripts.
 - Native firmware probing adds bounded `M115` diagnostics while keeping normal
   recurring polling on the stock-shaped `M105`/`M114` cadence.
-- Pause captures a fresh `M114` position before retract/park/cool so resume does
-  not rely on a stale periodic position sample.
+- Pause waits for the controller to finish queued motion (`M400`) before
+  requesting the `M114` position used for retract/park/cool and Resume.
+  Periodic position requests wait until the Pause probe has completed.
 - Resume uses the saved positive job nozzle target for the leading `M109`
   reheat. If a paused position-aware job has no positive saved nozzle target,
   resume fails closed instead of restoring motion cold.

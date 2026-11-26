@@ -39,6 +39,7 @@ int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc)
     svc->pause_policy_pending = 0;
     svc->resume_policy_pending = 0;
     svc->abort_cleanup_pending = 0;
+    svc->abort_pause_drain_deadline_ms = 0;
     svc->finish_cleanup_pending = 0;
     svc->heater_wait.active = 0;
     svc->paused_position_valid = 0;
@@ -81,7 +82,8 @@ static int send_status_probe(deneb_print_service_t *svc, int include_version)
     if (rc != 0)
         return rc;
 
-    if (!deneb_flow_can_send(&svc->flow))
+    /* Pause exclusively owns the position report until its probe completes. */
+    if (svc->pause_position_probe_pending || !deneb_flow_can_send(&svc->flow))
         return 0;
     rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
                                         svc->serial_ready, "M114");

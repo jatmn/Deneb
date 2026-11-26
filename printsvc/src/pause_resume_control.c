@@ -70,19 +70,23 @@ static int poll_pause_position_probe(deneb_print_service_t *svc)
 
     if (pause_now_ms() >= svc->pause_probe_deadline_ms) {
         svc->pause_position_probe_pending = 0;
+        svc->pause_position_drain_sent = 0;
         svc->pause_position_probe_sent = 0;
         svc->heater_wait.active = 0;
         deneb_job_lifecycle_error(&svc->status,
             deneb_error_make(DENEB_ERROR_SERIAL, "pause position probe timed out"));
         return -1;
     }
+
+    /* Wait for earlier replies, then wait for the controller to finish its
+     * planner moves. A transport ACK for a move alone is not a drain. */
+    if (deneb_flow_inflight(&svc->flow) != 0)
+        return 0;
     if (!svc->pause_position_probe_sent) {
-        if (deneb_flow_has_pending_barrier(&svc->flow) ||
-            !deneb_flow_can_send(&svc->flow) ||
-            deneb_flow_inflight(&svc->flow) >= DENEB_PRINTSVC_STREAM_WINDOW)
+        if (!deneb_flow_can_send(&svc->flow))
             return 0;
         send_rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
-                                                 svc->serial_ready, "M114");
+            svc->serial_ready, svc->pause_position_drain_sent ? "M114" : "M400");
         if (send_rc != 0) {
             if (send_rc == DENEB_MOTION_SEND_FLOW_FULL)
                 return 0;
@@ -93,16 +97,22 @@ static int poll_pause_position_probe(deneb_print_service_t *svc)
                                  "pause position probe failed"));
             return -1;
         }
-        svc->pause_position_probe_sent = 1;
+        if (svc->pause_position_drain_sent) {
+            /* The prior position reply precedes its ACK. Snapshot the report
+             * count now that only the Pause probe can supply a position. */
+            svc->pause_position_report_start = svc->status.position_report_count;
+            svc->pause_position_probe_sent = 1;
+        } else {
+            svc->pause_position_drain_sent = 1;
+        }
         return 0;
     }
 
-    if (deneb_flow_inflight(&svc->flow) != 0)
-        return 0;
     if (svc->status.position_report_count == svc->pause_position_report_start)
         return 0;
 
     svc->pause_position_probe_pending = 0;
+    svc->pause_position_drain_sent = 0;
     svc->pause_position_probe_sent = 0;
     svc->pause_position_report_start = 0;
     begin_pause_cleanup_from_current_position(svc);
@@ -219,8 +229,8 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
         svc->pause_probe_deadline_ms = pause_now_ms() + 60000;
         svc->paused_heater_wait = svc->heater_wait;
         svc->heater_wait.active = 0;
+        svc->pause_position_drain_sent = 0;
         svc->pause_position_probe_sent = 0;
-        svc->pause_position_report_start = svc->status.position_report_count;
         deneb_command_reply_ok(reply, reply_sz, "pause accepted");
         return 0;
     }
@@ -238,8 +248,8 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
         svc->pause_probe_deadline_ms = pause_now_ms() + 60000;
         svc->paused_heater_wait = svc->heater_wait;
         svc->heater_wait.active = 0;
+        svc->pause_position_drain_sent = 0;
         svc->pause_position_probe_sent = 0;
-        svc->pause_position_report_start = svc->status.position_report_count;
     } else {
         save_pause_state(svc);
     }

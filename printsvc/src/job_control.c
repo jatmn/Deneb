@@ -190,7 +190,13 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     svc->finish_cleanup_index = 0;
     svc->pause_policy_pending = 0;
     svc->pause_policy_index = 0;
+    /* Abort takes over the in-flight Pause barrier and its original deadline. */
+    svc->abort_pause_drain_deadline_ms =
+        svc->serial_ready && svc->pause_position_probe_pending &&
+        svc->pause_position_drain_sent && !svc->pause_position_probe_sent &&
+        deneb_flow_has_pending_barrier(&svc->flow) ? svc->pause_probe_deadline_ms : 0;
     svc->pause_position_probe_pending = 0;
+    svc->pause_position_drain_sent = 0;
     svc->pause_position_probe_sent = 0;
     svc->pause_position_report_start = 0;
     svc->resume_policy_pending = 0;
@@ -208,8 +214,10 @@ int deneb_job_control_abort(deneb_print_service_t *svc,
     svc->abort_cleanup_index = 0;
     svc->abort_cleanup_pending = 1;
     svc->heater_wait.active = 0;
-    svc->status.bed_t_set = 0.0f;
-    svc->status.head_t_set = 0.0f;
+    if (!svc->abort_pause_drain_deadline_ms) {
+        svc->status.bed_t_set = 0.0f;
+        svc->status.head_t_set = 0.0f;
+    }
     deneb_job_lifecycle_aborting(&svc->status);
     if (!svc->serial_ready) {
         deneb_flow_clear_inflight(&svc->flow);
@@ -257,6 +265,19 @@ int deneb_job_control_poll_abort_cleanup(deneb_print_service_t *svc)
     if (svc->status.manual_state == DENEB_MANUAL_CANCELLING &&
         deneb_gcode_control_manual_expired(svc))
         return fail_abort_cleanup(svc, DENEB_ERROR_SERIAL, "manual abort cleanup timed out");
+
+    if (svc->abort_pause_drain_deadline_ms) {
+        if (deneb_flow_has_pending_barrier(&svc->flow)) {
+            struct timespec now;
+            if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 ||
+                now.tv_sec * 1000LL + now.tv_nsec / 1000000 >=
+                    svc->abort_pause_drain_deadline_ms)
+                return fail_abort_cleanup(svc, DENEB_ERROR_SERIAL,
+                                          "pause drain timed out during abort");
+            return 0;
+        }
+        svc->abort_pause_drain_deadline_ms = 0;
+    }
 
     while (svc->abort_cleanup_index < svc->abort_cleanup_policy.count) {
         int send_rc;
