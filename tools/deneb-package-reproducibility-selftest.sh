@@ -31,7 +31,7 @@ build_package() (
     run_umask=$1
     shift
     umask "$run_umask"
-    if ! SOURCE_DATE_EPOCH="$EPOCH" DENEB_RELEASE_CHANNEL=experimental \
+    if ! SOURCE_DATE_EPOCH="$EPOCH" TAR_OPTIONS=--format=posix DENEB_RELEASE_CHANNEL=experimental \
         DENEB_PACKAGE_VERSION_OVERRIDE="$PACKAGE_VERSION" STRIP=true \
         sh "$REPO_ROOT/ui/build-package.sh" "$@" > "$TMP_DIR/build.log" 2>&1; then
         cat "$TMP_DIR/build.log"
