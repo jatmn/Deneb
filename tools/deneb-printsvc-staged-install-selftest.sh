@@ -32,7 +32,7 @@ for service in deneb-api deneb-web deneb-mdns deneb-printsvc digitalfactory; do
 done
 # Leave the real init content readable by the ownership audit, with service
 # invocations stopped by the fixture script's immediate exit above.
-cat "$repo/printsvc/init/deneb-printsvc.init" >> "$stage/deneb-printsvc.init"
+tr -d '\r' < "$repo/printsvc/init/deneb-printsvc.init" >> "$stage/deneb-printsvc.init"
 awk '
     /cat > "\$\{printserver_init\}" <<'\''EOF'\''/ { shim = 1; next }
     shim && /^EOF$/ { exit }
