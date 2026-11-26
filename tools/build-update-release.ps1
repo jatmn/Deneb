@@ -67,7 +67,7 @@ foreach ($summary in $PrintsvcNativeEvidenceSummary) {
     }
 }
 
-$buildPackageEnv = "DENEB_RELEASE_CHANNEL='$ReleaseChannel'"
+$buildPackageEnv = "DENEB_RELEASE_CHANNEL='$ReleaseChannel' DENEB_PACKAGE_PATH_ENCODING=base64"
 if ($printsvcStockSummaryWsl) {
     $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 }
@@ -228,17 +228,31 @@ $buildUi = "set -euo pipefail; " +
            "cd '$repoWsl'; " +
            "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc${buildPackageEvidenceArgs}"
 
+$packagePaths = @()
+# The packager sends the UTF-8 path as ASCII so it can pass through any console code page.
+$packagePathEncoding = [Text.UTF8Encoding]::new($false, $true)
 # Start Bash directly so the default WSL shell cannot expand evidence filenames.
-& wsl -d $Distro -u root --exec bash -lc $buildUi
+& wsl -d $Distro -u root --exec bash -lc $buildUi | ForEach-Object {
+    if ($_ -cmatch '^Package path \(base64\): (.+)$') {
+        $reportedPath = $packagePathEncoding.GetString([Convert]::FromBase64String($Matches[1]))
+        $packagePaths += $reportedPath
+        "Package: $reportedPath"
+    }
+    else {
+        $_
+    }
+}
 if ($LASTEXITCODE -ne 0) {
     throw "update release build failed with exit code $LASTEXITCODE"
 }
 
-$gitShort = (& git -C $repoRoot rev-parse --short HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitShort)) {
-    throw "failed to determine git short revision for package verification"
+$packagePattern = "^$([regex]::Escape($repoWsl))/dist/(Deneb_Update_[^/\\]+\.deneb)$"
+if ($packagePaths.Count -ne 1 -or $packagePaths[0] -cnotmatch $packagePattern) {
+    throw "update release build did not report exactly one Deneb archive in $repoWsl/dist"
 }
-$packageWsl = "$repoWsl/dist/Deneb_Update_$gitShort.deneb"
+$packageName = $Matches[1]
+# The verification and checksum commands put this path inside Bash single quotes.
+$packageWsl = $packagePaths[0].Replace("'", "'\''")
 
 $verifyPackage = "set -euo pipefail; " +
                  "test -s '$packageWsl' || { echo 'No Deneb update package found: $packageWsl' >&2; exit 1; }; " +
@@ -281,16 +295,16 @@ $verifyPackage = "set -euo pipefail; " +
                  "sh '$repoWsl/tools/deneb-printsvc-integration-audit-selftest.sh' >/tmp/deneb-release-integration-audit-selftest.log; " +
                  "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log"
 
-& wsl -d $Distro -u root -- bash -lc $verifyPackage
+& wsl -d $Distro -u root --exec bash -lc $verifyPackage
 if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }
 
 $writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
-& wsl -d $Distro -u root -- bash -lc $writeChecksum
+& wsl -d $Distro -u root --exec bash -lc $writeChecksum
 if ($LASTEXITCODE -ne 0) {
     throw "release package checksum publication failed with exit code $LASTEXITCODE"
 }
 
-$package = Join-Path $repoRoot "dist/Deneb_Update_$gitShort.deneb"
+$package = Join-Path $repoRoot "dist/$packageName"
 Write-Output "Verified native-only print service package: $package"
