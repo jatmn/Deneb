@@ -79,11 +79,17 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/font/lv_font_montserrat_14.c"
     "${LVGL_DIR}/src/font/lv_font_montserrat_16.c"
     "${LVGL_DIR}/src/font/fmt_txt/*.c"
+    "${LVGL_DIR}/src/fs/lv_fs.c"
+    "${LVGL_DIR}/src/fs/lv_fs_posix.c"
+    "${LVGL_DIR}/src/image/lv_bin_decoder.c"
+    "${LVGL_DIR}/src/image/lv_image_decoder.c"
+    "${LVGL_DIR}/src/image/lv_lodepng.c"
     "${LVGL_DIR}/src/indev/lv_indev.c"
     "${LVGL_DIR}/src/indev/lv_indev_scroll.c"
     "${LVGL_DIR}/src/layouts/lv_layout.c"
     "${LVGL_DIR}/src/layouts/flex/*.c"
-    "${LVGL_DIR}/src/libs/bin_decoder/*.c"
+    "${LVGL_DIR}/src/libs/lodepng/lodepng.c"
+    "${LVGL_DIR}/src/logging/lv_log.c"
     "${LVGL_DIR}/src/misc/*.c"
     "${LVGL_DIR}/src/misc/cache/*.c"
     "${LVGL_DIR}/src/misc/cache/class/lv_cache_lru_rb.c"
@@ -103,8 +109,6 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/widgets/label/*.c"
     "${LVGL_DIR}/src/widgets/slider/*.c"
     "${LVGL_DIR}/src/widgets/switch/*.c"
-    "${LVGL_DIR}/src/libs/lodepng/*.c"
-    "${LVGL_DIR}/src/libs/fsdrv/lv_fs_posix.c"
 )
 
 set(LVGL_SOURCES)
@@ -117,7 +121,6 @@ list(REMOVE_ITEM LVGL_SOURCES
     "${LVGL_DIR}/src/core/lv_obj_id_builtin.c"
     "${LVGL_DIR}/src/core/lv_obj_property.c"
     "${LVGL_DIR}/src/draw/lv_draw_3d.c"
-    "${LVGL_DIR}/src/draw/lv_draw_arc.c"
     "${LVGL_DIR}/src/draw/lv_draw_triangle.c"
     "${LVGL_DIR}/src/draw/lv_draw_vector.c"
 )
