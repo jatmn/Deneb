@@ -114,6 +114,41 @@ changes that touch streaming, parsers, lifecycle state, flow control, or shared
 print-control helpers. Valgrind and sanitizer runs prove the host test surface
 is clean. They do not replace target-side `/proc`, log, and hardware evidence.
 
+### Motion controller readback
+
+The host-stub build includes `deneb-motion-firmware-verify IMAGE.hex`. It
+expects a connected local stream socket on standard input, already speaking
+STK500v2. The CTest peer exercises the verifier over a socket pair with synthetic
+firmware. Run it with `ctest --test-dir /tmp/deneb-printsvc-host -R deneb-motion-firmware-verify-tests`.
+
+The verifier requires a nonempty Intel HEX image ending in one EOF record. It
+accepts data (00), EOF (01), extended segment address (02), and extended linear
+address (04) records. It rejects invalid lengths or checksums, overlapping data,
+and records that wrap around their 16-bit offset window. Allowed application byte
+addresses run from `0x00000` to `0x3dfff`, reserving the maximum 8 KiB boot area.
+Readback uses whole words within populated 256-byte pages. It compares only
+bytes supplied by the image, including explicit `0xff` bytes. A success therefore
+attests to the listed application bytes and the expected ATmega2560 signature.
+
+After validating the complete image, the verifier sends signature reads, flash
+address selections, and flash reads. It reports identity mismatch, incomplete
+or invalid replies, timeout, disconnect, and byte mismatch as failures. It
+opens no serial device or GPIO and sends no programming-mode, write, or erase
+commands. The normal service's local image digest and cached programming receipt
+are separate from fresh readback.
+
+The [Connect Marlin board definition](https://github.com/Ultimaker/UltimakerMarlin/blob/acb22046c69a50b8266d9cb047b0bdde217ec7a2/Marlin/pins.h#L8-L10)
+specifies the ATmega2560. The [Microchip datasheet](https://ww1.microchip.com/downloads/en/devicedoc/atmega640-1280-1281-2560-2561-datasheet-ds40002211a.pdf)
+defines its signature and boot size, and [AVR068](https://ww1.microchip.com/downloads/en/Appnotes/doc2591.pdf)
+defines the STK500v2 framing and commands.
+
+Before replacing the deployed programmer, supervised target acceptance must
+confirm the stock loader's identity and readback, including the high flash
+addresses. It must establish safe serial and reset ownership, validate failure
+and interruption recovery using a known-good restorable image, and prove
+application and bootloader restoration. See the
+[platform roadmap](../docs/PLATFORM_MODERNIZATION_ROADMAP.md#phase-1---finish-runtime-de-pythonization-on-the-legacy-base).
+
 ## Release Package Gate
 
 The full release build cross-compiles and packages `deneb-printsvc`:

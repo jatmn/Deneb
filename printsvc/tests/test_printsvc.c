@@ -6191,8 +6191,14 @@ static void test_motion_policy(void)
 
 static void test_motion_firmware_cache(void)
 {
-    const char *hex_path = "/tmp/deneb-motion-fw-test.hex";
-    const char *cache_path = "/tmp/deneb-motion-fw-test.sha256";
+    char dir[256], hex_path[sizeof(dir) + 16], cache_path[sizeof(dir) + 16];
+    char programmer_path[sizeof(dir) + 16];
+    const char *tmp = getenv("TMPDIR");
+    int length = snprintf(dir, sizeof(dir), "%s/deneb-motion-fw-XXXXXX", tmp && *tmp ? tmp : "/tmp");
+    assert(length >= 0 && (size_t)length < sizeof(dir) && mkdtemp(dir));
+    snprintf(hex_path, sizeof(hex_path), "%s/motion.hex", dir);
+    snprintf(cache_path, sizeof(cache_path), "%s/motion.sha256", dir);
+    snprintf(programmer_path, sizeof(programmer_path), "%s/programmer", dir);
     char hash[65];
     FILE *f = fopen(hex_path, "wb");
     assert(f != NULL);
@@ -6202,14 +6208,28 @@ static void test_motion_firmware_cache(void)
     assert(deneb_motion_firmware_hash_file(hex_path, hash) == 0);
     assert(strlen(hash) == 64);
     assert(deneb_motion_firmware_check_cache(hex_path, cache_path, hash) == DENEB_MOTION_FW_PROGRAM_REQUIRED);
+    assert(deneb_motion_firmware_ensure(hex_path, cache_path, programmer_path, 0) ==
+           DENEB_MOTION_FW_PROGRAM_REQUIRED);
+    assert(deneb_motion_firmware_ensure(hex_path, cache_path, programmer_path, 1) ==
+           DENEB_MOTION_FW_ERROR);
+    assert(deneb_motion_firmware_check_cache(hex_path, cache_path, hash) ==
+           DENEB_MOTION_FW_PROGRAM_REQUIRED);
 
-    f = fopen(cache_path, "wb");
-    assert(f != NULL);
-    fprintf(f, "%s\n", hash);
-    fclose(f);
+    static const char programmer[] =
+        "#!/bin/sh\n[ \"$#\" -eq 1 ] && [ \"$1\" = \"${0%/*}/motion.hex\" ]\n";
+    int fd = open(programmer_path, O_WRONLY | O_CREAT | O_EXCL, 0700);
+    assert(fd >= 0);
+    assert(write(fd, programmer, sizeof(programmer) - 1) == sizeof(programmer) - 1);
+    assert(close(fd) == 0);
+    assert(deneb_motion_firmware_ensure(hex_path, cache_path, programmer_path, 1) ==
+           DENEB_MOTION_FW_PROGRAMMED);
+    assert(unlink(programmer_path) == 0);
     assert(deneb_motion_firmware_check_cache(hex_path, cache_path, hash) == DENEB_MOTION_FW_CACHE_MATCH);
-    remove(hex_path);
-    remove(cache_path);
+    assert(deneb_motion_firmware_ensure(hex_path, cache_path, programmer_path, 1) ==
+           DENEB_MOTION_FW_CACHE_MATCH);
+    assert(unlink(hex_path) == 0);
+    assert(unlink(cache_path) == 0);
+    assert(rmdir(dir) == 0);
 }
 
 static void test_pending_job_file_contract(void)

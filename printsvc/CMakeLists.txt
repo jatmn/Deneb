@@ -181,6 +181,16 @@ target_link_libraries(deneb-printsvc-tests PRIVATE deneb-printsvc-core)
 enable_testing()
 add_test(NAME deneb-printsvc-tests COMMAND deneb-printsvc-tests)
 
+if(BUILD_HOST_STUB)
+    add_executable(deneb-motion-firmware-verify src/motion_firmware_verify.c)
+    add_executable(deneb-motion-firmware-verify-tests tests/test_motion_firmware_verify.c)
+    target_link_libraries(deneb-motion-firmware-verify-tests PRIVATE deneb-printsvc-core)
+    add_dependencies(deneb-motion-firmware-verify-tests deneb-motion-firmware-verify)
+    add_test(NAME deneb-motion-firmware-verify-tests
+        COMMAND deneb-motion-firmware-verify-tests "$<TARGET_FILE:deneb-motion-firmware-verify>")
+    set_tests_properties(deneb-motion-firmware-verify-tests PROPERTIES TIMEOUT 15)
+endif()
+
 find_program(SH_EXECUTABLE sh)
 if(SH_EXECUTABLE)
     add_test(
