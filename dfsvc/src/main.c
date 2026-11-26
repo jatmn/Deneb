@@ -28,14 +28,10 @@
 #include <unistd.h>
 
 #include <mbedtls/base64.h>
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
-#include <mbedtls/sha1.h>
 #include <mbedtls/ssl.h>
-#include <mbedtls/version.h>
 #include <mbedtls/x509_crt.h>
+#include <psa/crypto.h>
 #include <zmq.h>
 
 #include "print_job_file.h"
@@ -88,8 +84,6 @@ typedef struct {
     mbedtls_net_context net;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_x509_crt ca;
     bool connected;
 } ws_client_t;
@@ -1122,8 +1116,6 @@ static void ws_free(ws_client_t *ws)
     mbedtls_net_free(&ws->net);
     mbedtls_ssl_free(&ws->ssl);
     mbedtls_ssl_config_free(&ws->conf);
-    mbedtls_ctr_drbg_free(&ws->ctr_drbg);
-    mbedtls_entropy_free(&ws->entropy);
     mbedtls_x509_crt_free(&ws->ca);
     memset(ws, 0, sizeof(*ws));
 }
@@ -1152,11 +1144,6 @@ static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
     return 0;
 }
 
-static int ws_random(ws_client_t *ws, uint8_t *buf, size_t len)
-{
-    return mbedtls_ctr_drbg_random(&ws->ctr_drbg, buf, len) == 0 ? 0 : -1;
-}
-
 static int base64_encode(const uint8_t *input, size_t input_len,
                          char *out, size_t out_size)
 {
@@ -1169,10 +1156,10 @@ static int base64_encode(const uint8_t *input, size_t input_len,
     return 0;
 }
 
-static int ws_make_key(ws_client_t *ws, char out[25])
+static int ws_make_key(char out[25])
 {
     uint8_t nonce[16];
-    if (ws_random(ws, nonce, sizeof(nonce)) < 0)
+    if (psa_generate_random(nonce, sizeof(nonce)) != PSA_SUCCESS)
         return -1;
     return base64_encode(nonce, sizeof(nonce), out, 25);
 }
@@ -1185,13 +1172,11 @@ static int ws_expected_accept(const char *key, char out[32])
     int n = snprintf(input, sizeof(input), "%s%s", key, guid);
     if (n <= 0 || (size_t)n >= sizeof(input))
         return -1;
-#if MBEDTLS_VERSION_NUMBER >= 0x02070000
-    if (mbedtls_sha1_ret((const unsigned char *)input, strlen(input), digest) != 0)
+    size_t digest_len;
+    if (psa_hash_compute(PSA_ALG_SHA_1, (const uint8_t *)input, (size_t)n,
+                         digest, sizeof(digest), &digest_len) != PSA_SUCCESS)
         return -1;
-#else
-    mbedtls_sha1((const unsigned char *)input, strlen(input), digest);
-#endif
-    return base64_encode(digest, sizeof(digest), out, 32);
+    return base64_encode(digest, digest_len, out, 32);
 }
 
 static bool header_value_matches(const char *headers, const char *name,
@@ -1231,7 +1216,7 @@ static int ws_send_control(ws_client_t *ws, uint8_t opcode,
     uint8_t mask[4];
     if (len > 125)
         return -1;
-    if (ws_random(ws, mask, sizeof(mask)) < 0)
+    if (psa_generate_random(mask, sizeof(mask)) != PSA_SUCCESS)
         return -1;
     hdr[h++] = (uint8_t)(0x80 | (opcode & 0x0f));
     hdr[h++] = (uint8_t)(0x80 | len);
@@ -1254,20 +1239,17 @@ static void ws_send_close(ws_client_t *ws)
     (void)ws_send_control(ws, 0x8, NULL, 0);
 }
 
-static int ws_connect(ws_client_t *ws, const df_url_t *url)
+static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_directory)
 {
     memset(ws, 0, sizeof(*ws));
     mbedtls_net_init(&ws->net);
     mbedtls_ssl_init(&ws->ssl);
     mbedtls_ssl_config_init(&ws->conf);
-    mbedtls_entropy_init(&ws->entropy);
-    mbedtls_ctr_drbg_init(&ws->ctr_drbg);
     mbedtls_x509_crt_init(&ws->ca);
 
-    if (mbedtls_ctr_drbg_seed(&ws->ctr_drbg, mbedtls_entropy_func,
-                              &ws->entropy, (const unsigned char *)"deneb-dfsvc", 11) != 0)
+    if (psa_crypto_init() != PSA_SUCCESS)
         return -1;
-    (void)mbedtls_x509_crt_parse_path(&ws->ca, "/etc/ssl/certs");
+    (void)mbedtls_x509_crt_parse_path(&ws->ca, ca_directory);
     if (mbedtls_net_connect(&ws->net, url->host, url->port, MBEDTLS_NET_PROTO_TCP) != 0)
         return -1;
     if (mbedtls_ssl_config_defaults(&ws->conf, MBEDTLS_SSL_IS_CLIENT,
@@ -1276,7 +1258,6 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
         return -1;
     mbedtls_ssl_conf_authmode(&ws->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&ws->conf, &ws->ca, NULL);
-    mbedtls_ssl_conf_rng(&ws->conf, mbedtls_ctr_drbg_random, &ws->ctr_drbg);
     if (mbedtls_ssl_setup(&ws->ssl, &ws->conf) != 0)
         return -1;
     if (mbedtls_ssl_set_hostname(&ws->ssl, url->host) != 0)
@@ -1292,7 +1273,7 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
 
     char key[25];
     char expected_accept[32];
-    if (ws_make_key(ws, key) < 0 || ws_expected_accept(key, expected_accept) < 0)
+    if (ws_make_key(key) < 0 || ws_expected_accept(key, expected_accept) < 0)
         return -1;
     char req[768];
     int n = snprintf(req, sizeof(req),
@@ -1350,7 +1331,7 @@ static int ws_send_text(ws_client_t *ws, const char *text)
         return -1;
     }
     uint8_t mask[4];
-    if (ws_random(ws, mask, sizeof(mask)) < 0)
+    if (psa_generate_random(mask, sizeof(mask)) != PSA_SUCCESS)
         return -1;
     memcpy(hdr + h, mask, 4);
     h += 4;
@@ -2485,7 +2466,7 @@ int main(void)
         current_pin[0] = '\0';
         publish_status(pub, current_state, current_pin);
         ws_client_t ws;
-        if (ws_connect(&ws, &url) < 0) {
+        if (ws_connect(&ws, &url, "/etc/ssl/certs") < 0) {
             log_line("warn", "cloud websocket connect failed");
             ws_free(&ws);
             current_state = DF_STATE_RECONNECTING;

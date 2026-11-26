@@ -33,7 +33,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
     endif()
 endif()
 
-set(MBEDTLS_ROOT "" CACHE PATH "Path to static mbedTLS install")
+set(MBEDTLS_ROOT "" CACHE PATH "Path to static Mbed TLS 4.1 install")
 set(ZMQ_STATIC_PATH "" CACHE PATH "Path to static libzmq.a")
 set(ZMQ_INCLUDE_DIR "" CACHE PATH "Path to directory containing zmq.h")
 
@@ -83,21 +83,10 @@ if(MBEDTLS_ROOT)
     target_link_libraries(deneb-dfsvc PRIVATE
         "${MBEDTLS_ROOT}/lib/libmbedtls.a"
         "${MBEDTLS_ROOT}/lib/libmbedx509.a"
-        "${MBEDTLS_ROOT}/lib/libmbedcrypto.a")
+        "${MBEDTLS_ROOT}/lib/libtfpsacrypto.a")
 else()
-    find_path(MBEDTLS_INCLUDE_DIR mbedtls/ssl.h)
-    find_library(MBEDTLS_LIBRARY NAMES mbedtls)
-    find_library(MBEDX509_LIBRARY NAMES mbedx509)
-    find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
-    if(NOT MBEDTLS_INCLUDE_DIR OR
-       NOT MBEDTLS_LIBRARY OR
-       NOT MBEDX509_LIBRARY OR
-       NOT MBEDCRYPTO_LIBRARY)
-        message(FATAL_ERROR "mbedTLS headers or libraries not found. Set MBEDTLS_ROOT.")
-    endif()
-    target_include_directories(deneb-dfsvc PRIVATE ${MBEDTLS_INCLUDE_DIR})
-    target_link_libraries(deneb-dfsvc PRIVATE
-        ${MBEDTLS_LIBRARY} ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
+    find_package(MbedTLS 4.1 CONFIG REQUIRED)
+    target_link_libraries(deneb-dfsvc PRIVATE MbedTLS::mbedtls)
 endif()
 
 target_link_libraries(deneb-dfsvc PRIVATE m pthread)
@@ -106,14 +95,21 @@ install(TARGETS deneb-dfsvc DESTINATION /usr/bin)
 
 if(NOT CMAKE_CROSSCOMPILING)
     enable_testing()
-    add_executable(deneb-df-reconnect-tests tests/test_reconnect.c)
-    target_include_directories(deneb-df-reconnect-tests PRIVATE
-        $<TARGET_PROPERTY:deneb-dfsvc,INCLUDE_DIRECTORIES>)
-    target_compile_definitions(deneb-df-reconnect-tests PRIVATE
-        $<TARGET_PROPERTY:deneb-dfsvc,COMPILE_DEFINITIONS>)
-    target_compile_options(deneb-df-reconnect-tests PRIVATE -ffunction-sections -fdata-sections)
-    target_link_options(deneb-df-reconnect-tests PRIVATE -Wl,--gc-sections)
-    target_link_libraries(deneb-df-reconnect-tests PRIVATE
-        $<TARGET_PROPERTY:deneb-dfsvc,LINK_LIBRARIES>)
+    foreach(test IN ITEMS reconnect tls)
+        set(test_target deneb-df-${test}-tests)
+        add_executable(${test_target} tests/test_${test}.c)
+        target_include_directories(${test_target} PRIVATE
+            $<TARGET_PROPERTY:deneb-dfsvc,INCLUDE_DIRECTORIES>)
+        target_compile_definitions(${test_target} PRIVATE
+            $<TARGET_PROPERTY:deneb-dfsvc,COMPILE_DEFINITIONS>)
+        # Assert checks also drive fixture operations in Release builds.
+        target_compile_options(${test_target} PRIVATE -UNDEBUG -ffunction-sections -fdata-sections)
+        target_link_options(${test_target} PRIVATE -Wl,--gc-sections)
+        target_link_libraries(${test_target} PRIVATE
+            $<TARGET_PROPERTY:deneb-dfsvc,LINK_LIBRARIES>)
+    endforeach()
     add_test(NAME deneb-df-reconnect-tests COMMAND deneb-df-reconnect-tests)
+    add_test(NAME deneb-df-tls-tests COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tls.sh"
+        $<TARGET_FILE:deneb-df-tls-tests>)
+    set_tests_properties(deneb-df-tls-tests PROPERTIES TIMEOUT 15)
 endif()

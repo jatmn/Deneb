@@ -197,8 +197,10 @@ cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/ci-web --parallel
 cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/ci-ui --parallel
-cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
+sh tools/setup-mbedtls.sh "$PWD/build/ci-mbedtls"
+cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug -DMBEDTLS_ROOT="$PWD/build/ci-mbedtls"
 cmake --build build/ci-dfsvc --parallel
+ctest --test-dir build/ci-dfsvc --output-on-failure
 ```
 
 A package build is not valid unless the release wrapper and package audits

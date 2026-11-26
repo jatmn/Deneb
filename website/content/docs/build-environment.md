@@ -30,12 +30,12 @@ Install Git, clone the repository, and initialize its pinned submodules:
 
 ```sh
 sudo apt-get update
-sudo apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils
+sudo apt-get install --no-install-recommends build-essential bzip2 ca-certificates cmake curl file git make pkg-config python3 tar xz-utils
 git clone --recurse-submodules https://github.com/jatmn/Deneb.git
 cd Deneb
 ```
 
-Prepare the pinned cross-toolchain and mbedTLS dependency, then create and audit an experimental package:
+Prepare the pinned cross-toolchain and Mbed TLS dependency, then create and audit an experimental package:
 
 ```sh
 bash tools/setup-linux-build.sh "$PWD"
@@ -105,11 +105,11 @@ and verifies archives before extracting them.
 | Input | Version | SHA-256 |
 | --- | --- | --- |
 | musl.cc MIPS little-endian cross-toolchain | pinned archive | `82626533bf7e677c225e7cbedf1d5b0d6bc60c3daaf28249e54f0eb805d89b13` |
-| mbedTLS | 2.28.8 | `4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213` |
+| Mbed TLS (includes TF-PSA-Crypto 1.1.2) | 4.1.2 | `392215e5e4846df04e2f4c4516079303bd73edde837d8f3e68fb4d4d7ddf0126` |
 | ZeroMQ | 4.3.5 | `6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43` |
 | lighttpd | 1.4.85 | `18de51b393bac4a6827879e1a7ff377c169e414bae92cd245091d80fc2601d13` |
 
-The setup script prepares the toolchain and mbedTLS. The release wrapper downloads and hash-verifies ZeroMQ and lighttpd when their rebuild switches are used.
+The setup script prepares the toolchain and Mbed TLS. The release wrapper downloads and hash-verifies ZeroMQ and lighttpd when their rebuild switches are used.
 
 ### Build and audit
 
@@ -165,7 +165,7 @@ For native Debian/Linux:
 
 ```sh
 test -x build/deneb-cross/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc
-test -f build/deneb-cross/mbedtls-2.28.8-mipsel/lib/libmbedtls.a
+test -f build/deneb-cross/mbedtls-4.1.2-mipsel/lib/libmbedtls.a
 test -f build/deneb-cross/zeromq-4.3.5/build-musl/lib/libzmq.a
 test -x build/deneb-cross/lighttpd-1.4.85/build-musl-static/build/lighttpd
 git submodule status --recursive
@@ -176,7 +176,7 @@ For Windows/WSL:
 
 ```powershell
 wsl -d Debian -u root -- bash -lc '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version'
-wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedtls.a'
+wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/mbedtls-4.1.2-mipsel/lib/libmbedtls.a'
 wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/zeromq-4.3.5/build-musl/lib/libzmq.a'
 wsl -d Debian -u root -- bash -lc 'test -x /root/deneb-build/lighttpd-1.4.85/build-musl-static/build/lighttpd'
 git submodule status --recursive

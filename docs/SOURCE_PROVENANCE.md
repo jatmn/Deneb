@@ -12,7 +12,8 @@ original Deneb work. It is an engineering inventory, not legal advice.
 | `web/src/api_cluster_materials.h` | `Ultimaker/fdm_materials` | `886e7ad927463493cc9c64f427b1ae2cf4ce12c1` | CC0-1.0 | 280 exact GUID/version records; one malformed upstream GUID omitted |
 | LVGL | `lvgl/lvgl` submodule | Pinned by Git | MIT plus bundled helper notices | License files retained and packaged |
 | ZeroMQ/libzmq | `zeromq/libzmq` | 4.3.5 | MPL-2.0 | Statically linked; source URL and notice packaged |
-| mbedTLS | Mbed TLS upstream | 2.28.8 | Apache-2.0 OR GPL-2.0-or-later | Build dependency for `deneb-dfsvc`; not vendored |
+| Mbed TLS | [Official Mbed TLS release archive](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-4.1.2) | 4.1.2 | Apache-2.0 OR GPL-2.0-or-later | Static dependency for `deneb-dfsvc` |
+| TF-PSA-Crypto | `tf-psa-crypto/` in the Mbed TLS release archive | 1.1.2 | Apache-2.0 OR GPL-2.0-or-later | Bundled cryptography library used by Mbed TLS and `deneb-dfsvc` |
 | lighttpd | lighttpd upstream | 1.4.85 | BSD-3-Clause | HTTP front end built from pinned, hashed source; not vendored |
 | Pillow bootstrap host tool | `https://github.com/python-pillow/Pillow` | 13.0.0 / `293218ad059d994baf1777d882911bed6a49704a` | MIT-CMU | Host-only splash converter dependency; wheels are version/hash locked in `tools/bootstrap-requirements.txt`; source archive `pillow-13.0.0.tar.gz` SHA-256 is `cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510` |
 | ESLint host checker | registry.npmjs.org `eslint` 10.15.0, `@eslint/js` 10.0.1, and `globals` 17.12.0 | Locked by `tools/eslint/package-lock.json`. `eslint-10.15.0.tgz` SHA-256 is `8cb5e45fb5b1174e4216d546b69d37c0ac5cb5d9ba8342946a04af1f59605edb` | MIT | Host CI checker for existing browser JavaScript. Not installed on the printer and not copied from `web/www` into firmware packages |
