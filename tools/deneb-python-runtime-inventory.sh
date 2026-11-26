@@ -192,10 +192,14 @@ report_python_process() {
     case "$name" in
         python) ;;
         python[0-9]*)
-            printf '%s\n' "$name" | grep -Eq '^python[0-9]+(\.[0-9]+)*[dmt]*$' || return 1
+            printf '%s\n' "$name" | grep -Eq '^python[0-9]+(\.[0-9]+)*[dmt]*$' || name=
             ;;
-        *) return 1 ;;
+        *) name= ;;
     esac
+    if [ -z "$name" ]; then
+        [ "$exe" = "$(readlink "$pd/exe" 2>/dev/null)" ] || return 2
+        return 1
+    fi
 
     start="$(process_start_time "$pid")" || return 2
     argv="$(argv_for_pid "$pid")" || return 2
@@ -261,21 +265,25 @@ tmp="${SUMMARY}.$$"
     printf '| PID | Command | Classification | VSZ KB | RSS KB | VmData KB | Threads | FD count | Private KB |\n'
     printf '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n'
 
-    found=0
-    incomplete=0
-    for pd in "$PROC_DIR"/[0-9]*; do
-        [ -d "$pd" ] || continue
-        pid="${pd##*/}"
-        if report_python_process "$pid"; then
-            found=1
-        elif [ "$?" -eq 2 ] && process_may_be_live "$pid"; then
-            incomplete=$((incomplete + 1))
+    if [ -d "$PROC_DIR" ] && [ -x "$PROC_DIR" ] && ls -A "$PROC_DIR" >/dev/null 2>&1; then
+        found=0
+        incomplete=0
+        for pd in "$PROC_DIR"/[0-9]*; do
+            [ -d "$pd" ] || continue
+            pid="${pd##*/}"
+            if report_python_process "$pid"; then
+                found=1
+            elif [ "$?" -eq 2 ] && process_may_be_live "$pid"; then
+                incomplete=$((incomplete + 1))
+            fi
+        done
+        if [ "$incomplete" -gt 0 ]; then
+            printf '\nInventory incomplete. Could not inspect all live processes (%s unresolved).\n' "$incomplete"
+        elif [ "$found" -eq 0 ]; then
+            printf '| none | none | no live Python process found | 0 | 0 | 0 | 0 | 0 | 0 |\n'
         fi
-    done
-    if [ "$incomplete" -gt 0 ]; then
-        printf '\nInventory incomplete. Could not inspect all live processes (%s unresolved).\n' "$incomplete"
-    elif [ "$found" -eq 0 ]; then
-        printf '| none | none | no live Python process found | 0 | 0 | 0 | 0 | 0 | 0 |\n'
+    else
+        printf '\nInventory incomplete. Could not enumerate the process directory.\n'
     fi
 
     printf '\n## Expected Deneb-Native Absences\n\n'

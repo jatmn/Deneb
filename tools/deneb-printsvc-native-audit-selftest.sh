@@ -915,4 +915,34 @@ if grep -Fq 'no live Python process found' "$TMP_DIR/runtime-inventory.out"; the
     exit 1
 fi
 echo "PASS: runtime inventory distinguishes complete scans from unreadable processes"
+
+RUNTIME_SELFTEST_PROC="$TMP_DIR/runtime-inventory-transition"
+write_runtime_process 204 /usr/bin/dash S 0 python3 -
+DENEB_TEST_READLINK="$(command -v readlink)"
+export DENEB_TEST_READLINK
+cat > "$RUNTIME_SELFTEST_BIN/readlink" <<'EOF'
+#!/bin/sh
+target=$("$DENEB_TEST_READLINK" "$1") || exit 1
+if [ "$target" = /usr/bin/dash ]; then
+    ln -sfn /usr/bin/python3 "$1"
+fi
+printf '%s\n' "$target"
+EOF
+chmod +x "$RUNTIME_SELFTEST_BIN/readlink"
+capture_runtime_inventory
+grep -F 'Inventory incomplete. Could not inspect all live processes (1 unresolved).' "$TMP_DIR/runtime-inventory.out" >/dev/null
+if grep -Fq 'no live Python process found' "$TMP_DIR/runtime-inventory.out"; then
+    echo "FAIL: runtime inventory reported absence after a live executable changed" >&2
+    exit 1
+fi
+echo "PASS: runtime inventory detects a live process switching executable"
+
+RUNTIME_SELFTEST_PROC="$TMP_DIR/runtime-inventory-missing"
+capture_runtime_inventory
+grep -F 'Inventory incomplete. Could not enumerate the process directory.' "$TMP_DIR/runtime-inventory.out" >/dev/null
+if grep -Fq 'no live Python process found' "$TMP_DIR/runtime-inventory.out"; then
+    echo "FAIL: runtime inventory reported absence without a process directory" >&2
+    exit 1
+fi
+echo "PASS: runtime inventory detects an unavailable process directory"
 echo "deneb-printsvc native audit selftest passed"
