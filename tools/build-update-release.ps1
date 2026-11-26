@@ -228,7 +228,8 @@ $buildUi = "set -euo pipefail; " +
            "cd '$repoWsl'; " +
            "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc${buildPackageEvidenceArgs}"
 
-& wsl -d $Distro -u root -- bash -lc $buildUi
+# Start Bash directly so the default WSL shell cannot expand evidence filenames.
+& wsl -d $Distro -u root --exec bash -lc $buildUi
 if ($LASTEXITCODE -ne 0) {
     throw "update release build failed with exit code $LASTEXITCODE"
 }

@@ -40,9 +40,17 @@ done
 cat > "$scratch/bin/wsl" <<'EOF'
 #!/bin/sh
 set -eu
-[ "$#" -eq 8 ] && [ "$5" = -- ] && [ "$6" = bash ] && [ "$7" = -lc ] || exit 2
+[ "$#" -eq 8 ] && [ "$6" = bash ] && [ "$7" = -lc ] || exit 2
 case "$8" in
-    *'bash ui/build-package.sh '*) exec bash -c "$8" ;;
+    *'bash ui/build-package.sh '*)
+        case "$5" in
+            # Model the default shell parsing a double-quoted Windows argument.
+            --) exec sh -c "bash -c \"$8\"" ;;
+            --exec) exec bash -c "$8" ;;
+            *) exit 2 ;;
+        esac
+        ;;
+    *) [ "$5" = -- ] ;;
 esac
 EOF
 cat > "$fixture/tools/deneb-printsvc-smoke-verify.sh" <<'EOF'
@@ -72,7 +80,7 @@ export FIXTURE_REPO="$fixture"
 export FIXTURE_BUILD="$build"
 export STOCK_SUMMARY="$scratch/stock.summary"
 export NATIVE_SUMMARY="$scratch/native.summary"
-export FIRST_EVIDENCE="$scratch/evidence with spaces/first.summary"
+export FIRST_EVIDENCE="$scratch/evidence with spaces/extra \$HOME.summary"
 export SECOND_EVIDENCE="$scratch/second's.summary"
 touch "$STOCK_SUMMARY" "$NATIVE_SUMMARY" "$FIRST_EVIDENCE" "$SECOND_EVIDENCE"
 
