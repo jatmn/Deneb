@@ -229,15 +229,23 @@ $buildUi = "set -euo pipefail; " +
            "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc${buildPackageEvidenceArgs}"
 
 $packagePaths = @()
-# Start Bash directly so the default WSL shell cannot expand evidence filenames.
-& wsl -d $Distro -u root --exec bash -lc $buildUi | ForEach-Object {
-    if ($_ -cmatch '^Package: (.*)$') {
-        $packagePaths += $Matches[1]
+$previousOutputEncoding = [Console]::OutputEncoding
+try {
+    # WSL relays the Linux UTF-8 bytes before PowerShell decodes the lines.
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    # Start Bash directly so the default WSL shell cannot expand evidence filenames.
+    & wsl -d $Distro -u root --exec bash -lc $buildUi | ForEach-Object {
+        if ($_ -cmatch '^Package: (.*)$') {
+            $packagePaths += $Matches[1]
+        }
+        $_
     }
-    $_
+    if ($LASTEXITCODE -ne 0) {
+        throw "update release build failed with exit code $LASTEXITCODE"
+    }
 }
-if ($LASTEXITCODE -ne 0) {
-    throw "update release build failed with exit code $LASTEXITCODE"
+finally {
+    [Console]::OutputEncoding = $previousOutputEncoding
 }
 
 $packagePattern = "^$([regex]::Escape($repoWsl))/dist/(Deneb_Update_[^/\\]+\.deneb)$"

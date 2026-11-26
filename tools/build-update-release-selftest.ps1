@@ -7,7 +7,7 @@ if (-not $IsLinux) {
 }
 
 $sourceRepo = Split-Path -Parent $PSScriptRoot
-$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "deneb-wsl-release-$([guid]::NewGuid())"
+$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "deneb-wsl-café-$([guid]::NewGuid())"
 $fixtureRepo = Join-Path $fixtureRoot "repo"
 
 function wsl {
@@ -38,7 +38,18 @@ function Assert-VerifiedPackage {
 
     $name = "Deneb_Update_$Version.deneb"
     $archive = Join-Path $fixtureRepo "dist/$name"
-    $output = @(& "$fixtureRepo/tools/build-update-release.ps1" -LighttpdRoot "$fixtureRepo/lighttpd-fixture")
+    $originalEncoding = [Console]::OutputEncoding
+    $legacyEncoding = [Text.Encoding]::Latin1
+    try {
+        [Console]::OutputEncoding = $legacyEncoding
+        $output = @(& "$fixtureRepo/tools/build-update-release.ps1" -LighttpdRoot "$fixtureRepo/lighttpd-fixture")
+        if ([Console]::OutputEncoding.CodePage -ne $legacyEncoding.CodePage) {
+            throw "The release wrapper changed the caller's console encoding."
+        }
+    }
+    finally {
+        [Console]::OutputEncoding = $originalEncoding
+    }
     if ($output[-1] -cne "Verified native-only print service package: $archive") {
         throw "The wrapper did not report the newly built archive: $($output[-1])"
     }
@@ -85,8 +96,11 @@ try {
 
     $short = (& git -C $fixtureRepo rev-parse --short HEAD).Trim()
     $shortHash = Assert-VerifiedPackage $short
+    $shortArchive = Join-Path $fixtureRepo "dist/Deneb_Update_$short.deneb"
+    Set-Content -LiteralPath $shortArchive -Value "Deliberately invalid stale archive"
+    $staleHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $shortArchive).Hash
 
-    $tag = "release-handoff'fixture"
+    $tag = "release-handoff'café"
     & git -C $fixtureRepo -c tag.gpgSign=false tag $tag
     if ($LASTEXITCODE -ne 0) {
         throw "Could not tag the fixture checkout."
@@ -96,8 +110,7 @@ try {
     if ($tagHash -ceq $shortHash) {
         throw "The tagged build selected the previous short-SHA archive."
     }
-    $shortArchive = Join-Path $fixtureRepo "dist/Deneb_Update_$short.deneb"
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $shortArchive).Hash.ToLowerInvariant() -cne $shortHash -or
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $shortArchive).Hash -cne $staleHash -or
         (Get-Content -LiteralPath "$shortArchive.sha256" -Raw).TrimEnd() -cne "$shortHash  Deneb_Update_$short.deneb") {
         throw "The tagged build modified the unrelated short-SHA archive or sidecar."
     }
