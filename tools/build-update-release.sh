@@ -166,7 +166,7 @@ package_files=$(mktemp)
 cleanup() { rm -f "$package_files"; rm -rf /tmp/deneb-release-smoke-selftest; }
 trap cleanup EXIT
 tar tf "$package" > "$package_files"
-for required in update.sh deneb-printsvc deneb-dfsvc deneb-printsvc.init digitalfactory.init deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest deneb-runtime-inventory; do
+for required in update.sh deneb-printsvc deneb-dfsvc deneb-printsvc.init digitalfactory.init deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-runtime-inventory; do
     grep -Eq "(^|/)$required$" "$package_files" || die "Package is missing required file: $required"
 done
 ! grep -Eq '(^|/)deneb-df-bridge$' "$package_files" || die "Package contains obsolete deneb-df-bridge"
@@ -178,11 +178,11 @@ mkdir -p /tmp/deneb-release-smoke-selftest
 tar xf "$package" -C /tmp/deneb-release-smoke-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-smoke-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-stability --selftest
-DENEB_REPO_ROOT="$repo_root" sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-release-gate-selftest
+DENEB_REPO_ROOT="$repo_root" sh "$repo_root/tools/deneb-printsvc-release-gate-selftest.sh"
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit --archive "$package"
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive "$package"
-sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit-selftest
+sh "$repo_root/tools/deneb-printsvc-integration-audit-selftest.sh"
 DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest
 bash "$repo_root/tools/write-package-checksum.sh" "$package"
 printf 'Verified native-only print service package: %s\n' "$package"

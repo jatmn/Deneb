@@ -148,10 +148,11 @@ contract applies before the
 
 ## Stock menu compatibility audit
 
-All `.deneb` build channels run the stock menu prune fixture using synthetic
-inputs. When changing which stock menu files Deneb retains or which services
-consume them, run the separate import inventory against a local extraction of
-the stock firmware version you are investigating.
+All `.deneb` build channels run the stock menu prune fixture from the repository
+using synthetic inputs. Both stock-menu checks stay on the build host. When
+changing which stock menu files Deneb retains or which services consume them,
+run the separate import inventory against a local extraction of the stock
+firmware version you are investigating.
 
 ```sh
 bash tools/deneb-stock-menu-import-check.sh --repo-root /path/to/stock-workspace

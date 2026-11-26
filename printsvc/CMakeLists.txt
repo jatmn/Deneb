@@ -209,6 +209,14 @@ if(SH_EXECUTABLE)
     set_property(TEST deneb-printsvc-stability-selftest deneb-printsvc-cli-selftest
         APPEND PROPERTY RESOURCE_LOCK deneb-printsvc-rss)
     add_test(
+        NAME deneb-printsvc-staged-install-selftest
+        COMMAND "${SH_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-staged-install-selftest.sh"
+                "$<TARGET_FILE:deneb-printsvc>"
+    )
+    set_tests_properties(deneb-printsvc-staged-install-selftest
+        PROPERTIES RESOURCE_LOCK "deneb-active-thumbnail;deneb-printsvc-rss")
+    add_test(
         NAME deneb-printsvc-init-selftest
         COMMAND "${SH_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/../tools/deneb-printsvc-init-selftest.sh"

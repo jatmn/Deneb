@@ -50,11 +50,9 @@ write_valid_package() {
         "$root/deneb-printsvc-stock-baseline" \
         "$root/deneb-printsvc-cli-selftest" \
         "$root/deneb-printsvc-init-selftest" \
-        "$root/deneb-printsvc-release-gate-selftest" \
         "$root/deneb-printsvc-native-audit" \
         "$root/deneb-printsvc-native-audit-selftest" \
         "$root/deneb-printsvc-integration-audit" \
-        "$root/deneb-printsvc-integration-audit-selftest" \
         "$root/LVGL_LICENSE_TLSF.txt" \
         "$root/LODEPNG_LICENSE.txt"
     cat > "$root/deneb-printsvc-smoke" <<'EOF'
@@ -237,8 +235,8 @@ deneb-printsvc-stock-baseline
 deneb-printsvc-native-audit --source .
 deneb-printsvc-native-audit-selftest
 deneb-printsvc-integration-audit --source .
-deneb-printsvc-integration-audit-selftest
-deneb-printsvc-release-gate-selftest
+deneb-printsvc-integration-audit-selftest.sh
+deneb-printsvc-release-gate-selftest.sh
 deneb-printsvc-stability
 deneb-active-physical-soak-runner
 deneb-api digital-factory
@@ -265,9 +263,9 @@ if ($ReleaseChannel -ne "experimental") {
 $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
 $buildUi = "$buildPackageEnv bash ui/build-package.sh ui/build-musl/deneb-ui${buildPackageEvidenceArgs}"
-deneb-printsvc-release-gate-selftest
+deneb-printsvc-release-gate-selftest.sh
 deneb-printsvc-integration-audit
-deneb-printsvc-integration-audit-selftest
+deneb-printsvc-integration-audit-selftest.sh
 & wsl -d $Distro -u root -- bash -lc $verifyPackage
 $writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
 & wsl -d $Distro -u root -- bash -lc $writeChecksum
@@ -350,11 +348,9 @@ cat > "$root/ui/installer/update.sh" <<'EOF'
 #!/bin/sh
 DENEB_COORDINATOR_DISABLED=1
 deneb-printsvc-native-audit --package-dir /tmp/update
-deneb-printsvc-native-audit-selftest
-deneb-printsvc-integration-audit --package-dir /tmp/update
-deneb-printsvc-integration-audit-selftest
-deneb-printsvc-release-gate-selftest
-/usr/bin/deneb-printsvc-stability --selftest
+/tmp/update/deneb-printsvc-native-audit-selftest >audit.log
+/tmp/update/deneb-printsvc-integration-audit --package-dir /tmp/update
+/tmp/update/deneb-printsvc-stability --selftest
 /etc/init.d/deneb-api restart
 /etc/init.d/deneb-web restart
 configure_digitalfactory_boot() {
@@ -365,7 +361,6 @@ rm -f /tmp/Deneb_Update_*.deneb
 cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
 cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner
 cp /tmp/update/deneb-printsvc-stock-baseline /usr/bin/deneb-printsvc-stock-baseline
-cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
 cp /tmp/update/deneb-dfsvc /usr/bin/deneb-dfsvc
 cp /tmp/update/digitalfactory.init /etc/init.d/digitalfactory
 install_web_runtime
@@ -587,9 +582,9 @@ if ($ReleaseChannel -ne "experimental") {
 $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
 $buildUi = "$buildPackageEnv bash ui/build-package.sh ui/build-musl/deneb-ui${buildPackageEvidenceArgs}"
-deneb-printsvc-release-gate-selftest
+deneb-printsvc-release-gate-selftest.sh
 deneb-printsvc-integration-audit
-deneb-printsvc-integration-audit-selftest
+deneb-printsvc-integration-audit-selftest.sh
 $verifyPackage = "printf 'Verified native-only print service package: %s\n' '$packageWsl'"
 & wsl -d $Distro -u root -- bash -lc $verifyPackage
 $writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
@@ -653,12 +648,6 @@ write_valid_source "$SOURCE_MISSING_INSTALLER_SELFTEST"
 grep -v 'deneb-printsvc-native-audit-selftest' "$SOURCE_MISSING_INSTALLER_SELFTEST/ui/installer/update.sh" > "$SOURCE_MISSING_INSTALLER_SELFTEST/ui/installer/update.tmp"
 mv "$SOURCE_MISSING_INSTALLER_SELFTEST/ui/installer/update.tmp" "$SOURCE_MISSING_INSTALLER_SELFTEST/ui/installer/update.sh"
 expect_failure rejects_source_missing_installer_selftest "$AUDIT" --source "$SOURCE_MISSING_INSTALLER_SELFTEST"
-
-SOURCE_MISSING_INSTALLER_RELEASE_GATE="$TMP_DIR/source-missing-installer-release-gate"
-write_valid_source "$SOURCE_MISSING_INSTALLER_RELEASE_GATE"
-grep -v 'deneb-printsvc-release-gate-selftest' "$SOURCE_MISSING_INSTALLER_RELEASE_GATE/ui/installer/update.sh" > "$SOURCE_MISSING_INSTALLER_RELEASE_GATE/ui/installer/update.tmp"
-mv "$SOURCE_MISSING_INSTALLER_RELEASE_GATE/ui/installer/update.tmp" "$SOURCE_MISSING_INSTALLER_RELEASE_GATE/ui/installer/update.sh"
-expect_failure rejects_source_missing_installer_release_gate "$AUDIT" --source "$SOURCE_MISSING_INSTALLER_RELEASE_GATE"
 
 SOURCE_MISSING_INSTALLER_WEB_RESTART="$TMP_DIR/source-missing-installer-web-restart"
 write_valid_source "$SOURCE_MISSING_INSTALLER_WEB_RESTART"
@@ -765,10 +754,11 @@ write_valid_package "$MISSING_INIT_SELFTEST"
 rm -f "$MISSING_INIT_SELFTEST/deneb-printsvc-init-selftest"
 expect_failure rejects_missing_init_selftest "$AUDIT" --package-dir "$MISSING_INIT_SELFTEST"
 
-MISSING_RELEASE_GATE_SELFTEST="$TMP_DIR/missing-release-gate-selftest"
-write_valid_package "$MISSING_RELEASE_GATE_SELFTEST"
-rm -f "$MISSING_RELEASE_GATE_SELFTEST/deneb-printsvc-release-gate-selftest"
-expect_failure rejects_missing_release_gate_selftest "$AUDIT" --package-dir "$MISSING_RELEASE_GATE_SELFTEST"
+HOST_VALIDATION_SCRIPT="$TMP_DIR/host-validation-script"
+write_valid_package "$HOST_VALIDATION_SCRIPT"
+touch "$HOST_VALIDATION_SCRIPT/deneb-stock-menu-prune-selftest"
+expect_failure rejects_host_validation_script "$AUDIT" --package-dir "$HOST_VALIDATION_SCRIPT"
+
 MISSING_RUNTIME_INVENTORY="$TMP_DIR/missing-runtime-inventory"
 write_valid_package "$MISSING_RUNTIME_INVENTORY"
 rm -f "$MISSING_RUNTIME_INVENTORY/deneb-runtime-inventory"

@@ -41,7 +41,7 @@ schedule_reboot() {
 # Validate required files exist in the update package
 validate_package() {
     local missing=0
-    for f in deneb-ui deneb-ui.init deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf deneb-runtime-inventory manifest.txt en.json; do
+    for f in deneb-ui deneb-ui.init deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf deneb-runtime-inventory manifest.txt en.json; do
         if [ ! -f "/tmp/update/${f}" ]; then
             log "ERROR: missing required file: ${f}"
             missing=1
@@ -171,10 +171,6 @@ install_web_runtime() {
     chmod 0755 /usr/bin/deneb-printsvc-smoke-compare
     log "installed deneb-printsvc-smoke-compare to /usr/bin/deneb-printsvc-smoke-compare"
 
-    cp /tmp/update/deneb-printsvc-smoke-selftest /usr/bin/deneb-printsvc-smoke-selftest
-    chmod 0755 /usr/bin/deneb-printsvc-smoke-selftest
-    log "installed deneb-printsvc-smoke-selftest to /usr/bin/deneb-printsvc-smoke-selftest"
-
     cp /tmp/update/deneb-printsvc-stability /usr/bin/deneb-printsvc-stability
     chmod 0755 /usr/bin/deneb-printsvc-stability
     log "installed deneb-printsvc-stability to /usr/bin/deneb-printsvc-stability"
@@ -190,34 +186,6 @@ install_web_runtime() {
     cp /tmp/update/deneb-runtime-inventory /usr/bin/deneb-runtime-inventory
     chmod 0755 /usr/bin/deneb-runtime-inventory
     log "installed deneb-runtime-inventory to /usr/bin/deneb-runtime-inventory"
-
-    cp /tmp/update/deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc-cli-selftest
-    chmod 0755 /usr/bin/deneb-printsvc-cli-selftest
-    log "installed deneb-printsvc-cli-selftest to /usr/bin/deneb-printsvc-cli-selftest"
-
-    cp /tmp/update/deneb-printsvc-init-selftest /usr/bin/deneb-printsvc-init-selftest
-    chmod 0755 /usr/bin/deneb-printsvc-init-selftest
-    log "installed deneb-printsvc-init-selftest to /usr/bin/deneb-printsvc-init-selftest"
-
-    cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest
-    chmod 0755 /usr/bin/deneb-printsvc-release-gate-selftest
-    log "installed deneb-printsvc-release-gate-selftest to /usr/bin/deneb-printsvc-release-gate-selftest"
-
-    cp /tmp/update/deneb-printsvc-native-audit /usr/bin/deneb-printsvc-native-audit
-    chmod 0755 /usr/bin/deneb-printsvc-native-audit
-    log "installed deneb-printsvc-native-audit to /usr/bin/deneb-printsvc-native-audit"
-
-    cp /tmp/update/deneb-printsvc-native-audit-selftest /usr/bin/deneb-printsvc-native-audit-selftest
-    chmod 0755 /usr/bin/deneb-printsvc-native-audit-selftest
-    log "installed deneb-printsvc-native-audit-selftest to /usr/bin/deneb-printsvc-native-audit-selftest"
-
-    cp /tmp/update/deneb-printsvc-integration-audit /usr/bin/deneb-printsvc-integration-audit
-    chmod 0755 /usr/bin/deneb-printsvc-integration-audit
-    log "installed deneb-printsvc-integration-audit to /usr/bin/deneb-printsvc-integration-audit"
-
-    cp /tmp/update/deneb-printsvc-integration-audit-selftest /usr/bin/deneb-printsvc-integration-audit-selftest
-    chmod 0755 /usr/bin/deneb-printsvc-integration-audit-selftest
-    log "installed deneb-printsvc-integration-audit-selftest to /usr/bin/deneb-printsvc-integration-audit-selftest"
 
     mkdir -p /etc/deneb/marlindriver/gcode
     cp /tmp/update/deneb-printsvc-macros/*.gcode /etc/deneb/marlindriver/gcode/
@@ -670,28 +638,28 @@ smoke_test_binary() {
 }
 
 smoke_test_printsvc_tools() {
-    if ! /usr/bin/deneb-printsvc-smoke-selftest >/tmp/deneb-printsvc-smoke-selftest.log 2>&1; then
+    if ! /tmp/update/deneb-printsvc-smoke-selftest >/tmp/deneb-printsvc-smoke-selftest.log 2>&1; then
         log "ERROR: deneb-printsvc smoke tool selftest failed"
         cat /tmp/deneb-printsvc-smoke-selftest.log 2>/dev/null || true
         exit 1
     fi
     log "deneb-printsvc smoke tool selftest passed"
 
-    if ! /usr/bin/deneb-printsvc-stability --selftest >/tmp/deneb-printsvc-stability-selftest.log 2>&1; then
+    if ! /tmp/update/deneb-printsvc-stability --selftest >/tmp/deneb-printsvc-stability-selftest.log 2>&1; then
         log "ERROR: deneb-printsvc stability selftest failed"
         cat /tmp/deneb-printsvc-stability-selftest.log 2>/dev/null || true
         exit 1
     fi
     log "deneb-printsvc stability selftest passed"
 
-    if ! /usr/bin/deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc >/tmp/deneb-printsvc-cli-selftest.log 2>&1; then
+    if ! /tmp/update/deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc >/tmp/deneb-printsvc-cli-selftest.log 2>&1; then
         log "ERROR: deneb-printsvc CLI selftest failed"
         cat /tmp/deneb-printsvc-cli-selftest.log 2>/dev/null || true
         exit 1
     fi
     log "deneb-printsvc CLI selftest passed"
 
-    if ! /usr/bin/deneb-printsvc-native-audit-selftest >/tmp/deneb-printsvc-native-audit-selftest.log 2>&1; then
+    if ! /tmp/update/deneb-printsvc-native-audit-selftest >/tmp/deneb-printsvc-native-audit-selftest.log 2>&1; then
         log "ERROR: deneb-printsvc native audit selftest failed"
         cat /tmp/deneb-printsvc-native-audit-selftest.log 2>/dev/null || true
         exit 1
@@ -703,7 +671,7 @@ smoke_test_printsvc_init_handoff() {
     if ! DENEB_PRINTSVC_INIT=/etc/init.d/deneb-printsvc \
         DENEB_INSTALLER=/tmp/update/update.sh \
         DENEB_PRINTSERVER_INIT=/etc/init.d/printserver \
-        /usr/bin/deneb-printsvc-init-selftest >/tmp/deneb-printsvc-init-selftest.log 2>&1; then
+        /tmp/update/deneb-printsvc-init-selftest >/tmp/deneb-printsvc-init-selftest.log 2>&1; then
         log "ERROR: deneb-printsvc init handoff selftest failed"
         cat /tmp/deneb-printsvc-init-selftest.log 2>/dev/null || true
         exit 1
@@ -768,6 +736,33 @@ restart_live_deneb_ui() {
     fi
 }
 
+# Reclaim copies installed by the previous package. Unknown contents, links,
+# and locally changed ownership or permissions are left for the operator.
+remove_legacy_install_tool() {
+    local path="/usr/bin/$1" digest
+    [ -f "$path" ] && [ ! -L "$path" ] || return 0
+    [ "$(stat -c '%u:%g:%a' "$path" 2>/dev/null)" = "0:0:755" ] || return 0
+    digest=$(sha256sum "$path" 2>/dev/null) || return 0
+    [ "${digest%% *}" = "$2" ] || return 0
+    if rm -f "$path"; then
+        log "removed obsolete Deneb validation script: $path"
+    else
+        log "WARNING: could not remove obsolete Deneb validation script: $path"
+    fi
+}
+
+remove_legacy_validation_tools() {
+    # SHA-256 of the exact CR-stripped package inputs at baea878df665.
+    remove_legacy_install_tool deneb-printsvc-smoke-selftest 096fefa36b6a8da088eab043722bb74ad96094f85fd4f3e64baa8ea0c0db691c
+    remove_legacy_install_tool deneb-printsvc-cli-selftest ba58b4dda5bd3ef0b38c5608d145bc8f912990709a0298f8812a6191abad74c4
+    remove_legacy_install_tool deneb-printsvc-init-selftest a885b697f5bc8f4de2d5713809219e661e223a6e464aca67569fd1a02651a447
+    remove_legacy_install_tool deneb-printsvc-native-audit 9ec0f8868ac8ba84227e901041d59d7be814684b9f4670204cedea0587977fe5
+    remove_legacy_install_tool deneb-printsvc-native-audit-selftest 42e0612381a38e83d38bbc05ada1086be0932ba2a7c8c69f4a69399d2d809f79
+    remove_legacy_install_tool deneb-printsvc-integration-audit 22ef126d5a073898ff3bfba445531c8673d860b01ad554e7715d48ba6071df65
+    remove_legacy_install_tool deneb-printsvc-release-gate-selftest 613a7feb2365ded0f68cd3c0c87cdf29ad2cd6a8700182fd7db574b04aba50ec
+    remove_legacy_install_tool deneb-printsvc-integration-audit-selftest 384d1dd645451a865f0e560507a90d99732e4bc610b3010fa4449a20d9ff0924
+}
+
 # Main
 log "starting Deneb Touchscreen UI installation"
 # Failure leaves the current system available for diagnosis/recovery. Only the
@@ -789,6 +784,7 @@ restart_live_deneb_ui
 prune_stock_wifi_portal
 prune_stock_menu_ui
 prune_stock_compile_all
+remove_legacy_validation_tools
 
 log "installation complete"
 schedule_reboot
