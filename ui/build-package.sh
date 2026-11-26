@@ -140,10 +140,9 @@ tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-native-audit-selftest.sh" > "${S
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-integration-audit.sh" > "${STAGING_DIR}/deneb-printsvc-integration-audit"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-printsvc-integration-audit-selftest.sh" > "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-stock-menu-prune-selftest.sh" > "${STAGING_DIR}/deneb-stock-menu-prune-selftest"
-tr -d '\r' < "${REPO_ROOT}/tools/deneb-stock-menu-import-check.sh" > "${STAGING_DIR}/deneb-stock-menu-import-check"
 tr -d '\r' < "${REPO_ROOT}/tools/deneb-python-runtime-inventory.sh" > "${STAGING_DIR}/deneb-runtime-inventory"
 chmod 0755 "${STAGING_DIR}/deneb-api.init" "${STAGING_DIR}/deneb-web.init" "${STAGING_DIR}/deneb-mdns.init" "${STAGING_DIR}/deneb-printsvc.init" "${STAGING_DIR}/digitalfactory.init"
-chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest" "${STAGING_DIR}/deneb-printsvc-stability" "${STAGING_DIR}/deneb-active-physical-soak-runner" "${STAGING_DIR}/deneb-printsvc-stock-baseline" "${STAGING_DIR}/deneb-printsvc-cli-selftest" "${STAGING_DIR}/deneb-printsvc-init-selftest" "${STAGING_DIR}/deneb-printsvc-release-gate-selftest" "${STAGING_DIR}/deneb-printsvc-native-audit" "${STAGING_DIR}/deneb-printsvc-native-audit-selftest" "${STAGING_DIR}/deneb-printsvc-integration-audit" "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest" "${STAGING_DIR}/deneb-stock-menu-prune-selftest" "${STAGING_DIR}/deneb-stock-menu-import-check"
+chmod 0755 "${STAGING_DIR}/deneb-printsvc-smoke" "${STAGING_DIR}/deneb-printsvc-smoke-verify" "${STAGING_DIR}/deneb-printsvc-smoke-compare" "${STAGING_DIR}/deneb-printsvc-smoke-selftest" "${STAGING_DIR}/deneb-printsvc-stability" "${STAGING_DIR}/deneb-active-physical-soak-runner" "${STAGING_DIR}/deneb-printsvc-stock-baseline" "${STAGING_DIR}/deneb-printsvc-cli-selftest" "${STAGING_DIR}/deneb-printsvc-init-selftest" "${STAGING_DIR}/deneb-printsvc-release-gate-selftest" "${STAGING_DIR}/deneb-printsvc-native-audit" "${STAGING_DIR}/deneb-printsvc-native-audit-selftest" "${STAGING_DIR}/deneb-printsvc-integration-audit" "${STAGING_DIR}/deneb-printsvc-integration-audit-selftest" "${STAGING_DIR}/deneb-stock-menu-prune-selftest"
 chmod 0755 "${STAGING_DIR}/deneb-runtime-inventory"
 
 if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
@@ -242,7 +241,6 @@ contents:
   deneb-printsvc-integration-audit - Shell static client-integration ownership audit
   deneb-printsvc-integration-audit-selftest - Shell negative-fixture selftest for integration audit
   deneb-stock-menu-prune-selftest - Host fixture verifying stock menu retain/prune boundary
-  deneb-stock-menu-import-check - Host fixture for retained stock Python constant dependency map
   deneb-runtime-inventory - Device-side remaining runtime dependency inventory helper
   deneb-printsvc-macros/ - Deneb-owned native print-service macro defaults
   lighttpd          - Static web server and API reverse proxy (MIPS)
@@ -294,9 +292,6 @@ DENEB_INSTALLER="${STAGING_DIR}/update.sh" \
 # Run stock menu prune selftest (host fixture — no target hardware needed)
 "${STAGING_DIR}/deneb-stock-menu-prune-selftest"
 
-# Run import-dependency check for retained stock Python constants
-DENEB_REPO_ROOT="$REPO_ROOT" "${STAGING_DIR}/deneb-stock-menu-import-check"
-
 # Create tar-backed .deneb package for the Deneb USB update lane
 # A release wrapper publishes the matching checksum only after its additional
 # archive audits pass. Invalidate any earlier success marker before replacing
@@ -305,10 +300,14 @@ rm -f "$OUTPUT_IMG.sha256"
 cd "$STAGING_DIR"
 tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
     deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-release-gate-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit deneb-printsvc-integration-audit-selftest \
-    deneb-stock-menu-prune-selftest deneb-stock-menu-import-check deneb-runtime-inventory \
+    deneb-stock-menu-prune-selftest deneb-runtime-inventory \
     deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf www
 
 tar tf "$OUTPUT_IMG" > "${STAGING_DIR}/package-files.txt"
+if grep -Eq '(^|/)deneb-stock-menu-import-check(\.sh)?$' "${STAGING_DIR}/package-files.txt"; then
+    echo "ERROR: host-only stock menu import scanner found in update archive" >&2
+    exit 1
+fi
 grep -Eq '(^|/)update.sh$' "${STAGING_DIR}/package-files.txt"
 ! grep -Eq '(^|/)deneb-df-bridge$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc$' "${STAGING_DIR}/package-files.txt"
@@ -330,7 +329,6 @@ grep -Eq '(^|/)deneb-printsvc-native-audit-selftest$' "${STAGING_DIR}/package-fi
 grep -Eq '(^|/)deneb-printsvc-integration-audit$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-printsvc-integration-audit-selftest$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-stock-menu-prune-selftest$' "${STAGING_DIR}/package-files.txt"
-grep -Eq '(^|/)deneb-stock-menu-import-check$' "${STAGING_DIR}/package-files.txt"
 grep -Eq '(^|/)deneb-runtime-inventory$' "${STAGING_DIR}/package-files.txt"
 tar -xOf "$OUTPUT_IMG" manifest.txt > "${STAGING_DIR}/package-manifest.txt"
 grep -Eq "^channel: ${DENEB_RELEASE_CHANNEL}$" "${STAGING_DIR}/package-manifest.txt"

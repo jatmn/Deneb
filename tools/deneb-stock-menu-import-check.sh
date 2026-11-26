@@ -17,7 +17,6 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${DENEB_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
-ROOTFS_PYTHON="${REPO_ROOT}/rootfs/home/cygnus"
 
 usage() {
     echo "Usage: $(basename "$0") [--repo-root <path>]"
@@ -26,11 +25,17 @@ usage() {
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --repo-root) REPO_ROOT="$2"; shift 2 ;;
+        --repo-root)
+            [ "$#" -ge 2 ] || usage
+            REPO_ROOT="$2"
+            shift 2
+            ;;
         --help|-h) usage ;;
         *) usage ;;
     esac
 done
+
+ROOTFS_PYTHON="${REPO_ROOT}/rootfs/home/cygnus"
 
 # Files kept because they back surviving stock services
 SURVIVING_DIRS="coordinator|util"
@@ -64,7 +69,7 @@ if [ -z "$IMPORTING_FILES" ]; then
     fail "no files import menu_settings — retained file may be dead"
 fi
 
-for f in $IMPORTING_FILES; do
+while IFS= read -r f; do
     rel="${f#$ROOTFS_PYTHON/}"
     # Determine if this is a surviving service or pruned UI file
     surviving=0
@@ -81,7 +86,9 @@ for f in $IMPORTING_FILES; do
     else
         echo "  PRUNED-UI: ${rel}"
     fi
-done
+done <<EOF
+$IMPORTING_FILES
+EOF
 echo
 
 # ------------------------------------------------------------------

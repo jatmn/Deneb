@@ -140,6 +140,21 @@ The same zero-exit, verification-message, and matching `.deneb.sha256` sidecar
 contract applies before the
 [verified USB handoff](https://deneb3d.dev/docs/updating/#verify-and-copy-the-update-package).
 
+## Stock menu compatibility audit
+
+Ordinary `.deneb` builds run the stock menu prune fixture using synthetic
+inputs. When changing which stock menu files Deneb retains or which services
+still consume them, run the import inventory against a local extraction of
+the stock firmware version you are investigating.
+
+```sh
+bash tools/deneb-stock-menu-import-check.sh --repo-root /path/to/stock-workspace
+```
+
+Use the directory that contains `rootfs/home/cygnus`. Keep the extraction
+outside Git and record the stock firmware version with your compatibility
+evidence.
+
 ## Verify either lane
 
 For native Debian/Linux:
