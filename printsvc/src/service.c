@@ -39,6 +39,7 @@ int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc)
     svc->pause_policy_pending = 0;
     svc->resume_policy_pending = 0;
     svc->abort_cleanup_pending = 0;
+    svc->abort_pause_drain_deadline_ms = 0;
     svc->finish_cleanup_pending = 0;
     svc->heater_wait.active = 0;
     svc->paused_position_valid = 0;

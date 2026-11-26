@@ -41,6 +41,7 @@ typedef struct {
     int abort_cleanup_pending;
     deneb_motion_policy_t abort_cleanup_policy;
     size_t abort_cleanup_index;
+    long long abort_pause_drain_deadline_ms;
     int finish_cleanup_pending;
     deneb_motion_policy_t finish_cleanup_policy;
     size_t finish_cleanup_index;

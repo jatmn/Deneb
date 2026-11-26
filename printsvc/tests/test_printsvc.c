@@ -5301,10 +5301,27 @@ static uint8_t expect_controller_command(int fd, const char *command)
     uint8_t packet[DENEB_PRINTSVC_MAX_GCODE_LINE + 6];
     size_t len = strlen(command);
 
-    assert(read(fd, packet, len + 6) == (ssize_t)(len + 6));
+    for (size_t received = 0; received < len + 6;) {
+        ssize_t n = read(fd, packet + received, len + 6 - received);
+        if (n < 0 && errno == EINTR)
+            continue;
+        assert(n > 0);
+        received += (size_t)n;
+    }
     assert(packet[0] == 0xff && packet[1] == 0xff && packet[3] == len);
     assert(memcmp(packet + 4, command, len) == 0);
     return packet[2];
+}
+
+static void controller_send(int fd, const char *data, size_t len)
+{
+    for (size_t sent = 0; sent < len;) {
+        ssize_t n = write(fd, data + sent, len - sent);
+        if (n < 0 && errno == EINTR)
+            continue;
+        assert(n > 0);
+        sent += (size_t)n;
+    }
 }
 
 static void controller_acknowledge(int fd, uint8_t sequence, const char *report)
@@ -5313,7 +5330,7 @@ static void controller_acknowledge(int fd, uint8_t sequence, const char *report)
     format_sync_packet('o', sequence, 5, ack);
     int len = snprintf(frame, sizeof(frame), "%s%s\n", report ? report : "", ack);
     assert(len > 0 && (size_t)len < sizeof(frame));
-    assert(write(fd, frame, (size_t)len) == len);
+    controller_send(fd, frame, (size_t)len);
 }
 
 static void start_pause_controller_fixture(deneb_print_service_t *svc, int wire[2])
@@ -5403,7 +5420,7 @@ static void test_pause_drains_before_capturing_position(void)
     assert(!svc.paused_position_valid && !svc.pause_policy_pending);
 
     const char *position = "X:32.00 Y:24.00 Z:16.00 E:8.00\n";
-    assert(write(wire[1], position, strlen(position)) == (ssize_t)strlen(position));
+    controller_send(wire[1], position, strlen(position));
     assert(deneb_print_service_poll_motion(&svc) > 0);
     expect_controller_quiet(wire[1]);
     assert(!svc.paused_position_valid && !svc.pause_policy_pending);
@@ -5415,6 +5432,46 @@ static void test_pause_drains_before_capturing_position(void)
     expect_controller_quiet(wire[1]);
     close(wire[1]);
     deneb_print_service_close(&svc);
+}
+
+static void test_abort_during_unacknowledged_pause_drain(void)
+{
+    for (int desync = 0; desync <= 1; ++desync) {
+        deneb_print_service_t svc;
+        int wire[2];
+        char reply[256];
+        start_pause_controller_fixture(&svc, wire);
+        svc.status.bed_t_set = 50.0f;
+        svc.status.head_t_set = 195.0f;
+        assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
+                                               reply, sizeof(reply)) == 0);
+        assert(deneb_print_service_poll_motion(&svc) == 0);
+        expect_controller_command(wire[1], "M400");
+        if (!desync)
+            svc.pause_probe_deadline_ms = 1;
+
+        assert(deneb_printsvc_ipc_handle_frame(&svc, "ABORT<{}",
+                                               reply, sizeof(reply)) == 0);
+        assert(svc.status.state == DENEB_PRINT_STATE_ABORTING);
+        if (desync) {
+            const char *error =
+                "Error:ProtoError:Sequence number is unexpected (received, expected): 1,7\n";
+            controller_send(wire[1], error, strlen(error));
+        }
+        deneb_print_service_poll_motion(&svc);
+        assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+        if (!desync)
+            assert(svc.status.fault);
+        assert(svc.status.error.code == DENEB_ERROR_SERIAL);
+        assert(!svc.abort_cleanup_pending && !svc.pause_position_probe_pending);
+        assert(svc.status.bed_t_set == 50.0f && svc.status.head_t_set == 195.0f);
+        expect_controller_command(wire[1], "M401");
+        expect_controller_command(wire[1], "M104 S0");
+        expect_controller_command(wire[1], "M140 S0");
+        expect_controller_quiet(wire[1]);
+        close(wire[1]);
+        deneb_print_service_close(&svc);
+    }
 }
 
 static void test_pause_handshake_yields_to_abort_and_fault(void)
@@ -5448,7 +5505,7 @@ static void test_pause_handshake_yields_to_abort_and_fault(void)
             } else {
                 const char *error = interrupt == FAULT ? "Error:Thermal runaway\n" :
                     "Error:ProtoError:Sequence number is unexpected (received, expected): 1,7\n";
-                assert(write(wire[1], error, strlen(error)) == (ssize_t)strlen(error));
+                controller_send(wire[1], error, strlen(error));
                 assert(deneb_print_service_poll_motion(&svc) < 0);
                 assert(svc.status.state == DENEB_PRINT_STATE_ERROR && !svc.job_active);
                 expect_controller_command(wire[1], "M401");
@@ -7272,6 +7329,7 @@ int main(int argc, char **argv)
     test_repeated_jobs_release_terminal_state();
     test_pause_rejects_periodic_position_report();
     test_pause_drains_before_capturing_position();
+    test_abort_during_unacknowledged_pause_drain();
     test_pause_handshake_yields_to_abort_and_fault();
     test_pause_gates_active_job_streaming();
     test_pause_during_preheat_resumes_to_preparing();

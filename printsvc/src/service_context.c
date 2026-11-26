@@ -32,6 +32,7 @@ int deneb_service_context_motion_runtime(deneb_print_service_t *svc,
     /* A resync can retire unacknowledged slots. Pause needs the controller
      * to have completed its motion drain and position probe. */
     runtime->allow_sequence_resync = !svc->pause_position_probe_pending &&
+        !svc->abort_pause_drain_deadline_ms &&
         (svc->job_active || svc->gcode_queue_active ||
          svc->abort_cleanup_pending || svc->finish_cleanup_pending);
     return 0;
@@ -99,6 +100,7 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     svc->abort_requested = 0;
     svc->abort_cleanup_pending = 0;
     svc->abort_cleanup_index = 0;
+    svc->abort_pause_drain_deadline_ms = 0;
     svc->finish_cleanup_pending = 0;
     svc->finish_cleanup_index = 0;
     svc->startup_status_probe_pending = 0;
