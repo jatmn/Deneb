@@ -229,7 +229,7 @@ sed -n '1,/^\*\/$/p' "${SCRIPT_DIR}/lib/lvgl/src/libs/lodepng/lodepng.c" > "${ST
 cp "${REPO_ROOT}/notices/libzmq-4.3.5-NOTICE.txt" "${STAGING_DIR}/LIBZMQ_NOTICE.txt"
 cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
 cp "${REPO_ROOT}/notices/MBEDTLS-2.28.8-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
-cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.76-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
+cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.85-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
 
 # Create manifest
 cat > "${STAGING_DIR}/manifest.txt" <<EOF
@@ -280,7 +280,7 @@ contents:
   LIBZMQ_NOTICE.txt - libzmq MPL-2.0 notice and source location
   MPL-2.0.txt       - Mozilla Public License 2.0 text for libzmq
   MBEDTLS_LICENSE.txt - mbedTLS 2.28.8 dual-license text
-  LIGHTTPD_LICENSE.txt - lighttpd 1.4.76 BSD license notice
+  LIGHTTPD_LICENSE.txt - lighttpd 1.4.85 BSD license notice
   no Python driver files are packaged; native deneb-printsvc owns marlindriver
   manifest.txt      - This file
 EOF
