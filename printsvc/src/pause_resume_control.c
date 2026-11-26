@@ -203,6 +203,11 @@ int deneb_pause_resume_control_pause(deneb_print_service_t *svc,
         return -1;
     }
 
+    if (svc->status.state == DENEB_PRINT_STATE_PAUSED) {
+        deneb_command_reply_ok(reply, reply_sz, "pause accepted");
+        return 0;
+    }
+
     if (svc->job_active &&
         (svc->status.state == DENEB_PRINT_STATE_PREPARING ||
          svc->status.state == DENEB_PRINT_STATE_PRINTING)) {

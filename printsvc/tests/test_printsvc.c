@@ -5409,11 +5409,19 @@ static void test_pause_during_preheat_resumes_to_preparing(void)
     assert(deneb_command_parse(frame, &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
+    for (int i = 0; i < 8 && svc.job_prepare_stage != 3; ++i) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_print_service_poll_job(&svc) >= 0);
+    }
+    assert(svc.job_prepare_stage == 3); /* HEAT */
+    svc.status.bed_t_cur = 20.0f;
 
     assert(deneb_command_parse("PAUSE<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_PAUSING);
     assert(svc.pause_position_probe_pending);
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "pause/resume already pending") != NULL);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 0);
     assert(deneb_pause_resume_control_poll(&svc) == 0);
@@ -5423,6 +5431,8 @@ static void test_pause_during_preheat_resumes_to_preparing(void)
     svc.status.x = 105.0f;
     svc.status.y = 0.0f;
     svc.status.z = 207.0f;
+    svc.status.e = 4.2f;
+    svc.status.r0 = -3.0f;
     assert(deneb_pause_resume_control_poll(&svc) == 0);
     for (int i = 0; i < 40 && deneb_pause_resume_control_busy(&svc); i++) {
         deneb_flow_clear_inflight(&svc.flow);
@@ -5431,11 +5441,45 @@ static void test_pause_during_preheat_resumes_to_preparing(void)
     assert(!deneb_pause_resume_control_busy(&svc));
     assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
 
+    /* Simulate a position report at the parked location. */
+    svc.status.x = 0.0f;
+    svc.status.position_report_count++;
+    const unsigned long sent_before_retry = svc.flow.sent_count;
+    assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
+    assert(strstr(reply, "pause accepted") != NULL);
+    assert(svc.status.state == DENEB_PRINT_STATE_PAUSED);
+    assert(svc.paused_position_valid);
+    assert(svc.paused_x == 105.0f && svc.paused_y == 0.0f && svc.paused_z == 207.0f);
+    assert(svc.paused_e == 4.2f && svc.paused_r0 == -3.0f);
+    assert(svc.paused_nozzle_setpoint == 200.0f);
+    assert(svc.paused_heater_wait.active && svc.paused_heater_wait.wait_bed);
+    assert(svc.paused_heater_wait.bed_target == 60.0f);
+    assert(svc.paused_heater_wait.wait_head && svc.paused_heater_wait.head_target == 200.0f);
+    assert(!svc.pause_position_probe_pending && !svc.pause_policy_pending);
+    assert(deneb_pause_resume_control_poll(&svc) == 0);
+    assert(svc.flow.sent_count == sent_before_retry);
+
     assert(deneb_command_parse("RESUME<{}", &cmd) == 0);
     assert(deneb_print_service_handle_command(&svc, &cmd, reply, sizeof(reply)) == 0);
     assert(svc.status.state == DENEB_PRINT_STATE_PREPARING);
-    assert(deneb_print_service_poll_job(&svc) >= 0);
+    svc.status.head_t_cur = 200.0f;
+    for (int i = 0; i < 40 && svc.resume_policy_pending; ++i) {
+        deneb_flow_clear_inflight(&svc.flow);
+        assert(deneb_pause_resume_control_poll(&svc) >= 0);
+    }
+    assert(!svc.resume_policy_pending);
+    assert(svc.heater_wait.active && svc.heater_wait.wait_bed);
+    const unsigned long sent_after_resume = svc.flow.sent_count;
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_prepare_stage == 3 && svc.flow.sent_count == sent_after_resume);
     assert(svc.job_stream.line_number == 0);
+    svc.status.bed_t_cur = 60.0f;
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_prepare_stage == 4); /* STARTUP */
+    drive_service_job_prepare(&svc);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    assert(svc.job_stream.line_number == 1);
+    deneb_print_service_close(&svc);
     remove(job_path);
 }
 
