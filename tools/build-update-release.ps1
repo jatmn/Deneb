@@ -81,8 +81,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $loadPins = ". '$($repoWsl.Replace("'", "'\''"))/tools/native-dependency-pins.sh'"
-$readPins = $loadPins + ' && printf "%s\n" "$ZMQ_VERSION" "$ZMQ_URL" "$ZMQ_SHA256" "$LIGHTTPD_VERSION" "$LIGHTTPD_URL" "$LIGHTTPD_SHA256" "$MBEDTLS_VERSION"'
-$pins = @(& wsl -d $Distro -u root --exec bash -lc $readPins)
+# Keep the shell formatting in a script so Windows PowerShell can pass a plain path.
+$pins = @(& wsl -d $Distro -u root --exec sh "$repoWsl/tools/print-native-dependency-pins.sh")
 if ($LASTEXITCODE -ne 0 -or $pins.Count -ne 7) {
     throw "Could not read the native dependency pins in WSL."
 }

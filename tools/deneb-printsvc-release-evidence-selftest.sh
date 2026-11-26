@@ -46,7 +46,6 @@ if [ "$5" = --exec ] && [ "$6" = sh ]; then
 fi
 [ "$#" -eq 8 ] && [ "$6" = bash ] && [ "$7" = -lc ] || exit 2
 case "$8" in
-    *'tools/native-dependency-pins.sh'*) [ "$5" = --exec ] && exec bash -c "$8" ;;
     *'deneb-release-package-files.txt'*) [ "$5" = --exec ] && [ "${FIXTURE_PUBLICATION:-0}" = 1 ] ;;
     *'tools/write-package-checksum.sh'*) [ "$5" = --exec ] && exec bash -c "$8" ;;
     *'test -x '*'/lighttpd'*) [ "$5" = --exec ] ;;
@@ -106,6 +105,7 @@ run_linux() {
 run_powershell() {
     # shellcheck disable=SC2016
     pwsh -NoProfile -Command '
+        $PSNativeCommandArgumentPassing = "Legacy"
         & "$env:FIXTURE_REPO/tools/build-update-release.ps1" -ReleaseChannel stable `
             -ZmqRoot "$env:FIXTURE_BUILD/zeromq-4.3.5" -LighttpdRoot "$env:FIXTURE_BUILD/lighttpd-1.4.76" `
             -PrintsvcStockSummary $env:STOCK_SUMMARY -PrintsvcNativeSummary $env:NATIVE_SUMMARY `
