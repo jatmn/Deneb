@@ -18,7 +18,8 @@ enum {
     FRAME_HEADER_BYTES = 5,
     REQUEST_BYTES = 6,
     RESPONSE_BYTES = FLASH_READ_BYTES + 3,
-    EXCHANGE_TIMEOUT_MS = 1000,
+    COMMAND_TIMEOUT_MS = 1000,
+    FLASH_READ_TIMEOUT_MS = 5000,
     STK_START = 0x1b,
     STK_TOKEN = 0x0e,
     STK_OK = 0,
@@ -215,10 +216,17 @@ static verify_result_t exchange(int fd, uint8_t *sequence,
     int64_t start = monotonic_ms();
     if (start < 0)
         return VERIFY_PEER;
-    int64_t deadline = start + EXCHANGE_TIMEOUT_MS;
-    verify_result_t result = transfer(fd, false, frame, body_end + 1, deadline, false);
+    verify_result_t result = transfer(fd, false, frame, body_end + 1,
+                                      start + COMMAND_TIMEOUT_MS, false);
     if (result != VERIFY_MATCH)
         return result;
+
+    /* AVR068 counts the time to receive the complete reply after sending. */
+    start = monotonic_ms();
+    if (start < 0)
+        return VERIFY_PEER;
+    int timeout_ms = request[0] == STK_READ_FLASH ? FLASH_READ_TIMEOUT_MS : COMMAND_TIMEOUT_MS;
+    int64_t deadline = start + timeout_ms;
     result = transfer(fd, true, frame, FRAME_HEADER_BYTES, deadline, false);
     if (result != VERIFY_MATCH)
         return result;

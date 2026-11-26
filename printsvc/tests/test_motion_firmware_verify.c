@@ -3,12 +3,14 @@
 
 #undef NDEBUG
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char valid_image[] =
@@ -76,7 +78,7 @@ static void reply(int fd, uint8_t sequence, const uint8_t *data, size_t len,
 }
 
 static void expect_flash_read(int fd, uint8_t sequence, uint32_t word,
-                              const uint8_t *payload, size_t count)
+                              const uint8_t *payload, size_t count, bool slow_reply)
 {
     const uint8_t address[] = { 0x06, 0x80, (uint8_t)(word >> 16),
                                 (uint8_t)(word >> 8), (uint8_t)word };
@@ -85,6 +87,11 @@ static void expect_flash_read(int fd, uint8_t sequence, uint32_t word,
 
     const uint8_t read_flash[] = { 0x14, (uint8_t)(count >> 8), (uint8_t)count, 0x20 };
     expect_request(fd, sequence + 1, read_flash, sizeof(read_flash));
+    if (slow_reply) {
+        /* AVR068 allows five seconds for flash, longer than other replies. */
+        const struct timespec delay = { .tv_sec = 1, .tv_nsec = 500000000 };
+        assert(nanosleep(&delay, NULL) == 0);
+    }
     uint8_t response[256 + 3] = { 0x14, 0 };
     assert(count <= 256);
     memcpy(response + 2, payload, count);
@@ -113,13 +120,13 @@ static void simulate_controller(int fd, peer_case_t scenario)
 
     /* Include arbitrary bytes outside the records in the transported words. */
     uint8_t low[] = { 0x95, 0xaa, 0x11, 0x22, 0x00, 0xff };
-    expect_flash_read(fd, 4, 0, low, sizeof(low));
+    expect_flash_read(fd, 4, 0, low, sizeof(low), scenario == PEER_MATCH);
     uint8_t page[256] = { [0] = 0x42, [255] = 0xf0 };
-    expect_flash_read(fd, 6, 0x0080, page, sizeof(page));
-    expect_flash_read(fd, 8, 0x0810, (uint8_t[]){ 0x55, 0x31 }, 2);
-    expect_flash_read(fd, 10, 0x10000, (uint8_t[]){ 0x81, 0x56 }, 2);
+    expect_flash_read(fd, 6, 0x0080, page, sizeof(page), false);
+    expect_flash_read(fd, 8, 0x0810, (uint8_t[]){ 0x55, 0x31 }, 2, false);
+    expect_flash_read(fd, 10, 0x10000, (uint8_t[]){ 0x81, 0x56 }, 2, false);
     uint8_t last_byte = scenario == PEER_MISMATCH ? 0x7a : 0x79;
-    expect_flash_read(fd, 12, 0x1efff, (uint8_t[]){ 0x0c, last_byte }, 2);
+    expect_flash_read(fd, 12, 0x1efff, (uint8_t[]){ 0x0c, last_byte }, 2, false);
 }
 
 static void verify_case(const char *binary, const char *image_path,
