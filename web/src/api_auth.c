@@ -18,7 +18,9 @@
 #include <unistd.h>
 #include <crypt.h>
 
-#define AUTH_CONFIG_PATH  "/etc/deneb/web-auth.conf"
+#ifndef DENEB_API_AUTH_CONFIG_PATH
+#define DENEB_API_AUTH_CONFIG_PATH "/etc/deneb/web-auth.conf"
+#endif
 #define MAX_TOKENS        8
 #define TOKEN_LEN         64
 #define MAX_NONCES        16
@@ -73,7 +75,7 @@ static void generate_random_hex(char *out, size_t len)
 
 static void load_config(void)
 {
-    FILE *f = fopen(AUTH_CONFIG_PATH, "r");
+    FILE *f = fopen(DENEB_API_AUTH_CONFIG_PATH, "r");
     if (!f) { setup_complete = 0; return; }
     setup_complete = 0;
 
@@ -105,7 +107,7 @@ static void load_config(void)
 
 static void save_config(void)
 {
-    int fd = open(AUTH_CONFIG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    int fd = open(DENEB_API_AUTH_CONFIG_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (fd < 0) return;
     FILE *f = fdopen(fd, "w");
     if (!f) { close(fd); return; }

@@ -90,14 +90,21 @@ streaming uploads, SSE, Cura compatibility, and recovery behavior.
 | Finding | Implication |
 | --- | --- |
 | lighttpd `server.max-connections` is 8 and the API `MAX_SSE_CLIENTS` is 4 | The limits and proxy/backend connection accounting must be tested together; do not merely raise limits without resource and denial-of-service bounds. |
-| SSE sockets are registered for `EPOLLHUP | EPOLLERR`, but the main loop only handles ordinary client `EPOLLIN` | This is a likely cause of retained backend descriptors after disconnect and should be fixed before any protocol migration. |
-| Multipart upload reads synchronously in the single API event loop and may poll for up to 30 seconds | A slow/interrupted upload can delay unrelated API work; lighttpd transport limits plus a nonblocking or FastCGI/SCGI body path are worth prototyping. |
+| lighttpd streams SSE responses and `deneb-api` releases the client slot when the proxy disconnects | The host proxy test verifies that all four connections return to the descriptor baseline after disconnect. |
+| lighttpd streams multipart bodies with a known length. The API writes one chunk of up to 8 KiB per ready upload, limits pending bodies to 50 MiB in total, and closes an upload after 30 seconds without progress | REST and SSE can continue while an upload is waiting on the client. The API releases incomplete bodies when the proxy disconnects. Lighttpd decodes chunked requests before forwarding them. |
+| One transient API worker extracts and stages a completed print upload | REST and SSE continue during file preparation. The API loop checks pending-job state and publishes the staged file before native registration. |
 | `deneb-api` carries its own HTTP parser/serializer, header/body limits, keep-alive handling, and 64 KiB response buffer | These are transport responsibilities that could move behind a proven lighttpd application protocol if the total resource cost improves. |
 | Approximately 80 routes still perform dynamic printer/Cura work | The application service remains necessary even if all generic HTTP transport moves to lighttpd. |
 
-The immediate priority is fixing the observed four-SSE-client starvation,
-retained descriptors, and duplicate-API-process behavior across the existing
-proxy/API boundary. The frontend should remain framework-free; product work
+The Web host suite includes `deneb-proxy-upload-tests` when the stub build has
+Node.js, lighttpd, and unzip available. It checks two-second REST replies and
+fresh updates on all four live status streams during an incomplete Cura UFP
+upload, during delayed UFP extraction, and after cancellation. It also checks
+the successful response and stored G-code, descriptor recovery, and extraction
+cleanup when the API shuts down. The installed starvation and descriptor
+behavior still require a current-package retest.
+
+The frontend should remain framework-free. Product work
 should focus on lifecycle accuracy, storage/upload UX, security, diagnostics,
 updates/rollback, accessibility, and hardware-backed browser workflows. See
 [PROJECT_STATUS.md](PROJECT_STATUS.md) and

@@ -3,11 +3,16 @@
 #define DENEB_COMMON_PRINT_JOB_FILE_H
 
 #include <stddef.h>
+#include <stdatomic.h>
 
 #define DENEB_PRINT_JOB_USB_SCAN_DIR "/mnt/sda1"
 #define DENEB_PRINT_JOB_LOCAL_SCAN_DIR "/home/3D"
+#ifndef DENEB_PRINT_JOB_SPOOL_DIR
 #define DENEB_PRINT_JOB_SPOOL_DIR "/home/3D/deneb-uploads"
+#endif
+#ifndef DENEB_ACTIVE_THUMB_PATH
 #define DENEB_ACTIVE_THUMB_PATH "/tmp/deneb-active-thumb.rgb565"
+#endif
 
 #define DENEB_BUILD_VOLUME_X_MIN_MM 0.0f
 #define DENEB_BUILD_VOLUME_X_MAX_MM 223.0f
@@ -69,7 +74,8 @@ int deneb_print_job_file_replace_extension(const char *name,
                                            char *out,
                                            size_t out_sz);
 int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
-                                                 const char *gcode_path);
+                                                 const char *gcode_path,
+                                                 const atomic_bool *cancelled);
 int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
                                                const char *out_path);
 void deneb_print_job_file_clear_active_thumbnail(void);
@@ -81,7 +87,8 @@ int deneb_print_job_file_upload_storage_plan(
     const char *filename,
     deneb_print_job_upload_storage_plan_t *plan);
 int deneb_print_job_file_store_upload(const char *src_path,
-                                      const char *dest_path);
+                                      const char *dest_path,
+                                      const atomic_bool *cancelled);
 
 int deneb_print_job_file_check_build_volume(
     const deneb_print_job_file_metadata_t *meta,

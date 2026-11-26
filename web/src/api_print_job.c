@@ -4,6 +4,7 @@
  * Print job endpoint implementations.
  */
 
+#define _GNU_SOURCE
 #include "api_print_job.h"
 #include "api_multipart.h"
 #include "backend_zmq.h"
@@ -15,9 +16,11 @@
 #include "print_state_rules.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -338,68 +341,49 @@ void api_print_job_state_put(const http_request_t *req, http_response_t *resp)
 
 void api_print_job_post(const http_request_t *req, http_response_t *resp)
 {
-    /*
-     * POST /api/v1/print_job
-     * Cura uploads a gcode file via multipart/form-data with fields:
-     *   - file: the gcode/ufp file
-     *   - jobname: display name (optional)
-     *   - owner: who started the print (optional)
-     *
-     * The main.c stream_upload() has already saved the full multipart body
-     * to req->upload_path. We need to extract the file content, move it
-     * to internal printer storage, and send a ZMQ JOB command.
-     */
     if (req->upload_path[0] == '\0') {
         fprintf(stderr, "deneb-api: print upload rejected: no upload_path\n");
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"No file uploaded\"}");
+        set_message_response(resp, 400, "No file uploaded");
+        return;
+    }
+    if (!req->multipart_boundary[0]) {
+        set_message_response(resp, 400, "No file field in upload");
         return;
     }
 
-    /* Extract file from multipart body */
+    /* The router has already applied the route's authorization policy. */
+    resp->prepare_print_upload = 1;
+}
+
+int api_print_job_prepare_upload(const http_request_t *req,
+                                 api_print_upload_t *upload,
+                                 http_response_t *resp,
+                                 const atomic_bool *cancelled)
+{
     char gcode_path[256] = "";
     char filename[128] = "upload.gcode";
-    char job_instance_uuid[96] = "";
-    char cloud_job_id[96] = "";
-    char owner[32] = "";
-    int ufp_normalized = 0;
-    char validation_message[256] = "";
-    int validation_status_code = 0;
-    char ufp_thumbnail_path[] = "/tmp/deneb-ufp-thumb-upload-XXXXXX";
-    int ufp_thumbnail_ready = 0;
-    deneb_print_job_upload_storage_plan_t storage;
+    char validation_message[256];
 
-    if (req->multipart_boundary[0] &&
-        extract_multipart_file(req->multipart_boundary, req->upload_path,
+    if (extract_multipart_file(req->multipart_boundary, req->upload_path,
                                gcode_path, sizeof(gcode_path),
                                filename, sizeof(filename)) < 0) {
         fprintf(stderr, "deneb-api: print upload rejected: failed to extract multipart file\n");
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to extract file from upload\"}");
-        return;
+        set_message_response(resp, 400, "Failed to extract file from upload");
+        return -1;
     }
-    if (req->multipart_boundary[0]) {
-        (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
-                                      "job_instance_uuid", job_instance_uuid,
-                                      sizeof(job_instance_uuid));
-        (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
-                                      "cloud_job_id", cloud_job_id,
-                                      sizeof(cloud_job_id));
-        (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
-                                      "owner", owner, sizeof(owner));
-    }
-
-    if (gcode_path[0] == '\0') {
-        fprintf(stderr, "deneb-api: print upload rejected: no file field\n");
-        resp->status_code = 400;
-        api_http_set_body_str(resp, "{\"message\":\"No file field in upload\"}");
-        return;
-    }
+    (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+                                  "job_instance_uuid", upload->job_instance_uuid,
+                                  sizeof(upload->job_instance_uuid));
+    (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+                                  "cloud_job_id", upload->cloud_job_id,
+                                  sizeof(upload->cloud_job_id));
+    (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+                                  "owner", upload->owner, sizeof(upload->owner));
 
     if (deneb_print_job_file_has_extension(filename, ".ufp")) {
-        char extracted_path[] = "/tmp/deneb-ufp-model-XXXXXX";
+        char extracted_path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-model-XXXXXX";
         char extracted_name[sizeof(filename)];
-        int fd = mkstemp(extracted_path);
+        int fd = mkostemp(extracted_path, O_CLOEXEC);
 
         if (fd >= 0)
             close(fd);
@@ -408,138 +392,155 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
                 filename, ".gcode", extracted_name,
                 sizeof(extracted_name)) < 0 ||
             deneb_print_job_file_extract_ufp_model_gcode(
-                gcode_path, extracted_path) < 0) {
+                gcode_path, extracted_path, cancelled) < 0) {
             if (fd >= 0)
                 unlink(extracted_path);
-            fprintf(stderr,
-                    "deneb-api: print upload rejected: failed to extract UFP model.gcode from %s\n",
-                    filename);
             unlink(gcode_path);
-            resp->status_code = 400;
-            api_http_set_body_str(resp,
-                                  "{\"message\":\"Failed to extract UFP model.gcode\"}");
-            return;
+            if (!atomic_load(cancelled))
+                fprintf(stderr,
+                        "deneb-api: print upload rejected: failed to extract UFP model.gcode from %s\n",
+                        filename);
+            set_message_response(resp, 400, "Failed to extract UFP model.gcode");
+            return -1;
         }
 
-        int thumb_fd = mkstemp(ufp_thumbnail_path);
-        if (thumb_fd >= 0) {
-            close(thumb_fd);
-            if (deneb_print_job_file_extract_ufp_thumbnail(
-                    gcode_path, ufp_thumbnail_path) == 0)
-                ufp_thumbnail_ready = 1;
-            else
-                unlink(ufp_thumbnail_path);
+        if (!atomic_load(cancelled)) {
+            char thumb_path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-thumb-upload-XXXXXX";
+            int thumb_fd = mkostemp(thumb_path, O_CLOEXEC);
+            if (thumb_fd >= 0) {
+                close(thumb_fd);
+                if (deneb_print_job_file_extract_ufp_thumbnail(gcode_path, thumb_path) == 0)
+                    snprintf(upload->staged_thumbnail, sizeof(upload->staged_thumbnail),
+                             "%s", thumb_path);
+                else
+                    unlink(thumb_path);
+            }
         }
         unlink(gcode_path);
         snprintf(gcode_path, sizeof(gcode_path), "%s", extracted_path);
         snprintf(filename, sizeof(filename), "%s", extracted_name);
-        ufp_normalized = 1;
-        fprintf(stderr,
-                "deneb-api: normalized UFP upload to extracted G-code %s\n",
-                filename);
+        upload->ufp_normalized = 1;
+        fprintf(stderr, "deneb-api: normalized UFP upload to extracted G-code %s\n", filename);
     }
 
+    if (atomic_load(cancelled)) {
+        unlink(gcode_path);
+        return -1;
+    }
     validation_message[0] = '\0';
     if (deneb_print_job_file_validate_build_volume_path(
             gcode_path, validation_message, sizeof(validation_message)) < 0) {
         fprintf(stderr,
                 "deneb-api: print upload build-volume validation failed for %s: %s\n",
-                filename,
-                validation_message[0] ? validation_message :
-                "Invalid print job metadata");
-        if (ufp_thumbnail_ready)
-            unlink(ufp_thumbnail_path);
+                filename, validation_message[0] ? validation_message : "Invalid print job metadata");
         unlink(gcode_path);
         set_message_response(resp, 422,
-                             validation_message[0] ? validation_message :
-                             "Invalid print job metadata");
-        return;
+                             validation_message[0] ? validation_message : "Invalid print job metadata");
+        return -1;
     }
-    if (deneb_print_job_file_upload_storage_plan(filename, &storage) < 0) {
+
+    if (deneb_print_job_file_upload_storage_plan(filename, &upload->storage) < 0) {
         fprintf(stderr, "deneb-api: failed to prepare print spool path for %s: %s\n",
                 filename, strerror(errno));
-        if (ufp_thumbnail_ready)
-            unlink(ufp_thumbnail_path);
         unlink(gcode_path);
-        resp->status_code = 500;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to prepare print storage\"}");
+        set_message_response(resp, 500, "Failed to prepare print storage");
+        return -1;
+    }
+
+    /* Stage on the destination filesystem so publication is a single rename. */
+    char dir[] = DENEB_PRINT_JOB_SPOOL_DIR "/.upload-XXXXXX";
+    if ((mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) == 0 || errno == EEXIST) &&
+        mkdtemp(dir)) {
+        char staged[sizeof(upload->staged_gcode)];
+        snprintf(staged, sizeof(staged), "%s/job", dir);
+        snprintf(upload->staged_directory, sizeof(upload->staged_directory), "%s", dir);
+        if (deneb_print_job_file_store_upload(gcode_path, staged, cancelled) == 0)
+            snprintf(upload->staged_gcode, sizeof(upload->staged_gcode), "%s", staged);
+    }
+    if (!upload->staged_gcode[0]) {
+        fprintf(stderr, "deneb-api: failed to stage print file for %s: %s\n",
+                upload->storage.dest_path, strerror(errno));
+        unlink(gcode_path);
+        set_message_response(resp, 500, "Failed to save file");
+        return -1;
+    }
+
+    return 0;
+}
+
+void api_print_job_release_upload(const api_print_upload_t *upload)
+{
+    if (upload->staged_gcode[0])
+        unlink(upload->staged_gcode);
+    if (upload->staged_directory[0])
+        rmdir(upload->staged_directory);
+    if (upload->staged_thumbnail[0])
+        unlink(upload->staged_thumbnail);
+}
+
+void api_print_job_commit_upload(const api_print_upload_t *upload,
+                                  http_response_t *resp)
+{
+    const deneb_print_job_upload_storage_plan_t *storage = &upload->storage;
+    if (!upload->staged_gcode[0]) {
+        set_message_response(resp, 500, "Failed to save file");
         return;
     }
 
     deneb_pending_job_upload_check_t pending_upload;
-    if (deneb_pending_job_file_check_upload_default(storage.dest_path,
-                                                    storage.filename,
+    if (deneb_pending_job_file_check_upload_default(storage->dest_path,
+                                                    storage->filename,
                                                     &pending_upload) == 0 &&
         pending_upload.status != DENEB_PENDING_JOB_UPLOAD_CLEAR) {
         if (pending_upload.status == DENEB_PENDING_JOB_UPLOAD_DUPLICATE) {
             fprintf(stderr, "deneb-api: print upload deduped to existing pending job path=%s\n",
                     pending_upload.path);
             write_pending_job_response(resp, pending_upload.display_name, 200);
-            if (ufp_thumbnail_ready)
-                unlink(ufp_thumbnail_path);
-            unlink(gcode_path);
             return;
         }
 
         fprintf(stderr,
                 "deneb-api: print upload rejected because another pending print exists: %s\n",
                 pending_upload.path);
-        resp->status_code = 409;
-        api_http_set_body_str(resp, "{\"message\":\"Another print job is already pending\"}");
-        if (ufp_thumbnail_ready)
-            unlink(ufp_thumbnail_path);
-        unlink(gcode_path);
+        set_message_response(resp, 409, "Another print job is already pending");
         return;
     }
 
-    if (deneb_print_job_file_store_upload(gcode_path, storage.dest_path) < 0) {
-        fprintf(stderr, "deneb-api: failed to save print file to %s: %s\n",
-                storage.dest_path, strerror(errno));
-        if (ufp_thumbnail_ready)
-            unlink(ufp_thumbnail_path);
-        unlink(gcode_path);
-        resp->status_code = 500;
-        api_http_set_body_str(resp, "{\"message\":\"Failed to save file\"}");
+    if (rename(upload->staged_gcode, storage->dest_path) < 0) {
+        fprintf(stderr, "deneb-api: failed to save print file to %s\n", storage->dest_path);
+        set_message_response(resp, 500, "Failed to save file");
         return;
     }
 
-    fprintf(stderr, "deneb-api: print file saved to %s%s\n",
-            storage.dest_path,
-            ufp_normalized ? " (extracted from UFP)" : "");
-
+    fprintf(stderr, "deneb-api: print file saved to %s%s\n", storage->dest_path,
+            upload->ufp_normalized ? " (extracted from UFP)" : "");
     fprintf(stderr, "deneb-api: registration request sent for %s (%s)\n",
-            storage.filename, storage.dest_path);
+            storage->filename, storage->dest_path);
 
-    if (register_native_print(storage.dest_path,
-                              owner[0] ? owner : NULL,
-                              job_instance_uuid[0] ? job_instance_uuid : NULL,
-                              cloud_job_id[0] ? cloud_job_id : NULL,
-                              validation_message,
-                              sizeof(validation_message),
+    char validation_message[256] = "";
+    int validation_status_code = 0;
+    if (register_native_print(storage->dest_path,
+                              upload->owner[0] ? upload->owner : NULL,
+                              upload->job_instance_uuid[0] ? upload->job_instance_uuid : NULL,
+                              upload->cloud_job_id[0] ? upload->cloud_job_id : NULL,
+                              validation_message, sizeof(validation_message),
                               &validation_status_code) < 0) {
         fprintf(stderr, "deneb-api: failed to register print natively for %s\n",
-                storage.dest_path);
+                storage->dest_path);
         deneb_pending_job_file_clear_default();
-        if (ufp_thumbnail_ready)
-            unlink(ufp_thumbnail_path);
-        unlink(storage.dest_path);
-        set_message_response(resp,
-                             validation_status_code > 0 ?
-                             validation_status_code : 503,
-                             validation_message[0] ?
-                             validation_message : "Failed to start print");
+        unlink(storage->dest_path);
+        set_message_response(resp, validation_status_code > 0 ? validation_status_code : 503,
+                             validation_message[0] ? validation_message : "Failed to start print");
         return;
     }
-    if (ufp_thumbnail_ready &&
-        rename(ufp_thumbnail_path, DENEB_ACTIVE_THUMB_PATH) < 0)
-        unlink(ufp_thumbnail_path);
+    if (upload->staged_thumbnail[0])
+        (void)rename(upload->staged_thumbnail, DENEB_ACTIVE_THUMB_PATH);
     fprintf(stderr, "deneb-api: native registration accepted and print metadata prepared for %s\n",
-            storage.filename);
+            storage->filename);
 
     char buf[512];
-
     deneb_print_job_summary_format_queued_response(
-        "Print job accepted", storage.filename, buf, sizeof(buf));
+        "Print job accepted", storage->filename, buf, sizeof(buf));
     api_http_set_body_str(resp, buf);
     resp->status_code = 201;
 }

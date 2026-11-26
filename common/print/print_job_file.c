@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <signal.h>
+#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +18,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #define DENEB_THUMB_TARGET_SIZE 116
@@ -191,7 +194,7 @@ int deneb_print_job_file_metadata_load(const char *path,
     if (!path || !meta)
         return -1;
 
-    f = fopen(path, "rb");
+    f = fopen(path, "rbe");
     if (!f)
         return -1;
 
@@ -330,33 +333,60 @@ int deneb_print_job_file_replace_extension(const char *name,
 }
 
 static int extract_ufp_member(const char *ufp_path, const char *member,
-                              const char *gcode_path)
+                              const char *gcode_path,
+                              const atomic_bool *cancelled)
 {
-    int out_fd;
+    posix_spawn_file_actions_t actions;
+    posix_spawnattr_t attrs;
     int status = 0;
     pid_t pid;
     struct stat st;
 
-    out_fd = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (out_fd < 0)
-        return -1;
-
-    pid = fork();
-    if (pid < 0) {
-        close(out_fd);
+    if (atomic_load(cancelled)) {
+        errno = ECANCELED;
         return -1;
     }
-    if (pid == 0) {
-        if (dup2(out_fd, STDOUT_FILENO) < 0)
-            _exit(126);
-        close(out_fd);
-        execlp("unzip", "unzip", "-p", ufp_path, member, (char *)NULL);
-        _exit(127);
-    }
-    close(out_fd);
-
-    if (waitpid(pid, &status, 0) < 0)
+    int rc = posix_spawn_file_actions_init(&actions);
+    if (rc != 0) {
+        errno = rc;
         return -1;
+    }
+    rc = posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, gcode_path,
+                                         O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (rc == 0)
+        rc = posix_spawnattr_init(&attrs);
+    if (rc == 0) {
+        rc = posix_spawnattr_setflags(&attrs, POSIX_SPAWN_SETPGROUP);
+        if (rc == 0)
+            rc = posix_spawnattr_setpgroup(&attrs, 0);
+        char *argv[] = { "unzip", "-p", (char *)ufp_path, (char *)member, NULL };
+        if (rc == 0)
+            rc = posix_spawnp(&pid, argv[0], &actions, &attrs, argv, environ);
+        posix_spawnattr_destroy(&attrs);
+    }
+    posix_spawn_file_actions_destroy(&actions);
+    if (rc != 0) {
+        errno = rc;
+        return -1;
+    }
+
+    /* The worker owns this process group until the child has been reaped. */
+    const struct timespec delay = { .tv_nsec = 20000000L };
+    for (;;) {
+        if (atomic_load(cancelled)) {
+            kill(-pid, SIGKILL);
+            while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+            unlink(gcode_path);
+            errno = ECANCELED;
+            return -1;
+        }
+        pid_t exited = waitpid(pid, &status, WNOHANG);
+        if (exited == pid)
+            break;
+        if (exited < 0 && errno != EINTR)
+            return -1;
+        nanosleep(&delay, NULL);
+    }
     if (stat(gcode_path, &st) == 0 && st.st_size > 0)
         return 0;
     unlink(gcode_path);
@@ -537,7 +567,7 @@ static size_t list_ufp_thumbnail_members(
     if (!ufp_path || !candidates || max_candidates == 0)
         return 0;
 
-    f = fopen(ufp_path, "rb");
+    f = fopen(ufp_path, "rbe");
     if (!f)
         return 0;
 
@@ -621,7 +651,7 @@ static int extract_zip_candidate(const char *ufp_path,
 
     *out = NULL;
     *out_size = 0;
-    f = fopen(ufp_path, "rb");
+    f = fopen(ufp_path, "rbe");
     if (!f)
         return -1;
 
@@ -678,7 +708,7 @@ static int write_all_bytes(const char *path, const unsigned char *data,
     if (!path || !data)
         return -1;
 
-    f = fopen(path, "wb");
+    f = fopen(path, "wbe");
     if (!f)
         return -1;
     written = fwrite(data, 1, size, f);
@@ -987,7 +1017,8 @@ done:
 }
 
 int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
-                                                 const char *gcode_path)
+                                                 const char *gcode_path,
+                                                 const atomic_bool *cancelled)
 {
     int rc;
 
@@ -996,10 +1027,10 @@ int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
         return -1;
     }
 
-    rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path);
-    if (rc == 0)
-        return 0;
-    return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path);
+    rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path, cancelled);
+    if (rc == 0 || atomic_load(cancelled))
+        return rc;
+    return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path, cancelled);
 }
 
 int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
@@ -1138,16 +1169,17 @@ int deneb_print_job_file_upload_storage_plan(
                                            sizeof(plan->dest_path));
 }
 
-static int copy_file(const char *src_path, const char *dest_path)
+static int copy_file(const char *src_path, const char *dest_path,
+                     const atomic_bool *cancelled)
 {
     int src_fd;
     int dst_fd;
-    char buf[65536];
+    char buf[8192];
     ssize_t nr;
     int copy_ok = 1;
 
-    src_fd = open(src_path, O_RDONLY);
-    dst_fd = open(dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    src_fd = open(src_path, O_RDONLY | O_CLOEXEC);
+    dst_fd = open(dest_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (src_fd < 0 || dst_fd < 0) {
         if (src_fd >= 0)
             close(src_fd);
@@ -1157,6 +1189,10 @@ static int copy_file(const char *src_path, const char *dest_path)
     }
 
     while ((nr = read(src_fd, buf, sizeof(buf))) >= 0) {
+        if (atomic_load(cancelled)) {
+            copy_ok = 0;
+            break;
+        }
         if (nr == 0)
             break;
         if (write(dst_fd, buf, (size_t)nr) != nr) {
@@ -1173,20 +1209,18 @@ static int copy_file(const char *src_path, const char *dest_path)
 }
 
 int deneb_print_job_file_store_upload(const char *src_path,
-                                      const char *dest_path)
+                                      const char *dest_path,
+                                      const atomic_bool *cancelled)
 {
     if (!src_path || !*src_path || !dest_path || !*dest_path) {
         errno = EINVAL;
         return -1;
     }
 
-    if (mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) < 0 && errno != EEXIST)
-        return -1;
-
     if (rename(src_path, dest_path) == 0)
         return 0;
 
-    if (copy_file(src_path, dest_path) < 0) {
+    if (copy_file(src_path, dest_path, cancelled) < 0) {
         unlink(dest_path);
         return -1;
     }

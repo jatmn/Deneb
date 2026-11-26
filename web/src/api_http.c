@@ -208,7 +208,8 @@ int api_http_parse(http_request_t *req, const char *raw, size_t len)
                 }
             } else if (strcasecmp(req->headers[req->header_count].name, "Content-Length") == 0) {
                 long cl = strtol(req->headers[req->header_count].value, NULL, 10);
-                req->content_length = (cl < 0 || cl > 52428800) ? 0 : (int)cl;  /* cap at 50MB */
+                req->content_length =
+                    (cl < 0 || cl > HTTP_MAX_CONTENT_LENGTH) ? 0 : (int)cl;
             }
 
             req->header_count++;

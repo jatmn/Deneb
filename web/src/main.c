@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
+#include <pthread.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -21,23 +23,30 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/statvfs.h>
-#include <poll.h>
 #if !defined(_WIN32)
 #include <syslog.h>
 #endif
 
 #include "api_http.h"
+#include "api_multipart.h"
+#include "api_print_job.h"
 #include "backend_zmq.h"
 #include "df_bridge.h"
 #include "print_string.h"
 
-#define SOCKET_PATH     "/var/run/deneb-api.sock"
+#ifndef DENEB_API_SOCKET_PATH
+#define DENEB_API_SOCKET_PATH "/var/run/deneb-api.sock"
+#endif
 #define MAX_EVENTS      16
 #define EPOLL_TIMEOUT_MS 100
 #define MAX_SSE_CLIENTS 4
 #define SSE_PUSH_INTERVAL_MS 250
+#define MAX_PENDING_UPLOADS 8 /* The packaged proxy accepts eight clients. */
+#define UPLOAD_IDLE_TIMEOUT_MS 30000
 
-static volatile int running = 1;
+/* The signal handler may run on the upload worker thread. */
+_Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "Signal flag must be lock-free");
+static atomic_bool running = 1;
 static int listen_fd = -1;
 static int epoll_fd = -1;
 static int owner_lock_fd = -1;
@@ -46,6 +55,25 @@ static int owner_lock_fd = -1;
 static int sse_clients[MAX_SSE_CLIENTS];
 static int sse_client_count = 0;
 static uint64_t sse_last_push_ms = 0;
+
+typedef struct {
+    int client_fd;
+    int temp_fd;
+    uint64_t last_progress_ms;
+    uint64_t preparation_order;
+    http_request_t *request;
+} upload_t;
+
+static upload_t uploads[MAX_PENDING_UPLOADS];
+static uint64_t next_preparation_order;
+static struct {
+    upload_t *upload;
+    pthread_t thread;
+    atomic_bool cancelled;
+    int prepared;
+    api_print_upload_t files;
+    http_response_t response;
+} preparation;
 
 static void signal_handler(int sig)
 {
@@ -75,6 +103,13 @@ static int write_all(int fd, const char *data, size_t len)
     return 0;
 }
 
+static uint64_t monotonic_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 static int create_listen_socket_at(const char *path)
 {
     char lock_path[sizeof(((struct sockaddr_un *)0)->sun_path) + 8];
@@ -90,7 +125,7 @@ static int create_listen_socket_at(const char *path)
     }
     owner_lock_fd = lock_fd;
 
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) { perror("socket"); return -1; }
 
     unlink(path);
@@ -171,14 +206,12 @@ static void sse_push_status(void)
 
 static void handle_accept(void)
 {
-    int client_fd = accept(listen_fd, NULL, NULL);
+    int client_fd = accept4(listen_fd, NULL, NULL, SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (client_fd < 0) {
         if (errno != EAGAIN && errno != EWOULDBLOCK)
             perror("accept");
         return;
     }
-    set_nonblocking(client_fd);
-
     struct epoll_event ev;
     ev.events = EPOLLIN;
     ev.data.fd = client_fd;
@@ -188,67 +221,234 @@ static void handle_accept(void)
     }
 }
 
-/* Stream multipart POST body to a temp file. Returns 0 on success. */
-static int stream_upload(int fd, http_request_t *req, const char *initial_body, int initial_len)
+static upload_t *find_upload(int fd)
 {
-    char path[128];
-    snprintf(path, sizeof(path), "/tmp/deneb-upload-XXXXXX");
-    int tmpfd = mkstemp(path);
-    if (tmpfd < 0) {
-        perror("mkstemp");
-        return -1;
+    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+        if (uploads[i].request && uploads[i].client_fd == fd)
+            return &uploads[i];
+    }
+    return NULL;
+}
+
+static void release_upload(upload_t *upload)
+{
+    if (upload->temp_fd >= 0)
+        close(upload->temp_fd);
+    unlink(upload->request->upload_path);
+    free(upload->request);
+    upload->request = NULL;
+}
+
+static void close_client(int fd)
+{
+    upload_t *upload = find_upload(fd);
+    if (upload && upload == preparation.upload) {
+        upload->client_fd = -1;
+        atomic_store(&preparation.cancelled, 1);
+    } else if (upload) {
+        release_upload(upload);
+    }
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+    sse_remove_client(fd);
+    close(fd);
+}
+
+static void send_response(int fd, http_response_t *resp)
+{
+    char out_buf[65536];
+    int out_len = api_http_serialize(resp, out_buf, sizeof(out_buf));
+    free(resp->body);
+
+    if (out_len <= 0 || write_all(fd, out_buf, (size_t)out_len) < 0) {
+        close_client(fd);
+    } else if (resp->is_sse) {
+        /* Re-register fd to only detect disconnection, not incoming data. */
+        struct epoll_event sev = {
+            .events = EPOLLRDHUP | EPOLLHUP | EPOLLERR,
+            .data.fd = fd,
+        };
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &sev) == 0)
+            sse_register_client(fd);
+        else
+            close_client(fd);
+    } else if (!resp->keep_alive) {
+        close_client(fd);
+    }
+}
+
+static void set_upload_failed(http_response_t *resp)
+{
+    resp->status_code = 500;
+    api_http_set_body_str(resp, "{\"message\":\"Upload failed\"}");
+}
+
+static int upload_peer_gone(int fd)
+{
+    /* A write-side half-close still allows the upstream to read our reply. */
+    struct pollfd peer = { .fd = fd };
+    return poll(&peer, 1, 0) > 0 && (peer.revents & (POLLHUP | POLLERR | POLLNVAL));
+}
+
+static void *prepare_print_upload(void *unused)
+{
+    (void)unused;
+    preparation.prepared = api_print_job_prepare_upload(
+        preparation.upload->request, &preparation.files, &preparation.response,
+        &preparation.cancelled) == 0;
+    return NULL;
+}
+
+static void collect_print_upload(void)
+{
+    upload_t *upload = preparation.upload;
+    int fd = upload->client_fd;
+    int respond = running && fd >= 0 && !upload_peer_gone(fd);
+    if (respond && preparation.prepared) {
+        backend_zmq_poll();
+        api_print_job_commit_upload(&preparation.files, &preparation.response);
+    }
+    api_print_job_release_upload(&preparation.files);
+    release_upload(upload);
+    preparation.upload = NULL;
+    if (respond) {
+        send_response(fd, &preparation.response);
+    } else {
+        free(preparation.response.body);
+        if (fd >= 0)
+            close_client(fd);
+    }
+}
+
+static void poll_print_uploads(void)
+{
+    if (preparation.upload) {
+        /* A successful join publishes the results and never waits for disk work. */
+        if (pthread_tryjoin_np(preparation.thread, NULL) != 0)
+            return;
+        collect_print_upload();
     }
 
-    int remaining = req->content_length;
-    int written = 0;
-
-    /* Write initial body data already read */
-    if (initial_len > 0 && remaining > 0) {
-        int to_write = initial_len < remaining ? initial_len : remaining;
-        if (write_all(tmpfd, initial_body, (size_t)to_write) < 0) {
-            close(tmpfd); unlink(path);
-            return -1;
-        }
-        written += to_write;
-        remaining -= to_write;
+    upload_t *next = NULL;
+    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+        upload_t *upload = &uploads[i];
+        if (upload->request && upload->preparation_order &&
+            (!next || upload->preparation_order < next->preparation_order))
+            next = upload;
+    }
+    if (!next || !running)
+        return;
+    if (upload_peer_gone(next->client_fd)) {
+        close_client(next->client_fd);
+        return;
     }
 
-    /* Stream rest of body in 8KB chunks (bounded stack usage) */
-    char chunk[8192];
-    while (remaining > 0) {
-        ssize_t to_read = (ssize_t)(remaining < (int)sizeof(chunk) ? remaining : (int)sizeof(chunk));
-        ssize_t nr = read(fd, chunk, (size_t)to_read);
-        if (nr <= 0) {
-            if (nr < 0 && errno == EINTR) continue;
-            if (nr < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                struct pollfd pfd;
-                pfd.fd = fd;
-                pfd.events = POLLIN;
-                pfd.revents = 0;
-                int pr = poll(&pfd, 1, 30000);
-                if (pr > 0) continue;
+    preparation.upload = next;
+    memset(&preparation.files, 0, sizeof(preparation.files));
+    atomic_store(&preparation.cancelled, 0);
+    api_http_response_init(&preparation.response);
+    if (pthread_create(&preparation.thread, NULL, prepare_print_upload, NULL) != 0) {
+        set_upload_failed(&preparation.response);
+        preparation.prepared = 0;
+        collect_print_upload();
+    }
+}
+
+static void finish_upload(upload_t *upload, int complete)
+{
+    int fd = upload->client_fd;
+    http_response_t resp;
+    api_http_response_init(&resp);
+
+    if (close(upload->temp_fd) < 0)
+        complete = 0;
+    upload->temp_fd = -1;
+    if (complete) {
+        fprintf(stderr, "deneb-api: uploaded %d bytes to %s\n",
+                upload->request->upload_size, upload->request->upload_path);
+        backend_zmq_poll();
+        api_http_route(upload->request, &resp);
+        if (resp.prepare_print_upload) {
+            /* Only receive full disconnects while waiting to send the reply. */
+            struct epoll_event ev = { .data.fd = fd };
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) < 0) {
+                set_upload_failed(&resp);
+            } else {
+                upload->preparation_order = ++next_preparation_order;
+                return;
             }
-            close(tmpfd); unlink(path);
-            return -1;
         }
-        if (write_all(tmpfd, chunk, (size_t)nr) < 0) {
-            close(tmpfd); unlink(path);
-            return -1;
-        }
-        written += (int)nr;
-        remaining -= (int)nr;
+    } else {
+        set_upload_failed(&resp);
     }
+    release_upload(upload);
+    send_response(fd, &resp);
+}
 
-    if (remaining != 0) {
-        close(tmpfd); unlink(path);
+static size_t upload_remaining(const upload_t *upload)
+{
+    return (size_t)(upload->request->content_length - upload->request->upload_size);
+}
+
+static void append_upload(upload_t *upload, const char *data, size_t len)
+{
+    size_t remaining = upload_remaining(upload);
+    if (len > remaining)
+        len = remaining;
+    if (write_all(upload->temp_fd, data, len) < 0) {
+        finish_upload(upload, 0);
+        return;
+    }
+    upload->request->upload_size += (int)len;
+    upload->last_progress_ms = monotonic_ms();
+    if (len == remaining)
+        finish_upload(upload, 1);
+}
+
+static int start_upload(int fd, const http_request_t *req, const char *data, size_t len)
+{
+    upload_t *upload = NULL;
+    /* The receive files share /tmp, which may be RAM-backed on the printer. */
+    int available = HTTP_MAX_CONTENT_LENGTH;
+    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+        if (uploads[i].request)
+            available -= uploads[i].request->content_length;
+        else if (!upload)
+            upload = &uploads[i];
+    }
+    if (!upload || req->content_length > available)
+        return -1;
+
+    http_request_t *saved = malloc(sizeof(*saved));
+    if (!saved)
+        return -1;
+    *saved = *req;
+    snprintf(saved->upload_path, sizeof(saved->upload_path),
+             DENEB_UPLOAD_TEMP_DIR "/deneb-upload-XXXXXX");
+    int temp_fd = mkostemp(saved->upload_path, O_CLOEXEC);
+    if (temp_fd < 0) {
+        perror("mkostemp");
+        free(saved);
         return -1;
     }
-
-    close(tmpfd);
-    snprintf(req->upload_path, sizeof(req->upload_path), "%s", path);
-    req->upload_size = written;
-    fprintf(stderr, "deneb-api: uploaded %d bytes to %s\n", written, path);
+    *upload = (upload_t){ .client_fd = fd, .temp_fd = temp_fd, .request = saved };
+    append_upload(upload, data, len);
     return 0;
+}
+
+static void receive_upload(upload_t *upload)
+{
+    /* One chunk per readiness event lets other clients and SSE make progress. */
+    char chunk[8192];
+    size_t remaining = upload_remaining(upload);
+    ssize_t n;
+    do {
+        n = read(upload->client_fd, chunk, remaining < sizeof(chunk) ? remaining : sizeof(chunk));
+    } while (n < 0 && errno == EINTR);
+    if (n > 0) {
+        append_upload(upload, chunk, (size_t)n);
+    } else if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+        finish_upload(upload, 0);
+    }
 }
 
 static void handle_client(int fd)
@@ -257,9 +457,7 @@ static void handle_client(int fd)
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     if (n <= 0) {
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-        close(fd);
-        sse_remove_client(fd);
+        close_client(fd);
         return;
     }
     buf[n] = '\0';
@@ -272,58 +470,16 @@ static void handle_client(int fd)
         resp.status_code = 400;
         api_http_set_body_str(&resp, "{\"message\":\"Bad request\"}");
     } else if (req.is_multipart && strcmp(req.method, "POST") == 0) {
-        /* Stream multipart body to temp file for upload handlers. */
-        /* Find where body starts in the initial read */
         const char *body_start = strstr(buf, "\r\n\r\n");
-        int body_offset = body_start ? (int)(body_start + 4 - buf) : (int)n;
-        int initial_body_len = (int)n - body_offset;
-
-        if (stream_upload(fd, &req, buf + body_offset, initial_body_len) < 0) {
-            resp.status_code = 500;
-            api_http_set_body_str(&resp, "{\"message\":\"Upload failed\"}");
-        } else {
-            backend_zmq_poll();
-            api_http_route(&req, &resp);
-        }
-        /* Cleanup temp upload file */
-        if (req.upload_path[0]) unlink(req.upload_path);
+        const char *body = body_start ? body_start + 4 : buf + n;
+        if (start_upload(fd, &req, body, (size_t)(buf + n - body)) == 0)
+            return;
+        set_upload_failed(&resp);
     } else {
         backend_zmq_poll();
         api_http_route(&req, &resp);
     }
-
-    char out_buf[65536];
-    int out_len = api_http_serialize(&resp, out_buf, sizeof(out_buf));
-
-    /* Write response with partial-write handling */
-    int total_written = 0;
-    while (total_written < out_len) {
-        ssize_t nw = write(fd, out_buf + total_written, (size_t)(out_len - total_written));
-        if (nw <= 0) {
-            if (errno == EINTR) continue;
-            break;
-        }
-        total_written += (int)nw;
-    }
-
-    if (resp.body) free(resp.body);
-
-    if (out_len <= 0 || total_written != out_len) {
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-        close(fd);
-    } else if (resp.is_sse) {
-        /* Re-register fd to only detect disconnection, not incoming data */
-        struct epoll_event sev;
-        sev.events = EPOLLRDHUP | EPOLLHUP | EPOLLERR;
-        sev.data.fd = fd;
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &sev) == 0)
-            sse_register_client(fd);
-        else
-            close(fd);
-    } else if (!resp.keep_alive) {
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-        close(fd);
-    }
+    send_response(fd, &resp);
 }
 
 int main(int argc, char *argv[])
@@ -372,18 +528,18 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    listen_fd = create_listen_socket_at(SOCKET_PATH);
+    listen_fd = create_listen_socket_at(DENEB_API_SOCKET_PATH);
     if (listen_fd < 0) {
         fprintf(stderr, "deneb-api: failed to create listen socket\n");
         backend_zmq_deinit();
         return 1;
     }
 
-    epoll_fd = epoll_create1(0);
+    epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd < 0) {
         perror("epoll_create1");
         close(listen_fd);
-        unlink(SOCKET_PATH);
+        unlink(DENEB_API_SOCKET_PATH);
         backend_zmq_deinit();
         return 1;
     }
@@ -400,7 +556,7 @@ int main(int argc, char *argv[])
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, zmq_fd, &ev);
     }
 
-    fprintf(stderr, "deneb-api: listening on %s\n", SOCKET_PATH);
+    fprintf(stderr, "deneb-api: listening on %s\n", DENEB_API_SOCKET_PATH);
 
     struct epoll_event events[MAX_EVENTS];
     while (running) {
@@ -410,31 +566,50 @@ int main(int argc, char *argv[])
             perror("epoll_wait");
             break;
         }
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; running && i < n; i++) {
             int fd = events[i].data.fd;
             if (fd == listen_fd) {
                 handle_accept();
             } else if (fd == zmq_fd) {
                 backend_zmq_poll();
-            } else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-                sse_remove_client(fd);
-                close(fd);
-            } else if (events[i].events & EPOLLIN) {
-                handle_client(fd);
+            } else {
+                uint32_t ready = events[i].events;
+                upload_t *upload = find_upload(fd);
+                if (upload && !upload->preparation_order &&
+                    (ready & EPOLLIN) && !(ready & EPOLLERR)) {
+                    /* A hangup can accompany the last readable body bytes. */
+                    receive_upload(upload);
+                } else if (ready & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+                    close_client(fd);
+                } else if (!upload && (ready & EPOLLIN)) {
+                    handle_client(fd);
+                }
             }
         }
 
         backend_zmq_poll();
 
         /* Push SSE updates at 250 ms cadence */
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        uint32_t now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+        uint64_t now_ms = monotonic_ms();
         if (sse_client_count > 0 && (sse_last_push_ms == 0 || now_ms - sse_last_push_ms >= SSE_PUSH_INTERVAL_MS)) {
             sse_push_status();
             sse_last_push_ms = now_ms;
         }
+        for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+            if (uploads[i].request && !uploads[i].preparation_order &&
+                now_ms - uploads[i].last_progress_ms >= UPLOAD_IDLE_TIMEOUT_MS)
+                finish_upload(&uploads[i], 0);
+        }
+        poll_print_uploads();
+    }
+
+    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+        if (uploads[i].request && uploads[i].client_fd >= 0)
+            close_client(uploads[i].client_fd);
+    }
+    if (preparation.upload) {
+        pthread_join(preparation.thread, NULL);
+        collect_print_upload();
     }
 
     /* Cleanup SSE clients */
@@ -445,7 +620,7 @@ int main(int argc, char *argv[])
     fprintf(stderr, "deneb-api: shutting down\n");
     close(epoll_fd);
     close(listen_fd);
-    unlink(SOCKET_PATH);
+    unlink(DENEB_API_SOCKET_PATH);
     backend_zmq_deinit();
     close(owner_lock_fd);
     return 0;

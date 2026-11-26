@@ -42,7 +42,7 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
     int out_fd;
     size_t written = 0;
 
-    fd = open(upload_path, O_RDONLY);
+    fd = open(upload_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return -1;
 
@@ -174,8 +174,8 @@ int extract_multipart_file(const char *boundary, const char *upload_path,
         content_end--;
 
     content_len = (size_t)(content_end - content_start);
-    snprintf(out_path, (size_t)out_sz, "/tmp/deneb-gcode-XXXXXX");
-    out_fd = mkstemp(out_path);
+    snprintf(out_path, (size_t)out_sz, DENEB_UPLOAD_TEMP_DIR "/deneb-gcode-XXXXXX");
+    out_fd = mkostemp(out_path, O_CLOEXEC);
     if (out_fd < 0) {
         munmap(data, (size_t)st.st_size);
         return -1;
@@ -217,7 +217,7 @@ int extract_multipart_field(const char *boundary, const char *upload_path,
         return -1;
     out[0] = '\0';
 
-    fd = open(upload_path, O_RDONLY);
+    fd = open(upload_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0)
         return -1;
     if (fstat(fd, &st) < 0 || st.st_size == 0) {
