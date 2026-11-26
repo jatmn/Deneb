@@ -41,6 +41,7 @@ typedef struct {
     int abort_cleanup_pending;
     deneb_motion_policy_t abort_cleanup_policy;
     size_t abort_cleanup_index;
+    long long abort_pause_drain_deadline_ms;
     int finish_cleanup_pending;
     deneb_motion_policy_t finish_cleanup_policy;
     size_t finish_cleanup_index;
@@ -54,6 +55,7 @@ typedef struct {
     deneb_motion_policy_t pause_policy;
     size_t pause_policy_index;
     int pause_position_probe_pending;
+    int pause_position_drain_sent;
     int pause_position_probe_sent;
     long long pause_probe_deadline_ms;
     long long pause_policy_deadline_ms;

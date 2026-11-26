@@ -408,6 +408,14 @@ static void test_gcode_control_policy(void)
     assert(svc.status.error.code == DENEB_ERROR_SERIAL);
 }
 
+static void acknowledge_pause_drain(deneb_print_service_t *svc)
+{
+    assert(deneb_pause_resume_control_poll(svc) == 0);
+    assert(!svc->pause_position_probe_sent);
+    assert(deneb_flow_has_pending_barrier(&svc->flow));
+    assert(deneb_flow_handle_response(&svc->flow, "ok", NULL) == 1);
+}
+
 static void test_pause_resume_control_policy(void)
 {
     deneb_print_service_t svc;
@@ -453,6 +461,7 @@ static void test_pause_resume_control_policy(void)
     assert(!svc.pause_position_probe_sent);
     assert(!svc.pause_policy_pending);
     assert(!svc.paused_position_valid);
+    acknowledge_pause_drain(&svc);
     assert(deneb_pause_resume_control_poll(&svc) == 0);
     assert(svc.pause_position_probe_sent);
     assert(deneb_flow_inflight(&svc.flow) == 1);
@@ -5287,6 +5296,231 @@ static void test_repeated_jobs_release_terminal_state(void)
     remove(job_path);
 }
 
+static uint8_t expect_controller_command(int fd, const char *command)
+{
+    uint8_t packet[DENEB_PRINTSVC_MAX_GCODE_LINE + 6];
+    size_t len = strlen(command);
+
+    for (size_t received = 0; received < len + 6;) {
+        ssize_t n = read(fd, packet + received, len + 6 - received);
+        if (n < 0 && errno == EINTR)
+            continue;
+        assert(n > 0);
+        received += (size_t)n;
+    }
+    assert(packet[0] == 0xff && packet[1] == 0xff && packet[3] == len);
+    assert(memcmp(packet + 4, command, len) == 0);
+    return packet[2];
+}
+
+static void controller_send(int fd, const char *data, size_t len)
+{
+    for (size_t sent = 0; sent < len;) {
+        ssize_t n = write(fd, data + sent, len - sent);
+        if (n < 0 && errno == EINTR)
+            continue;
+        assert(n > 0);
+        sent += (size_t)n;
+    }
+}
+
+static void controller_acknowledge(int fd, uint8_t sequence, const char *report)
+{
+    char frame[128], ack[8];
+    format_sync_packet('o', sequence, 5, ack);
+    int len = snprintf(frame, sizeof(frame), "%s%s\n", report ? report : "", ack);
+    assert(len > 0 && (size_t)len < sizeof(frame));
+    controller_send(fd, frame, (size_t)len);
+}
+
+static void start_pause_controller_fixture(deneb_print_service_t *svc, int wire[2])
+{
+    deneb_print_service_init(svc);
+    assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, wire) == 0);
+    svc->serial.fd = wire[0];
+    svc->serial_ready = 1;
+    svc->job_active = 1;
+    svc->status.state = DENEB_PRINT_STATE_PRINTING;
+}
+
+static void expect_controller_quiet(int fd)
+{
+    char byte;
+    assert(read(fd, &byte, 1) < 0 && errno == EAGAIN);
+}
+
+static void test_pause_rejects_periodic_position_report(void)
+{
+    deneb_print_service_t svc;
+    int wire[2];
+    char reply[256];
+    start_pause_controller_fixture(&svc, wire);
+    svc.temperature_poll_ticks = 3;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    uint8_t temperature = expect_controller_command(wire[1], "M105");
+    uint8_t periodic = expect_controller_command(wire[1], "M114");
+
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
+                                           reply, sizeof(reply)) == 0);
+    controller_acknowledge(wire[1], temperature, NULL);
+    controller_acknowledge(wire[1], periodic, "X:10.00 Y:20.00 Z:30.00 E:0.00\n");
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(svc.status.position_report_count == 1 && svc.status.x == 10.0f);
+    uint8_t drain = expect_controller_command(wire[1], "M400");
+    controller_acknowledge(wire[1], drain, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    uint8_t probe = expect_controller_command(wire[1], "M114");
+    controller_acknowledge(wire[1], probe, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(svc.pause_position_probe_pending && !svc.pause_policy_pending);
+    assert(!svc.paused_position_valid);
+    expect_controller_quiet(wire[1]);
+
+    /* Temperature polling continues, but cannot send another position request. */
+    svc.temperature_poll_ticks = 3;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    temperature = expect_controller_command(wire[1], "M105");
+    expect_controller_quiet(wire[1]);
+    controller_acknowledge(wire[1], temperature, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(svc.pause_position_probe_pending && !svc.pause_policy_pending);
+
+    svc.pause_probe_deadline_ms = 1;
+    deneb_print_service_poll_motion(&svc);
+    assert(svc.status.fault && svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(!svc.pause_policy_pending && !svc.paused_position_valid);
+    expect_controller_quiet(wire[1]);
+    close(wire[1]);
+    deneb_print_service_close(&svc);
+}
+
+static void test_pause_drains_before_capturing_position(void)
+{
+    deneb_print_service_t svc;
+    int wire[2];
+    char reply[256];
+    start_pause_controller_fixture(&svc, wire);
+    assert(deneb_motion_sender_send_gcode(&svc.flow, &svc.serial, 1, "G1 X32") == 0);
+    uint8_t move = expect_controller_command(wire[1], "G1 X32");
+    assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
+                                           reply, sizeof(reply)) == 0);
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+
+    /* A move ACK leaves planner motion outstanding until M400 completes. */
+    controller_acknowledge(wire[1], move, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    uint8_t drain = expect_controller_command(wire[1], "M400");
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    assert(!svc.paused_position_valid && !svc.pause_policy_pending);
+    controller_acknowledge(wire[1], drain, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    uint8_t probe = expect_controller_command(wire[1], "M114");
+    assert(!svc.paused_position_valid && !svc.pause_policy_pending);
+
+    const char *position = "X:32.00 Y:24.00 Z:16.00 E:8.00\n";
+    controller_send(wire[1], position, strlen(position));
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    expect_controller_quiet(wire[1]);
+    assert(!svc.paused_position_valid && !svc.pause_policy_pending);
+    controller_acknowledge(wire[1], probe, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(!svc.pause_position_probe_pending && svc.pause_policy_pending);
+    assert(svc.paused_position_valid && svc.paused_x == 32.0f &&
+           svc.paused_y == 24.0f && svc.paused_z == 16.0f && svc.paused_e == 8.0f);
+    expect_controller_quiet(wire[1]);
+    close(wire[1]);
+    deneb_print_service_close(&svc);
+}
+
+static void test_abort_during_unacknowledged_pause_drain(void)
+{
+    for (int desync = 0; desync <= 1; ++desync) {
+        deneb_print_service_t svc;
+        int wire[2];
+        char reply[256];
+        start_pause_controller_fixture(&svc, wire);
+        svc.status.bed_t_set = 50.0f;
+        svc.status.head_t_set = 195.0f;
+        assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
+                                               reply, sizeof(reply)) == 0);
+        assert(deneb_print_service_poll_motion(&svc) == 0);
+        expect_controller_command(wire[1], "M400");
+        if (!desync)
+            svc.pause_probe_deadline_ms = 1;
+
+        assert(deneb_printsvc_ipc_handle_frame(&svc, "ABORT<{}",
+                                               reply, sizeof(reply)) == 0);
+        assert(svc.status.state == DENEB_PRINT_STATE_ABORTING);
+        if (desync) {
+            const char *error =
+                "Error:ProtoError:Sequence number is unexpected (received, expected): 1,7\n";
+            controller_send(wire[1], error, strlen(error));
+        }
+        deneb_print_service_poll_motion(&svc);
+        assert(svc.status.state == DENEB_PRINT_STATE_ERROR);
+        if (!desync)
+            assert(svc.status.fault);
+        assert(svc.status.error.code == DENEB_ERROR_SERIAL);
+        assert(!svc.abort_cleanup_pending && !svc.pause_position_probe_pending);
+        assert(svc.status.bed_t_set == 50.0f && svc.status.head_t_set == 195.0f);
+        expect_controller_command(wire[1], "M401");
+        expect_controller_command(wire[1], "M104 S0");
+        expect_controller_command(wire[1], "M140 S0");
+        expect_controller_quiet(wire[1]);
+        close(wire[1]);
+        deneb_print_service_close(&svc);
+    }
+}
+
+static void test_pause_handshake_yields_to_abort_and_fault(void)
+{
+    enum { ABORT, FAULT, DESYNC };
+    for (int wait_position = 0; wait_position <= 1; ++wait_position) {
+        for (int interrupt = ABORT; interrupt <= DESYNC; ++interrupt) {
+            deneb_print_service_t svc;
+            int wire[2];
+            char reply[256];
+            start_pause_controller_fixture(&svc, wire);
+            assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
+                                                   reply, sizeof(reply)) == 0);
+            assert(deneb_print_service_poll_motion(&svc) == 0);
+            uint8_t pending = expect_controller_command(wire[1], "M400");
+            if (wait_position) {
+                controller_acknowledge(wire[1], pending, NULL);
+                assert(deneb_print_service_poll_motion(&svc) > 0);
+                pending = expect_controller_command(wire[1], "M114");
+            }
+
+            if (interrupt == ABORT) {
+                assert(deneb_printsvc_ipc_handle_frame(&svc, "ABORT<{}",
+                                                       reply, sizeof(reply)) == 0);
+                controller_acknowledge(wire[1], pending,
+                    wait_position ? "X:32.00 Y:24.00 Z:16.00 E:8.00\n" : NULL);
+                assert(deneb_print_service_poll_motion(&svc) > 0);
+                assert(svc.status.state == DENEB_PRINT_STATE_ABORTING);
+                assert(svc.abort_cleanup_pending && svc.abort_cleanup_index == 1);
+                expect_controller_command(wire[1], "G91");
+            } else {
+                const char *error = interrupt == FAULT ? "Error:Thermal runaway\n" :
+                    "Error:ProtoError:Sequence number is unexpected (received, expected): 1,7\n";
+                controller_send(wire[1], error, strlen(error));
+                assert(deneb_print_service_poll_motion(&svc) < 0);
+                assert(svc.status.state == DENEB_PRINT_STATE_ERROR && !svc.job_active);
+                expect_controller_command(wire[1], "M401");
+                expect_controller_command(wire[1], "M104 S0");
+                expect_controller_command(wire[1], "M140 S0");
+            }
+            assert(!svc.pause_position_probe_pending && !svc.pause_policy_pending);
+            assert(!svc.paused_position_valid);
+            expect_controller_quiet(wire[1]);
+            close(wire[1]);
+            deneb_print_service_close(&svc);
+        }
+    }
+}
+
 static void test_pause_gates_active_job_streaming(void)
 {
     const char *job_path = "/tmp/deneb-printsvc-job-pause-test.gcode";
@@ -5324,6 +5558,7 @@ static void test_pause_gates_active_job_streaming(void)
     assert(deneb_flow_inflight(&svc.flow) == 1);
     assert(svc.job_stream.line_number == 1);
     deneb_flow_clear_inflight(&svc.flow);
+    acknowledge_pause_drain(&svc);
     assert(deneb_pause_resume_control_poll(&svc) == 0);
     assert(svc.pause_position_probe_sent);
     assert(svc.pause_position_probe_pending);
@@ -5424,6 +5659,7 @@ static void test_pause_during_preheat_resumes_to_preparing(void)
     assert(strstr(reply, "pause/resume already pending") != NULL);
     assert(deneb_print_service_poll_job(&svc) == 0);
     assert(svc.job_stream.line_number == 0);
+    acknowledge_pause_drain(&svc);
     assert(deneb_pause_resume_control_poll(&svc) == 0);
     assert(svc.pause_position_probe_sent);
     deneb_flow_clear_inflight(&svc.flow);
@@ -7110,6 +7346,10 @@ int main(int argc, char **argv)
     test_job_poll_streams_after_preheat();
     test_job_completion_waits_for_finish_cleanup();
     test_repeated_jobs_release_terminal_state();
+    test_pause_rejects_periodic_position_report();
+    test_pause_drains_before_capturing_position();
+    test_abort_during_unacknowledged_pause_drain();
+    test_pause_handshake_yields_to_abort_and_fault();
     test_pause_gates_active_job_streaming();
     test_pause_during_preheat_resumes_to_preparing();
     test_status_parser();
