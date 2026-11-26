@@ -25,11 +25,11 @@ sed 's/^\$repoWsl = ConvertTo-WslPath \$repoRoot$/\$repoWsl = \$repoRoot/' \
 
 mkdir -p "$build/mipsel-linux-musl-cross/bin" \
     "$build/zeromq-4.3.5/build-musl/lib" "$build/zeromq-4.3.5/include" \
-    "$build/lighttpd-1.4.76/src" "$build/lighttpd-1.4.76/build-musl-static/build" \
+    "$build/lighttpd-1.4.85/src" "$build/lighttpd-1.4.85/build-musl-static/build" \
     "$fixture"/{ui,web,printsvc,dfsvc}/build-musl
 touch "$build/zeromq-4.3.5/build-musl/lib/libzmq.a"
 for binary in "$build/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc" \
-    "$build/lighttpd-1.4.76/build-musl-static/build/lighttpd" \
+    "$build/lighttpd-1.4.85/build-musl-static/build/lighttpd" \
     "$fixture/ui/build-musl/deneb-ui" "$fixture/web/build-musl/deneb-api" \
     "$fixture/web/build-musl/deneb-mdns" "$fixture/printsvc/build-musl/deneb-printsvc" \
     "$fixture/dfsvc/build-musl/deneb-dfsvc" "$scratch/bin/cmake" "$scratch/bin/make"; do
@@ -107,7 +107,7 @@ run_powershell() {
     pwsh -NoProfile -Command '
         $PSNativeCommandArgumentPassing = "Legacy"
         & "$env:FIXTURE_REPO/tools/build-update-release.ps1" -ReleaseChannel stable `
-            -ZmqRoot "$env:FIXTURE_BUILD/zeromq-4.3.5" -LighttpdRoot "$env:FIXTURE_BUILD/lighttpd-1.4.76" `
+            -ZmqRoot "$env:FIXTURE_BUILD/zeromq-4.3.5" -LighttpdRoot "$env:FIXTURE_BUILD/lighttpd-1.4.85" `
             -PrintsvcStockSummary $env:STOCK_SUMMARY -PrintsvcNativeSummary $env:NATIVE_SUMMARY `
             -PrintsvcNativeEvidenceSummary @($env:FIRST_EVIDENCE, $env:SECOND_EVIDENCE)
     '

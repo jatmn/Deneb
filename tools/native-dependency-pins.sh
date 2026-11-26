@@ -9,9 +9,9 @@ MBEDTLS_VERSION=2.28.8
 MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v$MBEDTLS_VERSION.tar.gz"
 MBEDTLS_SHA256=4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213
 
-LIGHTTPD_VERSION=1.4.76
+LIGHTTPD_VERSION=1.4.85
 LIGHTTPD_URL="https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$LIGHTTPD_VERSION.tar.xz"
-LIGHTTPD_SHA256=8cbf4296e373cfd0cedfe9d978760b5b05c58fdc4048b4e2bcaf0a61ac8f5011
+LIGHTTPD_SHA256=18de51b393bac4a6827879e1a7ff377c169e414bae92cd245091d80fc2601d13
 
 # Store receipts only after checking the source archive and building its outputs.
 # Relative paths let an unchanged dependency tree move between build roots.

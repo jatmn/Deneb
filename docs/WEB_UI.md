@@ -73,7 +73,7 @@ backend.
 | Authentication | **Application-owned by default** because setup, bearer sessions, Digest compatibility, Open Access, and intentionally unauthenticated Cura routes are policy-sensitive; optional edge authentication can only be defense in depth |
 | Printer/Cura JSON, safety rules, print actions, ZMQ, pending jobs | **Keep in `deneb-api` or shared native print libraries** |
 
-The packaged lighttpd 1.4.76 build currently includes only `mod_access`,
+The packaged lighttpd 1.4.85 build currently includes only `mod_access`,
 `mod_alias`, `mod_indexfile`, `mod_staticfile`, `mod_setenv`, and `mod_proxy`.
 Adding authentication, access logging, TLS, FastCGI/SCGI, compression, or other
 modules is an explicit resource and security decision, not a free capability.

@@ -15,7 +15,7 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 ### mbedTLS and lighttpd
 
 - mbedTLS 2.28.8 is statically linked into deneb-dfsvc under its Apache-2.0 OR GPL-2.0-or-later choice. The upstream LICENSE is packaged as MBEDTLS_LICENSE.txt.
-- lighttpd 1.4.76 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
+- lighttpd 1.4.85 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
 
 ### Pillow bootstrap host tool
 
@@ -87,7 +87,7 @@ packages.
 
 Audited 2026-07-22. Current `.deneb` packages redistribute Deneb's MPL-2.0
 components, LVGL and its selected bundled helpers (including LodePNG), libzmq
-4.3.5, mbedTLS 2.28.8, and lighttpd 1.4.76. The Cura plugin is distributed
+4.3.5, mbedTLS 2.28.8, and lighttpd 1.4.85. The Cura plugin is distributed
 separately under LGPL-3.0-or-later; the material identifier dataset is retained
 in source form under CC0-1.0. The stock legal screen was used only as a
 comparison point: this notice inventory is derived from the actual Deneb
