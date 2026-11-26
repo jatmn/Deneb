@@ -15,68 +15,6 @@ PACKAGE_VERSION="release-gate-selftest.$$"
 PACKAGE_STAGING="${REPO_ROOT}/build/ui-package/Deneb_Update_${PACKAGE_VERSION}"
 PACKAGE_ARCHIVE="${REPO_ROOT}/dist/Deneb_Update_${PACKAGE_VERSION}.deneb"
 
-installed_runtime_selftest() {
-    manifest="${DENEB_INSTALLED_MANIFEST:-/etc/deneb/manifest.txt}"
-    failures=0
-
-    pass() {
-        echo "PASS: $*"
-    }
-
-    fail() {
-        echo "FAIL: $*" >&2
-        failures=$((failures + 1))
-    }
-
-    require_file() {
-        file="$1"
-        label="$2"
-        if [ -f "$file" ]; then
-            pass "$label"
-        else
-            fail "$label"
-        fi
-    }
-
-    require_pattern() {
-        file="$1"
-        pattern="$2"
-        label="$3"
-        if grep -Eq "$pattern" "$file"; then
-            pass "$label"
-        else
-            fail "$label"
-        fi
-    }
-
-    require_file "$manifest" "installed package manifest exists"
-    require_file "${SCRIPT_DIR}/deneb-printsvc-smoke-verify" "installed smoke verifier exists"
-    require_file "${SCRIPT_DIR}/deneb-printsvc-smoke-compare" "installed smoke comparator exists"
-    require_file "${SCRIPT_DIR}/deneb-printsvc-native-audit" "installed de-Python audit exists"
-    require_file "${SCRIPT_DIR}/deneb-printsvc-native-audit-selftest" "installed de-Python audit selftest exists"
-
-    if [ -f "$manifest" ]; then
-        require_pattern "$manifest" '^native_printsvc: experimental$' \
-            "installed manifest records experimental native printsvc"
-        require_pattern "$manifest" 'native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction' \
-            "installed manifest records non-experimental release gate"
-        require_pattern "$manifest" 'no Python driver files are packaged; native deneb-printsvc owns marlindriver' \
-            "installed manifest records native marlindriver ownership"
-    fi
-
-    if [ "$failures" -ne 0 ]; then
-        echo "$failures installed release gate selftest failure(s)" >&2
-        exit 1
-    fi
-
-    echo "deneb-printsvc installed release gate selftest passed"
-}
-
-if [ ! -f "$BUILD_PACKAGE" ]; then
-    installed_runtime_selftest
-    exit 0
-fi
-
 # Each host fixture supplies the evidence it needs.
 unset DENEB_PRINTSVC_STOCK_SUMMARY DENEB_PRINTSVC_NATIVE_SUMMARY DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
 

@@ -177,14 +177,32 @@ deneb-printsvc-smoke-verify --stock --resources /tmp/stock-printsvc.summary
 deneb-printsvc-smoke-verify --native --idle --boot-sync --client-proof --firmware-proof /tmp/native-observe.summary
 deneb-printsvc-smoke-verify --native --idle --job --pause-resume --cura-job --preheat-abort --active-abort --complete-job --resources /tmp/native-full.summary
 deneb-printsvc-smoke-compare --require-reduction /tmp/stock-printsvc.summary /tmp/native-full.summary
-deneb-printsvc-smoke-selftest
-deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc
-deneb-printsvc-init-selftest
-deneb-printsvc-release-gate-selftest
-deneb-printsvc-native-audit-selftest
-deneb-printsvc-integration-audit-selftest
 deneb-active-physical-soak-runner --duration 7200 --fixture /tmp/deneb-active-physical-soak-xyz.gcode
 ```
+
+The update installer runs the smoke, CLI, init and package-audit checks from its
+extracted package. To rerun them during lab work, extract the same verified
+`.deneb` into a scratch directory and keep the extracted files together. Run
+the following commands from that directory on the printer:
+
+```sh
+sh ./deneb-printsvc-smoke-selftest
+sh ./deneb-printsvc-cli-selftest /usr/bin/deneb-printsvc
+DENEB_PRINTSVC_INIT=/etc/init.d/deneb-printsvc DENEB_INSTALLER=./update.sh \
+    DENEB_PRINTSERVER_INIT=/etc/init.d/printserver sh ./deneb-printsvc-init-selftest
+sh ./deneb-printsvc-native-audit --package-dir .
+sh ./deneb-printsvc-native-audit-selftest
+sh ./deneb-printsvc-integration-audit --package-dir .
+```
+
+Run the release-gate and integration-audit fixtures on the build host from the
+same source checkout using `sh tools/deneb-printsvc-release-gate-selftest.sh`
+and `sh tools/deneb-printsvc-integration-audit-selftest.sh`.
+
+An upgrade removes a previous validation script from `/usr/bin` only if its
+contents, ownership and permissions match the known Deneb copy. Older or
+locally changed files can remain. Compare a remaining file to the corresponding
+script from the old package before removing it manually.
 
 ## Acceptance And Status
 

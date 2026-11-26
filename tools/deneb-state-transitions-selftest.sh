@@ -14,7 +14,7 @@ for result in 0 1; do
             configure_digitalfactory_boot smoke_test_printsvc_tools install_motion_firmware_verify_cache \
             patch_motion_stack_boot_order smoke_test_printsvc_init_handoff smoke_test_binary \
             install_config restart_live_deneb_ui prune_stock_wifi_portal prune_stock_menu_ui \
-            prune_stock_compile_all sleep; do
+            prune_stock_compile_all remove_legacy_validation_tools sleep; do
             printf '%s() { :; }\n' "$name"
         done
         printf 'schedule_reboot() { touch "%s/reboot-%s"; }\n' "$TASK_TMP" "$result"

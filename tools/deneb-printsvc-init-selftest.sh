@@ -265,12 +265,10 @@ if [ "$failures" -eq 0 ]; then
             "installer preserves package manifest"
         require_pattern "$INSTALLER" 'deneb-printsvc-native-audit --package-dir /tmp/update' \
             "installer runs packaged de-Python audit"
-        require_pattern "$INSTALLER" 'cp /tmp/update/deneb-printsvc-native-audit /usr/bin/deneb-printsvc-native-audit' \
-            "installer preserves de-Python audit tool"
-        require_pattern "$INSTALLER" 'cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest' \
-            "installer preserves release gate selftest"
-        require_pattern "$INSTALLER" 'deneb-printsvc-native-audit-selftest' \
-            "installer runs native audit selftest"
+        require_pattern "$INSTALLER" '/tmp/update/deneb-printsvc-native-audit-selftest >' \
+            "installer runs staged native audit selftest"
+        require_pattern "$INSTALLER" '/tmp/update/deneb-printsvc-init-selftest >' \
+            "installer runs staged init handoff selftest"
 
         generated_shim="${TMP_DIR}/printserver.generated"
         if extract_printserver_shim "$INSTALLER" "$generated_shim"; then

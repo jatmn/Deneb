@@ -265,10 +265,10 @@ audit_source() {
         "deneb-printsvc-integration-audit" \
         "package builder runs integration audit"
     require_pattern "${repo}/ui/build-package.sh" \
-        "deneb-printsvc-integration-audit-selftest" \
+        'deneb-printsvc-integration-audit-selftest[.]sh' \
         "package builder runs integration audit selftest"
     require_pattern "${repo}/ui/build-package.sh" \
-        "deneb-printsvc-release-gate-selftest" \
+        'deneb-printsvc-release-gate-selftest[.]sh' \
         "package builder runs release gate selftest"
     require_pattern "${repo}/ui/build-package.sh" \
         "deneb-printsvc-stability" \
@@ -328,13 +328,13 @@ audit_source() {
         'ui/build-package\.sh .*\$\{buildPackageEvidenceArgs\}' \
         "release wrapper forwards supplemental native evidence arguments"
     require_pattern "${repo}/tools/build-update-release.ps1" \
-        'deneb-printsvc-release-gate-selftest' \
+        'deneb-printsvc-release-gate-selftest[.]sh' \
         "release wrapper runs release gate selftest"
     require_pattern "${repo}/tools/build-update-release.ps1" \
         'deneb-printsvc-integration-audit' \
         "release wrapper preserves integration audit"
     require_pattern "${repo}/tools/build-update-release.ps1" \
-        'deneb-printsvc-integration-audit-selftest' \
+        'deneb-printsvc-integration-audit-selftest[.]sh' \
         "release wrapper runs integration audit selftest"
     require_order "${repo}/tools/build-update-release.sh" \
         'DENEB_INSTALLER=.*deneb-printsvc-init-selftest' \
@@ -500,7 +500,7 @@ audit_source() {
         'cp /tmp/update/deneb-active-physical-soak-runner /usr/bin/deneb-active-physical-soak-runner' \
         "installer preserves active physical soak runner"
     require_pattern "${repo}/ui/installer/update.sh" \
-        '/usr/bin/deneb-printsvc-stability --selftest' \
+        '/tmp/update/deneb-printsvc-stability --selftest' \
         "installer runs stability selftest"
     require_pattern "${repo}/web/init/deneb-web.init" \
         '/etc/init.d/deneb-api start' \
@@ -575,26 +575,17 @@ audit_source() {
         '/usr/bin/deneb-api digital-factory disconnect' \
         "Digital Factory screen calls deneb-api disconnect command"
     require_pattern "${repo}/ui/installer/update.sh" \
-        "deneb-printsvc-native-audit-selftest" \
-        "installer runs de-Python audit selftest"
+        '/tmp/update/deneb-printsvc-native-audit-selftest >' \
+        "installer runs staged de-Python audit selftest"
     require_pattern "${repo}/ui/installer/update.sh" \
-        "deneb-printsvc-integration-audit" \
-        "installer runs integration audit"
-    require_pattern "${repo}/ui/installer/update.sh" \
-        "deneb-printsvc-integration-audit-selftest" \
-        "installer requires integration audit selftest"
-    require_pattern "${repo}/ui/installer/update.sh" \
-        "deneb-printsvc-release-gate-selftest" \
-        "installer requires release gate selftest"
+        '/tmp/update/deneb-printsvc-integration-audit --package-dir /tmp/update' \
+        "installer runs staged integration audit"
     require_pattern "${repo}/ui/installer/update.sh" \
         '/etc/init.d/deneb-api restart' \
         "installer starts deneb-api after updating binaries"
     require_pattern "${repo}/ui/installer/update.sh" \
         '/etc/init.d/deneb-web restart' \
         "installer starts deneb-web after updating binaries"
-    require_pattern "${repo}/ui/installer/update.sh" \
-        'cp /tmp/update/deneb-printsvc-release-gate-selftest /usr/bin/deneb-printsvc-release-gate-selftest' \
-        "installer preserves release gate selftest"
     require_pattern "${repo}/ui/installer/update.sh" \
         "native_printsvc_release_gate: non-experimental packages require verified stock/native smoke summaries with strict resource reduction" \
         "installer checks native printsvc release gate"
@@ -630,13 +621,15 @@ audit_package_dir() {
     require_file "${root}/deneb-printsvc-stock-baseline" "package includes stock baseline helper"
     require_file "${root}/deneb-printsvc-cli-selftest" "package includes native CLI selftest"
     require_file "${root}/deneb-printsvc-init-selftest" "package includes native init selftest"
-    require_file "${root}/deneb-printsvc-release-gate-selftest" "package includes release gate selftest"
     require_file "${root}/deneb-printsvc-native-audit" "package includes de-Python audit"
     require_file "${root}/deneb-printsvc-native-audit-selftest" "package includes de-Python audit selftest"
     require_file "${root}/deneb-printsvc-integration-audit" "package includes integration audit"
-    require_file "${root}/deneb-printsvc-integration-audit-selftest" "package includes integration audit selftest"
     require_file "${root}/deneb-runtime-inventory" "package includes runtime inventory helper"
     require_dir "${root}/deneb-printsvc-macros" "package includes Deneb macro directory"
+    if find "$root" -print | grep -E '(^|/)deneb-(stock-menu-(prune-selftest|import-check)|printsvc-(release-gate-selftest|integration-audit-selftest))(\.sh)?$'; then
+        fail "package has no host-only validation scripts"
+    fi
+    pass "package has no host-only validation scripts"
     require_pattern "${root}/deneb-runtime-inventory" 'DENEB_COORDINATOR_DISABLED' "packaged runtime inventory detects coordinator disabled shim"
     require_file "${root}/LVGL_LICENSE_TLSF.txt" "package includes declared TLSF notice"
     require_file "${root}/LODEPNG_LICENSE.txt" "package includes declared LodePNG notice"
@@ -759,8 +752,6 @@ audit_archive() {
         "archive includes stability harness"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit$' \
         "archive includes integration audit"
-    require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-printsvc-integration-audit-selftest$' \
-        "archive includes integration audit selftest"
     require_pattern "${tmp_dir}/files.txt" '(^|/)deneb-runtime-inventory$' "archive includes runtime inventory helper"
     require_pattern "${tmp_dir}/files.txt" '(^|/)manifest.txt$' \
         "archive includes manifest"
