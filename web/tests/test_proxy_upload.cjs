@@ -345,6 +345,22 @@ async function main() {
         assert.equal(duplicate.code, 200, duplicate.data);
         assert.equal(JSON.parse(duplicate.data).message, 'Print job already queued');
 
+        // Keep the pending job while making the spool path unusable for staging.
+        const savedSpool = path.join(root, 'saved-spool');
+        fs.renameSync(spool, savedSpool);
+        try {
+            fs.writeFileSync(spool, 'not a directory');
+            const failedStage = await startUpload(port, archive, 'completed.ufp').finish();
+            assert.equal(failedStage.code, 500, failedStage.data);
+            assert.equal(JSON.parse(failedStage.data).message, 'Failed to save file');
+            assert.deepEqual(JSON.parse(fs.readFileSync(pendingJob, 'utf8')), pending);
+            assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
+        } finally {
+            fs.rmSync(spool, { force: true });
+            fs.renameSync(savedSpool, spool);
+        }
+        assert.equal(fs.readFileSync(path.join(spool, 'completed.gcode'), 'utf8'), gcode);
+
         const halfClosed = await halfClosedUpload(apiSocket, archive, 'completed.ufp');
         assert.match(halfClosed, /^HTTP\/1\.1 200 OK\r\n/);
         assert.match(halfClosed, /Print job already queued/);

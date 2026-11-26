@@ -461,9 +461,10 @@ int api_print_job_prepare_upload(const http_request_t *req,
         fprintf(stderr, "deneb-api: failed to stage print file for %s: %s\n",
                 upload->storage.dest_path, strerror(errno));
         unlink(gcode_path);
+        set_message_response(resp, 500, "Failed to save file");
+        return -1;
     }
 
-    /* A pending duplicate or conflict takes precedence over staging failure. */
     return 0;
 }
 
@@ -481,6 +482,11 @@ void api_print_job_commit_upload(const api_print_upload_t *upload,
                                   http_response_t *resp)
 {
     const deneb_print_job_upload_storage_plan_t *storage = &upload->storage;
+    if (!upload->staged_gcode[0]) {
+        set_message_response(resp, 500, "Failed to save file");
+        return;
+    }
+
     deneb_pending_job_upload_check_t pending_upload;
     if (deneb_pending_job_file_check_upload_default(storage->dest_path,
                                                     storage->filename,
@@ -500,7 +506,7 @@ void api_print_job_commit_upload(const api_print_upload_t *upload,
         return;
     }
 
-    if (!upload->staged_gcode[0] || rename(upload->staged_gcode, storage->dest_path) < 0) {
+    if (rename(upload->staged_gcode, storage->dest_path) < 0) {
         fprintf(stderr, "deneb-api: failed to save print file to %s\n", storage->dest_path);
         set_message_response(resp, 500, "Failed to save file");
         return;
