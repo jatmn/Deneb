@@ -57,7 +57,7 @@ ui/
     en.json, nl.json, de.json, fr.json  Translations
     zh-Hans.json, en-pirate.json, en-1337.json
   lib/
-    lvgl/                               LVGL v9.6.0-dev pinned git submodule
+    lvgl/                               LVGL v9.6.0 pinned git submodule
   src/
     main.c                              Entry point, main loop
     app_fonts.c / app_fonts.h           Montserrat + generated i18n fallbacks
