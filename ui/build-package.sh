@@ -74,9 +74,24 @@ case "$DENEB_RELEASE_CHANNEL" in
         ;;
 esac
 
+PACKAGE_EPOCH=${SOURCE_DATE_EPOCH-$(git -C "$REPO_ROOT" show -s --format=%ct HEAD 2>/dev/null || printf '0\n')}
+case "$PACKAGE_EPOCH" in
+    ''|*[!0-9]*)
+        echo "ERROR: package timestamp must be a nonnegative integer in seconds" >&2
+        exit 1
+        ;;
+esac
+if ! PACKAGE_DATE=$(date -u -d "@$PACKAGE_EPOCH" +%Y-%m-%dT%H:%M:%SZ); then
+    echo "ERROR: cannot format package timestamp: $PACKAGE_EPOCH" >&2
+    exit 1
+fi
+
 # Clean staging
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
+# Keep staging modes stable while honoring the caller's umask for the output file.
+OUTPUT_UMASK=$(umask)
+umask 022
 
 # Copy binary
 cp "$BINARY" "${STAGING_DIR}/deneb-ui"
@@ -221,7 +236,7 @@ cat > "${STAGING_DIR}/manifest.txt" <<EOF
 package: ${PACKAGE_NAME}
 version: ${VERSION}
 channel: ${DENEB_RELEASE_CHANNEL}
-date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+date: ${PACKAGE_DATE}
 native_printsvc: experimental
 native_printsvc_release_gate: ${PRINTSVC_RELEASE_GATE}
 contents:
@@ -301,7 +316,10 @@ sh "${REPO_ROOT}/tools/deneb-stock-menu-prune-selftest.sh"
 # the package so a failed rebuild cannot inherit a stale digest.
 rm -f "$OUTPUT_IMG.sha256"
 cd "$STAGING_DIR"
-tar cf "$OUTPUT_IMG" deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
+umask "$OUTPUT_UMASK"
+export LC_ALL=C
+tar --sort=name --mtime="@$PACKAGE_EPOCH" --owner=0 --group=0 --numeric-owner -cf "$OUTPUT_IMG" \
+    deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
     deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit \
     deneb-runtime-inventory \
     deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf www
