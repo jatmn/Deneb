@@ -463,6 +463,7 @@ jobs:
         run: |
           sh tools/setup-lvgl-selftest.sh
           bash tools/build-update-release-selftest.sh
+          sh tools/deneb-package-reproducibility-selftest.sh
           bash tools/deneb-compile-all-selftest.sh
           bash tools/deneb-stock-menu-prune-selftest.sh
           bash tools/deneb-stock-menu-import-check-selftest.sh

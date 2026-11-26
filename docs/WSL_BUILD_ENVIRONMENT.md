@@ -146,6 +146,23 @@ The same zero-exit, verification-message, and matching `.deneb.sha256` sidecar
 contract applies before the
 [verified USB handoff](https://deneb3d.dev/docs/updating/#verify-and-copy-the-update-package).
 
+## Reproducible update packages
+
+Both build lanes use the same package stage. The byte-for-byte check uses
+Linux staging with ordinary POSIX mode handling and the same version, channel,
+source files, member modes and compiled binaries. Inherited default ACLs and
+Windows drive permission mapping can change the staged modes. The manifest
+date and all tar member times use the committer timestamp of `HEAD` by
+default, or the Unix epoch if Git history is unavailable.
+Set `SOURCE_DATE_EPOCH` to a nonnegative Unix timestamp in seconds in the Linux
+packaging environment to override both. The archive uses a fixed member order,
+bytewise sorting for directory contents, and numeric owner and group IDs of zero.
+Archive creation pins the GNU tar format and clears inherited `TAR_OPTIONS`.
+The release wrappers run their archive audits before publishing the checksum.
+
+The repeat-package test uses identical prebuilt binaries. End-to-end
+reproducibility across independent cross-compilations remains unverified.
+
 ## Stock menu compatibility audit
 
 All `.deneb` build channels run the stock menu prune fixture from the repository
