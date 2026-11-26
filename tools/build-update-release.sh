@@ -72,6 +72,7 @@ toolchain="$toolchain_root/bin/mipsel-linux-musl-gcc"
 zmq_lib="$zmq_root/build-musl/lib/libzmq.a"
 zmq_include="$zmq_root/include"
 lighttpd_binary="$lighttpd_root/build-musl-static/build/lighttpd"
+mbedtls_root="$build_root/mbedtls-$MBEDTLS_VERSION-mipsel"
 
 [ -x "$toolchain" ] || die "Missing musl cross-compiler. Run bash tools/setup-linux-build.sh first."
 
@@ -85,6 +86,7 @@ if "$rebuild_zmq"; then
     rm -f "$zmq_root.tar.gz"
     cmake -S "$zmq_root" -B "$zmq_root/build-musl" -DCMAKE_TOOLCHAIN_FILE="$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF -DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON
     cmake --build "$zmq_root/build-musl" --parallel
+    record_native_dependency libzmq "$zmq_root"
 fi
 if [ ! -f "$zmq_lib" ] || [ ! -d "$zmq_include" ]; then
     die "Missing musl libzmq at $zmq_lib. Re-run with --rebuild-zmq."
@@ -148,8 +150,11 @@ else
 fi
 cmake --build "$lighttpd_root/build-musl-static" --target lighttpd --parallel
 test -x "$lighttpd_binary"
+if "$rebuild_lighttpd"; then
+    record_native_dependency lighttpd "$lighttpd_root"
+fi
 
-configure_component "$repo_root/dfsvc" "$repo_root/dfsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib" "-DMBEDTLS_ROOT=$build_root/mbedtls-$MBEDTLS_VERSION-mipsel"
+configure_component "$repo_root/dfsvc" "$repo_root/dfsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib" "-DMBEDTLS_ROOT=$mbedtls_root"
 configure_component "$repo_root/ui" "$repo_root/ui/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_LIBRARY=$zmq_lib"
 
 package_env=("DENEB_RELEASE_CHANNEL=$release_channel" "STRIP=$toolchain_root/bin/mipsel-linux-musl-strip")
@@ -185,6 +190,6 @@ sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive "$package"
 sh "$repo_root/tools/deneb-printsvc-integration-audit-selftest.sh"
 DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest
+sh "$repo_root/tools/write-native-sbom.sh" "$package" "$zmq_root" "$lighttpd_root" "$mbedtls_root"
 bash "$repo_root/tools/write-package-checksum.sh" "$package"
-sh "$repo_root/tools/write-native-sbom.sh" "$package"
 printf 'Verified native-only print service package: %s\n' "$package"

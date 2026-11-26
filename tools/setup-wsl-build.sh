@@ -66,6 +66,7 @@ if [ ! -f "$prefix/lib/libmbedtls.a" ]; then
       -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON
     cmake --build "$mbedtls_build" --parallel
     cmake --install "$mbedtls_build"
+    record_native_dependency mbedtls "$prefix"
 fi
 
 "$toolchain_root/bin/mipsel-linux-musl-gcc" --version

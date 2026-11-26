@@ -5,8 +5,8 @@ param(
     [string]$Distro = "Debian",
     [string]$BuildDirectory = "build-musl",
     [string]$WebBuildDirectory = "build-musl",
-    [string]$ZmqRoot = "/root/deneb-build/zeromq-4.3.5",
-    [string]$LighttpdRoot = "/root/deneb-build/lighttpd-1.4.76",
+    [string]$ZmqRoot = "",
+    [string]$LighttpdRoot = "",
     [ValidateSet("experimental", "nightly", "stable")]
     [string]$ReleaseChannel = "experimental",
     [string]$PrintsvcStockSummary = "",
@@ -80,22 +80,33 @@ if ($LASTEXITCODE -ne 0) {
     throw "Missing musl cross-compiler. Follow ui/README.md production build prerequisites first."
 }
 
+$loadPins = ". '$($repoWsl.Replace("'", "'\''"))/tools/native-dependency-pins.sh'"
+$readPins = $loadPins + ' && printf "%s\n" "$ZMQ_VERSION" "$ZMQ_URL" "$ZMQ_SHA256" "$LIGHTTPD_VERSION" "$LIGHTTPD_URL" "$LIGHTTPD_SHA256" "$MBEDTLS_VERSION"'
+$pins = @(& wsl -d $Distro -u root --exec bash -lc $readPins)
+if ($LASTEXITCODE -ne 0 -or $pins.Count -ne 7) {
+    throw "Could not read the native dependency pins in WSL."
+}
+$zmqVersion, $zmqUrl, $zmqSha256, $lighttpdVersion, $lighttpdUrl, $lighttpdSha256, $mbedtlsVersion = $pins
+if (!$ZmqRoot) {
+    $ZmqRoot = "/root/deneb-build/zeromq-$zmqVersion"
+}
+if (!$LighttpdRoot) {
+    $LighttpdRoot = "/root/deneb-build/lighttpd-$lighttpdVersion"
+}
+$mbedtlsRoot = "/root/deneb-build/mbedtls-$mbedtlsVersion-mipsel"
 $zmqLib = "$ZmqRoot/build-musl/lib/libzmq.a"
 $zmqInclude = "$ZmqRoot/include"
 $lighttpdBinary = "$LighttpdRoot/build-musl-static/build/lighttpd"
-$lighttpdVersion = "1.4.76"
-$zmqSha256 = "6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43"
-$lighttpdSha256 = "8cbf4296e373cfd0cedfe9d978760b5b05c58fdc4048b4e2bcaf0a61ac8f5011"
 
 if ($RebuildZmq) {
-    if ($ZmqRoot -notmatch '/zeromq-4\.3\.5/?$') {
-        throw "Refusing to rebuild libzmq outside a zeromq-4.3.5 leaf directory: $ZmqRoot"
+    if ($ZmqRoot -cnotmatch "/zeromq-$([regex]::Escape($zmqVersion))/?$") {
+        throw "Refusing to rebuild libzmq outside a zeromq-$zmqVersion leaf directory: $ZmqRoot"
     }
 
     $buildZmq = "set -euo pipefail; " +
                 "mkdir -p '$ZmqRoot'; " +
                 "rm -rf '$ZmqRoot'/*; " +
-                "curl --fail --location -o '$ZmqRoot.tar.gz' https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz; " +
+                "curl --fail --location -o '$ZmqRoot.tar.gz' '$zmqUrl'; " +
                 "printf '%s  %s\n' '$zmqSha256' '$ZmqRoot.tar.gz' | sha256sum -c -; " +
                 "tar xzf '$ZmqRoot.tar.gz' -C '$ZmqRoot' --strip-components=1; " +
                 "rm -f '$ZmqRoot.tar.gz'; " +
@@ -103,8 +114,9 @@ if ($RebuildZmq) {
                 "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' " +
                 "-DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF " +
                 "-DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON; " +
-                "make -j`$(nproc)"
-    & wsl -d $Distro -u root -- bash -lc $buildZmq
+                "make -j`$(nproc); " +
+                "$loadPins; record_native_dependency libzmq '$ZmqRoot'"
+    & wsl -d $Distro -u root --exec bash -lc $buildZmq
     if ($LASTEXITCODE -ne 0) {
         throw "libzmq musl build failed with exit code $LASTEXITCODE"
     }
@@ -117,18 +129,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($RebuildLighttpd) {
-    if ($LighttpdRoot -notmatch "/lighttpd-$lighttpdVersion/?$") {
+    if ($LighttpdRoot -cnotmatch "/lighttpd-$([regex]::Escape($lighttpdVersion))/?$") {
         throw "Refusing to rebuild lighttpd outside a lighttpd-$lighttpdVersion leaf directory: $LighttpdRoot"
     }
 
     $buildLighttpdSource = "set -euo pipefail; " +
                            "mkdir -p '$LighttpdRoot'; " +
                            "rm -rf '$LighttpdRoot'/*; " +
-                           "curl --fail --location -o '$LighttpdRoot.tar.xz' https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$lighttpdVersion.tar.xz; " +
+                           "curl --fail --location -o '$LighttpdRoot.tar.xz' '$lighttpdUrl'; " +
                            "printf '%s  %s\n' '$lighttpdSha256' '$LighttpdRoot.tar.xz' | sha256sum -c -; " +
                            "tar xf '$LighttpdRoot.tar.xz' -C '$LighttpdRoot' --strip-components=1; " +
                            "rm -f '$LighttpdRoot.tar.xz'"
-    & wsl -d $Distro -u root -- bash -lc $buildLighttpdSource
+    & wsl -d $Distro -u root --exec bash -lc $buildLighttpdSource
     if ($LASTEXITCODE -ne 0) {
         throw "lighttpd source fetch failed with exit code $LASTEXITCODE"
     }
@@ -195,7 +207,10 @@ $buildLighttpd = "set -euo pipefail; " +
                  "make -j`$(nproc) lighttpd; " +
                  "test -x '$lighttpdBinary'"
 
-& wsl -d $Distro -u root -- bash -lc $buildLighttpd
+if ($RebuildLighttpd) {
+    $buildLighttpd += "; $loadPins; record_native_dependency lighttpd '$LighttpdRoot'"
+}
+& wsl -d $Distro -u root --exec bash -lc $buildLighttpd
 if ($LASTEXITCODE -ne 0) {
     throw "release lighttpd build failed with exit code $LASTEXITCODE"
 }
@@ -207,10 +222,10 @@ $buildUi = "set -euo pipefail; " +
            "if [ -f CMakeCache.txt ]; then " +
            "grep -q 'mipsel-linux-musl-gcc' CMakeCache.txt || " +
            "{ echo 'Existing dfsvc build directory is not configured for mipsel musl. Use a different -BuildDirectory.' >&2; exit 1; }; " +
-           "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT=/root/deneb-build/mbedtls-2.28.8-mipsel; " +
+           "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT='$mbedtlsRoot'; " +
            "else " +
            "cmake .. -DCMAKE_TOOLCHAIN_FILE=../../ui/cmake/mipsel-musl-toolchain.cmake " +
-           "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT=/root/deneb-build/mbedtls-2.28.8-mipsel; " +
+           "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT='$mbedtlsRoot'; " +
            "fi; " +
            "make -j`$(nproc); " +
            "cd '$repoWsl/ui'; " +
@@ -300,11 +315,33 @@ if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }
 
-$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl' && " +
-                 "sh '$repoWsl/tools/write-native-sbom.sh' '$packageWsl'"
+# Win32 Git reads the checkout as its owner. WSL root need not trust the
+# repositories on the mounted Windows drive.
+$revision = & git -C $repoRoot rev-parse --verify HEAD
+if ($LASTEXITCODE -ne 0 -or $revision -cnotmatch '^[0-9a-f]{40}$') {
+    throw "Could not read the Deneb checkout revision."
+}
+$lvglPath = "ui/lib/lvgl"
+$gitlink = & git -C $repoRoot ls-tree HEAD -- $lvglPath
+if ($LASTEXITCODE -ne 0 -or $gitlink -cnotmatch '^160000 commit ([0-9a-f]{40})\tui/lib/lvgl$') {
+    throw "Could not read the pinned LVGL revision."
+}
+$expectedLvgl = $Matches[1]
+$lvglRevision = & git -C (Join-Path $repoRoot $lvglPath) rev-parse --verify HEAD
+if ($LASTEXITCODE -ne 0 -or $lvglRevision -cne $expectedLvgl) {
+    throw "LVGL checkout does not match the gitlink in HEAD. Initialize the pinned LVGL submodule."
+}
+
+& wsl -d $Distro -u root --exec sh "$repoWsl/tools/write-native-sbom.sh" ($packagePaths[0]) `
+    $ZmqRoot $LighttpdRoot $mbedtlsRoot $revision $lvglRevision
+if ($LASTEXITCODE -ne 0) {
+    throw "release package SBOM generation failed with exit code $LASTEXITCODE"
+}
+
+$writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
 & wsl -d $Distro -u root --exec bash -lc $writeChecksum
 if ($LASTEXITCODE -ne 0) {
-    throw "release package checksum or SBOM generation failed with exit code $LASTEXITCODE"
+    throw "release package checksum publication failed with exit code $LASTEXITCODE"
 }
 
 $package = Join-Path $repoRoot "dist/$packageName"
