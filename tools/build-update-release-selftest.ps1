@@ -33,6 +33,10 @@ function wsl {
         return
     }
 
+    if ($args[4] -cne '--exec') {
+        # PowerShell consumes -- for this function, modeling WSL's default-shell parse.
+        $command = 'bash -c "' + $command + '"'
+    }
     & bash -c "unset DENEB_PACKAGE_VERSION_OVERRIDE; $command"
 }
 
@@ -107,7 +111,7 @@ try {
     Set-Content -LiteralPath $shortArchive -Value "Deliberately invalid stale archive"
     $staleHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $shortArchive).Hash
 
-    $tag = "release-handoff'café"
+    $tag = 'release-handoff''café-$HOME'
     & git -C $fixtureRepo -c tag.gpgSign=false tag $tag
     if ($LASTEXITCODE -ne 0) {
         throw "Could not tag the fixture checkout."

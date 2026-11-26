@@ -295,13 +295,13 @@ $verifyPackage = "set -euo pipefail; " +
                  "sh '$repoWsl/tools/deneb-printsvc-integration-audit-selftest.sh' >/tmp/deneb-release-integration-audit-selftest.log; " +
                  "DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest >/tmp/deneb-release-init-selftest.log"
 
-& wsl -d $Distro -u root -- bash -lc $verifyPackage
+& wsl -d $Distro -u root --exec bash -lc $verifyPackage
 if ($LASTEXITCODE -ne 0) {
     throw "release package native print service verification failed with exit code $LASTEXITCODE"
 }
 
 $writeChecksum = "bash '$repoWsl/tools/write-package-checksum.sh' '$packageWsl'"
-& wsl -d $Distro -u root -- bash -lc $writeChecksum
+& wsl -d $Distro -u root --exec bash -lc $writeChecksum
 if ($LASTEXITCODE -ne 0) {
     throw "release package checksum publication failed with exit code $LASTEXITCODE"
 }
