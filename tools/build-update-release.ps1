@@ -53,7 +53,7 @@ if ($ReleaseChannel -ne "experimental" -and
 
 $printsvcStockSummaryWsl = ""
 $printsvcNativeSummaryWsl = ""
-$printsvcNativeEvidenceSummaryWsl = @()
+$buildPackageEvidenceArgs = ""
 if (-not [string]::IsNullOrWhiteSpace($PrintsvcStockSummary)) {
     $printsvcStockSummaryWsl = ConvertTo-WslInputPath $PrintsvcStockSummary
 }
@@ -62,7 +62,8 @@ if (-not [string]::IsNullOrWhiteSpace($PrintsvcNativeSummary)) {
 }
 foreach ($summary in $PrintsvcNativeEvidenceSummary) {
     if (-not [string]::IsNullOrWhiteSpace($summary)) {
-        $printsvcNativeEvidenceSummaryWsl += (ConvertTo-WslInputPath $summary)
+        $summaryWsl = ConvertTo-WslInputPath $summary
+        $buildPackageEvidenceArgs += " '$($summaryWsl.Replace("'", "'\''"))'"
     }
 }
 
@@ -73,10 +74,6 @@ if ($printsvcStockSummaryWsl) {
 if ($printsvcNativeSummaryWsl) {
     $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
 }
-if ($printsvcNativeEvidenceSummaryWsl.Count -gt 0) {
-    $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativeEvidenceSummaryWsl -join ' ')'"
-}
-
 $toolchainCheck = "/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version >/dev/null"
 & wsl -d $Distro -u root -- bash -lc $toolchainCheck
 if ($LASTEXITCODE -ne 0) {
@@ -229,9 +226,10 @@ $buildUi = "set -euo pipefail; " +
            "fi; " +
            "make -j`$(nproc); " +
            "cd '$repoWsl'; " +
-           "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc"
+           "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc${buildPackageEvidenceArgs}"
 
-& wsl -d $Distro -u root -- bash -lc $buildUi
+# Start Bash directly so the default WSL shell cannot expand evidence filenames.
+& wsl -d $Distro -u root --exec bash -lc $buildUi
 if ($LASTEXITCODE -ne 0) {
     throw "update release build failed with exit code $LASTEXITCODE"
 }

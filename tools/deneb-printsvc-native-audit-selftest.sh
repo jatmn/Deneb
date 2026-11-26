@@ -227,12 +227,11 @@ DENEB_RELEASE_CHANNEL="${DENEB_RELEASE_CHANNEL:-experimental}"
 VERSION="${DENEB_PACKAGE_VERSION_OVERRIDE:-test}"
 PRINTSVC_STOCK_SUMMARY="${DENEB_PRINTSVC_STOCK_SUMMARY:-}"
 PRINTSVC_NATIVE_SUMMARY="${DENEB_PRINTSVC_NATIVE_SUMMARY:-}"
-PRINTSVC_NATIVE_EVIDENCE_SUMMARIES="${DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES:-}"
 if [ "$DENEB_RELEASE_CHANNEL" != "experimental" ]; then
 deneb-printsvc-smoke-verify" --stock --resources "$PRINTSVC_STOCK_SUMMARY"
     deneb-printsvc-smoke-verify" --native --idle --restart --boot-sync --client-proof --firmware-proof --complete-job --resources "$PRINTSVC_NATIVE_SUMMARY"
     deneb-printsvc-smoke-verify" --full "$PRINTSVC_NATIVE_SUMMARY"
-    deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY" $PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
+    deneb-printsvc-smoke-compare" --require-reduction "$PRINTSVC_STOCK_SUMMARY" "$PRINTSVC_NATIVE_SUMMARY" "$@"
 fi
 deneb-printsvc-stock-baseline
 deneb-printsvc-native-audit --source .
@@ -265,7 +264,7 @@ if ($ReleaseChannel -ne "experimental") {
 }
 $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
-$buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativeEvidenceSummaryWsl -join ' ')'"
+$buildUi = "$buildPackageEnv bash ui/build-package.sh ui/build-musl/deneb-ui${buildPackageEvidenceArgs}"
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-integration-audit
 deneb-printsvc-integration-audit-selftest
@@ -587,7 +586,7 @@ if ($ReleaseChannel -ne "experimental") {
 }
 $buildPackageEnv += " DENEB_PRINTSVC_STOCK_SUMMARY='$printsvcStockSummaryWsl'"
 $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
-$buildPackageEnv += " DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES='$($printsvcNativeEvidenceSummaryWsl -join ' ')'"
+$buildUi = "$buildPackageEnv bash ui/build-package.sh ui/build-musl/deneb-ui${buildPackageEvidenceArgs}"
 deneb-printsvc-release-gate-selftest
 deneb-printsvc-integration-audit
 deneb-printsvc-integration-audit-selftest
