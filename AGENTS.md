@@ -114,8 +114,9 @@ successful host test. Preserve the distinctions between `SOURCE`, `HOST`,
    `docs/archive/`.
 6. Do not create changelog-style progress diaries or workstation-specific
    commentary in active documentation.
-7. Do not publish releases, change repository visibility, deploy, reboot, move,
-   heat, or flash hardware unless the user explicitly authorizes that action.
+7. Do not push directly to `main`, publish releases, change repository visibility,
+   deploy, reboot, move, heat, or flash hardware unless the user explicitly
+   authorizes that action.
 
 ## Physical Printer Safety
 
