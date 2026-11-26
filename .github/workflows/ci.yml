@@ -462,6 +462,7 @@ jobs:
         timeout-minutes: 10
         run: |
           sh tools/setup-lvgl-selftest.sh
+          bash tools/build-update-release-selftest.sh
           bash tools/deneb-compile-all-selftest.sh
           bash tools/deneb-stock-menu-prune-selftest.sh
           bash tools/deneb-stock-menu-import-check-selftest.sh
