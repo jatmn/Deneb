@@ -265,19 +265,23 @@ tmp="${SUMMARY}.$$"
     printf '| PID | Command | Classification | VSZ KB | RSS KB | VmData KB | Threads | FD count | Private KB |\n'
     printf '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n'
 
-    if [ -d "$PROC_DIR" ] && [ -x "$PROC_DIR" ] && ls -A "$PROC_DIR" >/dev/null 2>&1; then
+    if [ -d "$PROC_DIR" ] && [ -x "$PROC_DIR" ] && entries="$(ls -1A "$PROC_DIR" 2>/dev/null)"; then
         found=0
         incomplete=0
-        for pd in "$PROC_DIR"/[0-9]*; do
-            [ -d "$pd" ] || continue
-            pid="${pd##*/}"
+        while IFS= read -r pid; do
+            case "$pid" in ''|*[!0-9]*) continue ;; esac
+            [ -d "$PROC_DIR/$pid" ] || continue
             if report_python_process "$pid"; then
                 found=1
             elif [ "$?" -eq 2 ] && process_may_be_live "$pid"; then
                 incomplete=$((incomplete + 1))
             fi
-        done
-        if [ "$incomplete" -gt 0 ]; then
+        done <<EOF
+$entries
+EOF
+        if [ ! -d "$PROC_DIR" ] || [ ! -x "$PROC_DIR" ]; then
+            printf '\nInventory incomplete. Could not access the process directory.\n'
+        elif [ "$incomplete" -gt 0 ]; then
             printf '\nInventory incomplete. Could not inspect all live processes (%s unresolved).\n' "$incomplete"
         elif [ "$found" -eq 0 ]; then
             printf '| none | none | no live Python process found | 0 | 0 | 0 | 0 | 0 | 0 |\n'

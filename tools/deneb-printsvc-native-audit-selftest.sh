@@ -945,4 +945,24 @@ if grep -Fq 'no live Python process found' "$TMP_DIR/runtime-inventory.out"; the
     exit 1
 fi
 echo "PASS: runtime inventory detects an unavailable process directory"
+
+RUNTIME_SELFTEST_PROC="$TMP_DIR/runtime-inventory-listing"
+write_runtime_process 205 /usr/bin/python3 S 0 python3 -m compileall
+DENEB_TEST_LS="$(command -v ls)"
+export DENEB_TEST_LS
+cat > "$RUNTIME_SELFTEST_BIN/ls" <<'EOF'
+#!/bin/sh
+"$DENEB_TEST_LS" "$@" || exit $?
+if [ "$#" -eq 2 ] && [ "$2" = "$DENEB_RUNTIME_INVENTORY_PROC_DIR" ]; then
+    chmod a-r "$2"
+fi
+EOF
+chmod +x "$RUNTIME_SELFTEST_BIN/ls"
+if ! capture_runtime_inventory; then
+    chmod u+r "$RUNTIME_SELFTEST_PROC"
+    exit 1
+fi
+chmod u+r "$RUNTIME_SELFTEST_PROC"
+grep -E '^\| `205` \| .* stock startup work' "$TMP_DIR/runtime-inventory.out" >/dev/null
+echo "PASS: runtime inventory uses the checked PID listing after directory read access changes"
 echo "deneb-printsvc native audit selftest passed"
