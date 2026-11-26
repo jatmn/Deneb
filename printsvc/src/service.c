@@ -81,7 +81,8 @@ static int send_status_probe(deneb_print_service_t *svc, int include_version)
     if (rc != 0)
         return rc;
 
-    if (!deneb_flow_can_send(&svc->flow))
+    /* Pause exclusively owns the position report until its probe completes. */
+    if (svc->pause_position_probe_pending || !deneb_flow_can_send(&svc->flow))
         return 0;
     rc = deneb_motion_sender_send_gcode(&svc->flow, &svc->serial,
                                         svc->serial_ready, "M114");

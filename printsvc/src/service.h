@@ -54,6 +54,7 @@ typedef struct {
     deneb_motion_policy_t pause_policy;
     size_t pause_policy_index;
     int pause_position_probe_pending;
+    int pause_position_drain_sent;
     int pause_position_probe_sent;
     long long pause_probe_deadline_ms;
     long long pause_policy_deadline_ms;
