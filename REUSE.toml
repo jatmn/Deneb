@@ -37,7 +37,7 @@ SPDX-FileCopyrightText = ["1997-2011 Secret Labs AB", "1995-2011 Fredrik Lundh a
 SPDX-License-Identifier = "MIT-CMU"
 
 [[annotations]]
-path = "notices/ESLINT-10.11.0-LICENSE.txt"
+path = "notices/ESLINT-10.15.0-LICENSE.txt"
 precedence = "override"
 SPDX-FileCopyrightText = "OpenJS Foundation and other contributors"
 SPDX-License-Identifier = "MIT"

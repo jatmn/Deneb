@@ -40,8 +40,15 @@ done
 cat > "$scratch/bin/wsl" <<'EOF'
 #!/bin/sh
 set -eu
+if [ "$5" = --exec ] && [ "$6" = sh ]; then
+    shift 5
+    FIXTURE_WSL_ROOT=1 exec "$@"
+fi
 [ "$#" -eq 8 ] && [ "$6" = bash ] && [ "$7" = -lc ] || exit 2
 case "$8" in
+    *'deneb-release-package-files.txt'*) [ "$5" = --exec ] && [ "${FIXTURE_PUBLICATION:-0}" = 1 ] ;;
+    *'tools/write-package-checksum.sh'*) [ "$5" = --exec ] && exec bash -c "$8" ;;
+    *'test -x '*'/lighttpd'*) [ "$5" = --exec ] ;;
     *'bash ui/build-package.sh '*)
         case "$5" in
             # Model the default shell parsing a double-quoted Windows argument.
@@ -98,6 +105,7 @@ run_linux() {
 run_powershell() {
     # shellcheck disable=SC2016
     pwsh -NoProfile -Command '
+        $PSNativeCommandArgumentPassing = "Legacy"
         & "$env:FIXTURE_REPO/tools/build-update-release.ps1" -ReleaseChannel stable `
             -ZmqRoot "$env:FIXTURE_BUILD/zeromq-4.3.5" -LighttpdRoot "$env:FIXTURE_BUILD/lighttpd-1.4.76" `
             -PrintsvcStockSummary $env:STOCK_SUMMARY -PrintsvcNativeSummary $env:NATIVE_SUMMARY `
@@ -150,3 +158,69 @@ DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES=$FIRST_EVIDENCE \
 } > "$scratch/expected"
 check_failure 'Stopped at fixture comparator' run_linux
 echo 'PASS: missing, invalid, empty, and legacy supplemental evidence handling'
+
+# Exercise the WSL wrapper's real metadata write after a fixture archive audit.
+# Host Git can see the checkout; Git under the WSL stand-in rejects it.
+export FIXTURE_HOST_GIT
+FIXTURE_HOST_GIT=$(command -v git)
+cat > "$scratch/bin/git" <<'EOF'
+#!/bin/sh
+if [ "${FIXTURE_WSL_ROOT:-0}" = 1 ]; then
+    echo 'fixture: Git refuses a checkout owned by another user' >&2
+    exit 125
+fi
+exec "$FIXTURE_HOST_GIT" "$@"
+EOF
+chmod +x "$scratch/bin/git"
+mkdir -p "$fixture/ui/lib/lvgl" "$fixture/dist"
+git -C "$fixture/ui/lib/lvgl" init -q
+git -C "$fixture/ui/lib/lvgl" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    commit --allow-empty --no-gpg-sign -qm LVGL
+lvgl_revision=$(git -C "$fixture/ui/lib/lvgl" rev-parse HEAD)
+git -C "$fixture" init -q
+git -C "$fixture" update-index --add --cacheinfo "160000,$lvgl_revision,ui/lib/lvgl"
+git -C "$fixture" -c user.name=Fixture -c user.email=fixture@example.invalid commit --no-gpg-sign -qm Deneb
+revision=$(git -C "$fixture" rev-parse HEAD)
+export FIXTURE_PUBLICATION=1
+cat > "$fixture/ui/build-package.sh" <<'EOF'
+package="$PWD/dist/Deneb_Update_fixture.deneb"
+printf '%s\n' 'fixture archive' > "$package"
+printf 'Package path (base64): '
+printf '%s' "$package" | base64 -w0
+printf '\n'
+EOF
+package="$fixture/dist/Deneb_Update_fixture.deneb"
+mkdir "$package.sbom.cdx.json"
+if run_powershell > "$scratch/output" 2>&1 ||
+    ! grep -Fq 'release package SBOM generation failed' "$scratch/output"; then
+    cat "$scratch/output" >&2
+    echo 'Expected SBOM publication to fail at the fixture output directory' >&2
+    exit 1
+fi
+test ! -e "$package.sha256"
+rmdir "$package.sbom.cdx.json"
+run_powershell
+grep -Fq "\"version\": \"$revision\"" "$package.sbom.cdx.json"
+grep -Fq "\"version\": \"$lvgl_revision\"" "$package.sbom.cdx.json"
+test "$(grep -c '"value": "unverified"' "$package.sbom.cdx.json")" -eq 3
+(cd "$fixture/dist" && sha256sum -c "Deneb_Update_fixture.deneb.sha256")
+echo 'PASS: Windows checkout revisions survive WSL ownership and SBOM failure leaves no checksum'
+
+# A receipt is reusable only for the matching pin, output and input header.
+# shellcheck source=tools/native-dependency-pins.sh
+# shellcheck disable=SC1091
+. "$repo_root/tools/native-dependency-pins.sh"
+zmq_root="$build/zeromq-$ZMQ_VERSION"
+printf '%s\n' 'fixture header' > "$zmq_root/include/zmq.h"
+record_native_dependency libzmq "$zmq_root"
+native_dependency_verified libzmq "$zmq_root"
+if ZMQ_VERSION=0.0.0 native_dependency_verified libzmq "$zmq_root"; then
+    echo 'A receipt from a previous pin was accepted' >&2
+    exit 1
+fi
+printf '%s\n' 'changed fixture header' > "$zmq_root/include/zmq.h"
+if native_dependency_verified libzmq "$zmq_root"; then
+    echo 'A modified dependency tree was accepted' >&2
+    exit 1
+fi
+echo 'PASS: mismatched pins and modified dependency inputs invalidate receipts'

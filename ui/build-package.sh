@@ -314,7 +314,7 @@ sh "${REPO_ROOT}/tools/deneb-stock-menu-prune-selftest.sh"
 # A release wrapper publishes the matching checksum only after its additional
 # archive audits pass. Invalidate any earlier success marker before replacing
 # the package so a failed rebuild cannot inherit a stale digest.
-rm -f "$OUTPUT_IMG.sha256"
+rm -f "$OUTPUT_IMG.sha256" "$OUTPUT_IMG.sbom.cdx.json"
 cd "$STAGING_DIR"
 umask "$OUTPUT_UMASK"
 export LC_ALL=C

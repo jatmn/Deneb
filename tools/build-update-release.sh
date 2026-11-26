@@ -5,11 +5,15 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=tools/native-dependency-pins.sh
+# shellcheck disable=SC1091
+. "$repo_root/tools/native-dependency-pins.sh"
+
 build_root=${DENEB_BUILD_ROOT:-$repo_root/build/deneb-cross}
 build_directory="build-musl"
 web_build_directory="build-musl"
-zmq_root="$build_root/zeromq-4.3.5"
-lighttpd_root="$build_root/lighttpd-1.4.76"
+zmq_root="$build_root/zeromq-$ZMQ_VERSION"
+lighttpd_root="$build_root/lighttpd-$LIGHTTPD_VERSION"
 release_channel=experimental
 printsvc_stock_summary=
 printsvc_native_summary=
@@ -67,34 +71,33 @@ toolchain_root=${DENEB_TOOLCHAIN_ROOT:-$build_root/mipsel-linux-musl-cross}
 toolchain="$toolchain_root/bin/mipsel-linux-musl-gcc"
 zmq_lib="$zmq_root/build-musl/lib/libzmq.a"
 zmq_include="$zmq_root/include"
-lighttpd_version=1.4.76
 lighttpd_binary="$lighttpd_root/build-musl-static/build/lighttpd"
-zmq_sha256=6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43
-lighttpd_sha256=8cbf4296e373cfd0cedfe9d978760b5b05c58fdc4048b4e2bcaf0a61ac8f5011
+mbedtls_root="$build_root/mbedtls-$MBEDTLS_VERSION-mipsel"
 
 [ -x "$toolchain" ] || die "Missing musl cross-compiler. Run bash tools/setup-linux-build.sh first."
 
 if "$rebuild_zmq"; then
-    [[ "$zmq_root" =~ /zeromq-4\.3\.5/?$ ]] || die "Refusing to rebuild libzmq outside a zeromq-4.3.5 leaf directory: $zmq_root"
+    [[ "${zmq_root%/}" == */zeromq-"$ZMQ_VERSION" ]] || die "Refusing to rebuild libzmq outside a zeromq-$ZMQ_VERSION leaf directory: $zmq_root"
     mkdir -p "$zmq_root"
     rm -rf "${zmq_root:?}"/*
-    curl --fail --location -o "$zmq_root.tar.gz" https://github.com/zeromq/libzmq/releases/download/v4.3.5/zeromq-4.3.5.tar.gz
-    printf '%s  %s\n' "$zmq_sha256" "$zmq_root.tar.gz" | sha256sum -c -
+    curl --fail --location -o "$zmq_root.tar.gz" "$ZMQ_URL"
+    printf '%s  %s\n' "$ZMQ_SHA256" "$zmq_root.tar.gz" | sha256sum -c -
     tar xzf "$zmq_root.tar.gz" -C "$zmq_root" --strip-components=1
     rm -f "$zmq_root.tar.gz"
     cmake -S "$zmq_root" -B "$zmq_root/build-musl" -DCMAKE_TOOLCHAIN_FILE="$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF -DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON
     cmake --build "$zmq_root/build-musl" --parallel
+    record_native_dependency libzmq "$zmq_root"
 fi
 if [ ! -f "$zmq_lib" ] || [ ! -d "$zmq_include" ]; then
     die "Missing musl libzmq at $zmq_lib. Re-run with --rebuild-zmq."
 fi
 
 if "$rebuild_lighttpd"; then
-    [[ "$lighttpd_root" =~ /lighttpd-1\.4\.76/?$ ]] || die "Refusing to rebuild lighttpd outside a lighttpd-1.4.76 leaf directory: $lighttpd_root"
+    [[ "${lighttpd_root%/}" == */lighttpd-"$LIGHTTPD_VERSION" ]] || die "Refusing to rebuild lighttpd outside a lighttpd-$LIGHTTPD_VERSION leaf directory: $lighttpd_root"
     mkdir -p "$lighttpd_root"
     rm -rf "${lighttpd_root:?}"/*
-    curl --fail --location -o "$lighttpd_root.tar.xz" "https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$lighttpd_version.tar.xz"
-    printf '%s  %s\n' "$lighttpd_sha256" "$lighttpd_root.tar.xz" | sha256sum -c -
+    curl --fail --location -o "$lighttpd_root.tar.xz" "$LIGHTTPD_URL"
+    printf '%s  %s\n' "$LIGHTTPD_SHA256" "$lighttpd_root.tar.xz" | sha256sum -c -
     tar xf "$lighttpd_root.tar.xz" -C "$lighttpd_root" --strip-components=1
     rm -f "$lighttpd_root.tar.xz"
 fi
@@ -147,8 +150,11 @@ else
 fi
 cmake --build "$lighttpd_root/build-musl-static" --target lighttpd --parallel
 test -x "$lighttpd_binary"
+if "$rebuild_lighttpd"; then
+    record_native_dependency lighttpd "$lighttpd_root"
+fi
 
-configure_component "$repo_root/dfsvc" "$repo_root/dfsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib" "-DMBEDTLS_ROOT=$build_root/mbedtls-2.28.8-mipsel"
+configure_component "$repo_root/dfsvc" "$repo_root/dfsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib" "-DMBEDTLS_ROOT=$mbedtls_root"
 configure_component "$repo_root/ui" "$repo_root/ui/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_LIBRARY=$zmq_lib"
 
 package_env=("DENEB_RELEASE_CHANNEL=$release_channel" "STRIP=$toolchain_root/bin/mipsel-linux-musl-strip")
@@ -184,5 +190,6 @@ sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive "$package"
 sh "$repo_root/tools/deneb-printsvc-integration-audit-selftest.sh"
 DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest
+sh "$repo_root/tools/write-native-sbom.sh" "$package" "$zmq_root" "$lighttpd_root" "$mbedtls_root"
 bash "$repo_root/tools/write-package-checksum.sh" "$package"
 printf 'Verified native-only print service package: %s\n' "$package"

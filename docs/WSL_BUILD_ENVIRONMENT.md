@@ -158,7 +158,15 @@ Set `SOURCE_DATE_EPOCH` to a nonnegative Unix timestamp in seconds in the Linux
 packaging environment to override both. The archive uses a fixed member order,
 bytewise sorting for directory contents, and numeric owner and group IDs of zero.
 Archive creation pins the GNU tar format and clears inherited `TAR_OPTIONS`.
-The release wrappers run their archive audits before publishing the checksum.
+The release wrappers run their archive audits, write the `.deneb.sbom.cdx.json`
+CycloneDX file, then publish the checksum. The SBOM records the package SHA-256,
+Deneb commit, LVGL revision, and the direct native dependencies. The build records
+receipts for ZeroMQ, Mbed TLS, and lighttpd after verifying their source archives.
+The SBOM includes a version and source hash only when the receipt matches the
+current pin and the dependency's build outputs. Older caches and custom builds
+without matching receipts are marked unverified. Rebuild ZeroMQ and lighttpd with
+the release wrapper's rebuild flags. To generate a receipt for a previously
+cached Mbed TLS build, run the setup script with a fresh dependency build tree.
 
 The repeat-package test uses identical prebuilt binaries. End-to-end
 reproducibility across independent cross-compilations remains unverified.
