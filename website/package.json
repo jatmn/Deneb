@@ -2,6 +2,6 @@
   "name": "deneb-website-assets",
   "private": true,
   "dependencies": {
-    "flexsearch": "0.8.143"
+    "flexsearch": "0.8.212"
   }
 }
