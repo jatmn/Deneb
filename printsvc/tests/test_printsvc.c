@@ -6215,11 +6215,12 @@ static void test_motion_firmware_cache(void)
     assert(deneb_motion_firmware_check_cache(hex_path, cache_path, hash) ==
            DENEB_MOTION_FW_PROGRAM_REQUIRED);
 
-    f = fopen(programmer_path, "wb");
-    assert(f != NULL);
-    fputs("#!/bin/sh\n[ \"$#\" -eq 1 ] && [ \"$1\" = \"${0%/*}/motion.hex\" ]\n", f);
-    fclose(f);
-    assert(chmod(programmer_path, 0700) == 0);
+    static const char programmer[] =
+        "#!/bin/sh\n[ \"$#\" -eq 1 ] && [ \"$1\" = \"${0%/*}/motion.hex\" ]\n";
+    int fd = open(programmer_path, O_WRONLY | O_CREAT | O_EXCL, 0700);
+    assert(fd >= 0);
+    assert(write(fd, programmer, sizeof(programmer) - 1) == sizeof(programmer) - 1);
+    assert(close(fd) == 0);
     assert(deneb_motion_firmware_ensure(hex_path, cache_path, programmer_path, 1) ==
            DENEB_MOTION_FW_PROGRAMMED);
     assert(unlink(programmer_path) == 0);
