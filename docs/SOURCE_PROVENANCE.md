@@ -10,7 +10,7 @@ original Deneb work. It is an engineering inventory, not legal advice.
 | Original Deneb files | This repository | Current tree | MPL-2.0 | Default declared by `REUSE.toml` |
 | Cura integration plugin | Deneb adapter for UltiMaker Cura | Tested with Cura 5.13 | LGPL-3.0-or-later | Separate override; no Cura source is copied |
 | `web/src/api_cluster_materials.h` | `Ultimaker/fdm_materials` | `886e7ad927463493cc9c64f427b1ae2cf4ce12c1` | CC0-1.0 | 280 exact GUID/version records; one malformed upstream GUID omitted |
-| LVGL | `lvgl/lvgl` submodule | Pinned by Git | MIT plus bundled helper notices | License files retained and packaged |
+| LVGL | [`lvgl/lvgl` submodule](https://github.com/lvgl/lvgl/tree/cd75ce0c46657d4668889048cd43f16ff6e6121c) | v9.6 maintenance / `cd75ce0c46657d4668889048cd43f16ff6e6121c` | MIT plus bundled helper notices | License files retained and packaged |
 | LodePNG | [lvandeve/lodepng](https://github.com/lvandeve/lodepng/tree/7b2893e35891c0c85bee5595caafaf3c2044b409) | 20261102 / `7b2893e35891c0c85bee5595caafaf3c2044b409` | Zlib | `common/lodepng/`; upstream archive SHA-256 `e0b571062acdbe187fd4e8b0ff46f6e7d1b634457ff1a4b383aaac4c78bfd59b` |
 | ZeroMQ/libzmq | `zeromq/libzmq` | 4.3.5 | MPL-2.0 | Statically linked; source URL and notice packaged |
 | Mbed TLS | [Official Mbed TLS release archive](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-4.1.2) | 4.1.2 | Apache-2.0 OR GPL-2.0-or-later | Static dependency for `deneb-dfsvc` |

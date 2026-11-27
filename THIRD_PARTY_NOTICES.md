@@ -53,6 +53,7 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 - Component: LVGL runtime subset
 - Location: `ui/lib/lvgl`
 - Upstream: https://github.com/lvgl/lvgl
+- Revision: `cd75ce0c46657d4668889048cd43f16ff6e6121c` (v9.6 maintenance)
 - License: MIT
 - Repository form: pinned git submodule
 - Notice files kept in the LVGL submodule:
