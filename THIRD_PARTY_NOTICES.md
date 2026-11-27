@@ -5,6 +5,16 @@ Deneb releases. This is not legal advice.
 
 ## Runtime Components
 
+### Static MIPS toolchain runtimes
+
+The verified OpenWrt toolchain build includes these runtime components:
+
+- musl 1.2.5 with OpenWrt backports is linked into the native executables. The package includes the upstream MIT copyright and notices in `MUSL_COPYRIGHT.txt`. The OpenWrt build includes its small stack protector support archive.
+- GCC 14.3.0 `libgcc` (including its unwinder) and `libstdc++` code is statically linked where used. The package includes GPL-3.0 and the GCC Runtime Library Exception 3.1 in `GCC_COPYING3.txt` and `GCC_COPYING.RUNTIME.txt`.
+
+The compiler distribution and corresponding source are pinned in
+[Source Provenance](docs/SOURCE_PROVENANCE.md#mips-cross-toolchain).
+
 ### Cura plugin and material identifiers
 
 - The optional Cura plugin is LGPL-3.0-or-later and integrates with Cura without copying Cura source.
