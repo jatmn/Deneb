@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -46,6 +47,7 @@
 #define DF_HANDLING_SERVICE "coordinator::digitalfactory::handling"
 #define API_SOCKET_PATH "/var/run/deneb-api.sock"
 #define DF_DOWNLOAD_DIR "/tmp"
+#define DF_FD_PATH "/proc/self/fd/%d"
 #define DF_STATUS_FILE "/tmp/deneb-df-status"
 #define DF_PAIR_REQUEST_FILE "/tmp/deneb-df-pair-request"
 
@@ -213,11 +215,11 @@ static void create_pair_request(void)
 }
 
 
-static int fd_write_all(int fd, const void *buf, size_t len)
+static int socket_write_all(int fd, const void *buf, size_t len)
 {
     const uint8_t *p = (const uint8_t *)buf;
     while (len > 0) {
-        ssize_t n = write(fd, p, len);
+        ssize_t n = send(fd, p, len, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR)
                 continue;
@@ -270,7 +272,7 @@ static int local_api_request(const char *method, const char *path,
                      method, path, body_len, body ? body : "");
     if (n <= 0 || (size_t)n >= sizeof(req))
         goto out;
-    if (fd_write_all(fd, req, (size_t)n) < 0)
+    if (socket_write_all(fd, req, (size_t)n) < 0)
         goto out;
 
     while (used + 1 < sizeof(resp)) {
@@ -362,13 +364,13 @@ static void normalize_nozzle_id(const char *in, char *out, size_t out_size)
     }
 }
 
-static int local_api_upload_file(const char *file_path, const char *file_name,
+/* Takes ownership of file_fd, including on failure. */
+static int local_api_upload_file(int file_fd, const char *file_name,
                                  const char *job_instance_uuid,
                                  const char *cloud_job_id,
                                  char *out, size_t out_size)
 {
     int fd = -1;
-    FILE *fp = NULL;
     struct sockaddr_un addr;
     struct stat st;
     char boundary[64];
@@ -382,12 +384,10 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
     int status_code = -1;
 
     if (!out || out_size == 0)
-        return -1;
+        goto out;
     out[0] = '\0';
-    fp = fopen(file_path, "rb");
-    if (!fp)
-        return -1;
-    if (fstat(fileno(fp), &st) < 0 || st.st_size <= 0)
+    if (g_stop || fstat(file_fd, &st) < 0 || st.st_size <= 0 ||
+        lseek(file_fd, 0, SEEK_SET) < 0)
         goto out;
     snprintf(boundary, sizeof(boundary), "deneb-dfsvc-%lld",
              (long long)time(NULL));
@@ -434,19 +434,25 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
                      boundary, content_len);
     if (n <= 0 || (size_t)n >= sizeof(hdr))
         goto out;
-    if (fd_write_all(fd, hdr, (size_t)n) < 0 ||
-        fd_write_all(fd, meta, strlen(meta)) < 0 ||
-        fd_write_all(fd, head, strlen(head)) < 0)
+    if (socket_write_all(fd, hdr, (size_t)n) < 0 ||
+        socket_write_all(fd, meta, strlen(meta)) < 0 ||
+        socket_write_all(fd, head, strlen(head)) < 0)
         goto out;
 
-    while (!feof(fp)) {
-        size_t r = fread(chunk, 1, sizeof(chunk), fp);
-        if (r > 0 && fd_write_all(fd, chunk, r) < 0)
-            goto out;
-        if (ferror(fp))
+    while (!g_stop) {
+        ssize_t r = read(file_fd, chunk, sizeof(chunk));
+        if (r == 0)
+            break;
+        if (r < 0 && errno == EINTR)
+            continue;
+        if (r < 0 || socket_write_all(fd, chunk, (size_t)r) < 0)
             goto out;
     }
-    if (fd_write_all(fd, tail, strlen(tail)) < 0)
+
+    /* The last multipart boundary needs no data from our temporary file. */
+    close(file_fd);
+    file_fd = -1;
+    if (g_stop || socket_write_all(fd, tail, strlen(tail)) < 0)
         goto out;
 
     while (used + 1 < sizeof(resp)) {
@@ -465,8 +471,8 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
     }
 
 out:
-    if (fp)
-        fclose(fp);
+    if (file_fd >= 0)
+        close(file_fd);
     if (fd >= 0)
         close(fd);
     return status_code;
@@ -549,25 +555,79 @@ static void sanitize_hostname(const char *in, char *out, size_t out_size)
         snprintf(out, out_size, "Ultimaker");
 }
 
-static int download_file_with_wget(const char *url, const char *path)
+static int open_job_file(void)
 {
-    pid_t pid = fork();
+    char path[] = DF_DOWNLOAD_DIR "/deneb-df-XXXXXX";
+    int fd = mkstemp(path);
+
+    if (fd < 0)
+        return -1;
+    /* Keep scratch bytes tied to the owning descriptors across a restart. */
+    if (unlink(path) < 0 || fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+        close(fd);
+        return -1;
+    }
+    if (fd <= STDERR_FILENO) {
+        int job_fd = fcntl(fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+        close(fd);
+        return job_fd;
+    }
+    return fd;
+}
+
+static int wait_for_job_writer(pid_t pid, int fd, off_t prefix_size)
+{
+    const struct timespec interval = {.tv_nsec = 20 * 1000 * 1000};
+    int status;
+    struct stat st;
+
     if (pid < 0)
         return -1;
-    if (pid == 0) {
-        execlp("wget", "wget", "-q", "-T", "60", "-t", "1", "-O", path,
-               url, (char *)NULL);
-        _exit(127);
+    for (;;) {
+        /* A stop handled on another thread must also interrupt ingestion. */
+        if (g_stop)
+            (void)kill(pid, SIGKILL);
+        pid_t waited = waitpid(pid, &status, WNOHANG);
+        if (waited == pid)
+            break;
+        if (waited < 0 && errno != EINTR)
+            return -1;
+        if (waited == 0)
+            nanosleep(&interval, NULL);
     }
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0)
+    if (g_stop)
         return -1;
     if (!WIFEXITED(status))
         return -2;
     if (WEXITSTATUS(status) != 0)
         return WEXITSTATUS(status);
-    struct stat st;
-    return stat(path, &st) == 0 && st.st_size > 0 ? 0 : -3;
+    return fstat(fd, &st) == 0 && st.st_size > prefix_size ? 0 : -3;
+}
+
+static pid_t start_job_writer(int fd)
+{
+    pid_t parent = getpid();
+    pid_t pid = fork();
+    /* The parent check also covers a daemon exit before prctl runs. */
+    if (pid == 0 &&
+        (prctl(PR_SET_PDEATHSIG, SIGKILL, 0L, 0L, 0L) < 0 ||
+         getppid() != parent || dup2(fd, STDOUT_FILENO) < 0))
+        _exit(126);
+    return pid;
+}
+
+static int download_file_with_wget(const char *url, int fd, off_t prefix_size)
+{
+    /* The URL is an operand. An option can write diagnostics into the model. */
+    if (g_stop || !url[0] || url[0] == '-')
+        return -1;
+    pid_t pid = start_job_writer(fd);
+    if (pid == 0) {
+        execlp("wget", "wget", "-q", "-T", "60", "-t", "1", "-O", "-",
+               url, (char *)NULL);
+        _exit(127);
+    }
+    return wait_for_job_writer(pid, fd, prefix_size);
 }
 
 static bool filename_ends_with_ci(const char *name, const char *suffix)
@@ -609,100 +669,46 @@ static void replace_file_extension(const char *in, const char *extension,
         snprintf(out + used, remaining, "%s", extension);
 }
 
-static int extract_ufp_member(const char *ufp_path, const char *member,
-                              const char *gcode_path)
+static int extract_ufp_member(int archive_fd, const char *member,
+                              int model_fd, off_t prefix_size)
 {
-    pid_t pid;
-    int out_fd;
-    int status = 0;
-    struct stat st;
-
-    out_fd = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (out_fd < 0)
+    char archive_path[48];
+    if (g_stop)
         return -1;
-
-    pid = fork();
-    if (pid < 0) {
-        close(out_fd);
-        return -1;
-    }
+    snprintf(archive_path, sizeof(archive_path), DF_FD_PATH, archive_fd);
+    pid_t pid = start_job_writer(model_fd);
     if (pid == 0) {
-        if (dup2(out_fd, STDOUT_FILENO) < 0)
+        /* unzip reopens this seekable descriptor by path after exec. */
+        if (fcntl(archive_fd, F_SETFD, 0) < 0)
             _exit(126);
-        close(out_fd);
-        execlp("unzip", "unzip", "-p", ufp_path, member, (char *)NULL);
+        execlp("unzip", "unzip", "-p", archive_path, member, (char *)NULL);
         _exit(127);
     }
-    close(out_fd);
-
-    if (waitpid(pid, &status, 0) < 0)
-        return -1;
-    if (stat(gcode_path, &st) == 0 && st.st_size > 0)
-        return 0;
-    if (!WIFEXITED(status))
-        return -2;
-    return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
+    return wait_for_job_writer(pid, model_fd, prefix_size);
 }
 
-static int extract_ufp_model_gcode(const char *ufp_path, const char *gcode_path)
+static int extract_ufp_model_gcode(int archive_fd, int model_fd,
+                                    off_t prefix_size)
 {
-    int rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path);
-    if (rc == 0)
-        return 0;
-    return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path);
+    int rc = extract_ufp_member(archive_fd, "3D/model.gcode", model_fd,
+                                prefix_size);
+    if (rc == 0 || g_stop)
+        return rc;
+    if (ftruncate(model_fd, prefix_size) < 0 ||
+        lseek(model_fd, prefix_size, SEEK_SET) < 0)
+        return -1;
+    return extract_ufp_member(archive_fd, "/3D/model.gcode", model_fd,
+                              prefix_size);
 }
 
-static int prepend_file_metadata(const char *path, const char *material_guid,
+static off_t write_file_metadata(int fd, const char *material_guid,
                                  const char *print_core_id)
 {
-    char tmp_path[300];
-    int src = -1;
-    int dst = -1;
-    char buf[4096];
-    ssize_t nr;
-    int ok = 0;
-
-    if (!path || !path[0])
+    if (material_guid[0] && dprintf(fd, "; material_guid=%s\n", material_guid) < 0)
         return -1;
-    if ((!material_guid || !material_guid[0]) &&
-        (!print_core_id || !print_core_id[0]))
-        return 0;
-
-    if (snprintf(tmp_path, sizeof(tmp_path), "%s.meta", path) >=
-        (int)sizeof(tmp_path))
+    if (print_core_id[0] && dprintf(fd, "; print_core_id=%s\n", print_core_id) < 0)
         return -1;
-
-    src = open(path, O_RDONLY);
-    dst = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (src < 0 || dst < 0)
-        goto out;
-
-    if (material_guid && material_guid[0]) {
-        dprintf(dst, "; material_guid=%s\n", material_guid);
-    }
-    if (print_core_id && print_core_id[0]) {
-        dprintf(dst, "; print_core_id=%s\n", print_core_id);
-    }
-
-    while ((nr = read(src, buf, sizeof(buf))) > 0) {
-        if (fd_write_all(dst, buf, (size_t)nr) < 0)
-            goto out;
-    }
-    if (nr < 0)
-        goto out;
-    ok = 1;
-
-out:
-    if (src >= 0)
-        close(src);
-    if (dst >= 0)
-        close(dst);
-    if (ok) {
-        if (rename(tmp_path, path) == 0)
-            return 0;
-    }
-    unlink(tmp_path);
-    return -1;
+    return lseek(fd, 0, SEEK_CUR);
 }
 
 static int set_printer_name(const char *name)
@@ -2053,8 +2059,7 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     char print_core_id[32] = "";
     char file_name[192];
     char upload_name[192];
-    char path[256];
-    char upload_path[256];
+    char model_path[48];
     char api_body[1024] = "";
     char response[512];
     char safe_job_id[192];
@@ -2064,6 +2069,8 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     int code = -1;
     int download_rc = -1;
     int extract_rc = 0;
+    int archive_fd = -1;
+    int model_fd = -1;
     bool has_download_url = false;
 
     json_str_value(msg, "job_id", job_id, sizeof(job_id));
@@ -2079,9 +2086,6 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
 
     sanitize_filename(job_name, file_name, sizeof(file_name));
     snprintf(upload_name, sizeof(upload_name), "%s", file_name);
-    snprintf(path, sizeof(path), "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
-             (long long)time(NULL), file_name);
-    snprintf(upload_path, sizeof(upload_path), "%s", path);
 
     if (!df_printer_is_idle()) {
         reason = "printer_not_idle";
@@ -2097,40 +2101,66 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
         reason = download_url[0] ? "download_url_too_long" :
                                    "missing_download_url";
     } else {
-        download_rc = download_file_with_wget(download_url, path);
-        if (download_rc != 0) {
-            reason = "download_failed";
-        } else {
-            if (filename_ends_with_ci(file_name, ".ufp")) {
-                replace_file_extension(file_name, ".gcode", upload_name,
-                                       sizeof(upload_name));
-                snprintf(upload_path, sizeof(upload_path),
-                         "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
-                         (long long)time(NULL), upload_name);
-                extract_rc = extract_ufp_model_gcode(path, upload_path);
-            }
-            if (extract_rc != 0) {
-                reason = "ufp_extract_failed";
-            } else if (prepend_file_metadata(upload_path, material_guid,
-                                             print_core_id) != 0) {
-                reason = "metadata_prepend_failed";
-            } else if (deneb_print_job_file_validate_build_volume_path(
-                           upload_path, validation_error,
-                           sizeof(validation_error)) != 0) {
-                reason = "build_volume_validation_failed";
-            } else {
-                code = local_api_upload_file(upload_path, upload_name,
-                                             job_instance_uuid, job_id,
-                                             api_body, sizeof(api_body));
-                if (code >= 200 && code < 300) {
-                    reason = "queued";
-                    status = "queued";
-                } else {
-                    reason = "local_upload_failed";
-                }
+        bool is_ufp = filename_ends_with_ci(file_name, ".ufp");
+        model_fd = open_job_file();
+        if (model_fd < 0) {
+            reason = "staging_failed";
+            goto report;
+        }
+        off_t prefix_size = write_file_metadata(model_fd, material_guid,
+                                                print_core_id);
+        if (prefix_size < 0) {
+            reason = "metadata_prepend_failed";
+            goto report;
+        }
+        if (is_ufp) {
+            archive_fd = open_job_file();
+            if (archive_fd < 0) {
+                reason = "staging_failed";
+                goto report;
             }
         }
+        download_rc = download_file_with_wget(download_url,
+                                              is_ufp ? archive_fd : model_fd,
+                                              is_ufp ? 0 : prefix_size);
+        if (download_rc != 0) {
+            reason = "download_failed";
+            goto report;
+        }
+        if (is_ufp) {
+            replace_file_extension(file_name, ".gcode", upload_name,
+                                   sizeof(upload_name));
+            extract_rc = extract_ufp_model_gcode(archive_fd, model_fd,
+                                                prefix_size);
+            close(archive_fd);
+            archive_fd = -1;
+        }
+        if (extract_rc != 0) {
+            reason = "ufp_extract_failed";
+            goto report;
+        }
+        snprintf(model_path, sizeof(model_path), DF_FD_PATH, model_fd);
+        if (deneb_print_job_file_validate_build_volume_path(
+                model_path, validation_error, sizeof(validation_error)) != 0) {
+            reason = "build_volume_validation_failed";
+            goto report;
+        }
+        code = local_api_upload_file(model_fd, upload_name,
+                                     job_instance_uuid, job_id,
+                                     api_body, sizeof(api_body));
+        model_fd = -1;
+        if (code >= 200 && code < 300) {
+            reason = "queued";
+            status = "queued";
+        } else {
+            reason = "local_upload_failed";
+        }
     }
+report:
+    if (archive_fd >= 0)
+        close(archive_fd);
+    if (model_fd >= 0)
+        close(model_fd);
     logf_line("info",
               "Digital Factory print request result status=%s reason=%s "
               "api_code=%d download_rc=%d extract_rc=%d job_id=%d job_name=%d "
@@ -2145,9 +2175,6 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
               print_core_id[0] ? 1 : 0, file_name, upload_name,
               validation_error[0] ? validation_error : "-",
               api_body[0] ? api_body : "-");
-    unlink(path);
-    if (strcmp(upload_path, path) != 0)
-        unlink(upload_path);
     json_escape_string(job_id, safe_job_id, sizeof(safe_job_id));
     snprintf(response, sizeof(response),
              "{\"payload\":{\"job_id\":\"%s\",\"status\":\"%s\"},"
