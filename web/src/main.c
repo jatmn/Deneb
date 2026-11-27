@@ -41,6 +41,9 @@
 #define EPOLL_TIMEOUT_MS 100
 #define MAX_SSE_CLIENTS 4
 #define SSE_PUSH_INTERVAL_MS 250
+/* After a client FIN, lighttpd may need another downstream write to
+ * distinguish a half-close from a browser that closed its stream. */
+#define SSE_KEEPALIVE_MS 500
 #define MAX_PENDING_UPLOADS 8 /* The packaged proxy accepts eight clients. */
 #define UPLOAD_IDLE_TIMEOUT_MS 30000
 #define UPLOAD_FILE_TEMPLATE DENEB_UPLOAD_TEMP_DIR "/deneb-upload-XXXXXX"
@@ -53,7 +56,11 @@ static int epoll_fd = -1;
 static int owner_lock_fd = -1;
 
 /* SSE client tracking */
-static int sse_clients[MAX_SSE_CLIENTS];
+static struct {
+    int fd;
+    uint64_t revision;
+    uint64_t last_write_ms;
+} sse_clients[MAX_SSE_CLIENTS];
 static int sse_client_count = 0;
 static uint64_t sse_last_push_ms = 0;
 
@@ -96,7 +103,7 @@ typedef struct {
     size_t header_len;
     size_t header_written;
     int keep_alive;
-    int is_sse;
+    uint64_t sse_revision;
 } response_write_t;
 
 typedef struct pending_response {
@@ -198,7 +205,7 @@ static int create_listen_socket_at(const char *path)
 }
 
 /* Register a file descriptor as an SSE client */
-void sse_register_client(int fd)
+static void sse_register_client(int fd, uint64_t revision)
 {
     if (sse_client_count >= MAX_SSE_CLIENTS) {
         fprintf(stderr, "deneb-api: SSE client limit reached\n");
@@ -206,7 +213,9 @@ void sse_register_client(int fd)
         close(fd);
         return;
     }
-    sse_clients[sse_client_count++] = fd;
+    sse_clients[sse_client_count].fd = fd;
+    sse_clients[sse_client_count].revision = revision;
+    sse_clients[sse_client_count++].last_write_ms = monotonic_ms();
     set_nonblocking(fd);
     fprintf(stderr, "deneb-api: SSE client registered (fd=%d, total=%d)\n", fd, sse_client_count);
 }
@@ -215,7 +224,7 @@ void sse_register_client(int fd)
 static void sse_remove_client(int fd)
 {
     for (int i = 0; i < sse_client_count; i++) {
-        if (sse_clients[i] == fd) {
+        if (sse_clients[i].fd == fd) {
             sse_clients[i] = sse_clients[--sse_client_count];
             fprintf(stderr, "deneb-api: SSE client removed (fd=%d, total=%d)\n", fd, sse_client_count);
             return;
@@ -224,21 +233,30 @@ static void sse_remove_client(int fd)
 }
 
 /* Push status update to all connected SSE clients */
-static void sse_push_status(void)
+static void sse_push_status(uint64_t now_ms)
 {
-    if (sse_client_count == 0) return;
+    if (sse_client_count == 0 || now_ms - sse_last_push_ms < SSE_PUSH_INTERVAL_MS)
+        return;
+    sse_last_push_ms = now_ms;
 
-    const char *json = backend_zmq_get_status_json();
-    if (!json) return;
-
-    char event[1056];
-    int n = snprintf(event, sizeof(event), "data: %s\n\n", json);
-    if (n <= 0 || n >= (int)sizeof(event)) return;
+    static const char keepalive[] = ":\n\n";
+    size_t event_len;
+    uint64_t revision;
+    const char *event = backend_zmq_get_status_event(&event_len, &revision);
 
     for (int i = 0; i < sse_client_count; i++) {
-        int fd = sse_clients[i];
-        ssize_t nw = write(fd, event, (size_t)n);
-        if (nw != n) {
+        int fd = sse_clients[i].fd;
+        bool changed = event && revision != sse_clients[i].revision;
+        if (!changed && now_ms - sse_clients[i].last_write_ms < SSE_KEEPALIVE_MS)
+            continue;
+
+        const char *data = changed ? event : keepalive;
+        size_t len = changed ? event_len : sizeof(keepalive) - 1;
+        if (write(fd, data, len) == (ssize_t)len) {
+            if (changed)
+                sse_clients[i].revision = revision;
+            sse_clients[i].last_write_ms = now_ms;
+        } else {
             /* A slow reader must reconnect rather than receive a truncated
              * event or retain a slot indefinitely. No per-client buffers. */
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
@@ -325,22 +343,22 @@ static enum write_result write_response(int fd, const char *headers, response_wr
     return write_progress(fd, output->body, output->body_len, &output->body_written);
 }
 
-static void finish_response(int fd, int is_sse, int keep_alive, enum write_result result)
+static void finish_response(int fd, uint64_t sse_revision, int keep_alive, enum write_result result)
 {
-    if (result != WRITE_COMPLETE || (!is_sse && !keep_alive)) {
+    if (result != WRITE_COMPLETE || (!sse_revision && !keep_alive)) {
         close_client(fd);
         return;
     }
 
     /* SSE only needs disconnect events. Other persistent sockets read again. */
     struct epoll_event ev = {
-        .events = is_sse ? EPOLLRDHUP | EPOLLHUP | EPOLLERR : EPOLLIN,
+        .events = sse_revision ? EPOLLRDHUP | EPOLLHUP | EPOLLERR : EPOLLIN,
         .data.fd = fd,
     };
     if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) < 0)
         close_client(fd);
-    else if (is_sse)
-        sse_register_client(fd);
+    else if (sse_revision)
+        sse_register_client(fd, sse_revision);
 }
 
 static int defer_response(int fd, const char *headers, const response_write_t *output)
@@ -377,10 +395,10 @@ static void resume_response(int fd)
     enum write_result result = write_response(fd, pending->headers, &pending->output);
     if (result == WRITE_BLOCKED)
         return;
-    int is_sse = pending->output.is_sse;
+    uint64_t sse_revision = pending->output.sse_revision;
     int keep_alive = pending->output.keep_alive;
     release_response(slot);
-    finish_response(fd, is_sse, keep_alive, result);
+    finish_response(fd, sse_revision, keep_alive, result);
 }
 
 static void send_response(int fd, http_response_t *resp)
@@ -394,14 +412,14 @@ static void send_response(int fd, http_response_t *resp)
             .body_len = resp->body_len,
             .header_len = (size_t)header_len,
             .keep_alive = resp->keep_alive,
-            .is_sse = resp->is_sse,
+            .sse_revision = resp->sse_revision,
         };
         result = write_response(fd, headers, &output);
         if (result == WRITE_BLOCKED && defer_response(fd, headers, &output) == 0)
             return;
     }
     free(resp->body);
-    finish_response(fd, resp->is_sse, resp->keep_alive, result);
+    finish_response(fd, resp->sse_revision, resp->keep_alive, result);
 }
 
 static void set_upload_failed(http_response_t *resp)
@@ -762,12 +780,8 @@ int main(int argc, char *argv[])
 
         backend_zmq_poll();
 
-        /* Push SSE updates at 250 ms cadence */
         uint64_t now_ms = monotonic_ms();
-        if (sse_client_count > 0 && (sse_last_push_ms == 0 || now_ms - sse_last_push_ms >= SSE_PUSH_INTERVAL_MS)) {
-            sse_push_status();
-            sse_last_push_ms = now_ms;
-        }
+        sse_push_status(now_ms);
         for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
             if (uploads[i].request && !uploads[i].preparation_order &&
                 now_ms - uploads[i].last_progress_ms >= UPLOAD_IDLE_TIMEOUT_MS)
@@ -790,7 +804,7 @@ int main(int argc, char *argv[])
 
     /* Cleanup SSE clients */
     for (int i = 0; i < sse_client_count; i++) {
-        close(sse_clients[i]);
+        close(sse_clients[i].fd);
     }
 
     fprintf(stderr, "deneb-api: shutting down\n");

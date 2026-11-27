@@ -68,30 +68,20 @@ void api_deneb_events_get(const http_request_t *req, http_response_t *resp)
         }
     }
 
-    /*
-     * SSE endpoint. For now, return the current status as a single event.
-     * A full implementation would keep the connection open and stream
-     * updates. This is handled specially by the main loop's SSE client
-     * tracking, but for the initial response we send one event.
-     */
-    /* Mark as SSE — main.c will keep the connection open and push events */
-    resp->is_sse = 1;
-    resp->keep_alive = 1;
-    strcpy(resp->content_type, "text/event-stream");
-
-    /* Send initial event with current status */
-    const char *json = backend_zmq_get_status_json();
-    size_t json_len = strlen(json);
-    size_t total = json_len + 16;
-    char *buf = malloc(total);
-    if (!buf) {
+    size_t len;
+    uint64_t revision;
+    const char *event = backend_zmq_get_status_event(&len, &revision);
+    if (event)
+        api_http_set_body(resp, event, len);
+    if (!event || !resp->body) {
         resp->status_code = 500;
-        api_http_set_body_str(resp, "{\"message\":\"Out of memory\"}");
+        api_http_set_body_str(resp, "{\"message\":\"Status unavailable\"}");
         return;
     }
-    int n = snprintf(buf, total, "data: %s\n\n", json);
-    api_http_set_body(resp, buf, (size_t)n);
-    free(buf);
+
+    resp->sse_revision = revision;
+    resp->keep_alive = 1;
+    strcpy(resp->content_type, "text/event-stream");
 }
 
 /* Version: /api/v1/deneb/version */
