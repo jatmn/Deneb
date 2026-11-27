@@ -299,6 +299,24 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
     add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
+
+    add_executable(deneb-status-screen-tests
+        tests/test_status_screen.c
+        src/app_fonts.c
+        src/screen_mgr.c
+        src/assets/deneb_logo_116.c
+        src/assets/ic_nozzle_16.c
+        src/assets/ic_bed_16.c
+        src/fonts/deneb_font_i18n_12.c
+        src/fonts/deneb_font_i18n_14.c
+        src/fonts/deneb_font_i18n_16.c
+        ../common/print/print_state_rules.c
+        ../common/print/print_string.c)
+    target_include_directories(deneb-status-screen-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_compile_definitions(deneb-status-screen-tests PRIVATE
+        DENEB_ACTIVE_THUMB_PATH="${CMAKE_CURRENT_BINARY_DIR}/status-test-thumbnail.rgb565")
+    target_link_libraries(deneb-status-screen-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-status-screen-tests COMMAND deneb-status-screen-tests)
 endif()
 
 # Link ZMQ when not using stub
