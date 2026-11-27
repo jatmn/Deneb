@@ -295,6 +295,14 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME deneb-network-locale-tests COMMAND deneb-network-locale-tests)
     set_tests_properties(deneb-network-locale-tests PROPERTIES TIMEOUT 10)
 
+    add_executable(deneb-digital-factory-status-tests
+        tests/test_digital_factory_status.c src/locale.c)
+    target_include_directories(deneb-digital-factory-status-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-digital-factory-status-tests PRIVATE deneb-lvgl m pthread)
+    target_link_options(deneb-digital-factory-status-tests PRIVATE -Wl,--wrap=system)
+    add_test(NAME deneb-digital-factory-status-tests COMMAND deneb-digital-factory-status-tests)
+    set_tests_properties(deneb-digital-factory-status-tests PROPERTIES TIMEOUT 10)
+
     add_executable(deneb-lvgl-png-tests tests/test_lodepng.c)
     target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
