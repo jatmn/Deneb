@@ -58,8 +58,6 @@ static lv_image_dsc_t active_thumb_dsc = {
   .reserved = NULL,
 };
 
-static lv_timer_t *update_timer = NULL;
-
 static void set_label_text(lv_obj_t *label, const char *text)
 {
     const char *current = lv_label_get_text(label);
@@ -229,9 +227,8 @@ static void set_thumb_source(int job_active)
     lv_obj_invalidate(thumb);
 }
 
-static void update_timer_cb(lv_timer_t *timer)
+static void update_status(void)
 {
-    (void)timer;
     if (!status_screen) return;
 
     const printer_state_t *s = backend_get_state();
@@ -453,18 +450,11 @@ static lv_obj_t *status_create(void)
     lv_obj_center(stop_lbl);
     set_btn_enabled(stop_btn, 0);
 
-    /* Start live update timer (every 250ms) */
-    update_timer = lv_timer_create(update_timer_cb, 250, NULL);
-
     return status_screen;
 }
 
 static void status_destroy(void)
 {
-    if (update_timer) {
-        lv_timer_delete(update_timer);
-        update_timer = NULL;
-    }
     status_screen = NULL;
     state_label = NULL;
     nozzle_temp_label = NULL;
@@ -489,4 +479,6 @@ const screen_ops_t screen_status = {
     .create = status_create,
     .destroy = status_destroy,
     .show_back = true,
+    .refresh = update_status,
+    .refresh_period_ms = 250,
 };

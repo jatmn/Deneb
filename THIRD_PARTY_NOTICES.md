@@ -119,7 +119,7 @@ not installed on the printer.
 
 - Hugo 0.170.1, Apache-2.0, https://github.com/gohugoio/hugo
 - Hextra v0.13.0, MIT, https://github.com/imfing/hextra (Hugo module)
-- FlexSearch 0.8.143, Apache-2.0, https://github.com/nextapps-de/flexsearch
+- FlexSearch 0.8.212, Apache-2.0, https://github.com/nextapps-de/flexsearch
   (fetched at build; pin in `website/vendor-pins/flexsearch.bundle.min.js.sha256`)
 - Space Grotesk, OFL-1.1, loaded from https://fonts.bunny.net
 - IBM Plex Sans and IBM Plex Mono, OFL-1.1, loaded from https://fonts.bunny.net
