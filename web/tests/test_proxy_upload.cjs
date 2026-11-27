@@ -135,7 +135,7 @@ function multipartPayload(body, filename) {
     ]);
 }
 
-function solidRgbaPng(width, height, rgba) {
+function upFilteredRgbaPng(width, height, colors) {
     function chunk(type, data) {
         const body = Buffer.concat([Buffer.from(type), data]);
         const result = Buffer.alloc(body.length + 8);
@@ -158,10 +158,16 @@ function solidRgbaPng(width, height, rgba) {
     header[8] = 8;
     header[9] = 6;
     const stride = width * 4 + 1;
-    const row = Buffer.alloc(stride);
-    for (let offset = 1; offset < stride; offset += 4) row.writeUInt32BE(rgba, offset);
     const scanlines = Buffer.alloc(stride * height);
-    for (let offset = 0; offset < scanlines.length; offset += stride) row.copy(scanlines, offset);
+    const pixel = Buffer.alloc(4);
+    const previous = Buffer.alloc(4);
+    for (let y = 0; y < height; y++) {
+        const row = scanlines.subarray(y * stride, (y + 1) * stride);
+        pixel.writeUInt32BE(colors[y % colors.length]);
+        row[0] = 2; // Up filter predicts each channel from the previous row.
+        row.fill(pixel.map((channel, index) => channel - previous[index]), 1);
+        pixel.copy(previous);
+    }
     return Buffer.concat([
         Buffer.from('89504e470d0a1a0a', 'hex'),
         chunk('IHDR', header),
@@ -286,14 +292,21 @@ async function main() {
             ';' + createHash('sha256').update(String(index)).digest('hex') + '\n');
         const gcode = ';TIME:12\nG28\n' + comments.join('');
         fs.writeFileSync(path.join(root, '3D', 'model.gcode'), gcode);
-        function makeArchive(image) {
-            fs.writeFileSync(path.join(root, 'Metadata', 'thumbnail.png'), image);
+        function makeArchive(...images) {
+            const thumbnails = images.map((image, index) => {
+                const name = 'Metadata/thumbnail-' + index + '.png';
+                fs.writeFileSync(path.join(root, name), image);
+                return name;
+            });
             execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip',
-                '3D/model.gcode', 'Metadata/thumbnail.png'], { cwd: root });
+                '3D/model.gcode', ...thumbnails], { cwd: root });
             return fs.readFileSync(path.join(root, 'job.ufp'));
         }
-        const archive = makeArchive(solidRgbaPng(2, 1, 0xff000080));
-        const overBudgetArchive = makeArchive(solidRgbaPng(1024, 1025, 0xff000080));
+        const overBudget = upFilteredRgbaPng(1024, 1025, [0xff000080]);
+        const overBudgetArchive = makeArchive(overBudget);
+        // The 2048 x 512 image ranks below the ineligible 1024 x 1025 image.
+        const archive = makeArchive(overBudget, upFilteredRgbaPng(2048, 512,
+            [0xff000080, 0x00ff0080, 0x0000ff80, 0xffff0080]));
         const uploadedBodyExists = () => fs.readdirSync(temp).some((file) =>
             file.startsWith('deneb-upload-') && fs.statSync(path.join(temp, file), { throwIfNoEntry: false })?.size > 0);
 
@@ -388,9 +401,13 @@ async function main() {
         assert.equal(pending.length, 1);
         assert.equal(pending[0].path, 'spool/completed.gcode');
         const expectedPreview = Buffer.alloc(116 * 116 * 2);
+        const rowColors = [0x8021, 0x0421, 0x0031, 0x8421];
         for (let pixel = 0; pixel < 116 * 116; pixel++) {
             const y = Math.floor(pixel / 116);
-            expectedPreview.writeUInt16LE(y >= 29 && y < 87 ? 0x8021 : 0x0843, pixel * 2);
+            // The 4:1 source produces 29 image rows centered in the output.
+            const color = y >= 43 && y < 72
+                ? rowColors[Math.floor((y - 43) * 512 / 29) % rowColors.length] : 0x0843;
+            expectedPreview.writeUInt16LE(color, pixel * 2);
         }
         assert.deepEqual(fs.readFileSync(thumbnailPath), expectedPreview);
         const expectedTempFiles = ['deneb-active-thumb.rgb565', 'deneb-cluster-print-job.json'];

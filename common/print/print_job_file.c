@@ -27,7 +27,14 @@
 #define DENEB_UFP_THUMB_MAX_CANDIDATES 16
 #define DENEB_UFP_MEMBER_MAX 256
 #define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
-/* Filter bytes included: keep a 1024 x 1024 RGBA preview within budget. */
+/*
+ * Include one filter byte per row and admit 1024 x 1024 RGBA. The pinned
+ * LodePNG can reserve for a final 65,535-byte stored block before checking
+ * max_output_size. It adds half the old capacity on growth, so even a
+ * moving realloc keeps both scanline allocations below 10.2 MiB combined.
+ * This bound is for the inflater's output buffers, separate from input and
+ * decoder workspace. Recheck it when changing the inflater or this limit.
+ */
 #define DENEB_THUMB_MAX_SCANLINE_BYTES ((1024U * 4U + 1U) * 1024U)
 
 typedef struct {
@@ -37,6 +44,13 @@ typedef struct {
     uint32_t uncompressed_size;
     uint32_t local_header_offset;
 } deneb_ufp_thumb_candidate_t;
+
+typedef struct {
+    unsigned width;
+    unsigned height;
+    unsigned bpp;
+    size_t scanline_bytes;
+} deneb_png_layout_t;
 
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta)
 {
@@ -441,30 +455,42 @@ static uint32_t read_be32(const unsigned char *p)
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static int read_png_dimensions_data(const unsigned char *data, size_t size,
-                                    int *width, int *height)
+static int read_png_ihdr(const unsigned char *chunk, deneb_png_layout_t *layout)
+{
+    uint32_t width = read_be32(chunk);
+    uint32_t height = read_be32(chunk + 4);
+    unsigned color_type = chunk[9];
+    unsigned bpp;
+    size_t row_bytes;
+
+    if (width == 0 || height == 0 || width > 4096U || height > 4096U ||
+        chunk[8] != 8U || (color_type != 2U && color_type != 6U) ||
+        chunk[10] != 0U || chunk[11] != 0U || chunk[12] != 0U)
+        return -1;
+
+    bpp = color_type == 6U ? 4U : 3U;
+    row_bytes = (size_t)width * bpp + 1U;
+    if (height > DENEB_THUMB_MAX_SCANLINE_BYTES / row_bytes)
+        return -1;
+
+    layout->width = width;
+    layout->height = height;
+    layout->bpp = bpp;
+    layout->scanline_bytes = row_bytes * height;
+    return 0;
+}
+
+static int read_png_layout(const unsigned char *data, size_t size,
+                           deneb_png_layout_t *layout)
 {
     static const unsigned char png_sig[8] =
         {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    uint32_t png_width;
-    uint32_t png_height;
 
-    if (!data || size < 24 || !width || !height)
+    if (size < 33 || memcmp(data, png_sig, sizeof(png_sig)) != 0 ||
+        read_be32(data + 8) != 13U || memcmp(data + 12, "IHDR", 4) != 0)
         return -1;
 
-    if (memcmp(data, png_sig, sizeof(png_sig)) != 0 ||
-        memcmp(data + 12, "IHDR", 4) != 0)
-        return -1;
-
-    png_width = read_be32(data + 16);
-    png_height = read_be32(data + 20);
-    if (png_width == 0 || png_height == 0 ||
-        png_width > 2147483647U || png_height > 2147483647U)
-        return -1;
-
-    *width = (int)png_width;
-    *height = (int)png_height;
-    return 0;
+    return read_png_ihdr(data + 16, layout);
 }
 
 static unsigned thumbnail_score(int width, int height)
@@ -779,29 +805,18 @@ static int append_png_chunk(unsigned char **buf, size_t *size, size_t *cap,
 }
 
 static int inflate_png_scanlines(const unsigned char *png_data, size_t png_size,
-                                 unsigned char **out_raw, unsigned *out_width,
-                                 unsigned *out_height, unsigned *out_bpp)
+                                 unsigned char **out_raw,
+                                 deneb_png_layout_t *layout)
 {
-    static const unsigned char png_sig[8] =
-        {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
     unsigned char *idat = NULL;
     unsigned char *raw = NULL;
     size_t idat_size = 0;
     size_t idat_cap = 0;
     size_t raw_size = 0;
     size_t pos = 8;
-    size_t stride;
-    size_t expected_raw_size;
-    unsigned width = 0;
-    unsigned height = 0;
-    unsigned color_type = 0;
-    unsigned bpp = 0;
     int saw_ihdr = 0;
     int saw_iend = 0;
     int rc = -1;
-
-    if (png_size < 33 || memcmp(png_data, png_sig, sizeof(png_sig)) != 0)
-        return -1;
 
     while (pos + 12U <= png_size) {
         uint32_t chunk_len = read_be32(png_data + pos);
@@ -813,17 +828,8 @@ static int inflate_png_scanlines(const unsigned char *png_data, size_t png_size,
             goto done;
 
         if (memcmp(type, "IHDR", 4) == 0) {
-            if (chunk_len != 13U)
+            if (chunk_len != 13U || read_png_ihdr(chunk, layout) < 0)
                 goto done;
-            width = read_be32(chunk);
-            height = read_be32(chunk + 4);
-            color_type = chunk[9];
-            if (width == 0 || height == 0 || width > 4096U ||
-                height > 4096U || chunk[8] != 8U ||
-                (color_type != 2U && color_type != 6U) || chunk[10] != 0U ||
-                chunk[11] != 0U || chunk[12] != 0U)
-                goto done;
-            bpp = color_type == 6U ? 4U : 3U;
             saw_ihdr = 1;
         } else if (memcmp(type, "IDAT", 4) == 0) {
             if (append_png_chunk(&idat, &idat_size, &idat_cap, chunk,
@@ -840,26 +846,18 @@ static int inflate_png_scanlines(const unsigned char *png_data, size_t png_size,
     if (!saw_ihdr || !saw_iend || idat_size == 0)
         goto done;
 
-    stride = (size_t)width * bpp;
-    if (height > DENEB_THUMB_MAX_SCANLINE_BYTES / (stride + 1U))
-        goto done;
-    expected_raw_size = (stride + 1U) * height;
-
     {
         LodePNGDecompressSettings settings;
 
         lodepng_decompress_settings_init(&settings);
-        settings.max_output_size = expected_raw_size;
+        settings.max_output_size = layout->scanline_bytes;
         if (lodepng_zlib_decompress(&raw, &raw_size, idat, idat_size,
                                     &settings) != 0 ||
-            raw_size != expected_raw_size)
+            raw_size != layout->scanline_bytes)
             goto done;
     }
 
     *out_raw = raw;
-    *out_width = width;
-    *out_height = height;
-    *out_bpp = bpp;
     raw = NULL;
     rc = 0;
 
@@ -906,9 +904,7 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     unsigned char *raw = NULL;
     unsigned char *prev = NULL;
     unsigned char *rgb565 = NULL;
-    unsigned width = 0;
-    unsigned height = 0;
-    unsigned bpp = 0;
+    deneb_png_layout_t layout;
     size_t stride;
     unsigned scaled_w;
     unsigned scaled_h;
@@ -922,9 +918,12 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     if (!png_data || png_size == 0 || !target_path || !*target_path)
         return -1;
 
-    if (inflate_png_scanlines(png_data, png_size, &raw, &width, &height,
-                              &bpp) < 0)
+    if (inflate_png_scanlines(png_data, png_size, &raw, &layout) < 0)
         goto done;
+
+    unsigned width = layout.width;
+    unsigned height = layout.height;
+    unsigned bpp = layout.bpp;
     stride = (size_t)width * bpp;
 
     rgb565 = malloc(DENEB_THUMB_RGB565_BYTES);
@@ -1038,18 +1037,17 @@ int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
     for (i = 0; i < candidate_count; i++) {
         unsigned char *data = NULL;
         size_t data_size = 0;
-        int width = 0;
-        int height = 0;
+        deneb_png_layout_t layout;
         unsigned score;
 
         if (extract_zip_candidate(ufp_path, &candidates[i], &data,
                                   &data_size) != 0 ||
-            read_png_dimensions_data(data, data_size, &width, &height) != 0) {
+            read_png_layout(data, data_size, &layout) != 0) {
             free(data);
             continue;
         }
 
-        score = thumbnail_score(width, height);
+        score = thumbnail_score(layout.width, layout.height);
         if (!best_ready || score < best_score) {
             free(best_data);
             best_data = data;
