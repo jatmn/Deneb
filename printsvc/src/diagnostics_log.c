@@ -203,7 +203,7 @@ static int find_log_start(int fd, off_t *start, off_t end)
 }
 
 /* Copy forward so each destination chunk ends before the next source chunk. */
-static int move_log_tail(int fd, off_t start, off_t end)
+static int move_log_tail(int fd, off_t start, off_t end, int *moved)
 {
     char buf[2048];
     off_t target = 0;
@@ -220,6 +220,7 @@ static int move_log_tail(int fd, off_t start, off_t end)
                 continue;
             if (n <= 0)
                 return -1;
+            *moved = 1;
             copied += (size_t)n;
         }
         start += (off_t)count;
@@ -237,24 +238,39 @@ static int truncate_log(int fd, off_t original, off_t length)
 }
 
 /* Recover only complete lines, using the open inode and no second file. */
-static int normalize_log(int fd, off_t *size)
+static int clip_log(int fd, off_t *size, int *moved)
 {
     int oversized = *size > DENEB_DIAG_GENERATION_BYTES;
     off_t start = oversized ? *size - DENEB_DIAG_GENERATION_BYTES : 0;
     off_t end = *size;
-    if (find_log_end(fd, start, &end) == 0 &&
-        (!oversized || find_log_start(fd, &start, end) == 0)) {
-        off_t length = end - start;
-        if (length == *size ||
-            ((!oversized || move_log_tail(fd, start, end) == 0) &&
-             truncate_log(fd, *size, length) == 0)) {
-            *size = length;
+    if (find_log_end(fd, start, &end) != 0 ||
+        (oversized && find_log_start(fd, &start, end) != 0))
+        return -1;
+    off_t length = end - start;
+    if (length == *size)
+        return 0;
+    if ((oversized && move_log_tail(fd, start, end, moved) != 0) ||
+        truncate_log(fd, *size, length) != 0)
+        return -1;
+    *size = length;
+    return 0;
+}
+
+static int normalize_log(int fd, off_t *size)
+{
+    int moved = 0;
+    if (clip_log(fd, size, &moved) == 0)
+        return 0;
+    struct stat current;
+    if (!moved && fstat(fd, &current) == 0 && current.st_size != *size) {
+        /* The file changed before any record moved; clip what is there now. */
+        *size = current.st_size;
+        if (clip_log(fd, size, &moved) == 0)
             return 0;
-        }
     }
-    /* A failed clip can leave records partly moved. Emptying the file needs
-     * no new blocks and keeps the location within its budget. */
-    if (!oversized || ftruncate(fd, 0) != 0)
+    /* An oversized file may hold partly moved records. Emptying it needs no
+     * new blocks and keeps the location within its budget. */
+    if (*size <= DENEB_DIAG_GENERATION_BYTES || ftruncate(fd, 0) != 0)
         return -1;
     *size = 0;
     return 0;

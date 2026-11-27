@@ -24,12 +24,27 @@
 static time_t fixture_seconds = 1;
 static int pwrite_calls;
 static int pwrite_fail_at;
+static off_t pwrite_fail_truncate_to = -1;
+static off_t pread_truncate_to = -1;
 
+ssize_t __real_pread(int fd, void *buf, size_t count, off_t offset);
 ssize_t __real_pwrite(int fd, const void *buf, size_t count, off_t offset);
+
+/* Simulate another process truncating the file before the first read. */
+ssize_t __wrap_pread(int fd, void *buf, size_t count, off_t offset)
+{
+    if (pread_truncate_to >= 0) {
+        assert(ftruncate(fd, pread_truncate_to) == 0);
+        pread_truncate_to = -1;
+    }
+    return __real_pread(fd, buf, count, offset);
+}
 
 ssize_t __wrap_pwrite(int fd, const void *buf, size_t count, off_t offset)
 {
     if (pwrite_fail_at > 0 && ++pwrite_calls == pwrite_fail_at) {
+        if (pwrite_fail_truncate_to >= 0)
+            assert(ftruncate(fd, pwrite_fail_truncate_to) == 0);
         errno = ENOSPC;
         return -1;
     }
@@ -259,17 +274,21 @@ static void test_clip_failure(void)
         const char *path;
         unsigned int records;
         int fail_at;
+        off_t truncate_to;
     } cases[] = {
-        { PRIMARY, 1200, 1 },              /* above 1 MiB, nothing moved */
-        { PRIMARY, 900, 200 },             /* part of the kept window moved */
-        { PRIMARY PREVIOUS, 700, 200 },    /* previous generation */
+        { PRIMARY, 1200, 1, -1 },            /* above 1 MiB, nothing moved */
+        { PRIMARY, 900, 200, -1 },           /* part of the kept window moved */
+        { PRIMARY, 900, 200, 500000 },       /* moved, then shrunk externally */
+        { PRIMARY PREVIOUS, 700, 200, -1 },  /* previous generation */
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         write_records(cases[i].path, cases[i].records, 1000);
         pwrite_calls = 0;
         pwrite_fail_at = cases[i].fail_at;
+        pwrite_fail_truncate_to = cases[i].truncate_to;
         assert(deneb_diagnostics_log_open(NULL) == 0);
         pwrite_fail_at = 0;
+        pwrite_fail_truncate_to = -1;
         assert(pwrite_calls >= cases[i].fail_at);
         assert(log_stat(cases[i].path).st_size <= LIMIT / 2);
         assert(log_stat(PRIMARY).st_size + log_stat(PRIMARY PREVIOUS).st_size <= LIMIT);
@@ -283,6 +302,19 @@ static void test_clip_failure(void)
         remove_log(PRIMARY PREVIOUS);
         remove_log(FALLBACK);
     }
+
+    /* A shrink before any record moved keeps the complete records left. */
+    write_records(PRIMARY, 900, 1000);
+    pread_truncate_to = 256 * 1000;
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    assert(pread_truncate_to < 0);
+    assert(!log_stat(FALLBACK).st_ino);
+    assert(first_record(PRIMARY) == 0);
+    assert(log_contains(PRIMARY, "L00255 "));
+    assert(!log_contains(PRIMARY, "L00256 "));
+    deneb_diagnostics_log_close();
+    remove_log(PRIMARY);
+    remove_log(FALLBACK);
 }
 
 static void test_oversize_in_place(void)
