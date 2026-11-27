@@ -16,6 +16,8 @@ original Deneb work. It is an engineering inventory, not legal advice.
 | Mbed TLS | [Official Mbed TLS release archive](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-4.1.2) | 4.1.2 | Apache-2.0 OR GPL-2.0-or-later | Static dependency for `deneb-dfsvc` |
 | TF-PSA-Crypto | `tf-psa-crypto/` in the Mbed TLS release archive | 1.1.2 | Apache-2.0 OR GPL-2.0-or-later | Bundled cryptography library used by Mbed TLS and `deneb-dfsvc` |
 | lighttpd | lighttpd upstream | 1.4.85 | BSD-3-Clause | HTTP front end built from pinned, hashed source; not vendored |
+| musl libc | OpenWrt MT76x8 toolchain, see [MIPS cross-toolchain](#mips-cross-toolchain) | 1.2.5 with OpenWrt backports | MIT and bundled notices | Statically linked; upstream copyright and license packaged |
+| GCC runtime libraries | OpenWrt MT76x8 toolchain, see [MIPS cross-toolchain](#mips-cross-toolchain) | 14.3.0 | GPL-3.0-or-later WITH GCC-exception-3.1 | `libgcc` and `libstdc++` code statically linked where used; license and exception packaged |
 | Pillow bootstrap host tool | `https://github.com/python-pillow/Pillow` | 13.0.0 / `293218ad059d994baf1777d882911bed6a49704a` | MIT-CMU | Host-only splash converter dependency; wheels are version/hash locked in `tools/bootstrap-requirements.txt`; source archive `pillow-13.0.0.tar.gz` SHA-256 is `cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510` |
 | ESLint host checker | registry.npmjs.org `eslint` 10.15.0, `@eslint/js` 10.0.1, and `globals` 17.12.0 | Locked by `tools/eslint/package-lock.json`. `eslint-10.15.0.tgz` SHA-256 is `8cb5e45fb5b1174e4216d546b69d37c0ac5cb5d9ba8342946a04af1f59605edb` | MIT | Host CI checker for existing browser JavaScript. Not installed on the printer and not copied from `web/www` into firmware packages |
 | API, IPC, and Cura compatibility | Public printer APIs, public repositories/documentation, and interoperability observations | Current Deneb implementation | MPL-2.0 | Clean-room Deneb code; no stock application source copied |
@@ -55,3 +57,24 @@ When a dependency version or generated dataset changes:
 3. Update `REUSE.toml`, `LICENSES/`, this inventory, and release notices.
 4. Run `reuse lint`, the publication-boundary check, and the full-history secret
    scan before publication or release.
+
+## MIPS cross-toolchain
+
+The native package uses the [OpenWrt 25.12.6 ramips/mt76x8 toolchain](https://downloads.openwrt.org/releases/25.12.6/targets/ramips/mt76x8/).
+Its package archive has SHA-256 `628559363d3e41da6cc298ed0a27b81fbc3843a2758228c7697861defd324da3`.
+The compiler identifies OpenWrt build source revision
+[`981c978eff636fc7d81f0ed17b00e2a6317c949a`](https://github.com/openwrt/openwrt/tree/981c978eff636fc7d81f0ed17b00e2a6317c949a/toolchain),
+which records the build recipes and patches.
+
+| Runtime upstream source | Version | Source archive SHA-256 |
+| --- | --- | --- |
+| [musl](https://musl.libc.org/releases/musl-1.2.5.tar.gz) | 1.2.5 | `a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4` |
+| [GCC](https://ftp.gnu.org/gnu/gcc/gcc-14.3.0/gcc-14.3.0.tar.xz) | 14.3.0 | `e0dc77297625631ac8e50fa92fffefe899a4eb702592da5c32ef04e2293aca3a` |
+
+OpenWrt's [musl patch set](https://github.com/openwrt/openwrt/tree/981c978eff636fc7d81f0ed17b00e2a6317c949a/toolchain/musl/patches)
+backports the upstream `iconv` and `qsort` fixes for CVE-2026-6042 and
+CVE-2026-40200. The standard OpenWrt build omits the EUC-KR converter
+affected by CVE-2025-26519 through its `900-iconv_size_hack.patch`.
+OpenWrt supplies `libssp_nonshared.a` in the musl sysroot and
+`libgcc_eh.a` from GCC. GCC patches and target settings are pinned by the
+same OpenWrt source revision.
