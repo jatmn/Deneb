@@ -10,6 +10,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const apiBinary = process.argv[2];
 const guid = '11111111-2222-4333-8aaa-bbbbbbbbbbbb';
 const fallbackGuid = '22222222-2222-4333-8aaa-bbbbbbbbbbbb';
+const defaultGuid = '00000000-0000-0000-0000-000000000000';
 const pla = '506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9';
 const petg = '1cbfaeb3-1906-4b26-b2e7-6f777a8c197a';
 
@@ -42,17 +43,35 @@ async function main() {
     for (const name of ['bin', 'config', 'delta', 'override'])
         fs.mkdirSync(path.join(tmp, name));
     store('bin/uci', `#!/bin/sh
-printf '%s\\n' "$3" >> uci-calls
-package=\${3%%.*}
-for source in delta override config; do
-    [ -r "$source/$package" ] || continue
-    while IFS='=' read -r key value; do
-        if [ "$key" = "$3" ]; then
-            printf '%s\\n' "$value"
-            exit 0
-        fi
-    done < "$source/$package"
-done
+option=\${3:-$2}
+printf '%s\\n' "$option" >> uci-calls
+if [ -f fail-once ]; then
+    IFS=' ' read -r failing mode < fail-once
+    if [ "$option" = "$failing" ]; then
+        rm fail-once
+        case "$mode" in
+            no-output) exit 0 ;;
+            signal) kill -TERM "$$" ;;
+            io) [ "$1" = -q ] || printf 'uci: I/O error\\n' >&2 ;;
+        esac
+        exit 1
+    fi
+fi
+package=\${option%%.*}
+base="config/$package"
+[ ! -f "override/$package" ] || base="override/$package"
+if [ -r "$base" ]; then
+    for file in "delta/$package" "$base"; do
+        [ -r "$file" ] || continue
+        while IFS='=' read -r key value; do
+            if [ "$key" = "$option" ]; then
+                printf '%s\\n' "$value"
+                exit 0
+            fi
+        done < "$file"
+    done
+fi
+[ "$1" = -q ] || printf 'uci: Entry not found\\n' >&2
 exit 1
 `);
     fs.chmodSync(path.join(tmp, 'bin/uci'), 0o755);
@@ -81,6 +100,11 @@ exit 1
         for (let i = 0; i < 80 && api.exitCode === null && !fs.existsSync(socketPath); i++)
             await delay(25);
         assert.ok(fs.existsSync(socketPath), stderr);
+        store('fail-once', 'ultimaker.option.host_guid io\n');
+        const cold = await getPrinter(socketPath);
+        assert.equal(cold.uuid, defaultGuid, 'cold failure used the alternate GUID');
+        assert.equal(cold.friendly_name, 'Original Name');
+        store('uci-calls', '');
         const first = await getPrinter(socketPath);
         assert.equal(first.friendly_name, 'Original Name');
         assert.equal(first.uuid, guid);
@@ -92,6 +116,19 @@ exit 1
         for (let i = 0; i < 3; i++)
             assert.deepEqual(await getPrinter(socketPath), first);
         assert.equal(calls().length, 6, 'unchanged status reran UCI commands');
+
+        for (const mode of ['io', 'no-output', 'signal']) {
+            const before = calls().length;
+            store('fail-once', 'ultimaker.option.host_guid ' + mode + '\n');
+            // Change the file stamp without changing the effective options.
+            store('config/ultimaker', config + '# ' + mode + '\n');
+            assert.deepEqual(await getPrinter(socketPath), first,
+                'transient UCI failure replaced a published snapshot');
+            assert.ok(calls().length > before, 'test must trigger a full refresh');
+            const failed = calls().length;
+            assert.deepEqual(await getPrinter(socketPath), first);
+            assert.ok(calls().length > failed, 'refresh must retry before cache expiry');
+        }
 
         store('delta/ultimaker', 'ultimaker.option.printer_name=Staged Name\n');
         assert.equal((await getPrinter(socketPath)).friendly_name, 'Staged Name');
@@ -107,9 +144,15 @@ exit 1
         assert.equal(replaced.configuration[0].material.material, 'PETG');
 
         store('override/ultimaker', 'ultimaker.version.latest=1.0\n');
+        store('delta/ultimaker', 'ultimaker.option.printer_name=Delta on Override\n');
         const overridden = await getPrinter(socketPath);
         assert.equal(overridden.latest_available_firmware, '1.0');
-        assert.equal(overridden.firmware_update_status, 'up_to_date');
+        assert.notEqual(overridden.firmware_version, '1.0');
+        assert.equal(overridden.firmware_update_status, 'update_available');
+        assert.equal(overridden.configuration[0].print_core_id, '0.4 mm');
+        assert.equal(overridden.configuration[0].material.guid, pla);
+        assert.equal(overridden.friendly_name, 'Delta on Override');
+        assert.equal(overridden.uuid, fallbackGuid);
     } finally {
         if (api.exitCode === null && api.signalCode === null) api.kill('SIGTERM');
         const force = setTimeout(() => api.kill('SIGKILL'), 1000);
