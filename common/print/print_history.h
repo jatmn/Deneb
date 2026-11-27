@@ -4,7 +4,12 @@
 
 #include <stddef.h>
 
+#ifndef DENEB_PRINT_HISTORY_PATH
 #define DENEB_PRINT_HISTORY_PATH "/home/3D/deneb-print-history.json"
+#endif
+
+/* Leave room in the jobs response for the current job and 16 KiB of pending jobs. */
+#define DENEB_PRINT_HISTORY_MAX_BYTES (15 * 1024)
 
 typedef struct {
     const char *name;
