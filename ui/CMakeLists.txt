@@ -63,6 +63,8 @@ if(NOT EXISTS "${LVGL_DIR}/src")
     )
 endif()
 
+set(LODEPNG_DIR "${CMAKE_SOURCE_DIR}/../common/lodepng")
+
 # LVGL v9 sources. Keep this intentionally narrow: compiling the entire LVGL
 # tree pulls in every optional backend, codec, driver, and widget even when
 # lv_conf.h disables them at preprocessor time.
@@ -88,7 +90,6 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/indev/lv_indev_scroll.c"
     "${LVGL_DIR}/src/layouts/lv_layout.c"
     "${LVGL_DIR}/src/layouts/flex/*.c"
-    "${LVGL_DIR}/src/libs/lodepng/lodepng.c"
     "${LVGL_DIR}/src/logging/lv_log.c"
     "${LVGL_DIR}/src/misc/*.c"
     "${LVGL_DIR}/src/misc/cache/*.c"
@@ -117,6 +118,16 @@ foreach(pattern IN LISTS LVGL_SOURCE_GLOBS)
     list(APPEND LVGL_SOURCES ${matched_sources})
 endforeach()
 list(REMOVE_DUPLICATES LVGL_SOURCES)
+# The LVGL adapter includes its bundled header by relative path.
+set_source_files_properties(
+    "${LVGL_DIR}/src/image/lv_lodepng.c"
+    PROPERTIES COMPILE_OPTIONS "-include;${LODEPNG_DIR}/lodepng.h"
+)
+set_source_files_properties(
+    "${LODEPNG_DIR}/lodepng.c"
+    PROPERTIES COMPILE_DEFINITIONS DENEB_LODEPNG_LVGL
+)
+
 list(REMOVE_ITEM LVGL_SOURCES
     "${LVGL_DIR}/src/core/lv_obj_id_builtin.c"
     "${LVGL_DIR}/src/core/lv_obj_property.c"
@@ -221,21 +232,23 @@ set(DENEB_SOURCES
     ${DRIVER_SOURCES}
 )
 
-add_executable(deneb-ui ${DENEB_SOURCES} ${LVGL_SOURCES})
-
-target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING)
-
-target_include_directories(deneb-ui PRIVATE
+set(DENEB_UI_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/config       # lv_conf.h
     ${CMAKE_SOURCE_DIR}/src          # project headers
     ${CMAKE_SOURCE_DIR}/../common/print
     ${LVGL_DIR}/src                  # LVGL internal headers
-    ${LVGL_DIR}/src/libs/lodepng     # shared UFP thumbnail decoder
+    ${LODEPNG_DIR}
     ${LVGL_DIR}/include              # LVGL v9 public headers
     ${LVGL_DIR}                      # lvgl.h
 )
 
-target_link_libraries(deneb-ui PRIVATE m pthread)
+add_library(deneb-lvgl OBJECT ${LVGL_SOURCES} "${LODEPNG_DIR}/lodepng.c")
+target_compile_definitions(deneb-lvgl PUBLIC LV_DISABLE_API_MAPPING LODEPNG_NO_COMPILE_ENCODER)
+target_include_directories(deneb-lvgl PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+
+add_executable(deneb-ui ${DENEB_SOURCES})
+target_include_directories(deneb-ui PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+target_link_libraries(deneb-ui PRIVATE deneb-lvgl m pthread)
 
 if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     enable_testing()
@@ -262,6 +275,11 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_compile_options(deneb-ui-loop-tests PRIVATE -ffunction-sections -fdata-sections)
     target_link_options(deneb-ui-loop-tests PRIVATE -Wl,--gc-sections)
     add_test(NAME deneb-ui-loop-tests COMMAND deneb-ui-loop-tests)
+
+    add_executable(deneb-lvgl-png-tests tests/test_lodepng.c)
+    target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
 endif()
 
 # Link ZMQ when not using stub
