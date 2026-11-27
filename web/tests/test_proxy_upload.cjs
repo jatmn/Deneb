@@ -137,9 +137,10 @@ function pausedLocale(apiSocket) {
     };
 }
 
-function liveStatus(port) {
+function liveStatus(port, token) {
     const client = { events: 0 };
-    const req = request(port, '/api/v1/deneb/events', {}, (response) => {
+    const pathname = '/api/v1/deneb/events' + (token ? '?token=' + encodeURIComponent(token) : '');
+    const req = request(port, pathname, {}, (response) => {
         try {
             assert.equal(response.statusCode, 200);
             assert.match(response.headers['content-type'], /^text\/event-stream\b/);
@@ -645,8 +646,19 @@ async function main() {
         await withinDeadline('Paused responses did not release their sockets', () =>
             countDescriptors(api.pid) === active[0] && sockets.size === SSE_CLIENTS);
 
+        const latestStatus = clients[0].lastEvent;
         for (const client of clients) client.close();
         await withinDeadline('Client, API, or lighttpd descriptors did not return to idle', () =>
+            sockets.size === 0 &&
+            [process.pid, api.pid, proxy.pid].every((pid, index) => countDescriptors(pid) === baseline[index]));
+
+        const reconnected = liveStatus(port, token);
+        await withinDeadline('Reconnected SSE stream missed the current status', () => {
+            if (reconnected.error) throw reconnected.error;
+            return reconnected.events === 1 && reconnected.lastEvent === latestStatus;
+        });
+        reconnected.close();
+        await withinDeadline('Reconnected SSE stream did not release its descriptors', () =>
             sockets.size === 0 &&
             [process.pid, api.pid, proxy.pid].every((pid, index) => countDescriptors(pid) === baseline[index]));
 
