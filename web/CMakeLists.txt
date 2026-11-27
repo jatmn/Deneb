@@ -169,6 +169,11 @@ target_compile_options(deneb-sse-tests PRIVATE -ffunction-sections -fdata-sectio
 target_link_options(deneb-sse-tests PRIVATE -Wl,--gc-sections)
 target_link_libraries(deneb-sse-tests PRIVATE pthread)
 add_test(NAME deneb-sse-tests COMMAND deneb-sse-tests)
+add_executable(deneb-ufp-thumbnail-tests tests/test_ufp_thumbnail.c)
+target_include_directories(deneb-ufp-thumbnail-tests PRIVATE ../common/lodepng)
+target_compile_options(deneb-ufp-thumbnail-tests PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(deneb-ufp-thumbnail-tests PRIVATE -Wl,--gc-sections)
+add_test(NAME deneb-ufp-thumbnail-tests COMMAND deneb-ufp-thumbnail-tests)
 find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE)
     add_test(NAME deneb-browser-sse-tests
