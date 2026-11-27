@@ -118,15 +118,24 @@ static void test_local_http(void)
     assert(local_api_request("GET", STATUS, NULL, out, 8) == -1 && !out[0]);
     assert(local_api_request("GET", STATUS, NULL, out, sizeof(out)) == -1 && !out[0]);
     finish_replies(pid);
+}
 
+static void test_coalesced_reply(bool close_writer)
+{
     int pair[2];
     const char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\n\"idle\"";
     char headers[128];
+    char out[64];
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+    assert(fcntl(pair[1], F_SETFL, O_NONBLOCK) == 0);
     assert(socket_write_all(pair[0], response, sizeof(response) - 1) == 0);
-    assert(shutdown(pair[0], SHUT_WR) == 0);
-    assert(local_api_read_response(pair[1], headers, sizeof(headers), out, sizeof(out)) == 200);
-    assert(strcmp(out, "\"idle\"") == 0);
+    /* With the writer open, the EOF check must see EAGAIN. */
+    if (close_writer)
+        assert(shutdown(pair[0], SHUT_WR) == 0);
+    int status = local_api_read_response(pair[1], headers, sizeof(headers), out, sizeof(out));
+    assert(status == (close_writer ? 200 : -1));
+    if (close_writer)
+        assert(strcmp(out, "\"idle\"") == 0);
     close(pair[0]);
     close(pair[1]);
 }
@@ -258,6 +267,8 @@ int main(void)
     assert(mkdtemp(dir) && chdir(dir) == 0);
     assert(setenv("PATH", "/nonexistent", 1) == 0); /* Use built-in UCI/IP fallbacks. */
     test_local_http();
+    test_coalesced_reply(false);
+    test_coalesced_reply(true);
     test_status_json();
     test_masked_frames();
     assert(chdir("/") == 0 && rmdir(dir) == 0);
