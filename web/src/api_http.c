@@ -188,9 +188,7 @@ int api_http_parse(http_request_t *req, const char *raw, size_t len)
             req->headers[req->header_count].value[val_len] = '\0';
 
             /* Extract specific headers */
-            if (strcasecmp(req->headers[req->header_count].name, "Authorization") == 0) {
-                strncpy(req->auth_digest, req->headers[req->header_count].value, sizeof(req->auth_digest) - 1);
-            } else if (strcasecmp(req->headers[req->header_count].name, "Content-Type") == 0) {
+            if (strcasecmp(req->headers[req->header_count].name, "Content-Type") == 0) {
                 strncpy(req->content_type, req->headers[req->header_count].value, sizeof(req->content_type) - 1);
                 /* Parse multipart boundary */
                 const char *bp = strstr(req->headers[req->header_count].value, "boundary=");
@@ -370,20 +368,27 @@ void api_http_set_body_str(http_response_t *resp, const char *str)
     api_http_set_body(resp, str, strlen(str));
 }
 
+const char *api_http_authorization(const http_request_t *req)
+{
+    for (int i = 0; i < req->header_count; i++) {
+        if (strcasecmp(req->headers[i].name, "Authorization") != 0)
+            continue;
+        const char *value = req->headers[i].value;
+        if (strncasecmp(value, "Bearer ", 7) == 0 ||
+            strncasecmp(value, "Digest ", 7) == 0)
+            return value;
+    }
+    return NULL;
+}
+
 int api_http_check_auth(const http_request_t *req)
 {
-    /* Check Bearer token (web UI auth) */
-    for (int i = 0; i < req->header_count; i++) {
-        if (strcasecmp(req->headers[i].name, "Authorization") == 0) {
-            if (strncasecmp(req->headers[i].value, "Bearer ", 7) == 0) {
-                return api_auth_validate_token(req->headers[i].value + 7);
-            }
-            if (strncasecmp(req->headers[i].value, "Digest ", 7) == 0) {
-                return api_auth_validate_digest(req->headers[i].value + 7, req->method, req->path);
-            }
-        }
+    const char *value = api_http_authorization(req);
+    if (value) {
+        if (strncasecmp(value, "Bearer ", 7) == 0)
+            return api_auth_validate_token(value + 7);
+        return api_auth_validate_digest(value + 7, req->method, req->path);
     }
-    /* Check if auth is disabled */
     return api_auth_is_disabled();
 }
 

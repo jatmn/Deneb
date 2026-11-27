@@ -43,6 +43,7 @@
 #define SSE_PUSH_INTERVAL_MS 250
 #define MAX_PENDING_UPLOADS 8 /* The packaged proxy accepts eight clients. */
 #define UPLOAD_IDLE_TIMEOUT_MS 30000
+#define UPLOAD_FILE_TEMPLATE DENEB_UPLOAD_TEMP_DIR "/deneb-upload-XXXXXX"
 
 /* The signal handler may run on the upload worker thread. */
 _Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "Signal flag must be lock-free");
@@ -57,11 +58,24 @@ static int sse_client_count = 0;
 static uint64_t sse_last_push_ms = 0;
 
 typedef struct {
+    char path[HTTP_MAX_PATH];
+    char authorization[HTTP_HEADER_VALUE_SIZE];
+    char upload_path[sizeof(UPLOAD_FILE_TEMPLATE)];
+    char multipart_boundary[HTTP_MULTIPART_BOUNDARY_SIZE];
+    int content_length;
+    int upload_size;
+    int body_prefix_len;
+} upload_request_t;
+
+_Static_assert(sizeof(UPLOAD_FILE_TEMPLATE) <= sizeof(((http_request_t *)0)->upload_path),
+               "Upload name must fit in the routed request");
+
+typedef struct {
     int client_fd;
     int temp_fd;
     uint64_t last_progress_ms;
     uint64_t preparation_order;
-    http_request_t *request;
+    upload_request_t *request;
 } upload_t;
 
 static upload_t uploads[MAX_PENDING_UPLOADS];
@@ -406,8 +420,10 @@ static int upload_peer_gone(int fd)
 static void *prepare_print_upload(void *unused)
 {
     (void)unused;
+    const upload_request_t *request = preparation.upload->request;
     preparation.prepared = api_print_job_prepare_upload(
-        preparation.upload->request, &preparation.files, &preparation.response,
+        request->multipart_boundary, request->upload_path,
+        &preparation.files, &preparation.response,
         &preparation.cancelled) == 0;
     return NULL;
 }
@@ -467,20 +483,53 @@ static void poll_print_uploads(void)
     }
 }
 
+static int route_completed_upload(upload_t *upload, http_response_t *resp)
+{
+    const upload_request_t *saved = upload->request;
+    http_request_t req = { .method = "POST", .is_multipart = 1 };
+    snprintf(req.path, sizeof(req.path), "%s", saved->path);
+    snprintf(req.upload_path, sizeof(req.upload_path), "%s", saved->upload_path);
+    snprintf(req.multipart_boundary, sizeof(req.multipart_boundary), "%s",
+             saved->multipart_boundary);
+    req.content_length = saved->content_length;
+    req.upload_size = saved->upload_size;
+    if (saved->authorization[0]) {
+        memcpy(req.headers[0].name, "Authorization", sizeof("Authorization"));
+        snprintf(req.headers[0].value, sizeof(req.headers[0].value), "%s",
+                 saved->authorization);
+        req.header_count = 1;
+    }
+
+    /* Preserve the initial body prefix for POST handlers that read req.body. */
+    while (req.body_len < saved->body_prefix_len) {
+        ssize_t n = pread(upload->temp_fd, req.body + req.body_len,
+                          (size_t)(saved->body_prefix_len - req.body_len), req.body_len);
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            return -1;
+        req.body_len += (int)n;
+    }
+
+    int closed = close(upload->temp_fd);
+    upload->temp_fd = -1;
+    if (closed < 0)
+        return -1;
+
+    fprintf(stderr, "deneb-api: uploaded %d bytes to %s\n",
+            saved->upload_size, saved->upload_path);
+    backend_zmq_poll();
+    api_http_route(&req, resp);
+    return 0;
+}
+
 static void finish_upload(upload_t *upload, int complete)
 {
     int fd = upload->client_fd;
     http_response_t resp;
     api_http_response_init(&resp);
 
-    if (close(upload->temp_fd) < 0)
-        complete = 0;
-    upload->temp_fd = -1;
-    if (complete) {
-        fprintf(stderr, "deneb-api: uploaded %d bytes to %s\n",
-                upload->request->upload_size, upload->request->upload_path);
-        backend_zmq_poll();
-        api_http_route(upload->request, &resp);
+    if (complete && route_completed_upload(upload, &resp) == 0) {
         if (resp.prepare_print_upload) {
             /* Only receive full disconnects while waiting to send the reply. */
             struct epoll_event ev = { .data.fd = fd };
@@ -532,12 +581,20 @@ static int start_upload(int fd, const http_request_t *req, const char *data, siz
     if (!upload || req->content_length > available)
         return -1;
 
-    http_request_t *saved = malloc(sizeof(*saved));
+    upload_request_t *saved = malloc(sizeof(*saved));
     if (!saved)
         return -1;
-    *saved = *req;
-    snprintf(saved->upload_path, sizeof(saved->upload_path),
-             DENEB_UPLOAD_TEMP_DIR "/deneb-upload-XXXXXX");
+    snprintf(saved->path, sizeof(saved->path), "%s", req->path);
+    const char *authorization = api_http_authorization(req);
+    snprintf(saved->authorization, sizeof(saved->authorization), "%s",
+             authorization ? authorization : "");
+    snprintf(saved->multipart_boundary, sizeof(saved->multipart_boundary), "%s",
+             req->multipart_boundary);
+    memcpy(saved->upload_path, UPLOAD_FILE_TEMPLATE, sizeof(saved->upload_path));
+    saved->content_length = req->content_length;
+    saved->upload_size = 0;
+    saved->body_prefix_len = req->body_len < req->content_length ?
+        req->body_len : req->content_length;
     int temp_fd = mkostemp(saved->upload_path, O_CLOEXEC);
     if (temp_fd < 0) {
         perror("mkostemp");

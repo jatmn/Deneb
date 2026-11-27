@@ -202,7 +202,7 @@ rmdir "$package.sbom.cdx.json"
 run_powershell
 grep -Fq "\"version\": \"$revision\"" "$package.sbom.cdx.json"
 grep -Fq "\"version\": \"$lvgl_revision\"" "$package.sbom.cdx.json"
-test "$(grep -c '"value": "unverified"' "$package.sbom.cdx.json")" -eq 3
+test "$(grep -c '"value": "unverified"' "$package.sbom.cdx.json")" -eq 4
 (cd "$fixture/dist" && sha256sum -c "Deneb_Update_fixture.deneb.sha256")
 echo 'PASS: Windows checkout revisions survive WSL ownership and SBOM failure leaves no checksum'
 

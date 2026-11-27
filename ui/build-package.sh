@@ -228,7 +228,7 @@ cp "${SCRIPT_DIR}/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt" "${STAGING_DIR}/
 sed -n '1,/^\*\/$/p' "${SCRIPT_DIR}/../common/lodepng/lodepng.c" > "${STAGING_DIR}/LODEPNG_LICENSE.txt"
 cp "${REPO_ROOT}/notices/libzmq-4.3.5-NOTICE.txt" "${STAGING_DIR}/LIBZMQ_NOTICE.txt"
 cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
-cp "${REPO_ROOT}/notices/MBEDTLS-2.28.8-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
+cp "${REPO_ROOT}/notices/MBEDTLS-4.1.2-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
 cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.85-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
 
 # Create manifest
@@ -279,7 +279,7 @@ contents:
   LODEPNG_LICENSE.txt - LodePNG zlib-style license notice
   LIBZMQ_NOTICE.txt - libzmq MPL-2.0 notice and source location
   MPL-2.0.txt       - Mozilla Public License 2.0 text for libzmq
-  MBEDTLS_LICENSE.txt - mbedTLS 2.28.8 dual-license text
+  MBEDTLS_LICENSE.txt - Mbed TLS 4.1.2 and bundled TF-PSA-Crypto 1.1.2 dual-license texts
   LIGHTTPD_LICENSE.txt - lighttpd 1.4.85 BSD license notice
   no Python driver files are packaged; native deneb-printsvc owns marlindriver
   manifest.txt      - This file
