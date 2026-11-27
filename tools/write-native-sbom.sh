@@ -3,23 +3,24 @@
 # Write the firmware SBOM for the selected release inputs.
 
 set -eu
-if [ "$#" -ne 4 ] && [ "$#" -ne 6 ]; then
-    echo "usage: $0 PACKAGE ZMQ_ROOT LIGHTTPD_ROOT MBEDTLS_ROOT [DENEB_REV LVGL_REV]" >&2
+if [ "$#" -ne 5 ] && [ "$#" -ne 7 ]; then
+    echo "usage: $0 PACKAGE ZMQ_ROOT LIGHTTPD_ROOT MBEDTLS_ROOT TOOLCHAIN_ROOT [DENEB_REV LVGL_REV]" >&2
     exit 1
 fi
 package=$1
 zmq_root=$2
 lighttpd_root=$3
 mbedtls_root=$4
+toolchain_root=$5
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=tools/native-dependency-pins.sh
 # shellcheck disable=SC1091
 . "$repo_root/tools/native-dependency-pins.sh"
 
-if [ "$#" -eq 6 ]; then
+if [ "$#" -eq 7 ]; then
     # The Windows wrapper verifies these revisions with Git on the checkout host.
-    revision=$5
-    lvgl_revision=$6
+    revision=$6
+    lvgl_revision=$7
 else
     revision=$(git -C "$repo_root" rev-parse --verify HEAD)
     lvgl_path=ui/lib/lvgl
@@ -55,6 +56,37 @@ source_metadata() {
       }]
 EOF
 }
+
+toolchain_verified=false
+if runtime_key=$(mips_toolchain_key "$toolchain_root") &&
+    manifest=$(tar -xOf "$package" manifest.txt 2>/dev/null) &&
+    printf '%s\n' "$manifest" | grep -Fxq "mips_runtime_receipt: $runtime_key"; then
+    toolchain_verified=true
+fi
+
+runtime_metadata() {
+    if ! "$toolchain_verified"; then
+        printf '%s\n' '      "properties": [{"name": "deneb:source-provenance", "value": "unverified"}]'
+        return
+    fi
+    cat <<EOF
+      "version": "$1",
+      "purl": "$2",
+      "licenses": [$3],
+      "properties": [{"name": "deneb:openwrt-release", "value": "$MIPS_TOOLCHAIN_RELEASE"}],
+      "externalReferences": [{
+        "type": "distribution", "url": "$4",
+        "hashes": [{"alg": "SHA-256", "content": "$5"}]
+      }, {
+        "type": "distribution", "url": "$MIPS_TOOLCHAIN_URL",
+        "hashes": [{"alg": "SHA-256", "content": "$MIPS_TOOLCHAIN_SHA256"}]
+      }, {
+        "type": "vcs", "url": "https://github.com/openwrt/openwrt/tree/$MIPS_TOOLCHAIN_REVISION/toolchain"
+      }]
+EOF
+}
+
+gcc_runtime_license='{"expression": "GPL-3.0-or-later WITH GCC-exception-3.1"}'
 
 package_hash=$(sha256sum < "$package")
 package_hash=${package_hash%% *}
@@ -96,8 +128,50 @@ $(source_metadata lighttpd "$lighttpd_root" "$LIGHTTPD_VERSION" "pkg:generic/lig
       "type": "library",
       "bom-ref": "mbedtls",
       "name": "Mbed TLS",
-$(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tls/mbedtls@v$MBEDTLS_VERSION" \
+$(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tls/mbedtls@mbedtls-$MBEDTLS_VERSION" \
     '{"expression": "Apache-2.0 OR GPL-2.0-or-later"}' "$MBEDTLS_URL" "$MBEDTLS_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "tf-psa-crypto",
+      "name": "TF-PSA-Crypto",
+$(source_metadata mbedtls "$mbedtls_root" "$TF_PSA_CRYPTO_VERSION" "pkg:github/mbed-tls/tf-psa-crypto@tf-psa-crypto-$TF_PSA_CRYPTO_VERSION" \
+    '{"expression": "Apache-2.0 OR GPL-2.0-or-later"}' "$MBEDTLS_URL" "$MBEDTLS_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "musl",
+      "name": "musl",
+$(runtime_metadata "$MIPS_TOOLCHAIN_MUSL_VERSION" "pkg:generic/musl@$MIPS_TOOLCHAIN_MUSL_VERSION" \
+    '{"license": {"id": "MIT"}}' "$MUSL_URL" "$MUSL_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "libstdc++",
+      "name": "libstdc++",
+$(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libstdc%2B%2B@$MIPS_TOOLCHAIN_GCC_VERSION" \
+    "$gcc_runtime_license" "$GCC_URL" "$GCC_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "libgcc",
+      "name": "libgcc",
+      "description": "GCC support and exception unwinding runtime",
+$(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libgcc@$MIPS_TOOLCHAIN_GCC_VERSION" \
+    "$gcc_runtime_license" "$GCC_URL" "$GCC_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "lodepng",
+      "name": "LodePNG",
+      "version": "20261102",
+      "purl": "pkg:github/lvandeve/lodepng@7b2893e35891c0c85bee5595caafaf3c2044b409",
+      "licenses": [{"license": {"id": "Zlib"}}],
+      "externalReferences": [{
+        "type": "distribution",
+        "url": "https://codeload.github.com/lvandeve/lodepng/tar.gz/7b2893e35891c0c85bee5595caafaf3c2044b409",
+        "hashes": [{"alg": "SHA-256", "content": "e0b571062acdbe187fd4e8b0ff46f6e7d1b634457ff1a4b383aaac4c78bfd59b"}]
+      }]
     },
     {
       "type": "library",
@@ -112,7 +186,8 @@ $(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tl
     }
   ],
   "dependencies": [
-    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "lvgl"]}
+    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "tf-psa-crypto", "musl", "libstdc++", "libgcc", "lodepng", "lvgl"]},
+    {"ref": "mbedtls", "dependsOn": ["tf-psa-crypto"]}
   ]
 }
 EOF

@@ -128,13 +128,13 @@ int deneb_status_state_preheat_events(
         state->nozzle_temp_cur, state->nozzle_temp_set);
 }
 
-int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
-                                  const deneb_backend_status_state_t *prev,
-                                  const char *json,
-                                  char *retained_filename,
-                                  size_t retained_filename_sz,
-                                  deneb_print_stop_guard_t *stop_guard,
-                                  uint32_t now_ms)
+int deneb_status_state_apply_json_span(deneb_backend_status_state_t *state,
+                                       const deneb_backend_status_state_t *prev,
+                                       const char *json, size_t json_len,
+                                       char *retained_filename,
+                                       size_t retained_filename_sz,
+                                       deneb_print_stop_guard_t *stop_guard,
+                                       uint32_t now_ms)
 {
     deneb_status_payload_t payload;
     deneb_backend_status_state_t empty_prev;
@@ -144,7 +144,7 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
     if (!state || !json)
         return -1;
 
-    if (deneb_status_payload_parse(json, &payload) != 0)
+    if (deneb_status_payload_parse_span(json, json_len, &payload) != 0)
         return -1;
 
     if (!prev) {
@@ -226,6 +226,19 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
     state->last_update_ms = now_ms;
 
     return 0;
+}
+
+int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
+                                  const deneb_backend_status_state_t *prev,
+                                  const char *json,
+                                  char *retained_filename,
+                                  size_t retained_filename_sz,
+                                  deneb_print_stop_guard_t *stop_guard,
+                                  uint32_t now_ms)
+{
+    return json ? deneb_status_state_apply_json_span(
+        state, prev, json, strlen(json), retained_filename,
+        retained_filename_sz, stop_guard, now_ms) : -1;
 }
 
 int deneb_status_state_expire(deneb_backend_status_state_t *state, uint32_t now_ms)

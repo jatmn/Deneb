@@ -9,8 +9,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <poll.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +29,15 @@
 #define DENEB_UFP_THUMB_MAX_CANDIDATES 16
 #define DENEB_UFP_MEMBER_MAX 256
 #define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
+/*
+ * Include one filter byte per row and admit 1024 x 1024 RGBA. The pinned
+ * LodePNG can reserve for a final 65,535-byte stored block before checking
+ * max_output_size. It adds half the old capacity on growth, so even a
+ * moving realloc keeps both scanline allocations below 10.2 MiB combined.
+ * This bound is for the inflater's output buffers, separate from input and
+ * decoder workspace. Recheck it when changing the inflater or this limit.
+ */
+#define DENEB_THUMB_MAX_SCANLINE_BYTES ((1024U * 4U + 1U) * 1024U)
 
 typedef struct {
     char name[DENEB_UFP_MEMBER_MAX];
@@ -35,6 +46,13 @@ typedef struct {
     uint32_t uncompressed_size;
     uint32_t local_header_offset;
 } deneb_ufp_thumb_candidate_t;
+
+typedef struct {
+    unsigned width;
+    unsigned height;
+    unsigned bpp;
+    size_t scanline_bytes;
+} deneb_png_layout_t;
 
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta)
 {
@@ -332,27 +350,48 @@ int deneb_print_job_file_replace_extension(const char *name,
     return 0;
 }
 
-static int extract_ufp_member(const char *ufp_path, const char *member,
-                              const char *gcode_path,
-                              const atomic_bool *cancelled)
+static deneb_ufp_model_result_t drain_ufp_model(int reader, int output,
+                                               const atomic_bool *cancelled)
+{
+    char buf[8192];
+    struct pollfd ready = { .fd = reader, .events = POLLIN };
+    bool has_output = false;
+
+    while (!atomic_load(cancelled)) {
+        int rc = poll(&ready, 1, 20);
+        if (rc == 0 || (rc < 0 && errno == EINTR))
+            continue;
+        if (rc < 0)
+            return DENEB_UFP_MODEL_EXTRACT_FAILED;
+        ssize_t n = read(reader, buf, sizeof(buf));
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            return n == 0 && has_output ? DENEB_UFP_MODEL_OK : DENEB_UFP_MODEL_EXTRACT_FAILED;
+
+        for (ssize_t done = 0; done < n;) {
+            ssize_t written = write(output, buf + done, (size_t)(n - done));
+            if (written < 0 && errno == EINTR)
+                continue;
+            if (written <= 0)
+                return DENEB_UFP_MODEL_STORAGE_FAILED;
+            done += written;
+        }
+        has_output = true;
+    }
+    errno = ECANCELED;
+    return DENEB_UFP_MODEL_EXTRACT_FAILED;
+}
+
+static int spawn_ufp_extractor(const char *ufp_path, const char *member, int writer,
+                               pid_t *pid)
 {
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attrs;
-    int status = 0;
-    pid_t pid;
-    struct stat st;
-
-    if (atomic_load(cancelled)) {
-        errno = ECANCELED;
-        return -1;
-    }
     int rc = posix_spawn_file_actions_init(&actions);
-    if (rc != 0) {
-        errno = rc;
-        return -1;
-    }
-    rc = posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, gcode_path,
-                                         O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (rc != 0)
+        return rc;
+    rc = posix_spawn_file_actions_adddup2(&actions, writer, STDOUT_FILENO);
     if (rc == 0)
         rc = posix_spawnattr_init(&attrs);
     if (rc == 0) {
@@ -361,38 +400,66 @@ static int extract_ufp_member(const char *ufp_path, const char *member,
             rc = posix_spawnattr_setpgroup(&attrs, 0);
         char *argv[] = { "unzip", "-p", (char *)ufp_path, (char *)member, NULL };
         if (rc == 0)
-            rc = posix_spawnp(&pid, argv[0], &actions, &attrs, argv, environ);
+            rc = posix_spawnp(pid, argv[0], &actions, &attrs, argv, environ);
         posix_spawnattr_destroy(&attrs);
     }
     posix_spawn_file_actions_destroy(&actions);
-    if (rc != 0) {
-        errno = rc;
-        return -1;
+    return rc;
+}
+
+static deneb_ufp_model_result_t extract_ufp_member(const char *ufp_path, const char *member,
+                                                   const char *gcode_path,
+                                                   const atomic_bool *cancelled)
+{
+    if (atomic_load(cancelled)) {
+        errno = ECANCELED;
+        return DENEB_UFP_MODEL_EXTRACT_FAILED;
     }
 
+    int stream[2];
+    if (pipe2(stream, O_CLOEXEC) < 0)
+        return DENEB_UFP_MODEL_EXTRACT_FAILED;
+    int output = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    pid_t pid;
+    int rc = output < 0 ? errno : spawn_ufp_extractor(ufp_path, member, stream[1], &pid);
+    close(stream[1]);
+
+    /* Observe staging writes here. Some unzip versions exit successfully even
+     * after writing only part of a member to redirected stdout. */
+    deneb_ufp_model_result_t result = DENEB_UFP_MODEL_STORAGE_FAILED;
+    if (output >= 0)
+        result = rc == 0 ? drain_ufp_model(stream[0], output, cancelled)
+                         : DENEB_UFP_MODEL_EXTRACT_FAILED;
+    close(stream[0]);
+    if (output >= 0 && close(output) < 0)
+        result = DENEB_UFP_MODEL_STORAGE_FAILED;
+
     /* The worker owns this process group until the child has been reaped. */
-    const struct timespec delay = { .tv_nsec = 20000000L };
-    for (;;) {
-        if (atomic_load(cancelled)) {
-            kill(-pid, SIGKILL);
-            while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-            unlink(gcode_path);
-            errno = ECANCELED;
-            return -1;
+    if (rc == 0) {
+        const struct timespec delay = { .tv_nsec = 20000000L };
+        for (;;) {
+            if (result != DENEB_UFP_MODEL_OK || atomic_load(cancelled)) {
+                kill(-pid, SIGKILL);
+                while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+                break;
+            }
+            int status;
+            pid_t exited = waitpid(pid, &status, WNOHANG);
+            if (exited == pid) {
+                if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+                    return DENEB_UFP_MODEL_OK;
+                break;
+            }
+            if (exited < 0 && errno != EINTR)
+                break;
+            nanosleep(&delay, NULL);
         }
-        pid_t exited = waitpid(pid, &status, WNOHANG);
-        if (exited == pid)
-            break;
-        if (exited < 0 && errno != EINTR)
-            return -1;
-        nanosleep(&delay, NULL);
     }
-    if (stat(gcode_path, &st) == 0 && st.st_size > 0)
-        return 0;
-    unlink(gcode_path);
-    if (!WIFEXITED(status))
-        return -2;
-    return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
+    if (output >= 0)
+        unlink(gcode_path);
+    if (atomic_load(cancelled))
+        errno = ECANCELED;
+    return result == DENEB_UFP_MODEL_OK ? DENEB_UFP_MODEL_EXTRACT_FAILED : result;
 }
 
 static int contains_ci(const char *haystack, const char *needle)
@@ -439,33 +506,45 @@ static uint32_t read_be32(const unsigned char *p)
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static int read_png_dimensions_data(const unsigned char *data, size_t size,
-                                    int *width, int *height)
+static int read_png_ihdr(const unsigned char *chunk, deneb_png_layout_t *layout)
 {
-    static const unsigned char png_sig[8] =
-        {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    uint32_t png_width;
-    uint32_t png_height;
+    uint32_t width = read_be32(chunk);
+    uint32_t height = read_be32(chunk + 4);
+    unsigned color_type = chunk[9];
+    unsigned bpp;
+    size_t row_bytes;
 
-    if (!data || size < 24 || !width || !height)
+    if (width == 0 || height == 0 || width > 4096U || height > 4096U ||
+        chunk[8] != 8U || (color_type != 2U && color_type != 6U) ||
+        chunk[10] != 0U || chunk[11] != 0U || chunk[12] != 0U)
         return -1;
 
-    if (memcmp(data, png_sig, sizeof(png_sig)) != 0 ||
-        memcmp(data + 12, "IHDR", 4) != 0)
+    bpp = color_type == 6U ? 4U : 3U;
+    row_bytes = (size_t)width * bpp + 1U;
+    if (height > DENEB_THUMB_MAX_SCANLINE_BYTES / row_bytes)
         return -1;
 
-    png_width = read_be32(data + 16);
-    png_height = read_be32(data + 20);
-    if (png_width == 0 || png_height == 0 ||
-        png_width > 2147483647U || png_height > 2147483647U)
-        return -1;
-
-    *width = (int)png_width;
-    *height = (int)png_height;
+    layout->width = width;
+    layout->height = height;
+    layout->bpp = bpp;
+    layout->scanline_bytes = row_bytes * height;
     return 0;
 }
 
-static int thumbnail_score(int width, int height)
+static int read_png_layout(const unsigned char *data, size_t size,
+                           deneb_png_layout_t *layout)
+{
+    static const unsigned char png_sig[8] =
+        {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+
+    if (size < 33 || memcmp(data, png_sig, sizeof(png_sig)) != 0 ||
+        read_be32(data + 8) != 13U || memcmp(data + 12, "IHDR", 4) != 0)
+        return -1;
+
+    return read_png_ihdr(data + 16, layout);
+}
+
+static unsigned thumbnail_score(int width, int height)
 {
     int dw = width - DENEB_THUMB_TARGET_SIZE;
     int dh = height - DENEB_THUMB_TARGET_SIZE;
@@ -474,7 +553,7 @@ static int thumbnail_score(int width, int height)
         dw = -dw;
     if (dh < 0)
         dh = -dh;
-    return dw + dh;
+    return (unsigned)dw + (unsigned)dh;
 }
 
 static int inflate_zip_deflate(const unsigned char *compressed,
@@ -776,34 +855,19 @@ static int append_png_chunk(unsigned char **buf, size_t *size, size_t *cap,
     return 0;
 }
 
-static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
-                             unsigned char **out_rgba, unsigned *out_width,
-                             unsigned *out_height)
+static int inflate_png_scanlines(const unsigned char *png_data, size_t png_size,
+                                 unsigned char **out_raw,
+                                 deneb_png_layout_t *layout)
 {
-    static const unsigned char png_sig[8] =
-        {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
     unsigned char *idat = NULL;
     unsigned char *raw = NULL;
-    unsigned char *rgba = NULL;
-    unsigned char *prev = NULL;
-    unsigned char *cur = NULL;
     size_t idat_size = 0;
     size_t idat_cap = 0;
     size_t raw_size = 0;
     size_t pos = 8;
-    size_t stride;
-    size_t expected_raw_size;
-    unsigned width = 0;
-    unsigned height = 0;
-    unsigned color_type = 0;
-    unsigned bpp = 0;
     int saw_ihdr = 0;
     int saw_iend = 0;
     int rc = -1;
-
-    if (!png_data || png_size < 33 || !out_rgba || !out_width ||
-        !out_height || memcmp(png_data, png_sig, sizeof(png_sig)) != 0)
-        return -1;
 
     while (pos + 12U <= png_size) {
         uint32_t chunk_len = read_be32(png_data + pos);
@@ -815,17 +879,8 @@ static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
             goto done;
 
         if (memcmp(type, "IHDR", 4) == 0) {
-            if (chunk_len != 13U)
+            if (chunk_len != 13U || read_png_ihdr(chunk, layout) < 0)
                 goto done;
-            width = read_be32(chunk);
-            height = read_be32(chunk + 4);
-            color_type = chunk[9];
-            if (width == 0 || height == 0 || width > 4096U ||
-                height > 4096U || chunk[8] != 8U ||
-                (color_type != 2U && color_type != 6U) || chunk[10] != 0U ||
-                chunk[11] != 0U || chunk[12] != 0U)
-                goto done;
-            bpp = color_type == 6U ? 4U : 3U;
             saw_ihdr = 1;
         } else if (memcmp(type, "IDAT", 4) == 0) {
             if (append_png_chunk(&idat, &idat_size, &idat_cap, chunk,
@@ -842,80 +897,52 @@ static int decode_png_rgba32(const unsigned char *png_data, size_t png_size,
     if (!saw_ihdr || !saw_iend || idat_size == 0)
         goto done;
 
-    stride = (size_t)width * bpp;
-    if (height > SIZE_MAX / (stride + 1U))
-        goto done;
-    expected_raw_size = (stride + 1U) * height;
-
     {
         LodePNGDecompressSettings settings;
 
         lodepng_decompress_settings_init(&settings);
-        settings.max_output_size = expected_raw_size;
+        settings.max_output_size = layout->scanline_bytes;
         if (lodepng_zlib_decompress(&raw, &raw_size, idat, idat_size,
                                     &settings) != 0 ||
-            raw_size != expected_raw_size)
+            raw_size != layout->scanline_bytes)
             goto done;
     }
 
-    if ((size_t)width > SIZE_MAX / height ||
-        (size_t)width * height > SIZE_MAX / 4U)
-        goto done;
-    rgba = malloc((size_t)width * height * 4U);
-    prev = calloc(1, stride);
-    cur = malloc(stride);
-    if (!rgba || !prev || !cur)
-        goto done;
-
-    pos = 0;
-    for (unsigned y = 0; y < height; y++) {
-        unsigned filter = raw[pos++];
-        const unsigned char *scanline = raw + pos;
-
-        if (filter > 4U)
-            goto done;
-        for (size_t i = 0; i < stride; i++) {
-            int x = scanline[i];
-            int left = i >= bpp ? cur[i - bpp] : 0;
-            int up = prev[i];
-            int upper_left = i >= bpp ? prev[i - bpp] : 0;
-
-            if (filter == 1U)
-                x += left;
-            else if (filter == 2U)
-                x += up;
-            else if (filter == 3U)
-                x += (left + up) / 2;
-            else if (filter == 4U)
-                x += paeth_predictor(left, up, upper_left);
-            cur[i] = (unsigned char)(x & 0xff);
-        }
-        for (unsigned x = 0; x < width; x++) {
-            const unsigned char *src = cur + (size_t)x * bpp;
-            unsigned char *dst = rgba + (((size_t)y * width + x) * 4U);
-
-            dst[0] = src[0];
-            dst[1] = src[1];
-            dst[2] = src[2];
-            dst[3] = bpp == 4U ? src[3] : 255U;
-        }
-        memcpy(prev, cur, stride);
-        pos += stride;
-    }
-
-    *out_rgba = rgba;
-    *out_width = width;
-    *out_height = height;
-    rgba = NULL;
+    *out_raw = raw;
+    raw = NULL;
     rc = 0;
 
 done:
-    free(cur);
-    free(prev);
-    free(rgba);
     free(raw);
     free(idat);
     return rc;
+}
+
+static int unfilter_png_scanline(unsigned char *row, const unsigned char *prev,
+                                 size_t stride, unsigned bpp, unsigned filter)
+{
+    if (filter > 4U)
+        return -1;
+    if (filter == 0U)
+        return 0;
+
+    for (size_t i = 0; i < stride; i++) {
+        int left = i >= bpp ? row[i - bpp] : 0;
+        int up = prev ? prev[i] : 0;
+        int upper_left = prev && i >= bpp ? prev[i - bpp] : 0;
+        int x = row[i];
+
+        if (filter == 1U)
+            x += left;
+        else if (filter == 2U)
+            x += up;
+        else if (filter == 3U)
+            x += (left + up) / 2;
+        else
+            x += paeth_predictor(left, up, upper_left);
+        row[i] = (unsigned char)(x & 0xff);
+    }
+    return 0;
 }
 
 static int write_png_thumbnail_rgb565(const unsigned char *png_data,
@@ -925,10 +952,11 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     static const unsigned char bg_r = 10;
     static const unsigned char bg_g = 10;
     static const unsigned char bg_b = 26;
-    unsigned char *rgba = NULL;
+    unsigned char *raw = NULL;
+    unsigned char *prev = NULL;
     unsigned char *rgb565 = NULL;
-    unsigned width = 0;
-    unsigned height = 0;
+    deneb_png_layout_t layout;
+    size_t stride;
     unsigned scaled_w;
     unsigned scaled_h;
     unsigned offset_x;
@@ -941,8 +969,13 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     if (!png_data || png_size == 0 || !target_path || !*target_path)
         return -1;
 
-    if (decode_png_rgba32(png_data, png_size, &rgba, &width, &height) < 0)
+    if (inflate_png_scanlines(png_data, png_size, &raw, &layout) < 0)
         goto done;
+
+    unsigned width = layout.width;
+    unsigned height = layout.height;
+    unsigned bpp = layout.bpp;
+    stride = (size_t)width * bpp;
 
     rgb565 = malloc(DENEB_THUMB_RGB565_BYTES);
     if (!rgb565)
@@ -975,36 +1008,33 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
     offset_x = (DENEB_THUMB_TARGET_SIZE - scaled_w) / 2U;
     offset_y = (DENEB_THUMB_TARGET_SIZE - scaled_h) / 2U;
 
-    for (y = 0; y < scaled_h; y++) {
-        unsigned src_y = (unsigned)(((uint64_t)y * height) / scaled_h);
+    y = 0;
+    for (unsigned src_y = 0; src_y < height; src_y++) {
+        unsigned char *scanline = raw + (size_t)src_y * (stride + 1U);
+        unsigned char *row = scanline + 1U;
 
-        if (src_y >= height)
-            src_y = height - 1U;
-        for (x = 0; x < scaled_w; x++) {
-            unsigned src_x = (unsigned)(((uint64_t)x * width) / scaled_w);
-            const unsigned char *src;
-            unsigned alpha;
-            unsigned r;
-            unsigned g;
-            unsigned b;
+        if (unfilter_png_scanline(row, prev, stride, bpp, scanline[0]) < 0)
+            goto done;
+        prev = row;
 
-            if (src_x >= width)
-                src_x = width - 1U;
-            src = rgba + (((size_t)src_y * width + src_x) * 4U);
-            alpha = src[3];
-            r = ((unsigned)src[0] * alpha + (unsigned)bg_r * (255U - alpha)) /
-                255U;
-            g = ((unsigned)src[1] * alpha + (unsigned)bg_g * (255U - alpha)) /
-                255U;
-            b = ((unsigned)src[2] * alpha + (unsigned)bg_b * (255U - alpha)) /
-                255U;
-            write_rgb565_pixel(rgb565,
-                               (size_t)(y + offset_y) *
-                                   DENEB_THUMB_TARGET_SIZE +
+        /* A source row may be skipped or sampled more than once. */
+        for (; y < scaled_h && y * height / scaled_h == src_y; y++) {
+            for (x = 0; x < scaled_w; x++) {
+                unsigned src_x = x * width / scaled_w;
+                const unsigned char *src = row + (size_t)src_x * bpp;
+                unsigned alpha = bpp == 4U ? src[3] : 255U;
+                unsigned r = (src[0] * alpha + bg_r * (255U - alpha)) / 255U;
+                unsigned g = (src[1] * alpha + bg_g * (255U - alpha)) / 255U;
+                unsigned b = (src[2] * alpha + bg_b * (255U - alpha)) / 255U;
+
+                write_rgb565_pixel(rgb565,
+                                   (size_t)(y + offset_y) *
+                                       DENEB_THUMB_TARGET_SIZE +
                                    (x + offset_x),
-                               rgb_to_rgb565((unsigned char)r,
-                                             (unsigned char)g,
-                                             (unsigned char)b));
+                                   rgb_to_rgb565((unsigned char)r,
+                                                 (unsigned char)g,
+                                                 (unsigned char)b));
+            }
         }
     }
 
@@ -1012,23 +1042,21 @@ static int write_png_thumbnail_rgb565(const unsigned char *png_data,
 
 done:
     free(rgb565);
-    free(rgba);
+    free(raw);
     return rc;
 }
 
-int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
-                                                 const char *gcode_path,
-                                                 const atomic_bool *cancelled)
+deneb_ufp_model_result_t deneb_print_job_file_extract_ufp_model_gcode(
+    const char *ufp_path, const char *gcode_path, const atomic_bool *cancelled)
 {
-    int rc;
-
     if (!ufp_path || !*ufp_path || !gcode_path || !*gcode_path) {
         errno = EINVAL;
-        return -1;
+        return DENEB_UFP_MODEL_EXTRACT_FAILED;
     }
 
-    rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path, cancelled);
-    if (rc == 0 || atomic_load(cancelled))
+    deneb_ufp_model_result_t rc =
+        extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path, cancelled);
+    if (rc != DENEB_UFP_MODEL_EXTRACT_FAILED || atomic_load(cancelled))
         return rc;
     return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path, cancelled);
 }
@@ -1039,7 +1067,7 @@ int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
     deneb_ufp_thumb_candidate_t candidates[DENEB_UFP_THUMB_MAX_CANDIDATES];
     unsigned char *best_data = NULL;
     size_t best_size = 0;
-    int best_score = 0;
+    unsigned best_score = 0;
     int best_ready = 0;
     size_t candidate_count;
     size_t i;
@@ -1058,24 +1086,25 @@ int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
     for (i = 0; i < candidate_count; i++) {
         unsigned char *data = NULL;
         size_t data_size = 0;
-        int width = 0;
-        int height = 0;
-        int score;
+        deneb_png_layout_t layout;
+        unsigned score;
 
         if (extract_zip_candidate(ufp_path, &candidates[i], &data,
                                   &data_size) != 0 ||
-            read_png_dimensions_data(data, data_size, &width, &height) != 0) {
+            read_png_layout(data, data_size, &layout) != 0) {
             free(data);
             continue;
         }
 
-        score = thumbnail_score(width, height);
+        score = thumbnail_score(layout.width, layout.height);
         if (!best_ready || score < best_score) {
             free(best_data);
             best_data = data;
             best_size = data_size;
             best_score = score;
             best_ready = 1;
+            if (best_score == 0U)
+                break;
             continue;
         }
         free(data);
@@ -1141,6 +1170,11 @@ int deneb_print_job_file_spool_path(const char *name, char *out,
 
     if (deneb_print_job_file_sanitize_name(name, safe, sizeof(safe)) < 0)
         return -1;
+    if (strchr(safe, '/') || strchr(safe, '\\') ||
+        strcmp(safe, ".") == 0 || strcmp(safe, "..") == 0) {
+        errno = EINVAL;
+        return -1;
+    }
 
     if (snprintf(out, out_sz, "%s/%s", DENEB_PRINT_JOB_SPOOL_DIR,
                  safe) >= (int)out_sz) {

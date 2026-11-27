@@ -11,6 +11,9 @@ Deneb.api = {
     tokenExpiry: parseInt(localStorage.getItem('deneb_token_expiry') || '0', 10),
     sseSource: null,
     sseRetry: null,
+    sseHasSnapshot: false,
+    statusSequence: 0,
+    lastStatusSequence: 0,
     statusCallbacks: [],
 
     request: function(method, path, body) {
@@ -95,6 +98,8 @@ Deneb.api = {
             if (self.sseSource !== source) return;
             try {
                 var data = JSON.parse(e.data);
+                self.sseHasSnapshot = true;
+                self.lastStatusSequence = ++self.statusSequence;
                 for (var i = 0; i < self.statusCallbacks.length; i++) {
                     self.statusCallbacks[i](data);
                 }
@@ -103,6 +108,7 @@ Deneb.api = {
         source.onerror = function() {
             if (self.sseSource !== source) return;
             self.disconnectSSE();
+            self.pollStatus();
             self.sseRetry = setTimeout(function() {
                 self.sseRetry = null;
                 self.connectSSE();
@@ -119,6 +125,7 @@ Deneb.api = {
             this.sseSource.close();
             this.sseSource = null;
         }
+        this.sseHasSnapshot = false;
     },
 
     onStatus: function(callback) {
@@ -139,8 +146,12 @@ Deneb.api = {
 
     /* Poll status via GET when SSE is not available */
     pollStatus: function() {
+        if (this.sseHasSnapshot) return;
         var self = this;
-        this.get('/printer').then(function(data) {
+        var sequence = ++this.statusSequence;
+        return this.get('/printer').then(function(data) {
+            if (sequence < self.lastStatusSequence) return;
+            self.lastStatusSequence = sequence;
             for (var i = 0; i < self.statusCallbacks.length; i++) {
                 self.statusCallbacks[i](data);
             }

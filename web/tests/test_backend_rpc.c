@@ -15,15 +15,15 @@ static const char *replies[] = {
     "{\"status\":\"ok\",\"operation\":\"18446744073709551615\"}"
 };
 #ifdef TEST_WEB_BACKEND
-static void publish_until(void *pub, deneb_manual_state_t manual_state)
+static void publish_until(void *pub, const char *frame, deneb_manual_state_t manual_state)
 {
-    char frame[128];
-    int n = snprintf(frame, sizeof(frame),
-                     "10001<{\"manualId\":\"9\",\"manualState\":%d}", (int)manual_state);
+    int n = (int)strlen(frame);
+    uint32_t previous_update = state.last_update_ms;
     for (int i = 0; i < 400; ++i) {
         assert(zmq_send(pub, frame, (size_t)n, 0) == n);
         backend_zmq_poll();
-        if (state.connected && state.manual_id == 9 && state.manual_state == manual_state)
+        if (state.connected && state.last_update_ms != previous_update &&
+            state.manual_id == 9 && state.manual_state == manual_state)
             return;
         struct timespec pause = {0, 5000000};
         nanosleep(&pause, NULL);
@@ -31,10 +31,60 @@ static void publish_until(void *pub, deneb_manual_state_t manual_state)
     assert(!"status publication was not observed");
 }
 
+static void publish_manual_until(void *pub, deneb_manual_state_t manual_state)
+{
+    char frame[128];
+    snprintf(frame, sizeof(frame), "10001<{\"manualId\":\"9\",\"manualState\":%d}",
+             (int)manual_state);
+    publish_until(pub, frame, manual_state);
+}
+
+static uint64_t test_long_status_event(void *pub, uint64_t previous_revision)
+{
+    char filename[128], firmware[64], machine[16];
+    char file_json[256], firmware_json[128], machine_json[32];
+    memset(filename, '"', sizeof(filename) - sizeof(".gcode"));
+    memcpy(filename + sizeof(filename) - sizeof(".gcode"), ".gcode", sizeof(".gcode"));
+    memset(firmware, '"', sizeof(firmware) - 1);
+    firmware[sizeof(firmware) - 1] = '\0';
+    memset(machine, '"', sizeof(machine) - 1);
+    machine[sizeof(machine) - 1] = '\0';
+    deneb_json_escape_string(filename, file_json, sizeof(file_json));
+    deneb_json_escape_string(firmware, firmware_json, sizeof(firmware_json));
+    deneb_json_escape_string(machine, machine_json, sizeof(machine_json));
+
+    char frame[1024];
+    int n = snprintf(frame, sizeof(frame),
+        "10001<{\"file\":\"%s\",\"firmware\":\"%s\",\"machineType\":\"%s\","
+        "\"headTcur\":197.5,\"headTset\":198,\"bedTcur\":63,\"bedTset\":65,"
+        "\"topcapTemperature\":45,\"topcapIsPresent\":true,"
+        "\"X\":182.5,\"Y\":183.5,\"Z\":184.5,\"Ttot\":2147483647,\"Tleft\":1987654321,"
+        "\"pcbId\":1234567890,\"pcbIdValid\":true,\"denebActive\":true,\"denebStopAllowed\":true,"
+        "\"manualId\":\"9\",\"manualState\":%d}",
+        file_json, firmware_json, machine_json, (int)DENEB_MANUAL_RUNNING);
+    assert(n > 0 && (size_t)n < sizeof(frame));
+    publish_until(pub, frame, DENEB_MANUAL_RUNNING);
+
+    size_t len;
+    uint64_t revision;
+    const char *event = backend_zmq_get_status_event(&len, &revision);
+    assert(event && revision > previous_revision && len > 1056 && len == strlen(event));
+    const char *json = event + strlen("data: ");
+    char value[128];
+    assert(deneb_json_get_value(json, "filename", value, sizeof(value)) == 0);
+    assert(strcmp(value, filename) == 0);
+    assert(deneb_json_get_value(json, "firmware", value, sizeof(value)) == 0);
+    assert(strcmp(value, firmware) == 0);
+    assert(deneb_json_get_value(json, "machine_type", value, sizeof(value)) == 0);
+    assert(strcmp(value, machine) == 0);
+    return revision;
+}
+
 /* SSE and polled status must show the same manual ownership the motion gate
  * enforces, from the real status subscription path. */
 static void test_status_projects_manual_ownership(void)
 {
+    backend_route = deneb_print_backend_route_detect();
     void *pub = zmq_socket(zmq_ctx, ZMQ_PUB);
     assert(pub && zmq_bind(pub, "inproc://deneb-status-regression") == 0);
     status_sock = zmq_socket(zmq_ctx, ZMQ_SUB);
@@ -44,20 +94,38 @@ static void test_status_projects_manual_ownership(void)
     assert(zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) == 0);
     const deneb_manual_state_t states[] = {
         DENEB_MANUAL_RUNNING, DENEB_MANUAL_CANCELLING, DENEB_MANUAL_COMPLETE};
+    uint64_t revision = 0;
+    assert(!status_event);
+    publish_manual_until(pub, states[0]);
+    assert(!status_event); /* Receiving status without an SSE consumer is lazy. */
     for (size_t i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
-        publish_until(pub, states[i]);
+        publish_manual_until(pub, states[i]);
         int allowed = states[i] == DENEB_MANUAL_COMPLETE;
         assert(backend_zmq_manual_action_allowed() == allowed);
         deneb_printer_status_response_t response;
         backend_zmq_get_printer_status_response(&response);
         assert(response.manual_action_allowed == allowed);
-        assert(strstr(backend_zmq_get_status_json(),
-                      allowed ? "\"manual_action_allowed\":true" :
-                                "\"manual_action_allowed\":false"));
+        size_t len;
+        uint64_t current_revision;
+        const char *event = backend_zmq_get_status_event(&len, &current_revision);
+        assert(event && len == strlen(event) && current_revision > revision);
+        assert(strstr(event, allowed ? "\"manual_action_allowed\":true" :
+                                       "\"manual_action_allowed\":false"));
+        revision = current_revision;
+        publish_manual_until(pub, states[i]);
+        assert(backend_zmq_get_status_event(&len, &current_revision) == event);
+        assert(current_revision == revision);
     }
+    revision = test_long_status_event(pub, revision);
     zmq_close(status_sock);
     status_sock = NULL;
     zmq_close(pub);
+    state.last_update_ms -= DENEB_STATUS_STALE_MS;
+    backend_zmq_poll();
+    size_t len;
+    uint64_t expired_revision;
+    const char *event = backend_zmq_get_status_event(&len, &expired_revision);
+    assert(event && strstr(event, "\"connected\":false") && expired_revision > revision);
 }
 #endif
 

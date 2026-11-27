@@ -36,6 +36,10 @@
 #define DNS_TYPE_SRV 33
 #define TTL_SECONDS 120
 #define ROUTE_FLAG_UP 0x1
+#define ANNOUNCE_INTERVAL_MS 30000
+#define INTERFACE_RECHECK_MS 5000
+#define INTERFACE_RETRY_MS 1000
+#define MAX_QUERIES_PER_WAKE 32
 #define DENEB_DEFAULT_CURA_MACHINE "deneb_um2c"
 #define DENEB_DEFAULT_CURA_CONNECT_VERSION "4.0.0"
 
@@ -45,6 +49,11 @@ typedef struct {
     uint8_t data[1500];
     size_t len;
 } packet_t;
+
+typedef struct {
+    struct in_addr addr;
+    int ifindex;
+} interface_t;
 
 static void on_signal(int sig)
 {
@@ -170,39 +179,35 @@ static int get_default_interface(char *buf, size_t size)
     return rc;
 }
 
-static int find_ipv4_on_interface(const char *preferred_ifname, struct in_addr *addr)
+static int get_primary_ipv4(interface_t *interface)
 {
+    char preferred[IFNAMSIZ] = "";
+    bool have_preferred = get_default_interface(preferred, sizeof(preferred)) == 0;
     struct ifaddrs *ifaddr = NULL;
     if (getifaddrs(&ifaddr) < 0)
         return -1;
 
-    int rc = -1;
-    for (struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
+    const struct ifaddrs *selected = NULL;
+    for (const struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
         if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
             continue;
         if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK))
             continue;
-        if (preferred_ifname && strcmp(ifa->ifa_name, preferred_ifname) != 0)
-            continue;
-
-        struct sockaddr_in *sin = (struct sockaddr_in *)ifa->ifa_addr;
-        *addr = sin->sin_addr;
-        rc = 0;
-        break;
+        if (!selected)
+            selected = ifa;
+        if (!have_preferred || strcmp(ifa->ifa_name, preferred) == 0) {
+            selected = ifa;
+            break;
+        }
     }
 
+    interface->ifindex = 0;
+    if (selected) {
+        interface->addr = ((const struct sockaddr_in *)selected->ifa_addr)->sin_addr;
+        interface->ifindex = (int)if_nametoindex(selected->ifa_name);
+    }
     freeifaddrs(ifaddr);
-    return rc;
-}
-
-static int get_primary_ipv4(struct in_addr *addr)
-{
-    char ifname[IFNAMSIZ] = "";
-    if (get_default_interface(ifname, sizeof(ifname)) == 0 &&
-        find_ipv4_on_interface(ifname, addr) == 0)
-        return 0;
-
-    return find_ipv4_on_interface(NULL, addr);
+    return interface->ifindex ? 0 : -1;
 }
 
 static int put_u8(packet_t *p, uint8_t v)
@@ -367,12 +372,6 @@ static int open_mdns_socket(void)
         return -1;
     }
 
-    struct ip_mreq mreq;
-    memset(&mreq, 0, sizeof(mreq));
-    mreq.imr_multiaddr.s_addr = inet_addr(MDNS_ADDR);
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    (void)setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
-
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags >= 0)
         (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
@@ -380,9 +379,45 @@ static int open_mdns_socket(void)
     return fd;
 }
 
-static void set_multicast_interface(int fd, const struct in_addr *addr)
+/* Membership follows the selected device. Its index stays valid across
+ * IPv4 lease changes, while the outgoing multicast address can change. */
+static int set_multicast_membership(int fd, int *joined_ifindex, int ifindex)
 {
-    (void)setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, addr, sizeof(*addr));
+    if (*joined_ifindex == ifindex)
+        return 0;
+
+    struct ip_mreqn request = {
+        .imr_multiaddr.s_addr = inet_addr(MDNS_ADDR),
+        .imr_ifindex = *joined_ifindex,
+    };
+    if (*joined_ifindex) {
+        (void)setsockopt(fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &request, sizeof(request));
+        *joined_ifindex = 0;
+    }
+
+    if (ifindex) {
+        request.imr_ifindex = ifindex;
+        if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &request, sizeof(request)) < 0)
+            return -1;
+        *joined_ifindex = ifindex;
+    }
+    return 0;
+}
+
+static int set_multicast_interface(int fd, const interface_t *interface)
+{
+    struct ip_mreqn request = {
+        .imr_address = interface->addr,
+        .imr_ifindex = interface->ifindex,
+    };
+    return setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &request, sizeof(request));
+}
+
+static uint64_t monotonic_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 static void send_multicast_packet(int fd, const packet_t *packet)
@@ -419,46 +454,63 @@ int main(void)
         return 1;
     }
 
-    time_t next_announce = 0;
+    interface_t active = {0};
+    int joined_ifindex = 0;
+    packet_t response;
+    bool ready = false;
+    uint64_t next_recheck = 0;
+    uint64_t next_announce = 0;
     while (running) {
-        struct in_addr addr;
-        if (get_primary_ipv4(&addr) == 0) {
-            packet_t response;
-            if (build_response(&response, &addr, instance_id, printer_name, machine, firmware) == 0) {
-                time_t now = time(NULL);
-                set_multicast_interface(fd, &addr);
-                if (now >= next_announce) {
-                    send_multicast_packet(fd, &response);
-                    next_announce = now + 30;
+        uint64_t now = monotonic_ms();
+        if (now >= next_recheck) {
+            interface_t current;
+            if (get_primary_ipv4(&current) < 0) {
+                ready = false;
+                (void)set_multicast_membership(fd, &joined_ifindex, 0);
+            } else if (!ready || current.ifindex != active.ifindex ||
+                       current.addr.s_addr != active.addr.s_addr) {
+                ready = build_response(&response, &current.addr, instance_id,
+                                       printer_name, machine, firmware) == 0 &&
+                    set_multicast_membership(fd, &joined_ifindex, current.ifindex) == 0 &&
+                    set_multicast_interface(fd, &current) == 0;
+                if (ready) {
+                    active = current;
+                    next_announce = now;
                 }
+            }
+            next_recheck = now + (ready ? INTERFACE_RECHECK_MS : INTERFACE_RETRY_MS);
+        }
+        if (ready && now >= next_announce) {
+            send_multicast_packet(fd, &response);
+            next_announce = now + ANNOUNCE_INTERVAL_MS;
+        }
 
-                fd_set rfds;
-                FD_ZERO(&rfds);
-                FD_SET(fd, &rfds);
-                struct timeval tv = {1, 0};
-                int rc = select(fd + 1, &rfds, NULL, NULL, &tv);
-                if (rc > 0 && FD_ISSET(fd, &rfds)) {
-                    uint8_t buf[1500];
-                    struct sockaddr_in src;
-                    socklen_t src_len = sizeof(src);
-                    while (1) {
-                        src_len = sizeof(src);
-                        ssize_t got = recvfrom(fd, buf, sizeof(buf), 0, (struct sockaddr *)&src, &src_len);
-                        if (got <= 0)
-                            break;
-                        if (got >= 4 && !(buf[2] & 0x80)) {
-                            if (ntohs(src.sin_port) == MDNS_PORT) {
-                                send_multicast_packet(fd, &response);
-                            } else {
-                                send_unicast_packet(fd, &response, &src);
-                            }
-                        }
-                    }
-                }
-                continue;
+        uint64_t deadline = ready && next_announce < next_recheck ?
+            next_announce : next_recheck;
+        uint64_t wait_ms = deadline - now;
+        struct timeval timeout = {wait_ms / 1000, (wait_ms % 1000) * 1000};
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        if (ready)
+            FD_SET(fd, &rfds);
+        if (select(ready ? fd + 1 : 0, ready ? &rfds : NULL, NULL, NULL, &timeout) <= 0)
+            continue;
+
+        /* Return to the deadlines even if new queries keep the socket readable. */
+        for (int i = 0; running && i < MAX_QUERIES_PER_WAKE; i++) {
+            uint8_t buf[1500];
+            struct sockaddr_in src;
+            socklen_t src_len = sizeof(src);
+            ssize_t got = recvfrom(fd, buf, sizeof(buf), 0, (struct sockaddr *)&src, &src_len);
+            if (got <= 0)
+                break;
+            if (got >= 4 && !(buf[2] & 0x80)) {
+                if (ntohs(src.sin_port) == MDNS_PORT)
+                    send_multicast_packet(fd, &response);
+                else
+                    send_unicast_packet(fd, &response, &src);
             }
         }
-        sleep(1);
     }
 
     close(fd);

@@ -15,6 +15,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../www/js/api.js'), 'utf8'), context);
 const api = context.Deneb.api;
+api.get = () => Promise.reject(new Error('REST unavailable'));
 api.connectSSE();
 const oldError = sources[0].onerror;
 oldError();
@@ -35,4 +36,59 @@ timers.clear();
 retry();
 assert.equal(sources.length, 3);
 api.disconnectSSE();
-console.log('SSE client lifecycle passed');
+
+async function testStatusFallback() {
+    const updates = [];
+    const requests = [];
+    api.onStatus(data => updates.push(data.status));
+    api.get = path => {
+        assert.equal(path, '/printer');
+        return new Promise(resolve => requests.push(resolve));
+    };
+
+    api.connectSSE();
+    const startup = api.pollStatus();
+    requests.shift()({status: 'idle'});
+    await startup;
+    assert.deepEqual(updates, ['idle']);
+
+    const delayed = api.pollStatus();
+    sources.at(-1).onmessage({data: '{"status":"printing"}'});
+    api.disconnectSSE();
+    requests.shift()({status: 'idle'});
+    await delayed;
+    assert.deepEqual(updates, ['idle', 'printing'], 'a delayed poll cannot replace streamed status');
+
+    const disconnected = api.pollStatus();
+    requests.shift()({status: 'offline'});
+    await disconnected;
+    assert.deepEqual(updates, ['idle', 'printing', 'offline']);
+
+    api.connectSSE();
+    const printing = sources.at(-1);
+    printing.onmessage({data: '{"status":"printing"}'});
+    api.pollStatus();
+    assert.equal(requests.length, 0, 'an active status stream owns display updates');
+    printing.onerror();
+    assert.equal(timers.size, 1, 'reconnect remains scheduled');
+    assert.equal(requests.length, 1, 'a broken status stream starts REST fallback');
+    requests.shift()({status: 'paused'});
+    await Promise.resolve();
+    assert.deepEqual(updates, ['idle', 'printing', 'offline', 'printing', 'paused']);
+
+    const older = api.pollStatus();
+    const newer = api.pollStatus();
+    requests.pop()({status: 'idle'});
+    await newer;
+    requests.shift()({status: 'paused'});
+    await older;
+    assert.equal(updates.at(-1), 'idle', 'an older fallback reply cannot replace a newer one');
+    api.disconnectSSE();
+}
+
+testStatusFallback().then(() => {
+    console.log('SSE client lifecycle and status fallback passed');
+}).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});

@@ -78,7 +78,6 @@ set(DENEB_API_SOURCES
     ../common/print/json_field.c
     ../common/print/json_file.c
     ../common/print/json_string.c
-    ../common/print/lodepng_standalone_alloc.c
     ../common/print/manual_motion.c
     ../common/print/material_catalog.c
     ../common/print/material_workflow.c
@@ -99,14 +98,14 @@ set(DENEB_API_SOURCES
     ../common/print/status_payload.c
     ../common/print/status_state.c
     ../common/print/system_language.c
-    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
+    ../common/lodepng/lodepng.c
     ../printsvc/src/pending_job.c
     ../printsvc/src/pending_job_registration.c
     ../printsvc/src/print_control.c
 )
 
 set_source_files_properties(
-    ../ui/lib/lvgl/src/libs/lodepng/lodepng.c
+    ../common/lodepng/lodepng.c
     PROPERTIES
     COMPILE_DEFINITIONS "LODEPNG_NO_COMPILE_PNG;LODEPNG_NO_COMPILE_ENCODER;LODEPNG_NO_COMPILE_DISK;LODEPNG_NO_COMPILE_ERROR_TEXT"
 )
@@ -115,18 +114,10 @@ set(DENEB_API_INCLUDE_DIRS
     src
     ../common/print
     ../printsvc/src
-    ../ui/config
-    ../ui/lib/lvgl
-    ../ui/lib/lvgl/include
-    ../ui/lib/lvgl/src
-    ../ui/lib/lvgl/src/libs/lodepng
+    ../common/lodepng
 )
 add_executable(deneb-api ${DENEB_API_SOURCES})
 target_include_directories(deneb-api PRIVATE ${DENEB_API_INCLUDE_DIRS})
-target_compile_definitions(deneb-api PRIVATE
-    LV_CONF_INCLUDE_SIMPLE
-    LV_DISABLE_API_MAPPING
-)
 
 # Host stub build (no ZMQ)
 option(BUILD_HOST_STUB "Build with stub ZMQ for host testing" OFF)
@@ -164,6 +155,14 @@ install(TARGETS deneb-api deneb-mdns DESTINATION /usr/bin)
 # Host-only connection regressions exercise production server/client code.
 if(NOT CMAKE_CROSSCOMPILING)
 enable_testing()
+add_executable(deneb-mdns-tests tests/test_mdns.c)
+target_compile_options(deneb-mdns-tests PRIVATE -UNDEBUG)
+foreach(function popen fopen getifaddrs freeifaddrs if_nametoindex inet_ntop
+                 socket bind fcntl close setsockopt clock_gettime select recvfrom sendto)
+    target_link_options(deneb-mdns-tests PRIVATE "-Wl,--wrap=${function}")
+endforeach()
+add_test(NAME deneb-mdns-tests COMMAND deneb-mdns-tests)
+set_tests_properties(deneb-mdns-tests PROPERTIES TIMEOUT 5)
 add_executable(deneb-sse-tests tests/test_sse.c)
 target_include_directories(deneb-sse-tests PRIVATE src ../common/print)
 target_compile_options(deneb-sse-tests PRIVATE -ffunction-sections -fdata-sections)
@@ -175,26 +174,46 @@ if(NODE_EXECUTABLE)
         COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_api_sse.cjs")
     add_test(NAME deneb-browser-motion-tests
         COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_ui_motion.cjs")
-    find_program(LIGHTTPD_EXECUTABLE lighttpd)
-    find_program(UNZIP_EXECUTABLE unzip)
-    if(BUILD_HOST_STUB AND LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
+    if(BUILD_HOST_STUB)
         # Use the normal API code with an isolated, per-test working directory.
-        add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES})
+        add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES} tests/small_send_buffer.c)
+        target_link_options(deneb-api-upload-fixture PRIVATE
+            -Wl,--wrap=accept4 -Wl,--wrap=backend_zmq_get_status_event)
         target_include_directories(deneb-api-upload-fixture PRIVATE ${DENEB_API_INCLUDE_DIRS})
         target_compile_definitions(deneb-api-upload-fixture PRIVATE
-            LV_CONF_INCLUDE_SIMPLE LV_DISABLE_API_MAPPING BACKEND_ZMQ_STUB
+            BACKEND_ZMQ_STUB
             DENEB_API_SOCKET_PATH="api.sock"
             DENEB_API_AUTH_CONFIG_PATH="web-auth.conf"
+            DENEB_API_LOCALE_DIR="locales"
             DENEB_UPLOAD_TEMP_DIR="tmp"
             DENEB_PRINT_JOB_SPOOL_DIR="spool"
+            DENEB_PRINT_HISTORY_PATH="tmp/deneb-print-history.json"
             DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"
-            DENEB_ACTIVE_THUMB_PATH="tmp/deneb-active-thumb.rgb565")
+            DENEB_ACTIVE_THUMB_PATH="deneb-active-thumb.rgb565")
         target_link_libraries(deneb-api-upload-fixture PRIVATE m pthread crypt)
-        add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
-            "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}")
-        set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
+        find_program(LIGHTTPD_EXECUTABLE lighttpd)
+        find_program(UNZIP_EXECUTABLE unzip)
+        if(LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
+            add_executable(deneb-upload-digest-fixture tests/upload_digest_fixture.c src/md5.c)
+            target_include_directories(deneb-upload-digest-fixture PRIVATE src)
+            add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
+                "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}"
+                "$<TARGET_FILE:deneb-upload-digest-fixture>")
+            set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
+        endif()
+
+        add_executable(deneb-print-history-fixture tests/print_history_fixture.c
+            ../common/print/print_history.c ../common/print/json_string.c)
+        target_include_directories(deneb-print-history-fixture PRIVATE ../common/print)
+        target_compile_definitions(deneb-print-history-fixture PRIVATE
+            DENEB_PRINT_HISTORY_PATH="tmp/deneb-print-history.json")
+        target_link_options(deneb-print-history-fixture PRIVATE -Wl,--wrap=rename)
+        add_test(NAME deneb-print-history-tests COMMAND "${NODE_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/test_print_history.cjs"
+            "$<TARGET_FILE:deneb-api-upload-fixture>" "$<TARGET_FILE:deneb-print-history-fixture>")
+        set_tests_properties(deneb-print-history-tests PROPERTIES TIMEOUT 20)
     endif()
 endif()
 

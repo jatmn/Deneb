@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+#ifndef FB_DRAW_BUFFER_H
+#define FB_DRAW_BUFFER_H
+
+#include "lvgl.h"
+
+#define FB_WIDTH 320
+#define FB_HEIGHT 240
+#define FB_COLOR_FORMAT LV_COLOR_FORMAT_RGB565
+#define FB_DRAW_ROWS 80
+#define FB_DRAW_BYTES (LV_DRAW_BUF_STRIDE(FB_WIDTH, FB_COLOR_FORMAT) * FB_DRAW_ROWS)
+
+#endif /* FB_DRAW_BUFFER_H */

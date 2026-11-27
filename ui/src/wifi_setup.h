@@ -12,6 +12,7 @@
 #define WIFI_SETUP_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #define WIFI_SETUP_MAX_SSID     64
 #define WIFI_SETUP_MAX_PASS     128
@@ -82,11 +83,11 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg);
  * Full import flow: find wifi.txt on USB, parse, apply.
  * Convenience wrapper around find + parse + apply.
  *
- * @param status_msg  Buffer for human-readable status (min 128 bytes)
- * @param msg_size    Size of status_msg buffer
- * @return WIFI_OK on success, error code on failure
+ * @param argument       Output for the status template's SSID, empty if unused
+ * @param argument_size  Size of argument buffer (at least WIFI_SETUP_MAX_SSID)
+ * @return Locale key for the status, to be translated on the UI thread
  */
-wifi_result_t wifi_setup_import(char *status_msg, int msg_size);
+const char *wifi_setup_import(char *argument, size_t argument_size);
 
 /**
  * Check if WiFi STA is currently configured and enabled.

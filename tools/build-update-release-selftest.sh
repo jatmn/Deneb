@@ -11,19 +11,24 @@ trap 'rm -rf -- "$fixture"' EXIT
 repo="$fixture/repo"
 export DENEB_BUILD_ROOT="$fixture/deps"
 export DENEB_TOOLCHAIN_ROOT="$fixture/pinned compiler"
-toolchain="$DENEB_TOOLCHAIN_ROOT/bin/mipsel-linux-musl-gcc"
+toolchain="$DENEB_TOOLCHAIN_ROOT/bin/mipsel-openwrt-linux-musl-gcc"
 zmq_root="$DENEB_BUILD_ROOT/zeromq-4.3.5"
 mkdir -p "$repo/tools" "$DENEB_TOOLCHAIN_ROOT/bin" "$zmq_root/include" "$zmq_root/build-musl/lib"
 cp "$script_dir/build-update-release.sh" "$script_dir/native-dependency-pins.sh" "$repo/tools/"
 touch "$zmq_root/build-musl/lib/libzmq.a"
 
 # Distinct compiler paths emulate a pinned toolchain and another installation.
-# Both invoke host cc so the fixture runs without release cross dependencies.
-cat > "$toolchain" <<'EOF'
+# The wrapper picks a runtime from its resolved location and invoked name.
+wrapper_path="${toolchain%-gcc}-wrapper.sh"
+cat > "$wrapper_path" <<'EOF'
 #!/bin/sh
-exec cc "$@"
+wrapper=$(readlink -f "$0") || exit 1
+library_dir=fixture-lib
+case "$0" in *-custom) library_dir=custom-lib ;; esac
+exec cc "-L${wrapper%/*}/../$library_dir" "$@"
 EOF
-chmod +x "$toolchain"
+chmod +x "$wrapper_path"
+ln -s "${wrapper_path##*/}" "$toolchain"
 cp "$toolchain" "$toolchain-other"
 
 make_project() {
@@ -43,13 +48,14 @@ EOF
 }
 
 make_project "$repo/web" deneb-api
+printf '%s\n' 'add_executable(deneb-mdns main.c)' >> "$repo/web/CMakeLists.txt"
 make_project "$repo/printsvc" deneb-printsvc
 make_project "$repo/dfsvc" deneb-dfsvc
 make_project "$repo/ui" deneb-ui
 for component in web ui; do
     mkdir -p "$repo/$component/cmake"
     cat > "$repo/$component/cmake/mipsel-musl-toolchain.cmake" <<'EOF'
-set(CMAKE_C_COMPILER "$ENV{DENEB_TOOLCHAIN_ROOT}/bin/mipsel-linux-musl-gcc")
+set(CMAKE_C_COMPILER "$ENV{DENEB_TOOLCHAIN_ROOT}/bin/mipsel-openwrt-linux-musl-gcc")
 EOF
 done
 # Stop after the real configure/build paths. The release package is tested
@@ -123,3 +129,111 @@ sed -i 's/^\(CMAKE_CACHE_\(MAJOR\|MINOR\|PATCH\)_VERSION:INTERNAL=\).*/\10/' "$m
 release --build-directory make --web-build-directory make --lighttpd-root "$fixture/lighttpd-make"
 expect_result 1 'CMake version mismatch'
 printf '%s\n' 'Compiler reuse rejected conflicting records from different CMake versions.'
+
+# A runtime archive in the compiler's standard library search is implicit to
+# CMake. Replacing its bytes at the same path must relink cached applications.
+# shellcheck source=tools/native-dependency-pins.sh
+# shellcheck disable=SC1091
+. "$script_dir/native-dependency-pins.sh"
+gcc_lib="$DENEB_TOOLCHAIN_ROOT/lib/gcc/$MIPS_TOOLCHAIN_TARGET/$MIPS_TOOLCHAIN_GCC_VERSION"
+mkdir -p "$gcc_lib"
+touch "$DENEB_TOOLCHAIN_ROOT/info.mk" \
+    "$toolchain.bin" "$DENEB_TOOLCHAIN_ROOT/bin/$MIPS_TOOLCHAIN_TARGET-g++.bin" \
+    "$DENEB_TOOLCHAIN_ROOT/lib/libstdc++.a" "$DENEB_TOOLCHAIN_ROOT/lib/libssp_nonshared.a" \
+    "$gcc_lib/libgcc.a" "$gcc_lib/libgcc_eh.a"
+export FIXTURE_RUNTIME_DIR="$fixture/runtime libs"
+mkdir -p "$FIXTURE_RUNTIME_DIR"
+# Use the fingerprinted libc.a path for the fixture runtime, with a neutral
+# linker name so the host compiler can still use its own libc.
+ln -s "$DENEB_TOOLCHAIN_ROOT/lib/libc.a" "$FIXTURE_RUNTIME_DIR/libfixture.a"
+make_runtime() {
+    local archive=${2:-"$DENEB_TOOLCHAIN_ROOT/lib/libc.a"}
+    printf 'int runtime_value(void) { return %s; }\n' "$1" > "$fixture/runtime.c"
+    cc -c "$fixture/runtime.c" -o "$fixture/runtime.o"
+    ar rcs "$archive" "$fixture/runtime.o"
+    touch -t 200001010000 "$archive"
+}
+
+lighttpd_proof="$fixture/lighttpd-proof"
+make_lighttpd "$lighttpd_proof"
+cat >> "$lighttpd_proof/CMakeLists.txt" <<'EOF'
+set(CMAKE_C_STANDARD_LIBRARIES "-L\"$ENV{FIXTURE_RUNTIME_DIR}\" -lfixture")
+EOF
+cat > "$lighttpd_proof/main.c" <<'EOF'
+#include <stdio.h>
+int runtime_value(void);
+int main(void) { printf("%d\n", runtime_value()); }
+EOF
+runtime_executable="$lighttpd_proof/build-musl-static/build/lighttpd"
+
+# The old runtime has no receipt. The existing release path permits the build.
+make_runtime 11
+release --build-directory proof --web-build-directory proof --lighttpd-root "$lighttpd_proof"
+expect_result 47 'Reached fixture packager'
+test "$("$runtime_executable")" = 11
+test ! -e "$runtime_executable.deneb-runtime.receipt"
+
+# A freshly verified runtime replaces the old archive without updating its mtime.
+make_runtime 22
+record_native_dependency mips-toolchain "$DENEB_TOOLCHAIN_ROOT"
+release --build-directory proof --web-build-directory proof --lighttpd-root "$lighttpd_proof"
+expect_result 47 'Reached fixture packager'
+test "$("$runtime_executable")" = 22
+runtime_key=$(mips_toolchain_key "$DENEB_TOOLCHAIN_ROOT")
+mips_runtime_output_verified "$runtime_key" "$runtime_executable" "$runtime_executable"
+
+# The compiler can refresh lighttpd for its generated config independently.
+# An unchanged verified application need not relink.
+api_executable="$repo/web/proof/deneb-api"
+runtime_inode=$(stat -c %i "$api_executable")
+release --build-directory proof --web-build-directory proof --lighttpd-root "$lighttpd_proof"
+expect_result 47 'Reached fixture packager'
+test "$runtime_inode" = "$(stat -c %i "$api_executable")"
+printf '%s\n' 'Backdated runtime replacement relinks warm lighttpd and unchanged verified links are reused.'
+
+# WSL admits the warm directory from MUSL_CROSS. The compiler record must
+# still match before any runtime receipt can be reused or written.
+mismatched_build="$wrong_lighttpd/build-musl-static"
+cmake -S "$wrong_lighttpd" -B "$mismatched_build" -DMUSL_CROSS:PATH="$DENEB_TOOLCHAIN_ROOT" >/dev/null
+grep -Fxq "MUSL_CROSS:PATH=$DENEB_TOOLCHAIN_ROOT" "$mismatched_build/CMakeCache.txt"
+cmake --build "$mismatched_build" --target lighttpd >/dev/null
+mismatched_output="$mismatched_build/build/lighttpd"
+mips_runtime_fingerprint "$runtime_key" "$mismatched_output" > "$mismatched_output.deneb-runtime.receipt"
+mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$mismatched_build" lighttpd build/lighttpd
+test -x "$mismatched_output"
+test ! -e "$mismatched_output.deneb-runtime.receipt"
+printf '%s\n' 'Warm cache with the expected root and a different compiler keeps its output without a pinned receipt.'
+
+# A wrapper can have the same inode and still resolve to a different sysroot.
+alternate_root="$fixture/alternate toolchain"
+alternate_compiler="$alternate_root/bin/$MIPS_TOOLCHAIN_TARGET-gcc"
+mkdir -p "$alternate_root/bin" "$alternate_root/fixture-lib"
+alternate_wrapper="$alternate_root/bin/${wrapper_path##*/}"
+ln "$wrapper_path" "$alternate_wrapper"
+ln -s "${alternate_wrapper##*/}" "$alternate_compiler"
+test "$wrapper_path" -ef "$alternate_wrapper"
+make_runtime 33 "$alternate_root/fixture-lib/libfixture.a"
+alternate_build="$fixture/hardlinked-toolchain-build"
+cmake -S "$lighttpd_proof" -B "$alternate_build" -DCMAKE_C_COMPILER:FILEPATH="$alternate_compiler" \
+    -DMUSL_CROSS:PATH="$DENEB_TOOLCHAIN_ROOT" >/dev/null
+cmake --build "$alternate_build" --target lighttpd >/dev/null
+mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$alternate_build" lighttpd build/lighttpd
+alternate_output="$alternate_build/build/lighttpd"
+test "$("$alternate_output")" = 33
+test ! -e "$alternate_output.deneb-runtime.receipt"
+printf '%s\n' 'A hard-linked wrapper in a different toolchain directory leaves runtime provenance unverified.'
+
+# A symlink with another tool name can resolve to the same wrapper but run a
+# different driver. The resolved wrapper alone does not identify that driver.
+custom_compiler="${toolchain%-gcc}-custom"
+ln -s "${wrapper_path##*/}" "$custom_compiler"
+mkdir -p "$DENEB_TOOLCHAIN_ROOT/custom-lib"
+make_runtime 44 "$DENEB_TOOLCHAIN_ROOT/custom-lib/libfixture.a"
+custom_build="$fixture/custom-driver-build"
+cmake -S "$lighttpd_proof" -B "$custom_build" -DCMAKE_C_COMPILER:FILEPATH="$custom_compiler" >/dev/null
+cmake --build "$custom_build" --target lighttpd >/dev/null
+mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$custom_build" lighttpd build/lighttpd
+custom_output="$custom_build/build/lighttpd"
+test "$("$custom_output")" = 44
+test ! -e "$custom_output.deneb-runtime.receipt"
+printf '%s\n' 'An alias selecting a different driver leaves runtime provenance unverified.'

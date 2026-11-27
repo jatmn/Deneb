@@ -15,12 +15,20 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=tools/native-dependency-pins.sh
+# shellcheck disable=SC1091
+. "$REPO_ROOT/tools/native-dependency-pins.sh"
 BINARY="${1:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]}"
 WEB_API_BINARY="${2:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]}"
 LIGHTTPD_BINARY="${3:?Usage: $0 <path-to-deneb-ui> <path-to-deneb-api> <path-to-lighttpd> [path-to-deneb-mdns] [path-to-deneb-printsvc] [path-to-deneb-dfsvc]}"
-MDNS_BINARY="${4:-$(dirname "$WEB_API_BINARY")/deneb-mdns}"
-PRINTSVC_BINARY="${5:-$(dirname "$WEB_API_BINARY")/../../printsvc/build-musl/deneb-printsvc}"
-DFSVC_BINARY="${6:-$(dirname "$WEB_API_BINARY")/../../dfsvc/build-musl/deneb-dfsvc}"
+WEB_BUILD_DIR=$(dirname "$WEB_API_BINARY")
+MDNS_BINARY="${4:-$WEB_BUILD_DIR/deneb-mdns}"
+DEFAULT_COMPONENT_BUILD=build-musl
+if [ "${WEB_BUILD_DIR##*/}" = build-musl-openwrt ]; then
+    DEFAULT_COMPONENT_BUILD=build-musl-openwrt
+fi
+PRINTSVC_BINARY="${5:-$WEB_BUILD_DIR/../../printsvc/$DEFAULT_COMPONENT_BUILD/deneb-printsvc}"
+DFSVC_BINARY="${6:-$WEB_BUILD_DIR/../../dfsvc/$DEFAULT_COMPONENT_BUILD/deneb-dfsvc}"
 if [ "$#" -ge 6 ]; then
     shift 6
 else
@@ -55,6 +63,14 @@ fi
 if [ ! -f "$DFSVC_BINARY" ]; then
     echo "ERROR: deneb-dfsvc binary not found: $DFSVC_BINARY"
     exit 1
+fi
+
+# Nested packaging fixtures have their own inputs and provenance.
+package_toolchain_root=${DENEB_PACKAGE_TOOLCHAIN_ROOT:-}
+unset DENEB_PACKAGE_TOOLCHAIN_ROOT
+package_runtime_key=
+if [ -n "$package_toolchain_root" ]; then
+    package_runtime_key=$(mips_toolchain_key "$package_toolchain_root") || package_runtime_key=
 fi
 
 # Get version from git, unless a selftest supplies an isolated package name.
@@ -93,51 +109,51 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 OUTPUT_UMASK=$(umask)
 umask 022
 
-# Copy binary
-cp "$BINARY" "${STAGING_DIR}/deneb-ui"
 STRIP_TOOL="${STRIP:-}"
 if [ -z "$STRIP_TOOL" ]; then
-    if command -v mipsel-linux-musl-strip >/dev/null 2>&1; then
-        STRIP_TOOL="mipsel-linux-musl-strip"
-    elif [ -x /root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-strip ]; then
-        STRIP_TOOL="/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-strip"
+    toolchain_suffix="openwrt-$MIPS_TOOLCHAIN_RELEASE/$MIPS_TOOLCHAIN_MEMBER/bin/$MIPS_TOOLCHAIN_TARGET-strip"
+    for candidate in "$MIPS_TOOLCHAIN_TARGET-strip" \
+        "$REPO_ROOT/build/deneb-cross/$toolchain_suffix" "/root/deneb-build/$toolchain_suffix" \
+        mipsel-linux-musl-strip /root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-strip; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            STRIP_TOOL="$candidate"
+            break
+        fi
+    done
+fi
+stage_executable() {
+    input=$1
+    staged="$STAGING_DIR/$2"
+    cp "$input" "$staged"
+    if [ -n "$package_toolchain_root" ]; then
+        if ! headers=$(LC_ALL=C readelf -WhlAd "$staged") ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Class:[[:space:]]+ELF32' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Data:.*little endian' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Type:[[:space:]]+EXEC[[:space:]]' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Machine:[[:space:]]+MIPS' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Flags:.*o32.*mips32r2' ||
+            ! printf '%s\n' "$headers" | grep -Fxq 'FP ABI: Soft float' ||
+            printf '%s\n' "$headers" | grep -Eq '\(NEEDED\)|^[[:space:]]*INTERP[[:space:]]'; then
+            echo "ERROR: $input is not a static MT7688 soft-float executable" >&2
+            exit 1
+        fi
+        if [ -n "$package_runtime_key" ] &&
+            ! mips_runtime_output_verified "$package_runtime_key" "$input" "$staged"; then
+            package_runtime_key=
+        fi
     fi
-fi
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-ui" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-ui"
+    if [ -n "$STRIP_TOOL" ]; then
+        "$STRIP_TOOL" "$staged" 2>/dev/null || true
+    fi
+    chmod 0755 "$staged"
+}
 
-# Copy web/API runtime into the same Deneb update package.
-cp "$WEB_API_BINARY" "${STAGING_DIR}/deneb-api"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-api" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-api"
-
-cp "$LIGHTTPD_BINARY" "${STAGING_DIR}/lighttpd"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/lighttpd" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/lighttpd"
-
-cp "$MDNS_BINARY" "${STAGING_DIR}/deneb-mdns"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-mdns" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-mdns"
-
-cp "$PRINTSVC_BINARY" "${STAGING_DIR}/deneb-printsvc"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-printsvc" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-printsvc"
-
-cp "$DFSVC_BINARY" "${STAGING_DIR}/deneb-dfsvc"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-dfsvc" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-dfsvc"
+stage_executable "$BINARY" deneb-ui
+stage_executable "$WEB_API_BINARY" deneb-api
+stage_executable "$LIGHTTPD_BINARY" lighttpd
+stage_executable "$MDNS_BINARY" deneb-mdns
+stage_executable "$PRINTSVC_BINARY" deneb-printsvc
+stage_executable "$DFSVC_BINARY" deneb-dfsvc
 
 tr -d '\r' < "${REPO_ROOT}/web/lighttpd.conf" > "${STAGING_DIR}/lighttpd.conf"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-api.init" > "${STAGING_DIR}/deneb-api.init"
@@ -225,11 +241,16 @@ cp "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" "${STAGING_DIR}/THIRD_PARTY_NOTICES.md"
 cp "${SCRIPT_DIR}/lib/lvgl/LICENCE.txt" "${STAGING_DIR}/LVGL_LICENCE.txt"
 cp "${SCRIPT_DIR}/lib/lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt" "${STAGING_DIR}/LVGL_LICENSE_SPRINTF.txt"
 cp "${SCRIPT_DIR}/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt" "${STAGING_DIR}/LVGL_LICENSE_TLSF.txt"
-sed -n '1,/^\*\/$/p' "${SCRIPT_DIR}/lib/lvgl/src/libs/lodepng/lodepng.c" > "${STAGING_DIR}/LODEPNG_LICENSE.txt"
+sed -n '1,/^\*\/$/p' "${SCRIPT_DIR}/../common/lodepng/lodepng.c" > "${STAGING_DIR}/LODEPNG_LICENSE.txt"
 cp "${REPO_ROOT}/notices/libzmq-4.3.5-NOTICE.txt" "${STAGING_DIR}/LIBZMQ_NOTICE.txt"
 cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
-cp "${REPO_ROOT}/notices/MBEDTLS-2.28.8-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
-cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.76-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
+cp "${REPO_ROOT}/notices/MBEDTLS-4.1.2-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
+cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.85-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
+if [ -n "$package_runtime_key" ]; then
+    cp "${REPO_ROOT}/notices/MUSL-1.2.5-COPYRIGHT.txt" "${STAGING_DIR}/MUSL_COPYRIGHT.txt"
+    cp "${REPO_ROOT}/notices/GCC-14.3.0-COPYING3.txt" "${STAGING_DIR}/GCC_COPYING3.txt"
+    cp "${REPO_ROOT}/notices/GCC-14.3.0-COPYING.RUNTIME.txt" "${STAGING_DIR}/GCC_COPYING.RUNTIME.txt"
+fi
 
 # Create manifest
 cat > "${STAGING_DIR}/manifest.txt" <<EOF
@@ -279,11 +300,16 @@ contents:
   LODEPNG_LICENSE.txt - LodePNG zlib-style license notice
   LIBZMQ_NOTICE.txt - libzmq MPL-2.0 notice and source location
   MPL-2.0.txt       - Mozilla Public License 2.0 text for libzmq
-  MBEDTLS_LICENSE.txt - mbedTLS 2.28.8 dual-license text
-  LIGHTTPD_LICENSE.txt - lighttpd 1.4.76 BSD license notice
+  MBEDTLS_LICENSE.txt - Mbed TLS 4.1.2 and bundled TF-PSA-Crypto 1.1.2 dual-license texts
+  LIGHTTPD_LICENSE.txt - lighttpd 1.4.85 BSD license notice
+  Verified OpenWrt toolchain builds also include MUSL_COPYRIGHT.txt,
+  GCC_COPYING3.txt, and GCC_COPYING.RUNTIME.txt.
   no Python driver files are packaged; native deneb-printsvc owns marlindriver
   manifest.txt      - This file
 EOF
+if [ -n "$package_runtime_key" ]; then
+    printf 'mips_runtime_receipt: %s\n' "$package_runtime_key" >> "${STAGING_DIR}/manifest.txt"
+fi
 
 if find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' -o -name 'deneb-df-bridge.py' \) \
     -print | grep . >/dev/null 2>&1; then
@@ -318,8 +344,12 @@ rm -f "$OUTPUT_IMG.sha256" "$OUTPUT_IMG.sbom.cdx.json"
 cd "$STAGING_DIR"
 umask "$OUTPUT_UMASK"
 export LC_ALL=C
+set --
+if [ -n "$package_runtime_key" ]; then
+    set -- MUSL_COPYRIGHT.txt GCC_COPYING3.txt GCC_COPYING.RUNTIME.txt
+fi
 TAR_OPTIONS= tar --format=gnu --sort=name --mtime="@$PACKAGE_EPOCH" --owner=0 --group=0 --numeric-owner -cf "$OUTPUT_IMG" \
-    deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt manifest.txt \
+    deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt "$@" manifest.txt \
     deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit \
     deneb-runtime-inventory \
     deneb-printsvc-macros lighttpd deneb-api.init deneb-web.init deneb-mdns.init deneb-printsvc.init digitalfactory.init lighttpd.conf www

@@ -23,6 +23,10 @@
 
 #include "api_auth.h"
 
+#ifndef DENEB_API_LOCALE_DIR
+#define DENEB_API_LOCALE_DIR "/www/deneb/locales"
+#endif
+
 static void generate_token(char *out, size_t len)
 {
     int fd = open("/dev/urandom", O_RDONLY);
@@ -64,30 +68,20 @@ void api_deneb_events_get(const http_request_t *req, http_response_t *resp)
         }
     }
 
-    /*
-     * SSE endpoint. For now, return the current status as a single event.
-     * A full implementation would keep the connection open and stream
-     * updates. This is handled specially by the main loop's SSE client
-     * tracking, but for the initial response we send one event.
-     */
-    /* Mark as SSE — main.c will keep the connection open and push events */
-    resp->is_sse = 1;
-    resp->keep_alive = 1;
-    strcpy(resp->content_type, "text/event-stream");
-
-    /* Send initial event with current status */
-    const char *json = backend_zmq_get_status_json();
-    size_t json_len = strlen(json);
-    size_t total = json_len + 16;
-    char *buf = malloc(total);
-    if (!buf) {
+    size_t len;
+    uint64_t revision;
+    const char *event = backend_zmq_get_status_event(&len, &revision);
+    if (event)
+        api_http_set_body(resp, event, len);
+    if (!event || !resp->body) {
         resp->status_code = 500;
-        api_http_set_body_str(resp, "{\"message\":\"Out of memory\"}");
+        api_http_set_body_str(resp, "{\"message\":\"Status unavailable\"}");
         return;
     }
-    int n = snprintf(buf, total, "data: %s\n\n", json);
-    api_http_set_body(resp, buf, (size_t)n);
-    free(buf);
+
+    resp->sse_revision = revision;
+    resp->keep_alive = 1;
+    strcpy(resp->content_type, "text/event-stream");
 }
 
 /* Version: /api/v1/deneb/version */
@@ -241,7 +235,7 @@ void api_deneb_locale_get(const http_request_t *req, http_response_t *resp)
     if (i == 0) { resp->status_code = 404; api_http_set_body_str(resp, "{}"); return; }
 
     char path[128];
-    snprintf(path, sizeof(path), "/www/deneb/locales/%s.json", safe_lang);
+    snprintf(path, sizeof(path), DENEB_API_LOCALE_DIR "/%s.json", safe_lang);
 
     FILE *f = fopen(path, "r");
     if (!f) {
@@ -317,7 +311,8 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     json_raw(&w, "pending", file_buf);
 
     /* History */
-    deneb_print_history_read_default_array_or_empty(file_buf, sizeof(file_buf));
+    deneb_print_history_read_default_array_or_empty(file_buf,
+                                                   DENEB_PRINT_HISTORY_MAX_BYTES + 1);
     json_raw(&w, "history", file_buf);
 
     json_obj_close(&w);

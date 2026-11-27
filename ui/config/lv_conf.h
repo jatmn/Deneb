@@ -14,7 +14,7 @@
 /*====================
    COLOR
  *====================*/
-#define LV_COLOR_DEPTH          16
+#define LV_COLOR_FORMAT_DEFAULT LV_COLOR_FORMAT_RGB565
 
 /*====================
    MEMORY

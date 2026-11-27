@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -28,14 +29,10 @@
 #include <unistd.h>
 
 #include <mbedtls/base64.h>
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
-#include <mbedtls/sha1.h>
 #include <mbedtls/ssl.h>
-#include <mbedtls/version.h>
 #include <mbedtls/x509_crt.h>
+#include <psa/crypto.h>
 #include <zmq.h>
 
 #include "print_job_file.h"
@@ -50,6 +47,7 @@
 #define DF_HANDLING_SERVICE "coordinator::digitalfactory::handling"
 #define API_SOCKET_PATH "/var/run/deneb-api.sock"
 #define DF_DOWNLOAD_DIR "/tmp"
+#define DF_FD_PATH "/proc/self/fd/%d"
 #define DF_STATUS_FILE "/tmp/deneb-df-status"
 #define DF_PAIR_REQUEST_FILE "/tmp/deneb-df-pair-request"
 
@@ -88,10 +86,9 @@ typedef struct {
     mbedtls_net_context net;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_x509_crt ca;
     bool connected;
+    bool immediate_read;
 } ws_client_t;
 
 static void on_signal(int sig)
@@ -218,11 +215,11 @@ static void create_pair_request(void)
 }
 
 
-static int fd_write_all(int fd, const void *buf, size_t len)
+static int socket_write_all(int fd, const void *buf, size_t len)
 {
     const uint8_t *p = (const uint8_t *)buf;
     while (len > 0) {
-        ssize_t n = write(fd, p, len);
+        ssize_t n = send(fd, p, len, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR)
                 continue;
@@ -275,7 +272,7 @@ static int local_api_request(const char *method, const char *path,
                      method, path, body_len, body ? body : "");
     if (n <= 0 || (size_t)n >= sizeof(req))
         goto out;
-    if (fd_write_all(fd, req, (size_t)n) < 0)
+    if (socket_write_all(fd, req, (size_t)n) < 0)
         goto out;
 
     while (used + 1 < sizeof(resp)) {
@@ -367,13 +364,13 @@ static void normalize_nozzle_id(const char *in, char *out, size_t out_size)
     }
 }
 
-static int local_api_upload_file(const char *file_path, const char *file_name,
+/* Takes ownership of file_fd, including on failure. */
+static int local_api_upload_file(int file_fd, const char *file_name,
                                  const char *job_instance_uuid,
                                  const char *cloud_job_id,
                                  char *out, size_t out_size)
 {
     int fd = -1;
-    FILE *fp = NULL;
     struct sockaddr_un addr;
     struct stat st;
     char boundary[64];
@@ -387,12 +384,10 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
     int status_code = -1;
 
     if (!out || out_size == 0)
-        return -1;
+        goto out;
     out[0] = '\0';
-    fp = fopen(file_path, "rb");
-    if (!fp)
-        return -1;
-    if (fstat(fileno(fp), &st) < 0 || st.st_size <= 0)
+    if (g_stop || fstat(file_fd, &st) < 0 || st.st_size <= 0 ||
+        lseek(file_fd, 0, SEEK_SET) < 0)
         goto out;
     snprintf(boundary, sizeof(boundary), "deneb-dfsvc-%lld",
              (long long)time(NULL));
@@ -439,19 +434,25 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
                      boundary, content_len);
     if (n <= 0 || (size_t)n >= sizeof(hdr))
         goto out;
-    if (fd_write_all(fd, hdr, (size_t)n) < 0 ||
-        fd_write_all(fd, meta, strlen(meta)) < 0 ||
-        fd_write_all(fd, head, strlen(head)) < 0)
+    if (socket_write_all(fd, hdr, (size_t)n) < 0 ||
+        socket_write_all(fd, meta, strlen(meta)) < 0 ||
+        socket_write_all(fd, head, strlen(head)) < 0)
         goto out;
 
-    while (!feof(fp)) {
-        size_t r = fread(chunk, 1, sizeof(chunk), fp);
-        if (r > 0 && fd_write_all(fd, chunk, r) < 0)
-            goto out;
-        if (ferror(fp))
+    while (!g_stop) {
+        ssize_t r = read(file_fd, chunk, sizeof(chunk));
+        if (r == 0)
+            break;
+        if (r < 0 && errno == EINTR)
+            continue;
+        if (r < 0 || socket_write_all(fd, chunk, (size_t)r) < 0)
             goto out;
     }
-    if (fd_write_all(fd, tail, strlen(tail)) < 0)
+
+    /* The last multipart boundary needs no data from our temporary file. */
+    close(file_fd);
+    file_fd = -1;
+    if (g_stop || socket_write_all(fd, tail, strlen(tail)) < 0)
         goto out;
 
     while (used + 1 < sizeof(resp)) {
@@ -470,8 +471,8 @@ static int local_api_upload_file(const char *file_path, const char *file_name,
     }
 
 out:
-    if (fp)
-        fclose(fp);
+    if (file_fd >= 0)
+        close(file_fd);
     if (fd >= 0)
         close(fd);
     return status_code;
@@ -554,25 +555,79 @@ static void sanitize_hostname(const char *in, char *out, size_t out_size)
         snprintf(out, out_size, "Ultimaker");
 }
 
-static int download_file_with_wget(const char *url, const char *path)
+static int open_job_file(void)
 {
-    pid_t pid = fork();
+    char path[] = DF_DOWNLOAD_DIR "/deneb-df-XXXXXX";
+    int fd = mkstemp(path);
+
+    if (fd < 0)
+        return -1;
+    /* Keep scratch bytes tied to the owning descriptors across a restart. */
+    if (unlink(path) < 0 || fcntl(fd, F_SETFD, FD_CLOEXEC) < 0) {
+        close(fd);
+        return -1;
+    }
+    if (fd <= STDERR_FILENO) {
+        int job_fd = fcntl(fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+        close(fd);
+        return job_fd;
+    }
+    return fd;
+}
+
+static int wait_for_job_writer(pid_t pid, int fd, off_t prefix_size)
+{
+    const struct timespec interval = {.tv_nsec = 20 * 1000 * 1000};
+    int status;
+    struct stat st;
+
     if (pid < 0)
         return -1;
-    if (pid == 0) {
-        execlp("wget", "wget", "-q", "-T", "60", "-t", "1", "-O", path,
-               url, (char *)NULL);
-        _exit(127);
+    for (;;) {
+        /* A stop handled on another thread must also interrupt ingestion. */
+        if (g_stop)
+            (void)kill(pid, SIGKILL);
+        pid_t waited = waitpid(pid, &status, WNOHANG);
+        if (waited == pid)
+            break;
+        if (waited < 0 && errno != EINTR)
+            return -1;
+        if (waited == 0)
+            nanosleep(&interval, NULL);
     }
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0)
+    if (g_stop)
         return -1;
     if (!WIFEXITED(status))
         return -2;
     if (WEXITSTATUS(status) != 0)
         return WEXITSTATUS(status);
-    struct stat st;
-    return stat(path, &st) == 0 && st.st_size > 0 ? 0 : -3;
+    return fstat(fd, &st) == 0 && st.st_size > prefix_size ? 0 : -3;
+}
+
+static pid_t start_job_writer(int fd)
+{
+    pid_t parent = getpid();
+    pid_t pid = fork();
+    /* The parent check also covers a daemon exit before prctl runs. */
+    if (pid == 0 &&
+        (prctl(PR_SET_PDEATHSIG, SIGKILL, 0L, 0L, 0L) < 0 ||
+         getppid() != parent || dup2(fd, STDOUT_FILENO) < 0))
+        _exit(126);
+    return pid;
+}
+
+static int download_file_with_wget(const char *url, int fd, off_t prefix_size)
+{
+    /* The URL is an operand. An option can write diagnostics into the model. */
+    if (g_stop || !url[0] || url[0] == '-')
+        return -1;
+    pid_t pid = start_job_writer(fd);
+    if (pid == 0) {
+        execlp("wget", "wget", "-q", "-T", "60", "-t", "1", "-O", "-",
+               url, (char *)NULL);
+        _exit(127);
+    }
+    return wait_for_job_writer(pid, fd, prefix_size);
 }
 
 static bool filename_ends_with_ci(const char *name, const char *suffix)
@@ -614,100 +669,46 @@ static void replace_file_extension(const char *in, const char *extension,
         snprintf(out + used, remaining, "%s", extension);
 }
 
-static int extract_ufp_member(const char *ufp_path, const char *member,
-                              const char *gcode_path)
+static int extract_ufp_member(int archive_fd, const char *member,
+                              int model_fd, off_t prefix_size)
 {
-    pid_t pid;
-    int out_fd;
-    int status = 0;
-    struct stat st;
-
-    out_fd = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (out_fd < 0)
+    char archive_path[48];
+    if (g_stop)
         return -1;
-
-    pid = fork();
-    if (pid < 0) {
-        close(out_fd);
-        return -1;
-    }
+    snprintf(archive_path, sizeof(archive_path), DF_FD_PATH, archive_fd);
+    pid_t pid = start_job_writer(model_fd);
     if (pid == 0) {
-        if (dup2(out_fd, STDOUT_FILENO) < 0)
+        /* unzip reopens this seekable descriptor by path after exec. */
+        if (fcntl(archive_fd, F_SETFD, 0) < 0)
             _exit(126);
-        close(out_fd);
-        execlp("unzip", "unzip", "-p", ufp_path, member, (char *)NULL);
+        execlp("unzip", "unzip", "-p", archive_path, member, (char *)NULL);
         _exit(127);
     }
-    close(out_fd);
-
-    if (waitpid(pid, &status, 0) < 0)
-        return -1;
-    if (stat(gcode_path, &st) == 0 && st.st_size > 0)
-        return 0;
-    if (!WIFEXITED(status))
-        return -2;
-    return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
+    return wait_for_job_writer(pid, model_fd, prefix_size);
 }
 
-static int extract_ufp_model_gcode(const char *ufp_path, const char *gcode_path)
+static int extract_ufp_model_gcode(int archive_fd, int model_fd,
+                                    off_t prefix_size)
 {
-    int rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path);
-    if (rc == 0)
-        return 0;
-    return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path);
+    int rc = extract_ufp_member(archive_fd, "3D/model.gcode", model_fd,
+                                prefix_size);
+    if (rc == 0 || g_stop)
+        return rc;
+    if (ftruncate(model_fd, prefix_size) < 0 ||
+        lseek(model_fd, prefix_size, SEEK_SET) < 0)
+        return -1;
+    return extract_ufp_member(archive_fd, "/3D/model.gcode", model_fd,
+                              prefix_size);
 }
 
-static int prepend_file_metadata(const char *path, const char *material_guid,
+static off_t write_file_metadata(int fd, const char *material_guid,
                                  const char *print_core_id)
 {
-    char tmp_path[300];
-    int src = -1;
-    int dst = -1;
-    char buf[4096];
-    ssize_t nr;
-    int ok = 0;
-
-    if (!path || !path[0])
+    if (material_guid[0] && dprintf(fd, "; material_guid=%s\n", material_guid) < 0)
         return -1;
-    if ((!material_guid || !material_guid[0]) &&
-        (!print_core_id || !print_core_id[0]))
-        return 0;
-
-    if (snprintf(tmp_path, sizeof(tmp_path), "%s.meta", path) >=
-        (int)sizeof(tmp_path))
+    if (print_core_id[0] && dprintf(fd, "; print_core_id=%s\n", print_core_id) < 0)
         return -1;
-
-    src = open(path, O_RDONLY);
-    dst = open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (src < 0 || dst < 0)
-        goto out;
-
-    if (material_guid && material_guid[0]) {
-        dprintf(dst, "; material_guid=%s\n", material_guid);
-    }
-    if (print_core_id && print_core_id[0]) {
-        dprintf(dst, "; print_core_id=%s\n", print_core_id);
-    }
-
-    while ((nr = read(src, buf, sizeof(buf))) > 0) {
-        if (fd_write_all(dst, buf, (size_t)nr) < 0)
-            goto out;
-    }
-    if (nr < 0)
-        goto out;
-    ok = 1;
-
-out:
-    if (src >= 0)
-        close(src);
-    if (dst >= 0)
-        close(dst);
-    if (ok) {
-        if (rename(tmp_path, path) == 0)
-            return 0;
-    }
-    unlink(tmp_path);
-    return -1;
+    return lseek(fd, 0, SEEK_CUR);
 }
 
 static int set_printer_name(const char *name)
@@ -1122,8 +1123,6 @@ static void ws_free(ws_client_t *ws)
     mbedtls_net_free(&ws->net);
     mbedtls_ssl_free(&ws->ssl);
     mbedtls_ssl_config_free(&ws->conf);
-    mbedtls_ctr_drbg_free(&ws->ctr_drbg);
-    mbedtls_entropy_free(&ws->entropy);
     mbedtls_x509_crt_free(&ws->ca);
     memset(ws, 0, sizeof(*ws));
 }
@@ -1140,21 +1139,55 @@ static int ws_write_all(ws_client_t *ws, const uint8_t *buf, size_t len)
     return 0;
 }
 
-static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
+enum { WS_READ_IDLE = 2 };
+
+static int ws_tls_send(void *context, const unsigned char *buf, size_t len)
+{
+    ws_client_t *ws = context;
+    return mbedtls_net_send(&ws->net, buf, len);
+}
+
+static int ws_tls_receive(void *context, unsigned char *buf, size_t len, uint32_t timeout)
+{
+    ws_client_t *ws = context;
+    if (!ws->immediate_read)
+        return mbedtls_net_recv_timeout(&ws->net, buf, len, timeout);
+
+    ssize_t n = recv(ws->net.fd, buf, len, MSG_DONTWAIT);
+    if (n >= 0)
+        return (int)n;
+    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+
+static int ws_read_bytes(ws_client_t *ws, uint8_t *buf, size_t len, bool allow_idle)
 {
     size_t used = 0;
-    while (used < len) {
+    int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
+    while (used < len && !g_stop && monotonic_ms() < deadline) {
+        // TLS may consume a control record and fetch again in the same read.
+        ws->immediate_read = allow_idle && used == 0;
         int n = mbedtls_ssl_read(&ws->ssl, buf + used, len - used);
+        ws->immediate_read = false;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
+            n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
+            // Finish any held TLS message before yielding an idle WebSocket.
+            if (allow_idle && used == 0 && n != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                !mbedtls_ssl_check_pending(&ws->ssl))
+                return WS_READ_IDLE;
+            continue;
+        }
         if (n <= 0)
             return -1;
         used += (size_t)n;
     }
-    return 0;
+    return used == len ? 0 : -1;
 }
 
-static int ws_random(ws_client_t *ws, uint8_t *buf, size_t len)
+static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
 {
-    return mbedtls_ctr_drbg_random(&ws->ctr_drbg, buf, len) == 0 ? 0 : -1;
+    return ws_read_bytes(ws, buf, len, false);
 }
 
 static int base64_encode(const uint8_t *input, size_t input_len,
@@ -1169,10 +1202,10 @@ static int base64_encode(const uint8_t *input, size_t input_len,
     return 0;
 }
 
-static int ws_make_key(ws_client_t *ws, char out[25])
+static int ws_make_key(char out[25])
 {
     uint8_t nonce[16];
-    if (ws_random(ws, nonce, sizeof(nonce)) < 0)
+    if (psa_generate_random(nonce, sizeof(nonce)) != PSA_SUCCESS)
         return -1;
     return base64_encode(nonce, sizeof(nonce), out, 25);
 }
@@ -1185,13 +1218,11 @@ static int ws_expected_accept(const char *key, char out[32])
     int n = snprintf(input, sizeof(input), "%s%s", key, guid);
     if (n <= 0 || (size_t)n >= sizeof(input))
         return -1;
-#if MBEDTLS_VERSION_NUMBER >= 0x02070000
-    if (mbedtls_sha1_ret((const unsigned char *)input, strlen(input), digest) != 0)
+    size_t digest_len;
+    if (psa_hash_compute(PSA_ALG_SHA_1, (const uint8_t *)input, (size_t)n,
+                         digest, sizeof(digest), &digest_len) != PSA_SUCCESS)
         return -1;
-#else
-    mbedtls_sha1((const unsigned char *)input, strlen(input), digest);
-#endif
-    return base64_encode(digest, sizeof(digest), out, 32);
+    return base64_encode(digest, digest_len, out, 32);
 }
 
 static bool header_value_matches(const char *headers, const char *name,
@@ -1231,7 +1262,7 @@ static int ws_send_control(ws_client_t *ws, uint8_t opcode,
     uint8_t mask[4];
     if (len > 125)
         return -1;
-    if (ws_random(ws, mask, sizeof(mask)) < 0)
+    if (psa_generate_random(mask, sizeof(mask)) != PSA_SUCCESS)
         return -1;
     hdr[h++] = (uint8_t)(0x80 | (opcode & 0x0f));
     hdr[h++] = (uint8_t)(0x80 | len);
@@ -1254,20 +1285,17 @@ static void ws_send_close(ws_client_t *ws)
     (void)ws_send_control(ws, 0x8, NULL, 0);
 }
 
-static int ws_connect(ws_client_t *ws, const df_url_t *url)
+static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_directory)
 {
     memset(ws, 0, sizeof(*ws));
     mbedtls_net_init(&ws->net);
     mbedtls_ssl_init(&ws->ssl);
     mbedtls_ssl_config_init(&ws->conf);
-    mbedtls_entropy_init(&ws->entropy);
-    mbedtls_ctr_drbg_init(&ws->ctr_drbg);
     mbedtls_x509_crt_init(&ws->ca);
 
-    if (mbedtls_ctr_drbg_seed(&ws->ctr_drbg, mbedtls_entropy_func,
-                              &ws->entropy, (const unsigned char *)"deneb-dfsvc", 11) != 0)
+    if (psa_crypto_init() != PSA_SUCCESS)
         return -1;
-    (void)mbedtls_x509_crt_parse_path(&ws->ca, "/etc/ssl/certs");
+    (void)mbedtls_x509_crt_parse_path(&ws->ca, ca_directory);
     if (mbedtls_net_connect(&ws->net, url->host, url->port, MBEDTLS_NET_PROTO_TCP) != 0)
         return -1;
     if (mbedtls_ssl_config_defaults(&ws->conf, MBEDTLS_SSL_IS_CLIENT,
@@ -1276,12 +1304,12 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
         return -1;
     mbedtls_ssl_conf_authmode(&ws->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&ws->conf, &ws->ca, NULL);
-    mbedtls_ssl_conf_rng(&ws->conf, mbedtls_ctr_drbg_random, &ws->ctr_drbg);
+    mbedtls_ssl_conf_read_timeout(&ws->conf, DF_WS_PING_TIMEOUT_MS);
     if (mbedtls_ssl_setup(&ws->ssl, &ws->conf) != 0)
         return -1;
     if (mbedtls_ssl_set_hostname(&ws->ssl, url->host) != 0)
         return -1;
-    mbedtls_ssl_set_bio(&ws->ssl, &ws->net, mbedtls_net_send, mbedtls_net_recv, NULL);
+    mbedtls_ssl_set_bio(&ws->ssl, ws, ws_tls_send, NULL, ws_tls_receive);
     int rc;
     while ((rc = mbedtls_ssl_handshake(&ws->ssl)) != 0) {
         if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE)
@@ -1292,7 +1320,7 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
 
     char key[25];
     char expected_accept[32];
-    if (ws_make_key(ws, key) < 0 || ws_expected_accept(key, expected_accept) < 0)
+    if (ws_make_key(key) < 0 || ws_expected_accept(key, expected_accept) < 0)
         return -1;
     char req[768];
     int n = snprintf(req, sizeof(req),
@@ -1311,11 +1339,9 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
     char resp[1024];
     size_t used = 0;
     while (used + 1 < sizeof(resp)) {
-        int r = mbedtls_ssl_read(&ws->ssl, (unsigned char *)resp + used, 1);
-        if (r <= 0)
+        if (ws_read_exact(ws, (unsigned char *)resp + used, 1) < 0)
             return -1;
-        used += (size_t)r;
-        resp[used] = '\0';
+        resp[++used] = '\0';
         if (strstr(resp, "\r\n\r\n"))
             break;
     }
@@ -1350,7 +1376,7 @@ static int ws_send_text(ws_client_t *ws, const char *text)
         return -1;
     }
     uint8_t mask[4];
-    if (ws_random(ws, mask, sizeof(mask)) < 0)
+    if (psa_generate_random(mask, sizeof(mask)) != PSA_SUCCESS)
         return -1;
     memcpy(hdr + h, mask, 4);
     h += 4;
@@ -1371,8 +1397,9 @@ static int ws_read_text(ws_client_t *ws, char *buf, size_t buf_size)
 
     while (true) {
         uint8_t h[2];
-        if (ws_read_exact(ws, h, 2) < 0)
-            return -1;
+        int rc = ws_read_bytes(ws, h, sizeof(h), !in_text);
+        if (rc != 0)
+            return rc;
         bool fin = (h[0] & 0x80) != 0;
         int opcode = h[0] & 0x0f;
         bool masked = (h[1] & 0x80) != 0;
@@ -2032,8 +2059,7 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     char print_core_id[32] = "";
     char file_name[192];
     char upload_name[192];
-    char path[256];
-    char upload_path[256];
+    char model_path[48];
     char api_body[1024] = "";
     char response[512];
     char safe_job_id[192];
@@ -2043,6 +2069,8 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
     int code = -1;
     int download_rc = -1;
     int extract_rc = 0;
+    int archive_fd = -1;
+    int model_fd = -1;
     bool has_download_url = false;
 
     json_str_value(msg, "job_id", job_id, sizeof(job_id));
@@ -2058,9 +2086,6 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
 
     sanitize_filename(job_name, file_name, sizeof(file_name));
     snprintf(upload_name, sizeof(upload_name), "%s", file_name);
-    snprintf(path, sizeof(path), "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
-             (long long)time(NULL), file_name);
-    snprintf(upload_path, sizeof(upload_path), "%s", path);
 
     if (!df_printer_is_idle()) {
         reason = "printer_not_idle";
@@ -2076,40 +2101,66 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
         reason = download_url[0] ? "download_url_too_long" :
                                    "missing_download_url";
     } else {
-        download_rc = download_file_with_wget(download_url, path);
-        if (download_rc != 0) {
-            reason = "download_failed";
-        } else {
-            if (filename_ends_with_ci(file_name, ".ufp")) {
-                replace_file_extension(file_name, ".gcode", upload_name,
-                                       sizeof(upload_name));
-                snprintf(upload_path, sizeof(upload_path),
-                         "%s/deneb-df-%lld-%s", DF_DOWNLOAD_DIR,
-                         (long long)time(NULL), upload_name);
-                extract_rc = extract_ufp_model_gcode(path, upload_path);
-            }
-            if (extract_rc != 0) {
-                reason = "ufp_extract_failed";
-            } else if (prepend_file_metadata(upload_path, material_guid,
-                                             print_core_id) != 0) {
-                reason = "metadata_prepend_failed";
-            } else if (deneb_print_job_file_validate_build_volume_path(
-                           upload_path, validation_error,
-                           sizeof(validation_error)) != 0) {
-                reason = "build_volume_validation_failed";
-            } else {
-                code = local_api_upload_file(upload_path, upload_name,
-                                             job_instance_uuid, job_id,
-                                             api_body, sizeof(api_body));
-                if (code >= 200 && code < 300) {
-                    reason = "queued";
-                    status = "queued";
-                } else {
-                    reason = "local_upload_failed";
-                }
+        bool is_ufp = filename_ends_with_ci(file_name, ".ufp");
+        model_fd = open_job_file();
+        if (model_fd < 0) {
+            reason = "staging_failed";
+            goto report;
+        }
+        off_t prefix_size = write_file_metadata(model_fd, material_guid,
+                                                print_core_id);
+        if (prefix_size < 0) {
+            reason = "metadata_prepend_failed";
+            goto report;
+        }
+        if (is_ufp) {
+            archive_fd = open_job_file();
+            if (archive_fd < 0) {
+                reason = "staging_failed";
+                goto report;
             }
         }
+        download_rc = download_file_with_wget(download_url,
+                                              is_ufp ? archive_fd : model_fd,
+                                              is_ufp ? 0 : prefix_size);
+        if (download_rc != 0) {
+            reason = "download_failed";
+            goto report;
+        }
+        if (is_ufp) {
+            replace_file_extension(file_name, ".gcode", upload_name,
+                                   sizeof(upload_name));
+            extract_rc = extract_ufp_model_gcode(archive_fd, model_fd,
+                                                prefix_size);
+            close(archive_fd);
+            archive_fd = -1;
+        }
+        if (extract_rc != 0) {
+            reason = "ufp_extract_failed";
+            goto report;
+        }
+        snprintf(model_path, sizeof(model_path), DF_FD_PATH, model_fd);
+        if (deneb_print_job_file_validate_build_volume_path(
+                model_path, validation_error, sizeof(validation_error)) != 0) {
+            reason = "build_volume_validation_failed";
+            goto report;
+        }
+        code = local_api_upload_file(model_fd, upload_name,
+                                     job_instance_uuid, job_id,
+                                     api_body, sizeof(api_body));
+        model_fd = -1;
+        if (code >= 200 && code < 300) {
+            reason = "queued";
+            status = "queued";
+        } else {
+            reason = "local_upload_failed";
+        }
     }
+report:
+    if (archive_fd >= 0)
+        close(archive_fd);
+    if (model_fd >= 0)
+        close(model_fd);
     logf_line("info",
               "Digital Factory print request result status=%s reason=%s "
               "api_code=%d download_rc=%d extract_rc=%d job_id=%d job_name=%d "
@@ -2124,9 +2175,6 @@ static void handle_print_request(ws_client_t *ws, const char *msg)
               print_core_id[0] ? 1 : 0, file_name, upload_name,
               validation_error[0] ? validation_error : "-",
               api_body[0] ? api_body : "-");
-    unlink(path);
-    if (strcmp(upload_path, path) != 0)
-        unlink(upload_path);
     json_escape_string(job_id, safe_job_id, sizeof(safe_job_id));
     snprintf(response, sizeof(response),
              "{\"payload\":{\"job_id\":\"%s\",\"status\":\"%s\"},"
@@ -2485,7 +2533,7 @@ int main(void)
         current_pin[0] = '\0';
         publish_status(pub, current_state, current_pin);
         ws_client_t ws;
-        if (ws_connect(&ws, &url) < 0) {
+        if (ws_connect(&ws, &url, "/etc/ssl/certs") < 0) {
             log_line("warn", "cloud websocket connect failed");
             ws_free(&ws);
             current_state = DF_STATE_RECONNECTING;
@@ -2559,6 +2607,8 @@ int main(void)
                           current_state);
                 break;
             }
+            if (rc == WS_READ_IDLE)
+                continue;
             last_rx = monotonic_ms();
             if (rc == 0)
                 handle_cloud_message(pub, &ws, msg, &current_state,

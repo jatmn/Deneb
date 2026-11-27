@@ -10,43 +10,67 @@ static int is_space(int c)
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
-int deneb_json_get_value(const char *json, const char *key,
-                         char *out, size_t out_sz)
+/* Keep the C-string path free of span checks in the shared decoder. */
+static inline __attribute__((always_inline))
+int copy_value(const char *p, size_t len, char *out, size_t out_sz, int bounded)
 {
-    char search[128];
-    const char *p;
     size_t i = 0;
 
-    if (!json || !key || !out || out_sz == 0)
-        return -1;
     out[0] = '\0';
-
-    snprintf(search, sizeof(search), "\"%s\"", key);
-    p = strstr(json, search);
-    if (!p)
-        return -1;
-
-    p += strlen(search);
-    while (*p && (is_space((unsigned char)*p) || *p == ':'))
+    while ((!bounded || len) && (is_space((unsigned char)*p) || *p == ':')) {
         p++;
+        if (bounded)
+            len--;
+    }
 
-    if (*p == '"') {
+    if ((!bounded || len) && *p == '"') {
         p++;
-        while (*p && *p != '"' && i < out_sz - 1) {
-            if (*p == '\\' && p[1])
+        if (bounded)
+            len--;
+        while ((!bounded || len) && *p && *p != '"' && i < out_sz - 1) {
+            if (*p == '\\' && (!bounded || len > 1) && p[1]) {
                 p++;
+                if (bounded)
+                    len--;
+            }
             out[i++] = *p++;
+            if (bounded)
+                len--;
         }
-        if (*p != '"')
+        if ((bounded && !len) || *p != '"')
             return -1;
     } else {
-        while (*p && *p != ',' && *p != '}' &&
-               !is_space((unsigned char)*p) && i < out_sz - 1)
+        while ((!bounded || len) && *p && *p != ',' && *p != '}' &&
+               !is_space((unsigned char)*p) && i < out_sz - 1) {
             out[i++] = *p++;
+            if (bounded)
+                len--;
+        }
     }
 
     out[i] = '\0';
     return 0;
+}
+
+int deneb_json_copy_value_span(const char *value, size_t len,
+                               char *out, size_t out_sz)
+{
+    if (!value || !out || out_sz == 0)
+        return -1;
+    return copy_value(value, len, out, out_sz, 1);
+}
+
+int deneb_json_get_value(const char *json, const char *key,
+                         char *out, size_t out_sz)
+{
+    char search[128];
+
+    if (!json || !key || !out || out_sz == 0)
+        return -1;
+    out[0] = '\0';
+    snprintf(search, sizeof(search), "\"%s\"", key);
+    const char *p = strstr(json, search);
+    return p ? copy_value(p + strlen(search), 0, out, out_sz, 0) : -1;
 }
 
 int deneb_json_field_present(const char *json, const char *key)

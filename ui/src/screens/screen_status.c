@@ -12,6 +12,7 @@
 #include "lvgl.h"
 #include "misc/cache/instance/lv_image_cache.h"
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 
 LV_IMAGE_DECLARE(deneb_logo_116);
@@ -30,6 +31,8 @@ static lv_obj_t *time_left_label = NULL;
 static lv_obj_t *progress_bar = NULL;
 static lv_obj_t *progress_label = NULL;
 static lv_obj_t *file_label = NULL;
+static char file_label_text[128];
+static bool file_label_text_valid;
 static lv_obj_t *thumb = NULL;
 static lv_obj_t *pause_resume_btn = NULL;
 static lv_obj_t *pause_resume_label = NULL;
@@ -57,9 +60,40 @@ static lv_image_dsc_t active_thumb_dsc = {
 
 static lv_timer_t *update_timer = NULL;
 
+static void set_label_text(lv_obj_t *label, const char *text)
+{
+    const char *current = lv_label_get_text(label);
+    if (!current || strcmp(current, text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void set_file_label_text(const char *text)
+{
+    /* LVGL's dots mode can replace part of the stored label text. */
+    if (file_label_text_valid && strcmp(file_label_text, text) == 0)
+        return;
+
+    lv_label_set_text(file_label, text);
+    size_t len = strlen(text);
+    file_label_text_valid = len < sizeof(file_label_text) &&
+                            lv_label_get_text(file_label) != NULL;
+    if (file_label_text_valid)
+        memcpy(file_label_text, text, len + 1);
+}
+
+static void set_progress(int pct)
+{
+    if (lv_bar_get_value(progress_bar) != pct)
+        lv_bar_set_value(progress_bar, pct, LV_ANIM_OFF);
+
+    char text[16];
+    snprintf(text, sizeof(text), "%d%%", pct);
+    set_label_text(progress_label, text);
+}
+
 static void set_btn_enabled(lv_obj_t *btn, int enabled)
 {
-    if (!btn)
+    if (!btn || lv_obj_has_state(btn, LV_STATE_DISABLED) == !enabled)
         return;
 
     if (enabled)
@@ -80,7 +114,7 @@ static void stop_btn_cb(lv_event_t *e)
     stop_inflight = 1;
     set_btn_enabled(stop_btn, 0);
     if (backend_stop_print() == 0)
-        lv_label_set_text(state_label, locale_get("print.stopping"));
+        set_label_text(state_label, locale_get("print.stopping"));
     else {
         stop_inflight = 0;
         set_btn_enabled(stop_btn, 1);
@@ -97,7 +131,7 @@ static void pause_resume_btn_cb(lv_event_t *e)
 
     if (s->is_paused) {
         if (backend_resume_print() == 0)
-            lv_label_set_text(state_label, locale_get("print.resuming"));
+            set_label_text(state_label, locale_get("print.resuming"));
         return;
     }
 
@@ -105,43 +139,30 @@ static void pause_resume_btn_cb(lv_event_t *e)
         return;
 
     if (backend_pause_print() == 0)
-        lv_label_set_text(state_label, locale_get("print.pausing"));
+        set_label_text(state_label, locale_get("print.pausing"));
 }
 
 static void set_temp_label(lv_obj_t *label, float cur, float target)
 {
     char text[32];
     snprintf(text, sizeof(text), "%.0f / %.0f \u00b0C", cur, target);
-    lv_label_set_text(label, text);
+    set_label_text(label, text);
 }
 
-static void format_duration(int seconds, char *out, size_t out_sz)
+static void set_time_left_label(lv_obj_t *label, int job_active, int time_left)
 {
-    int hours, minutes;
-
-    if (seconds < 0)
-        seconds = 0;
-
-    hours = seconds / 3600;
-    minutes = (seconds % 3600) / 60;
-    seconds = seconds % 60;
-    snprintf(out, out_sz, "%d:%02d:%02d", hours, minutes, seconds);
-}
-
-static void set_time_left_label(lv_obj_t *label, const printer_state_t *s)
-{
-    char duration[16];
-
     if (!label)
         return;
 
-    if (!s || !backend_has_active_print_context() || s->time_left <= 0) {
-        lv_label_set_text(label, "Left --:--");
+    if (!job_active || time_left <= 0) {
+        set_label_text(label, "Left --:--");
         return;
     }
 
-    format_duration(s->time_left, duration, sizeof(duration));
-    lv_label_set_text_fmt(label, "Left %s", duration);
+    char text[24];
+    snprintf(text, sizeof(text), "Left %d:%02d:%02d",
+             time_left / 3600, (time_left % 3600) / 60, time_left % 60);
+    set_label_text(label, text);
 }
 
 static const char *display_state_locale_key(deneb_print_display_state_t state)
@@ -215,82 +236,63 @@ static void update_timer_cb(lv_timer_t *timer)
 
     const printer_state_t *s = backend_get_state();
     if (!s->connected) {
-        lv_label_set_text(state_label, locale_get("status.preparing"));
-        lv_label_set_text(nozzle_temp_label, "-- / --");
-        lv_label_set_text(bed_temp_label, "-- / --");
-        lv_label_set_text(time_left_label, "Left --:--");
-        lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
-        lv_label_set_text(progress_label, "0%");
-        lv_label_set_text(file_label, locale_get("status.no_file"));
+        set_label_text(state_label, locale_get("status.preparing"));
+        set_label_text(nozzle_temp_label, "-- / --");
+        set_label_text(bed_temp_label, "-- / --");
+        set_label_text(time_left_label, "Left --:--");
+        set_progress(0);
+        set_file_label_text(locale_get("status.no_file"));
         set_btn_enabled(pause_resume_btn, 0);
         if (pause_resume_label)
-            lv_label_set_text(pause_resume_label, locale_get("print.pause"));
+            set_label_text(pause_resume_label, locale_get("print.pause"));
         set_btn_enabled(stop_btn, 0);
         set_thumb_source(0);
         return;
     }
 
     char resolved_name[128];
-    backend_get_print_display_name(resolved_name, sizeof(resolved_name));
-    int has_print_name = backend_has_print_name(resolved_name);
-    int job_active = backend_has_active_print_context();
-
-    if (!job_active && !has_print_name)
-        backend_clear_print_display_context_if_idle();
+    deneb_print_context_flags_t context =
+        backend_get_print_display_context(resolved_name, sizeof(resolved_name));
+    int job_active = context.has_active_context;
+    int aborting = backend_has_abort_print_context();
+    deneb_print_display_state_t display_state = deneb_print_display_state_with_req(
+        s->connected, s->has_error, s->is_paused, s->is_printing, aborting,
+        context.has_preparing_context, s->time_total, s->current_req);
 
     const char *display_name = locale_get("status.no_file");
     if (job_active && resolved_name[0])
         display_name = resolved_name;
 
     /* Printer state */
-    lv_label_set_text(
-        state_label,
-        locale_get(display_state_locale_key(deneb_print_display_state_with_req(
-            s->connected, s->has_error, s->is_paused, s->is_printing,
-            backend_has_abort_print_context(),
-            backend_has_preparing_print_context(), s->time_total,
-            s->current_req))));
+    set_label_text(state_label, locale_get(display_state_locale_key(display_state)));
 
     /* Temperatures */
     set_temp_label(nozzle_temp_label, s->nozzle_temp_cur, s->nozzle_temp_set);
     set_temp_label(bed_temp_label, s->bed_temp_cur, s->bed_temp_set);
 
     /* Time remaining */
-    set_time_left_label(time_left_label, s);
+    set_time_left_label(time_left_label, job_active, s->time_left);
 
     /* Progress */
     int pct = (int)s->progress;
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
-    lv_bar_set_value(progress_bar, pct, LV_ANIM_OFF);
-    lv_label_set_text_fmt(progress_label, "%d%%", pct);
+    set_progress(pct);
 
     /* File */
-    lv_label_set_text(file_label, display_name);
+    set_file_label_text(display_name);
 
     if (!backend_is_stop_print_inflight())
         stop_inflight = 0;
 
-    if (!job_active && !has_print_name &&
-        s->time_total <= 0 &&
-        s->time_left <= 0 &&
-        s->bed_temp_set <= 0.0f &&
-        s->nozzle_temp_set <= 0.0f)
-        backend_clear_print_display_context_if_idle();
-
-    int aborting = backend_has_abort_print_context();
-    int pausing = deneb_print_display_state_with_req(
-        s->connected, s->has_error, s->is_paused, s->is_printing,
-        aborting, backend_has_preparing_print_context(), s->time_total,
-        s->current_req) == DENEB_PRINT_DISPLAY_STATE_PAUSING;
+    int pausing = display_state == DENEB_PRINT_DISPLAY_STATE_PAUSING;
     if (pause_resume_label)
-        lv_label_set_text(pause_resume_label,
-                          locale_get(s->is_paused ? "print.resume" :
-                                                   "print.pause"));
+        set_label_text(pause_resume_label,
+                       locale_get(s->is_paused ? "print.resume" : "print.pause"));
     set_btn_enabled(pause_resume_btn,
                     ((job_active && s->is_printing) || s->is_paused) &&
                     !aborting && !pausing);
-    set_btn_enabled(stop_btn, backend_has_stoppable_print_context() &&
+    set_btn_enabled(stop_btn, context.has_stoppable_context &&
                                   !stop_inflight &&
                                   !backend_is_stop_print_inflight());
 
@@ -383,7 +385,8 @@ static lv_obj_t *status_create(void)
 
     /* File name */
     file_label = lv_label_create(status_screen);
-    lv_label_set_text(file_label, locale_get("status.no_file"));
+    file_label_text_valid = false;
+    set_file_label_text(locale_get("status.no_file"));
     lv_obj_set_width(file_label, 312);
     lv_obj_set_style_text_color(file_label, lv_color_hex(0xa0a0a0), 0);
     lv_obj_set_style_text_font(file_label, &deneb_font_12, 0);

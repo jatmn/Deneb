@@ -35,7 +35,7 @@ jobs:
       bootstrap: ${{ steps.changes.outputs.bootstrap }}
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           submodules: false
@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           # Gitleaks and the publication-boundary audit both inspect Git history.
           fetch-depth: 0
@@ -119,13 +119,13 @@ jobs:
 
       - name: Set up Go
         if: steps.site.outputs.needs_site_build == 'true'
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
           go-version: "1.25.x"
           cache-dependency-path: website/go.sum
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
 
@@ -133,9 +133,9 @@ jobs:
         if: steps.site.outputs.needs_site_build == 'true'
         run: |
           HUGO_VERSION="$(tr -d '[:space:]' < website/vendor-pins/hugo.version)"
-          expected="$(awk '{print $1}' website/vendor-pins/hugo_extended_linux-amd64.tar.gz.sha256)"
+          expected="$(awk '{print $1}' website/vendor-pins/hugo_linux-amd64.tar.gz.sha256)"
           curl -fsSL -o /tmp/hugo.tgz \
-            "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
+            "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_${HUGO_VERSION}_linux-amd64.tar.gz"
           actual="$(sha256sum /tmp/hugo.tgz | awk '{print $1}')"
           if [[ "$actual" != "$expected" ]]; then
             echo "Hugo tarball checksum mismatch: got ${actual}, expected ${expected}" >&2
@@ -228,7 +228,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 1
           submodules: false
@@ -253,7 +253,7 @@ jobs:
                 sh -n -- "$script"
               fi
             done
-          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
+          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-mbedtls.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
           sh tools/write-package-checksum-selftest.sh
           sh tools/ssh-bootstrap-patch-selftest.sh
           bash tools/select-ci-validation-selftest.sh
@@ -266,7 +266,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 1
           submodules: false
@@ -317,7 +317,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 1
           submodules: false
@@ -434,7 +434,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 1
           filter: blob:none
@@ -445,7 +445,7 @@ jobs:
 
       - name: Install native host libraries
         run: |
-          packages=(libmbedtls-dev libzmq3-dev lighttpd unzip)
+          packages=(bzip2 libzmq3-dev lighttpd openssl unzip)
           if ! command -v cmake >/dev/null; then
             packages+=(cmake)
           fi
@@ -457,6 +457,7 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install --no-install-recommends "${packages[@]}"
+          sh tools/setup-mbedtls.sh "$PWD/build/ci-mbedtls"
 
       - name: Run repository fixture and audit self-tests
         timeout-minutes: 10
@@ -496,6 +497,6 @@ jobs:
 
       - name: Build native Digital Factory service
         run: |
-          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
+          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug -DMBEDTLS_ROOT="$PWD/build/ci-mbedtls"
           cmake --build build/ci-dfsvc --parallel
           ctest --test-dir build/ci-dfsvc --output-on-failure

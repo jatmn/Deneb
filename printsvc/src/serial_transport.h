@@ -13,6 +13,9 @@ typedef struct {
     unsigned int baud;
     char rx_buf[DENEB_PRINTSVC_SERIAL_LINE];
     size_t rx_len;
+    char rx_pending[DENEB_PRINTSVC_SERIAL_LINE];
+    size_t rx_pending_pos;
+    size_t rx_pending_len;
 } deneb_serial_transport_t;
 
 int deneb_serial_open(deneb_serial_transport_t *transport, const char *device,

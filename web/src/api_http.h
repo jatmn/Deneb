@@ -8,11 +8,14 @@
 #define API_HTTP_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define HTTP_MAX_PATH    256
 #define HTTP_MAX_HEADERS 16
+#define HTTP_HEADER_VALUE_SIZE 256
 #define HTTP_MAX_BODY    4096
 #define HTTP_MAX_CONTENT_LENGTH (50 * 1024 * 1024)
+#define HTTP_MULTIPART_BOUNDARY_SIZE 128
 
 /* Parsed HTTP request */
 typedef struct {
@@ -21,18 +24,17 @@ typedef struct {
     char query[HTTP_MAX_PATH];         /* query string after ? */
     struct {
         char name[64];
-        char value[256];
+        char value[HTTP_HEADER_VALUE_SIZE];
     } headers[HTTP_MAX_HEADERS];
     int header_count;
     char body[HTTP_MAX_BODY];
     int body_len;
-    char auth_digest[512];             /* Authorization header value */
     char content_type[64];
     int content_length;
     /* For multipart file uploads */
     char upload_path[128];             /* temp file path if body was streamed */
     int upload_size;                   /* bytes written to upload_path */
-    char multipart_boundary[128];      /* parsed from Content-Type */
+    char multipart_boundary[HTTP_MULTIPART_BOUNDARY_SIZE]; /* parsed from Content-Type */
     int is_multipart;                  /* 1 if Content-Type is multipart/form-data */
 } http_request_t;
 
@@ -45,8 +47,8 @@ typedef struct {
     size_t body_cap;
     int keep_alive;
     int prepare_print_upload;
-    /* For SSE */
-    int is_sse;
+    /* Nonzero for an SSE response, including the initial event revision. */
+    uint64_t sse_revision;
     /* For Digest auth challenge */
     char auth_challenge[256];
 } http_response_t;
@@ -71,8 +73,8 @@ int api_http_parse(http_request_t *req, const char *raw, size_t len);
 /* Route a parsed request to the appropriate handler. */
 void api_http_route(const http_request_t *req, http_response_t *resp);
 
-/* Serialize response to raw HTTP bytes. Returns bytes written. */
-int api_http_serialize(const http_response_t *resp, char *buf, size_t cap);
+/* Serialize only the HTTP response headers. Returns bytes written or -1. */
+int api_http_serialize_headers(const http_response_t *resp, char *buf, size_t cap);
 
 /* Initialize a response with defaults. */
 void api_http_response_init(http_response_t *resp);
@@ -85,5 +87,8 @@ void api_http_set_body_str(http_response_t *resp, const char *str);
 
 /* Check if request requires auth and validate it. Returns 1 if authorized. */
 int api_http_check_auth(const http_request_t *req);
+
+/* Borrow the first Authorization header with a supported scheme, if any. */
+const char *api_http_authorization(const http_request_t *req);
 
 #endif /* API_HTTP_H */

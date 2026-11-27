@@ -63,6 +63,8 @@ if(NOT EXISTS "${LVGL_DIR}/src")
     )
 endif()
 
+set(LODEPNG_DIR "${CMAKE_SOURCE_DIR}/../common/lodepng")
+
 # LVGL v9 sources. Keep this intentionally narrow: compiling the entire LVGL
 # tree pulls in every optional backend, codec, driver, and widget even when
 # lv_conf.h disables them at preprocessor time.
@@ -79,11 +81,16 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/font/lv_font_montserrat_14.c"
     "${LVGL_DIR}/src/font/lv_font_montserrat_16.c"
     "${LVGL_DIR}/src/font/fmt_txt/*.c"
+    "${LVGL_DIR}/src/fs/lv_fs.c"
+    "${LVGL_DIR}/src/fs/lv_fs_posix.c"
+    "${LVGL_DIR}/src/image/lv_bin_decoder.c"
+    "${LVGL_DIR}/src/image/lv_image_decoder.c"
+    "${LVGL_DIR}/src/image/lv_lodepng.c"
     "${LVGL_DIR}/src/indev/lv_indev.c"
     "${LVGL_DIR}/src/indev/lv_indev_scroll.c"
     "${LVGL_DIR}/src/layouts/lv_layout.c"
     "${LVGL_DIR}/src/layouts/flex/*.c"
-    "${LVGL_DIR}/src/libs/bin_decoder/*.c"
+    "${LVGL_DIR}/src/logging/lv_log.c"
     "${LVGL_DIR}/src/misc/*.c"
     "${LVGL_DIR}/src/misc/cache/*.c"
     "${LVGL_DIR}/src/misc/cache/class/lv_cache_lru_rb.c"
@@ -103,8 +110,6 @@ set(LVGL_SOURCE_GLOBS
     "${LVGL_DIR}/src/widgets/label/*.c"
     "${LVGL_DIR}/src/widgets/slider/*.c"
     "${LVGL_DIR}/src/widgets/switch/*.c"
-    "${LVGL_DIR}/src/libs/lodepng/*.c"
-    "${LVGL_DIR}/src/libs/fsdrv/lv_fs_posix.c"
 )
 
 set(LVGL_SOURCES)
@@ -113,11 +118,20 @@ foreach(pattern IN LISTS LVGL_SOURCE_GLOBS)
     list(APPEND LVGL_SOURCES ${matched_sources})
 endforeach()
 list(REMOVE_DUPLICATES LVGL_SOURCES)
+# The LVGL adapter includes its bundled header by relative path.
+set_source_files_properties(
+    "${LVGL_DIR}/src/image/lv_lodepng.c"
+    PROPERTIES COMPILE_OPTIONS "-include;${LODEPNG_DIR}/lodepng.h"
+)
+set_source_files_properties(
+    "${LODEPNG_DIR}/lodepng.c"
+    PROPERTIES COMPILE_DEFINITIONS DENEB_LODEPNG_LVGL
+)
+
 list(REMOVE_ITEM LVGL_SOURCES
     "${LVGL_DIR}/src/core/lv_obj_id_builtin.c"
     "${LVGL_DIR}/src/core/lv_obj_property.c"
     "${LVGL_DIR}/src/draw/lv_draw_3d.c"
-    "${LVGL_DIR}/src/draw/lv_draw_arc.c"
     "${LVGL_DIR}/src/draw/lv_draw_triangle.c"
     "${LVGL_DIR}/src/draw/lv_draw_vector.c"
 )
@@ -218,21 +232,23 @@ set(DENEB_SOURCES
     ${DRIVER_SOURCES}
 )
 
-add_executable(deneb-ui ${DENEB_SOURCES} ${LVGL_SOURCES})
-
-target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING)
-
-target_include_directories(deneb-ui PRIVATE
+set(DENEB_UI_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/config       # lv_conf.h
     ${CMAKE_SOURCE_DIR}/src          # project headers
     ${CMAKE_SOURCE_DIR}/../common/print
     ${LVGL_DIR}/src                  # LVGL internal headers
-    ${LVGL_DIR}/src/libs/lodepng     # shared UFP thumbnail decoder
+    ${LODEPNG_DIR}
     ${LVGL_DIR}/include              # LVGL v9 public headers
     ${LVGL_DIR}                      # lvgl.h
 )
 
-target_link_libraries(deneb-ui PRIVATE m pthread)
+add_library(deneb-lvgl OBJECT ${LVGL_SOURCES} "${LODEPNG_DIR}/lodepng.c")
+target_compile_definitions(deneb-lvgl PUBLIC LV_DISABLE_API_MAPPING LODEPNG_NO_COMPILE_ENCODER)
+target_include_directories(deneb-lvgl PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+
+add_executable(deneb-ui ${DENEB_SOURCES})
+target_include_directories(deneb-ui PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+target_link_libraries(deneb-ui PRIVATE deneb-lvgl m pthread)
 
 if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     enable_testing()
@@ -251,6 +267,72 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_link_options(deneb-touchscreen-motion-tests PRIVATE -Wl,--gc-sections)
     target_link_libraries(deneb-touchscreen-motion-tests PRIVATE m)
     add_test(NAME deneb-touchscreen-motion-tests COMMAND deneb-touchscreen-motion-tests)
+
+    add_executable(deneb-ui-loop-tests tests/test_main_loop.c)
+    target_include_directories(deneb-ui-loop-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-ui,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(deneb-ui-loop-tests PRIVATE LV_DISABLE_API_MAPPING)
+    target_compile_options(deneb-ui-loop-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-ui-loop-tests PRIVATE -Wl,--gc-sections)
+    add_test(NAME deneb-ui-loop-tests COMMAND deneb-ui-loop-tests)
+
+    add_executable(deneb-locale-tests tests/test_locale.c src/locale.c)
+    target_include_directories(deneb-locale-tests PRIVATE src)
+    target_compile_definitions(deneb-locale-tests PRIVATE LOCALE_DIR=".")
+    add_test(NAME deneb-locale-tests
+        COMMAND deneb-locale-tests "${CMAKE_CURRENT_SOURCE_DIR}/locales")
+
+    add_executable(deneb-network-locale-tests
+        tests/test_network_locale.c src/locale.c src/wifi_setup.c src/eth_setup.c
+        src/net_utils.c ../common/print/print_string.c)
+    target_include_directories(deneb-network-locale-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_compile_definitions(deneb-network-locale-tests PRIVATE LV_DISABLE_API_MAPPING LOCALE_DIR=".")
+    target_compile_options(deneb-network-locale-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-network-locale-tests PRIVATE -Wl,--gc-sections
+        -Wl,--wrap=system -Wl,--wrap=net_find_usb_config -Wl,--wrap=net_read_command
+        -Wl,--wrap=locale_get -Wl,--wrap=locale_format_s -Wl,--wrap=locale_format_ss)
+    target_link_libraries(deneb-network-locale-tests PRIVATE pthread)
+    add_test(NAME deneb-network-locale-tests COMMAND deneb-network-locale-tests)
+    set_tests_properties(deneb-network-locale-tests PROPERTIES TIMEOUT 10)
+
+    add_executable(deneb-digital-factory-status-tests
+        tests/test_digital_factory_status.c src/locale.c)
+    target_include_directories(deneb-digital-factory-status-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-digital-factory-status-tests PRIVATE deneb-lvgl m pthread)
+    target_link_options(deneb-digital-factory-status-tests PRIVATE -Wl,--wrap=system)
+    add_test(NAME deneb-digital-factory-status-tests COMMAND deneb-digital-factory-status-tests)
+    set_tests_properties(deneb-digital-factory-status-tests PROPERTIES TIMEOUT 10)
+
+    add_executable(deneb-lvgl-png-tests tests/test_lodepng.c)
+    target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
+
+    add_executable(deneb-framebuffer-tests tests/test_framebuffer.c src/drivers/fb_driver.c)
+    target_include_directories(deneb-framebuffer-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-framebuffer-tests PRIVATE deneb-lvgl m pthread)
+    target_link_options(deneb-framebuffer-tests PRIVATE
+        -Wl,--wrap=open -Wl,--wrap=open64 -Wl,--wrap=ioctl
+        -Wl,--wrap=mmap -Wl,--wrap=mmap64 -Wl,--wrap=msync -Wl,--wrap=munmap -Wl,--wrap=close)
+    add_test(NAME deneb-framebuffer-tests COMMAND deneb-framebuffer-tests)
+
+    add_executable(deneb-status-screen-tests
+        tests/test_status_screen.c
+        src/app_fonts.c
+        src/screen_mgr.c
+        src/assets/deneb_logo_116.c
+        src/assets/ic_nozzle_16.c
+        src/assets/ic_bed_16.c
+        src/fonts/deneb_font_i18n_12.c
+        src/fonts/deneb_font_i18n_14.c
+        src/fonts/deneb_font_i18n_16.c
+        ../common/print/print_state_rules.c
+        ../common/print/print_string.c)
+    target_include_directories(deneb-status-screen-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_compile_definitions(deneb-status-screen-tests PRIVATE
+        DENEB_ACTIVE_THUMB_PATH="${CMAKE_CURRENT_BINARY_DIR}/status-test-thumbnail.rgb565")
+    target_link_libraries(deneb-status-screen-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-status-screen-tests COMMAND deneb-status-screen-tests)
 endif()
 
 # Link ZMQ when not using stub

@@ -5,6 +5,16 @@ Deneb releases. This is not legal advice.
 
 ## Runtime Components
 
+### Static MIPS toolchain runtimes
+
+The verified OpenWrt toolchain build includes these runtime components:
+
+- musl 1.2.5 with OpenWrt backports is linked into the native executables. The package includes the upstream MIT copyright and notices in `MUSL_COPYRIGHT.txt`. The OpenWrt build includes its small stack protector support archive.
+- GCC 14.3.0 `libgcc` (including its unwinder) and `libstdc++` code is statically linked where used. The package includes GPL-3.0 and the GCC Runtime Library Exception 3.1 in `GCC_COPYING3.txt` and `GCC_COPYING.RUNTIME.txt`.
+
+The compiler distribution and corresponding source are pinned in
+[Source Provenance](docs/SOURCE_PROVENANCE.md#mips-cross-toolchain).
+
 ### Cura plugin and material identifiers
 
 - The optional Cura plugin is LGPL-3.0-or-later and integrates with Cura without copying Cura source.
@@ -12,10 +22,10 @@ Deneb releases. This is not legal advice.
 
 See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 
-### mbedTLS and lighttpd
+### Mbed TLS and lighttpd
 
-- mbedTLS 2.28.8 is statically linked into deneb-dfsvc under its Apache-2.0 OR GPL-2.0-or-later choice. The upstream LICENSE is packaged as MBEDTLS_LICENSE.txt.
-- lighttpd 1.4.76 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
+- Mbed TLS 4.1.2 and its bundled TF-PSA-Crypto 1.1.2 are statically linked into `deneb-dfsvc` under their Apache-2.0 OR GPL-2.0-or-later choice. Their shared license texts are packaged as `MBEDTLS_LICENSE.txt`. The [Mbed TLS release archive](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-4.1.2) includes the corresponding source for both components.
+- lighttpd 1.4.85 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
 
 ### Pillow bootstrap host tool
 
@@ -76,19 +86,28 @@ under `ui/lib/lvgl/src/stdlib/builtin`:
   `ui/lib/lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt`
 - `tlsf`, BSD-style license, notice in
   `ui/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt`
-- `LodePNG` 20230410, copyright 2005-2023 Lode Vandevenne, zlib-style
-  license, notice retained in `ui/lib/lvgl/src/libs/lodepng/lodepng.c` and
-  `lodepng.h`
 
 These notices are retained in the LVGL submodule and included in release
 packages.
 
+### LodePNG
+
+- Version `20261102`, [upstream source at 7b2893e](https://github.com/lvandeve/lodepng/tree/7b2893e35891c0c85bee5595caafaf3c2044b409)
+- Copyright (c) 2005-2026 Lode Vandevenne
+- Zlib license retained in `common/lodepng/lodepng.c` and `lodepng.h` and
+  included in release packages as `LODEPNG_LICENSE.txt`
+
+Deneb uses this snapshot in all four native executables that consume LodePNG.
+The touchscreen build retains LVGL's allocation, filesystem, and draw-buffer
+integration. The print service, web API, and Digital Factory service build the
+same source with only the inflate/zlib decoder enabled.
+
 ## Package Inventory Reconciliation
 
 Audited 2026-07-22. Current `.deneb` packages redistribute Deneb's MPL-2.0
-components, LVGL and its selected bundled helpers (including LodePNG), libzmq
-4.3.5, mbedTLS 2.28.8, and lighttpd 1.4.76. The Cura plugin is distributed
-separately under LGPL-3.0-or-later; the material identifier dataset is retained
+components, LVGL and its selected bundled helpers, LodePNG 20261102, libzmq
+4.3.5, Mbed TLS 4.1.2 with TF-PSA-Crypto 1.1.2, and lighttpd 1.4.85. The Cura
+plugin is distributed separately under LGPL-3.0-or-later; the material identifier dataset is retained
 in source form under CC0-1.0. The stock legal screen was used only as a
 comparison point: this notice inventory is derived from the actual Deneb
 payload, not copied from stock notices.
@@ -98,8 +117,8 @@ payload, not copied from stock notices.
 These components are used to generate or render the public docs site. They are
 not installed on the printer.
 
-- Hugo extended 0.166.0, Apache-2.0, https://github.com/gohugoio/hugo
-- Hextra, MIT, https://github.com/imfing/hextra (Hugo module)
+- Hugo 0.170.1, Apache-2.0, https://github.com/gohugoio/hugo
+- Hextra v0.13.0, MIT, https://github.com/imfing/hextra (Hugo module)
 - FlexSearch 0.8.212, Apache-2.0, https://github.com/nextapps-de/flexsearch
   (fetched at build; pin in `website/vendor-pins/flexsearch.bundle.min.js.sha256`)
 - Space Grotesk, OFL-1.1, loaded from https://fonts.bunny.net

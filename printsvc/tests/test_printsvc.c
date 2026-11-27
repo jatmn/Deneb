@@ -23,6 +23,8 @@
 #include "job_lifecycle.h"
 #include "job_streamer.h"
 #include "background_action.h"
+#include <sys/ioctl.h>
+#include <sys/inotify.h>
 #include <sys/socket.h>
 #include "macro_control.h"
 #include "macro_registry.h"
@@ -1328,12 +1330,19 @@ static void test_gcode_stream_rewrite_policy(void)
     FILE *f = fopen(path, "wb");
 
     assert(f != NULL);
-    fputs("M117 printing\n", f);
+    fputs(";LAYER:0\n;TIME_ELAPSED:12.5\nM117 printing\nM190 S55\n", f);
     fputs("M109 S205\n", f);
     fputs("G280 S1\n", f);
     fclose(f);
 
     assert(deneb_gcode_stream_open(&stream, path) == 0);
+    assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
+    assert(strcmp(line, "M140 S55") == 0);
+    assert(deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
+                                        &target) == 1);
+    assert(wait_bed && !wait_nozzle && target == 55.0f);
+    assert(stream.last_layer_zero);
+    assert(stream.last_time_elapsed_valid && stream.last_time_elapsed == 12.5f);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
     assert(strcmp(line, "M104 S205") == 0);
     assert(deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
@@ -1341,6 +1350,7 @@ static void test_gcode_stream_rewrite_policy(void)
     assert(!wait_bed);
     assert(wait_nozzle);
     assert(target == 205.0f);
+    assert(!stream.last_layer_zero && !stream.last_time_elapsed_valid);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
     assert(strcmp(line, "G92 E-16.5") == 0);
     assert(deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
@@ -1352,19 +1362,40 @@ static void test_gcode_stream_rewrite_policy(void)
 
     f = fopen(path, "wb");
     assert(f != NULL);
-    fputs("G280\n", f);
+    fputs("G280\n \tG1 X2 ; comment\nG1 X", f);
+    for (size_t i = 0; i < DENEB_PRINTSVC_MAX_GCODE_LINE; i++)
+        fputc('2', f);
+    fputs("\nG280\n", f);
     fclose(f);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
+    static const char *const prime[] = {
+        "G0 Z2 F9000", "G10 S-6.5 F1500", "G10 S0 F300", "G92 E0",
+        "G1 E7.65 F75", "G1 E8.5 Z6 F150", "G0 Z6.1 F1.2", "G92 E0",
+        "G1 E-6.5 F600", "G0 Z6.2 F2.4", "G91", "G0 Y10 F1.2e+03",
+        "G90", "G0 Z2 F1.2e+03", "G0 F9000"
+    };
+    for (size_t i = 0; i < sizeof(prime) / sizeof(prime[0]); i++) {
+        assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
+        assert(strcmp(line, prime[i]) == 0);
+        assert(stream.line_number == 1);
+    }
+    assert(stream.pending.count == 0);
+    assert(stream.pending_index == 0);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
-    assert(strcmp(line, "G0 Z2 F9000") == 0);
+    assert(strcmp(line, "G1 X2") == 0);
+    assert(stream.line_number == 2);
+    char long_line[DENEB_PRINTSVC_MAX_GCODE_LINE + 16];
+    assert(deneb_gcode_stream_next(&stream, long_line, sizeof(long_line)) == 1);
+    assert(strlen(long_line) == DENEB_PRINTSVC_MAX_GCODE_LINE - 1);
+    assert(strncmp(long_line, "G1 X", 4) == 0);
+    assert(stream.line_number == 3);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
-    assert(strcmp(line, "G10 S-6.5 F1500") == 0);
-    assert(stream.line_number == 1);
+    assert(strcmp(line, prime[0]) == 0);
     deneb_gcode_stream_close(&stream);
     assert(stream.fd == -1);
     assert(stream.path[0] == '\0');
-    assert(stream.line_number == 1);
-    assert(stream.pending_count == 0);
+    assert(stream.line_number == 4);
+    assert(stream.pending.count == 0);
     assert(stream.pending_index == 0);
     assert(stream.read_len == 0);
     assert(stream.read_pos == 0);
@@ -1625,6 +1656,7 @@ static void test_serial_transport_buffers_partial_lines(void)
     deneb_serial_transport_t serial;
     int pipefd[2];
     char line[DENEB_PRINTSVC_SERIAL_LINE];
+    static const char tail[] = "A6\r\n\nT:20\ntrailing";
 
     memset(&serial, 0, sizeof(serial));
     serial.fd = -1;
@@ -1635,12 +1667,55 @@ static void test_serial_transport_buffers_partial_lines(void)
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
     assert(write(pipefd[1], "05", 2) == 2);
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
-    assert(write(pipefd[1], "A6\n", 3) == 3);
+    assert(write(pipefd[1], tail, sizeof(tail) - 1) == sizeof(tail) - 1);
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 7);
     assert(strcmp(line, "o0005A6") == 0);
-    close(pipefd[0]);
+    int queued = -1;
+    assert(ioctl(pipefd[0], FIONREAD, &queued) == 0);
+    assert(queued == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    assert(line[0] == '\0');
+    assert(deneb_serial_read_line(&serial, line, 3) == 2);
+    assert(strcmp(line, "T:") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    assert(write(pipefd[1], "!\n", 2) == 2);
     close(pipefd[1]);
-    serial.fd = -1;
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 9);
+    assert(strcmp(line, "trailing!") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    assert(line[0] == '\0');
+    deneb_serial_close(&serial);
+}
+
+static void test_serial_transport_preserves_replies_after_long_line(void)
+{
+    deneb_serial_transport_t serial = { .fd = -1 };
+    int pipefd[2];
+    char line[DENEB_PRINTSVC_SERIAL_LINE];
+    static const char suffix[] = "tail\nok\n";
+    char input[2 * DENEB_PRINTSVC_SERIAL_LINE + sizeof(suffix)];
+
+    memset(input, 'a', sizeof(input));
+    input[DENEB_PRINTSVC_SERIAL_LINE - 1] = '\n';
+    input[DENEB_PRINTSVC_SERIAL_LINE] = '\r';
+    memcpy(input + 2 * DENEB_PRINTSVC_SERIAL_LINE + 1,
+           suffix, sizeof(suffix) - 1);
+
+    assert(pipe(pipefd) == 0);
+    assert(write(pipefd[1], input, sizeof(input)) == sizeof(input));
+    close(pipefd[1]);
+    serial.fd = pipefd[0];
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == sizeof(line) - 1);
+    assert(memcmp(line, input, sizeof(line) - 1) == 0);
+    assert(line[sizeof(line) - 1] == '\0');
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == -1);
+    assert(line[0] == '\0');
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 4);
+    assert(strcmp(line, "tail") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 2);
+    assert(strcmp(line, "ok") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    deneb_serial_close(&serial);
 }
 
 static void test_serial_transport_retries_nonblocking_writes(void)
@@ -3011,6 +3086,70 @@ static void test_status_payload_filename_resolution(void)
     assert(retained[0] == '\0');
 }
 
+static void test_status_payload_pending_file_opens(void)
+{
+    deneb_status_filename_context_t curr = {0};
+    deneb_status_filename_context_t prev = {0};
+    deneb_pending_job_t pending;
+    struct inotify_event event;
+    char retained[128] = "";
+    char out[128];
+
+    deneb_pending_job_init(&pending, "/home/3D/first.gcode");
+    pending.tracker = 42;
+    pending.material_change_required = 1;
+    assert(deneb_pending_job_write_default(&pending) == 0);
+
+    int monitor = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    assert(monitor >= 0);
+    /* The close separates successive opens so inotify cannot coalesce them. */
+    assert(inotify_add_watch(monitor, DENEB_PENDING_JOB_PATH,
+                             IN_OPEN | IN_CLOSE_NOWRITE) >= 0);
+
+    deneb_status_payload_resolve_filename_value(
+        "/home/3D/printing.gcode", 1, &curr, &prev,
+        retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "printing.gcode") == 0);
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
+
+    retained[0] = '\0';
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(out[0] == '\0');
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
+
+    curr.req = DENEB_PRINT_REQ_PREPARE;
+    prev.filename = "previous.gcode";
+    snprintf(retained, sizeof(retained), "%s", "retained.gcode");
+    deneb_status_payload_resolve_filename_value(
+        DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD, 1, &curr, &prev,
+        retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "first.gcode") == 0);
+    assert(strcmp(retained, "retained.gcode") == 0);
+    assert(read(monitor, &event, sizeof(event)) == (ssize_t)sizeof(event));
+    assert(event.mask == IN_OPEN);
+    assert(read(monitor, &event, sizeof(event)) == (ssize_t)sizeof(event));
+    assert(event.mask == IN_CLOSE_NOWRITE);
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
+    assert(close(monitor) == 0);
+
+    deneb_pending_job_init(&pending, "/home/3D/replacement.gcode");
+    pending.tracker = 43;
+    assert(deneb_pending_job_write_default(&pending) == 0);
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "replacement.gcode") == 0);
+    assert(deneb_pending_job_file_clear_default() == 0);
+
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "retained.gcode") == 0);
+    retained[0] = '\0';
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "previous.gcode") == 0);
+}
+
 static void test_gcode_command_helpers(void)
 {
     char value[96];
@@ -3638,6 +3777,27 @@ static void test_status_payload_helpers(void)
     assert(payload.has_native_stop_allowed);
     assert(!payload.native_stop_allowed);
     assert(payload.is_printing);
+
+    /* A transport span need not be terminated. Later bytes are another frame. */
+    const char frames[] = "{\"unknown\":{},\"file\":\"none\",\"name\":\"cube\\\"one.gcode\","
+                          "\"X\":\"2.5\",\"X\":12,\"Ttot\":\"200\",\"Tleft\":bad}"
+                          "\"denebActive\":true";
+    size_t json_len = sizeof(frames) - sizeof("\"denebActive\":true");
+    assert(deneb_status_payload_parse_span(frames, json_len, &payload) == 0);
+    assert(strcmp(payload.file, "cube\"one.gcode") == 0);
+    assert(payload.pos_x == 2.5f);
+    assert(payload.time_total == 200 && payload.time_left == 0);
+    assert(!payload.has_native_active && !payload.has_error);
+
+    const char embedded_nul[] = "{\"X\":7}\0{\"denebActive\":true}";
+    assert(deneb_status_payload_parse_span(embedded_nul, sizeof(embedded_nul) - 1,
+                                           &payload) == 0);
+    assert(payload.pos_x == 7.0f && !payload.has_native_active);
+
+    const char truncated[] = {'"', 'X', '"', ':', '"', '7', '\\'};
+    assert(deneb_status_payload_parse_span(truncated, sizeof(truncated),
+                                           &payload) == 0);
+    assert(payload.pos_x == 0.0f);
 }
 
 static void test_status_state_helpers(void)
@@ -4617,6 +4777,87 @@ static void test_material_catalog_helpers(void)
     remove(material_path);
 }
 
+static void test_material_catalog_scan_boundaries(void)
+{
+    const char *path = "/tmp/deneb-material-scan.xml";
+    const char *guid = "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9";
+    char parsed_guid[64];
+    char fields[96];
+    int version;
+    FILE *f = fopen(path, "wb");
+
+    assert(f != NULL);
+    /* The version opener and closer straddle separate read boundaries. */
+    fprintf(f, "%*s<version>\t+7 %*s</version><GUID>\n%*s%s\t</GUID>",
+            508, "", 502, "", 620, "", guid);
+    assert(fclose(f) == 0);
+    assert(deneb_material_catalog_parse_file(path, parsed_guid,
+                                            sizeof(parsed_guid), &version) == 0);
+    assert(strcmp(parsed_guid, guid) == 0 && version == 7);
+
+    int fields_len = snprintf(fields, sizeof(fields), "<GUID>%s</GUID>"
+                              "<version>8</version>", guid);
+    assert(fields_len > 0 && (size_t)fields_len < sizeof(fields));
+
+    /* A pipe exposes how much input the parser consumes beyond the metadata. */
+    int material_pipe[2];
+    char material[4096];
+    char pipe_path[64];
+    const char suffix[] = "</description></material>";
+    int prefix_len = snprintf(material, sizeof(material),
+                              "<material>%s<description>", fields);
+    assert(prefix_len > 0 && (size_t)prefix_len < 512);
+    memset(material + prefix_len, 'x', sizeof(material) - (size_t)prefix_len);
+    memcpy(material + sizeof(material) - (sizeof(suffix) - 1),
+           suffix, sizeof(suffix) - 1);
+    assert(pipe(material_pipe) == 0);
+    assert(write(material_pipe[1], material, sizeof(material)) == (ssize_t)sizeof(material));
+    assert(close(material_pipe[1]) == 0);
+    snprintf(pipe_path, sizeof(pipe_path), "/proc/self/fd/%d", material_pipe[0]);
+    assert(deneb_material_catalog_parse_file(pipe_path, parsed_guid,
+                                            sizeof(parsed_guid), &version) == 0);
+    assert(strcmp(parsed_guid, guid) == 0 && version == 8);
+    assert(read(material_pipe[0], material, sizeof(material)) == (ssize_t)sizeof(material) - 512);
+    assert(close(material_pipe[0]) == 0);
+
+    for (int past_limit = 0; past_limit <= 1; ++past_limit) {
+        f = fopen(path, "wb");
+        assert(f != NULL);
+        fprintf(f, "%*s%s", 128 * 1024 - fields_len + past_limit, "", fields);
+        assert(fclose(f) == 0);
+        int result = deneb_material_catalog_parse_file(path, parsed_guid,
+                                                       sizeof(parsed_guid),
+                                                       &version);
+        if (past_limit) {
+            assert(result != 0);
+        } else {
+            assert(result == 0);
+            assert(strcmp(parsed_guid, guid) == 0 && version == 8);
+        }
+    }
+
+    const char *invalid_suffixes[] = {
+        "",
+        "<version>7</versio",
+        "<version> </version><version>9</version>",
+    };
+    for (size_t i = 0; i < sizeof(invalid_suffixes) / sizeof(*invalid_suffixes); ++i) {
+        f = fopen(path, "wb");
+        assert(f != NULL);
+        fprintf(f, "<GUID>%s</GUID>%s", guid, invalid_suffixes[i]);
+        assert(fclose(f) == 0);
+        assert(deneb_material_catalog_parse_file(path, parsed_guid,
+                                                sizeof(parsed_guid), &version) != 0);
+    }
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fprintf(f, "<GUID>%s</GUID>%c<version>7</version>", guid, 0);
+    assert(fclose(f) == 0);
+    assert(deneb_material_catalog_parse_file(path, parsed_guid,
+                                            sizeof(parsed_guid), &version) != 0);
+    assert(remove(path) == 0);
+}
+
 static void test_macro_safety(void)
 {
     char path[256];
@@ -5277,7 +5518,7 @@ static void test_repeated_jobs_release_terminal_state(void)
         assert(svc.job_stream.path[0] == '\0');
         assert(svc.job_stream.read_len == 0);
         assert(svc.job_stream.read_pos == 0);
-        assert(svc.job_stream.pending_count == 0);
+        assert(svc.job_stream.pending.count == 0);
         assert(svc.job_stream.pending_index == 0);
         assert(svc.job_stream.line_number == 0);
         assert(!flow_has_retained_slot_text(&svc.flow));
@@ -7302,6 +7543,7 @@ int main(int argc, char **argv)
     test_native_reply_acceptance();
     test_motion_observer_policy();
     test_serial_transport_buffers_partial_lines();
+    test_serial_transport_preserves_replies_after_long_line();
     test_serial_transport_retries_nonblocking_writes();
     test_motion_runtime_policy();
     test_macro_runner_policy();
@@ -7311,6 +7553,7 @@ int main(int argc, char **argv)
     test_printer_status_response();
     test_json_field_helpers();
     test_status_payload_filename_resolution();
+    test_status_payload_pending_file_opens();
     test_gcode_command_helpers();
     test_frame_light_helpers();
     test_parse_int_helpers();
@@ -7331,6 +7574,7 @@ int main(int argc, char **argv)
     test_pending_job_registration_policy();
     test_print_job_file_metadata();
     test_material_catalog_helpers();
+    test_material_catalog_scan_boundaries();
     test_status_frame();
     test_crc_and_packet();
     test_macro_safety();

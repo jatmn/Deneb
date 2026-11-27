@@ -188,9 +188,7 @@ int api_http_parse(http_request_t *req, const char *raw, size_t len)
             req->headers[req->header_count].value[val_len] = '\0';
 
             /* Extract specific headers */
-            if (strcasecmp(req->headers[req->header_count].name, "Authorization") == 0) {
-                strncpy(req->auth_digest, req->headers[req->header_count].value, sizeof(req->auth_digest) - 1);
-            } else if (strcasecmp(req->headers[req->header_count].name, "Content-Type") == 0) {
+            if (strcasecmp(req->headers[req->header_count].name, "Content-Type") == 0) {
                 strncpy(req->content_type, req->headers[req->header_count].value, sizeof(req->content_type) - 1);
                 /* Parse multipart boundary */
                 const char *bp = strstr(req->headers[req->header_count].value, "boundary=");
@@ -284,7 +282,7 @@ void api_http_route(const http_request_t *req, http_response_t *resp)
     handle_not_found(req, resp);
 }
 
-int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
+int api_http_serialize_headers(const http_response_t *resp, char *buf, size_t cap)
 {
     const char *status_text;
     switch (resp->status_code) {
@@ -303,12 +301,11 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
         default: status_text = "OK"; break;
     }
 
-    /* Clamp Content-Length to what actually fits in the buffer */
-    size_t max_body = cap > 512 ? cap - 512 : 0;  /* reserve space for headers */
-    size_t actual_body_len = resp->body_len < max_body ? resp->body_len : max_body;
+    const char *challenge_prefix = resp->auth_challenge[0] ? "WWW-Authenticate: " : "";
+    const char *challenge_end = resp->auth_challenge[0] ? "\r\n" : "";
 
     int n;
-    if (resp->is_sse) {
+    if (resp->sse_revision) {
         n = snprintf(buf, cap,
             "HTTP/1.1 %d %s\r\n"
             "Content-Type: %s\r\n"
@@ -318,12 +315,11 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
             "Access-Control-Allow-Origin: *\r\n"
             "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
             "Access-Control-Allow-Headers: Authorization, Content-Type\r\n"
-            "%s%s"
+            "%s%s%s"
             "\r\n",
             resp->status_code, status_text,
             resp->content_type[0] ? resp->content_type : "text/event-stream",
-            resp->auth_challenge[0] ? "WWW-Authenticate: " : "",
-            resp->auth_challenge);
+            challenge_prefix, resp->auth_challenge, challenge_end);
     } else {
         n = snprintf(buf, cap,
         "HTTP/1.1 %d %s\r\n"
@@ -335,23 +331,16 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
         "Access-Control-Allow-Origin: *\r\n"
         "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
         "Access-Control-Allow-Headers: Authorization, Content-Type\r\n"
-        "%s%s"
+        "%s%s%s"
         "\r\n",
         resp->status_code, status_text,
         resp->content_type[0] ? resp->content_type : "application/json",
-        actual_body_len,
+        resp->body_len,
         resp->keep_alive ? "keep-alive" : "close",
-        resp->auth_challenge[0] ? "WWW-Authenticate: " : "",
-        resp->auth_challenge);
+        challenge_prefix, resp->auth_challenge, challenge_end);
     }
 
-    if (n < 0 || (size_t)n >= cap) n = (int)cap - 1;
-    if (resp->body && actual_body_len > 0) {
-        memcpy(buf + n, resp->body, actual_body_len);
-        n += (int)actual_body_len;
-    }
-
-    return n;
+    return n < 0 || (size_t)n >= cap ? -1 : n;
 }
 
 void api_http_response_init(http_response_t *resp)
@@ -379,20 +368,27 @@ void api_http_set_body_str(http_response_t *resp, const char *str)
     api_http_set_body(resp, str, strlen(str));
 }
 
+const char *api_http_authorization(const http_request_t *req)
+{
+    for (int i = 0; i < req->header_count; i++) {
+        if (strcasecmp(req->headers[i].name, "Authorization") != 0)
+            continue;
+        const char *value = req->headers[i].value;
+        if (strncasecmp(value, "Bearer ", 7) == 0 ||
+            strncasecmp(value, "Digest ", 7) == 0)
+            return value;
+    }
+    return NULL;
+}
+
 int api_http_check_auth(const http_request_t *req)
 {
-    /* Check Bearer token (web UI auth) */
-    for (int i = 0; i < req->header_count; i++) {
-        if (strcasecmp(req->headers[i].name, "Authorization") == 0) {
-            if (strncasecmp(req->headers[i].value, "Bearer ", 7) == 0) {
-                return api_auth_validate_token(req->headers[i].value + 7);
-            }
-            if (strncasecmp(req->headers[i].value, "Digest ", 7) == 0) {
-                return api_auth_validate_digest(req->headers[i].value + 7, req->method, req->path);
-            }
-        }
+    const char *value = api_http_authorization(req);
+    if (value) {
+        if (strncasecmp(value, "Bearer ", 7) == 0)
+            return api_auth_validate_token(value + 7);
+        return api_auth_validate_digest(value + 7, req->method, req->path);
     }
-    /* Check if auth is disabled */
     return api_auth_is_disabled();
 }
 

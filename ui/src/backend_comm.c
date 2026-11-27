@@ -59,23 +59,15 @@ int backend_init(void) {
 
 void backend_poll(void) { /* no-op in stub */ }
 const printer_state_t *backend_get_state(void) { return &state; }
-int backend_get_print_display_name(char *out, size_t out_sz)
+deneb_print_context_flags_t backend_get_print_display_context(
+    char *display_name, size_t display_name_sz)
 {
-    if (!out || out_sz == 0)
-        return -1;
-    out[0] = '\0';
-    return deneb_pending_job_file_display_value(state.filename, out, out_sz);
-}
-int backend_has_print_name(const char *display_name)
-{
-    return deneb_print_file_is_candidate(display_name) ||
-           deneb_print_file_is_candidate(state.filename);
+    deneb_pending_job_file_display_value(state.filename, display_name, display_name_sz);
+    return (deneb_print_context_flags_t){0};
 }
 int backend_has_active_print_context(void) { return 0; }
-int backend_has_preparing_print_context(void) { return 0; }
 int backend_has_stoppable_print_context(void) { return 0; }
 int backend_has_abort_print_context(void) { return 0; }
-void backend_clear_print_display_context_if_idle(void) {}
 deneb_print_backend_t backend_get_print_backend(void) { return backend_route.backend; }
 const char *backend_get_print_backend_name(void) { return deneb_print_backend_name(backend_route.backend); }
 const char *backend_get_print_backend_status_url(void) { return backend_route.status_url; }
@@ -268,7 +260,7 @@ static void log_status_transition(const printer_state_t *curr)
 /**
  * Parse a status JSON payload and update the cached state.
  */
-static void parse_status(const char *json)
+static void parse_status(const char *json, size_t json_len)
 {
     printer_state_t prev = state;
     struct timespec ts;
@@ -276,10 +268,10 @@ static void parse_status(const char *json)
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
     now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-    if (deneb_status_state_apply_json(&state, &prev, json,
-                                      retained_print_filename,
-                                      sizeof(retained_print_filename),
-                                      &stop_guard, now_ms) != 0)
+    if (deneb_status_state_apply_json_span(&state, &prev, json, json_len,
+                                           retained_print_filename,
+                                           sizeof(retained_print_filename),
+                                           &stop_guard, now_ms) != 0)
         return;
 
     log_status_transition(&state);
@@ -351,17 +343,8 @@ void backend_poll(void)
         const char *data = (const char *)zmq_msg_data(&msg);
         size_t len = zmq_msg_size(&msg);
 
-        if (len > 6 && memcmp(data, "10001<", 6) == 0) {
-            /* Extract JSON (skip "10001<" prefix, strip trailing "}" if needed) */
-            size_t json_len = len - 6;
-            char *json_buf = malloc(json_len + 1);
-            if (json_buf) {
-                memcpy(json_buf, data + 6, json_len);
-                json_buf[json_len] = '\0';
-                parse_status(json_buf);
-                free(json_buf);
-            }
-        }
+        if (len > 6 && memcmp(data, "10001<", 6) == 0)
+            parse_status(data + 6, len - 6);
 
         zmq_msg_close(&msg);
     }
@@ -372,16 +355,15 @@ const printer_state_t *backend_get_state(void)
     return &state;
 }
 
-int backend_get_print_display_name(char *out, size_t out_sz)
+static void get_print_display_name(char *out, size_t out_sz)
 {
     deneb_status_filename_context_t curr;
     deneb_status_filename_context_t prev;
     const printer_state_t *prev_state;
 
     if (!out || out_sz == 0)
-        return -1;
+        return;
 
-    out[0] = '\0';
     prev_state = had_previous_status ? &previous_state : &state;
     curr = deneb_status_state_filename_context(&state);
     prev = deneb_status_state_filename_context(prev_state);
@@ -391,78 +373,59 @@ int backend_get_print_display_name(char *out, size_t out_sz)
         state.filename[0] && strcmp(state.filename, DENEB_PRINT_NONE_VALUE) != 0,
         &curr, &prev, retained_print_filename,
         sizeof(retained_print_filename), out, out_sz);
-    return out[0] ? 0 : -1;
 }
 
-int backend_has_print_name(const char *display_name)
+static deneb_print_context_flags_t get_print_display_context(
+    char *display_name, size_t display_name_sz, bool clear_if_idle)
 {
-    return deneb_status_state_has_print_name(&state, display_name);
+    int has_print_name;
+    deneb_print_context_flags_t flags;
+
+    get_print_display_name(display_name, display_name_sz);
+    has_print_name = deneb_status_state_has_print_name(&state, display_name);
+    flags = deneb_status_state_context_flags(&state, has_print_name);
+    if (state.has_native_active)
+        flags.has_active_context = state.native_active;
+    if (state.has_native_stop_allowed)
+        flags.has_stoppable_context = state.native_stop_allowed;
+
+    if (clear_if_idle && !flags.has_active_context && !has_print_name &&
+        state.time_total <= 0 && state.time_left <= 0 &&
+        state.bed_temp_set <= 0.0f && state.nozzle_temp_set <= 0.0f)
+        retained_print_filename[0] = '\0';
+    return flags;
+}
+
+deneb_print_context_flags_t backend_get_print_display_context(
+    char *display_name, size_t display_name_sz)
+{
+    return get_print_display_context(display_name, display_name_sz, true);
 }
 
 int backend_has_active_print_context(void)
 {
     char display_name[128];
-    int has_print_name;
-    deneb_print_context_flags_t flags;
 
     if (state.has_native_active)
         return state.native_active;
-
-    backend_get_print_display_name(display_name, sizeof(display_name));
-    has_print_name = deneb_status_state_has_print_name(&state, display_name);
-    flags = deneb_status_state_context_flags(&state, has_print_name);
-    return flags.has_active_context;
-}
-
-int backend_has_preparing_print_context(void)
-{
-    char display_name[128];
-    int has_print_name;
-    deneb_print_context_flags_t flags;
-
-    backend_get_print_display_name(display_name, sizeof(display_name));
-    has_print_name = deneb_status_state_has_print_name(&state, display_name);
-    flags = deneb_status_state_context_flags(&state, has_print_name);
-    return flags.has_preparing_context;
+    return get_print_display_context(display_name, sizeof(display_name), false)
+        .has_active_context;
 }
 
 int backend_has_stoppable_print_context(void)
 {
     char display_name[128];
-    int has_print_name;
-    deneb_print_context_flags_t flags;
 
     if (state.has_native_stop_allowed)
         return state.native_stop_allowed;
-
-    backend_get_print_display_name(display_name, sizeof(display_name));
-    has_print_name = deneb_status_state_has_print_name(&state, display_name);
-    flags = deneb_status_state_context_flags(&state, has_print_name);
-    return flags.has_stoppable_context;
+    return get_print_display_context(display_name, sizeof(display_name), false)
+        .has_stoppable_context;
 }
 
 int backend_has_abort_print_context(void)
 {
     return deneb_status_state_has_abort_context(
         &state, backend_is_stop_print_inflight());
-}
-
-void backend_clear_print_display_context_if_idle(void)
-{
-    char display_name[128];
-    int has_print_name;
-
-    backend_get_print_display_name(display_name, sizeof(display_name));
-    has_print_name = deneb_status_state_has_print_name(&state, display_name);
-
-    if (!backend_has_active_print_context() &&
-        !has_print_name &&
-        state.time_total <= 0 &&
-        state.time_left <= 0 &&
-        state.bed_temp_set <= 0.0f &&
-        state.nozzle_temp_set <= 0.0f) {
-        retained_print_filename[0] = '\0';
-    }
 }
 
 deneb_print_backend_t backend_get_print_backend(void)
