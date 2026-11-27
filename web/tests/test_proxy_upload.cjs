@@ -284,13 +284,19 @@ async function main() {
             ''
         ].join('\n'), { mode: 0o700 });
         fs.mkdirSync(path.join(root, '3D'));
+        fs.mkdirSync(path.join(root, 'Metadata'));
         fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
         // Keep the compressed upload larger than the API's receive chunk.
         const comments = Array.from({ length: 512 }, (_, index) =>
             ';' + createHash('sha256').update(String(index)).digest('hex') + '\n');
         const gcode = ';TIME:12\nG28\n' + comments.join('');
         fs.writeFileSync(path.join(root, '3D', 'model.gcode'), gcode);
-        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip', '3D/model.gcode'], { cwd: root });
+        // A 1×1 opaque red RGBA PNG. The accepted upload must publish a red preview.
+        fs.writeFileSync(path.join(root, 'Metadata', 'thumbnail.png'), Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+            'base64'));
+        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip',
+            '3D/model.gcode', 'Metadata/thumbnail.png'], { cwd: root });
         const archive = fs.readFileSync(path.join(root, 'job.ufp'));
         const uploadedBodyExists = () => fs.readdirSync(temp).some((file) =>
             file.startsWith('deneb-upload-') && fs.statSync(path.join(temp, file), { throwIfNoEntry: false })?.size > 0);
@@ -375,6 +381,8 @@ async function main() {
         assert.equal(response.message, 'Print job accepted');
         assert.equal(response.name, 'completed.gcode');
         assert.equal(fs.readFileSync(path.join(spool, 'completed.gcode'), 'utf8'), gcode);
+        assert.deepEqual(fs.readFileSync(path.join(root, 'deneb-active-thumb.rgb565')),
+            Buffer.alloc(116 * 116 * 2, Buffer.from([0x00, 0xf8])));
         const pending = JSON.parse(fs.readFileSync(pendingJob, 'utf8'));
         assert.equal(pending.length, 1);
         assert.equal(pending[0].path, 'spool/completed.gcode');
@@ -442,7 +450,7 @@ async function testThumbnailUploads() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'du-'));
     const temp = path.join(root, 'tmp');
     const apiSocket = path.join(root, 'api.sock');
-    const thumbnailPath = path.join(temp, 'deneb-active-thumb.rgb565');
+    const thumbnailPath = path.join(root, 'deneb-active-thumb.rgb565');
     const pendingJob = path.join(temp, 'deneb-cluster-print-job.json');
     let api;
     try {
@@ -472,6 +480,7 @@ async function testThumbnailUploads() {
         const overBudget = upFilteredRgbaPng(1024, 1025, [0xff000080]);
         const skipped = await halfClosedUpload(apiSocket, makeArchive(overBudget), 'large-preview.ufp');
         assert.match(skipped, /^HTTP\/1\.1 201 Created\r\n/);
+        assert.equal(fs.existsSync(thumbnailPath), false);
         assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
         assert.equal(fs.readFileSync(path.join(root, 'spool/large-preview.gcode'), 'utf8'), gcode);
         fs.rmSync(pendingJob);
@@ -491,7 +500,7 @@ async function testThumbnailUploads() {
             expectedPreview.writeUInt16LE(color, pixel * 2);
         }
         assert.deepEqual(fs.readFileSync(thumbnailPath), expectedPreview);
-        assert.deepEqual(fs.readdirSync(temp).sort(), ['deneb-active-thumb.rgb565', 'deneb-cluster-print-job.json']);
+        assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
     } catch (error) {
         if (api) process.stderr.write(api.log);
         throw error;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# Build the public Deneb site with Hugo extended, Go and npm.
+# Build the public Deneb site with Hugo, Go and npm.
 
 set -euo pipefail
 
@@ -12,14 +12,14 @@ if [[ -z "$hugo_bin" ]]; then
     if command -v hugo >/dev/null 2>&1; then
         hugo_bin="$(command -v hugo)"
     else
-        printf '%s\n' "hugo not found; set HUGO_BIN or install Hugo extended ${hugo_version}" >&2
+        printf '%s\n' "hugo not found; set HUGO_BIN or install Hugo ${hugo_version}" >&2
         exit 1
     fi
 fi
 
 got="$("$hugo_bin" version)"
-if [[ "$got" != *"${hugo_version}"* ]] || [[ "$got" != *"extended"* ]]; then
-    printf '%s\n' "need Hugo extended ${hugo_version}; got: ${got}" >&2
+if [[ "$got" != "hugo v${hugo_version}"[-+[:space:]]* ]]; then
+    printf '%s\n' "need Hugo ${hugo_version}; got: ${got}" >&2
     exit 1
 fi
 

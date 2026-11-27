@@ -11,6 +11,7 @@ original Deneb work. It is an engineering inventory, not legal advice.
 | Cura integration plugin | Deneb adapter for UltiMaker Cura | Tested with Cura 5.13 | LGPL-3.0-or-later | Separate override; no Cura source is copied |
 | `web/src/api_cluster_materials.h` | `Ultimaker/fdm_materials` | `886e7ad927463493cc9c64f427b1ae2cf4ce12c1` | CC0-1.0 | 280 exact GUID/version records; one malformed upstream GUID omitted |
 | LVGL | `lvgl/lvgl` submodule | Pinned by Git | MIT plus bundled helper notices | License files retained and packaged |
+| LodePNG | [lvandeve/lodepng](https://github.com/lvandeve/lodepng/tree/7b2893e35891c0c85bee5595caafaf3c2044b409) | 20261102 / `7b2893e35891c0c85bee5595caafaf3c2044b409` | Zlib | `common/lodepng/`; upstream archive SHA-256 `e0b571062acdbe187fd4e8b0ff46f6e7d1b634457ff1a4b383aaac4c78bfd59b` |
 | ZeroMQ/libzmq | `zeromq/libzmq` | 4.3.5 | MPL-2.0 | Statically linked; source URL and notice packaged |
 | mbedTLS | Mbed TLS upstream | 2.28.8 | Apache-2.0 OR GPL-2.0-or-later | Build dependency for `deneb-dfsvc`; not vendored |
 | lighttpd | lighttpd upstream | 1.4.85 | BSD-3-Clause | HTTP front end built from pinned, hashed source; not vendored |
@@ -18,8 +19,8 @@ original Deneb work. It is an engineering inventory, not legal advice.
 | ESLint host checker | registry.npmjs.org `eslint` 10.15.0, `@eslint/js` 10.0.1, and `globals` 17.12.0 | Locked by `tools/eslint/package-lock.json`. `eslint-10.15.0.tgz` SHA-256 is `8cb5e45fb5b1174e4216d546b69d37c0ac5cb5d9ba8342946a04af1f59605edb` | MIT | Host CI checker for existing browser JavaScript. Not installed on the printer and not copied from `web/www` into firmware packages |
 | API, IPC, and Cura compatibility | Public printer APIs, public repositories/documentation, and interoperability observations | Current Deneb implementation | MPL-2.0 | Clean-room Deneb code; no stock application source copied |
 | Print-service macros and G-code policies | Public G-code/controller documentation and observed printer behavior | Current Deneb implementation | MPL-2.0 | Minimal Deneb-authored sequences; no stock macro file copied |
-| Hugo extended | `gohugoio/hugo` | 0.166.0 (pinned in `website/vendor-pins/hugo.version`; tarball SHA-256 `0e39b901e3f919f1daae05c8ff64f0c14c8a348ef46886d63f8e6d1bb2653885`) | Apache-2.0 | Public-site generator only; not a printer runtime |
-| Hextra | `github.com/imfing/hextra` | Hugo module, locked by `website/go.sum` | MIT | Docs theme for `website/` |
+| Hugo | `gohugoio/hugo` | 0.170.1 (pinned in `website/vendor-pins/hugo.version`; `hugo_0.170.1_linux-amd64.tar.gz` SHA-256 `841a5462853aefc9942e4de1e8a5d75584b6a5181941e6ad3f1d745190e03cd8`) | Apache-2.0 | Public-site generator only; not a printer runtime |
+| Hextra | `github.com/imfing/hextra` | v0.13.0, locked by `website/go.sum` | MIT | Docs theme for `website/` |
 | FlexSearch | `nextapps-de/flexsearch` via the npm registry | 0.8.143 in `website/package-lock.json`, bundle SHA-256 `433e941a8a573ebb9931fc16fc75266ab6b93f569ac2fb4f3dc66882e0416f4c` | Apache-2.0 | Only the verified browser bundle is copied into the generated static site |
 | Space Grotesk | Bunny Fonts / OFL project | Runtime CSS from `fonts.bunny.net` | OFL-1.1 | Public-site webfont |
 | IBM Plex Sans and IBM Plex Mono | Bunny Fonts / OFL project | Runtime CSS from `fonts.bunny.net` | OFL-1.1 | Public-site webfonts |
@@ -37,6 +38,13 @@ device identifiers, and credentials remain outside the repository boundary.
 Deneb's API, IPC, touchscreen, services, compatibility code, and macro sequences
 are clean-room implementations based on publicly available resources and
 observed interoperability behavior.
+
+LodePNG's upstream `lodepng.cpp` is compiled as C. To refresh the snapshot, copy
+the pinned upstream source and header, retain the license headers, and reapply
+the marked LVGL integration and scanline sizing changes in `lodepng.c`. The
+LVGL adapter uses the vendored header and receives a draw buffer owned by LVGL's
+image-cache handlers. The touchscreen builds the PNG decoder. The native
+services use libc and the existing zlib-only build flags.
 
 When a dependency version or generated dataset changes:
 
