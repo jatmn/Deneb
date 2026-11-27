@@ -12,6 +12,7 @@
 #define ETH_SETUP_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #define ETH_SETUP_MAX_IP    48
 #define ETH_SETUP_MAX_DNS   128
@@ -61,8 +62,12 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg);
 
 /**
  * Full import flow: find eth.txt on USB, parse, apply.
+ *
+ * @param argument       Output for the status template's IP, empty if unused
+ * @param argument_size  Size of argument buffer (at least ETH_SETUP_MAX_IP)
+ * @return Locale key for the status, to be translated on the UI thread
  */
-eth_result_t eth_setup_import(char *status_msg, int msg_size);
+const char *eth_setup_import(char *argument, size_t argument_size);
 
 /**
  * Check if Ethernet is currently configured with a static IP.

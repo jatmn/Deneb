@@ -350,75 +350,33 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
 /* Full import flow                                                    */
 /* ------------------------------------------------------------------ */
 
-wifi_result_t wifi_setup_import(char *status_msg, int msg_size)
+const char *wifi_setup_import(char *argument, size_t argument_size)
 {
     char path[160];
     wifi_config_t cfg;
-    wifi_result_t res;
+    argument[0] = '\0';
 
-    if (status_msg && msg_size > 0)
-        status_msg[0] = '\0';
+    wifi_result_t res = wifi_setup_find_config(path, sizeof(path));
+    if (res != WIFI_OK)
+        return res == WIFI_ERR_NO_USB ? "network.no_usb" : "network.no_wifi_txt";
 
-    /* Find wifi.txt on USB */
-    res = wifi_setup_find_config(path, sizeof(path));
-    if (res != WIFI_OK) {
-        if (status_msg) {
-            if (res == WIFI_ERR_NO_USB)
-                snprintf(status_msg, msg_size, "%s",
-                         locale_get("network.no_usb"));
-            else
-                snprintf(status_msg, msg_size, "%s",
-                         locale_get("network.no_wifi_txt"));
-        }
-        return res;
-    }
-
-    /* Parse wifi.txt */
     res = wifi_setup_parse(path, &cfg);
-    if (res != WIFI_OK) {
-        if (status_msg) {
-            switch (res) {
-            case WIFI_ERR_NO_SSID:
-                snprintf(status_msg, msg_size, "%s",
-                         locale_get("network.wifi_no_ssid"));
-                break;
-            default:
-                snprintf(status_msg, msg_size, "%s",
-                         locale_get("network.wifi_parse_error"));
-                break;
-            }
-        }
-        return res;
-    }
+    if (res != WIFI_OK)
+        return res == WIFI_ERR_NO_SSID ? "network.wifi_no_ssid" : "network.wifi_parse_error";
 
-    /* Apply configuration */
-    res = wifi_setup_apply(&cfg);
-    if (status_msg) {
-        switch (res) {
-        case WIFI_OK:
-            locale_format_s(status_msg, msg_size,
-                            "network.wifi_configured_fmt", cfg.ssid);
-            break;
-        case WIFI_ERR_UCI_FAIL:
-            snprintf(status_msg, msg_size, "%s",
-                     locale_get("network.wifi_save_failed"));
-            break;
-        case WIFI_ERR_NET_FAIL:
-            snprintf(status_msg, msg_size, "%s",
-                     locale_get("network.wifi_restarting"));
-            break;
-        case WIFI_ERR_NTP_FAIL:
-            snprintf(status_msg, msg_size, "%s",
-                     locale_get("network.wifi_ntp_restart_failed"));
-            break;
-        default:
-            snprintf(status_msg, msg_size, "%s",
-                     locale_get("network.wifi_setup_failed"));
-            break;
-        }
+    switch (wifi_setup_apply(&cfg)) {
+    case WIFI_OK:
+        snprintf(argument, argument_size, "%s", cfg.ssid);
+        return "network.wifi_configured_fmt";
+    case WIFI_ERR_UCI_FAIL:
+        return "network.wifi_save_failed";
+    case WIFI_ERR_NET_FAIL:
+        return "network.wifi_restarting";
+    case WIFI_ERR_NTP_FAIL:
+        return "network.wifi_ntp_restart_failed";
+    default:
+        return "network.wifi_setup_failed";
     }
-
-    return res;
 }
 
 /* ------------------------------------------------------------------ */
