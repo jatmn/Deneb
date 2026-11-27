@@ -23,6 +23,7 @@
 #include "job_lifecycle.h"
 #include "job_streamer.h"
 #include "background_action.h"
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include "macro_control.h"
 #include "macro_registry.h"
@@ -1625,6 +1626,7 @@ static void test_serial_transport_buffers_partial_lines(void)
     deneb_serial_transport_t serial;
     int pipefd[2];
     char line[DENEB_PRINTSVC_SERIAL_LINE];
+    static const char tail[] = "A6\r\n\nT:20\ntrailing";
 
     memset(&serial, 0, sizeof(serial));
     serial.fd = -1;
@@ -1635,12 +1637,55 @@ static void test_serial_transport_buffers_partial_lines(void)
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
     assert(write(pipefd[1], "05", 2) == 2);
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
-    assert(write(pipefd[1], "A6\n", 3) == 3);
+    assert(write(pipefd[1], tail, sizeof(tail) - 1) == sizeof(tail) - 1);
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 7);
     assert(strcmp(line, "o0005A6") == 0);
-    close(pipefd[0]);
+    int queued = -1;
+    assert(ioctl(pipefd[0], FIONREAD, &queued) == 0);
+    assert(queued == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    assert(line[0] == '\0');
+    assert(deneb_serial_read_line(&serial, line, 3) == 2);
+    assert(strcmp(line, "T:") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    assert(write(pipefd[1], "!\n", 2) == 2);
     close(pipefd[1]);
-    serial.fd = -1;
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 9);
+    assert(strcmp(line, "trailing!") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    assert(line[0] == '\0');
+    deneb_serial_close(&serial);
+}
+
+static void test_serial_transport_preserves_replies_after_long_line(void)
+{
+    deneb_serial_transport_t serial = { .fd = -1 };
+    int pipefd[2];
+    char line[DENEB_PRINTSVC_SERIAL_LINE];
+    static const char suffix[] = "tail\nok\n";
+    char input[2 * DENEB_PRINTSVC_SERIAL_LINE + sizeof(suffix)];
+
+    memset(input, 'a', sizeof(input));
+    input[DENEB_PRINTSVC_SERIAL_LINE - 1] = '\n';
+    input[DENEB_PRINTSVC_SERIAL_LINE] = '\r';
+    memcpy(input + 2 * DENEB_PRINTSVC_SERIAL_LINE + 1,
+           suffix, sizeof(suffix) - 1);
+
+    assert(pipe(pipefd) == 0);
+    assert(write(pipefd[1], input, sizeof(input)) == sizeof(input));
+    close(pipefd[1]);
+    serial.fd = pipefd[0];
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == sizeof(line) - 1);
+    assert(memcmp(line, input, sizeof(line) - 1) == 0);
+    assert(line[sizeof(line) - 1] == '\0');
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == -1);
+    assert(line[0] == '\0');
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 4);
+    assert(strcmp(line, "tail") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 2);
+    assert(strcmp(line, "ok") == 0);
+    assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
+    deneb_serial_close(&serial);
 }
 
 static void test_serial_transport_retries_nonblocking_writes(void)
@@ -7383,6 +7428,7 @@ int main(int argc, char **argv)
     test_native_reply_acceptance();
     test_motion_observer_policy();
     test_serial_transport_buffers_partial_lines();
+    test_serial_transport_preserves_replies_after_long_line();
     test_serial_transport_retries_nonblocking_writes();
     test_motion_runtime_policy();
     test_macro_runner_policy();
