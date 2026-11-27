@@ -20,6 +20,7 @@ lv_font_t deneb_font_12;
 lv_font_t deneb_font_14;
 static printer_state_t observed;
 static unsigned state_reads, saved_languages, cancel_requests;
+static unsigned root_refreshes;
 
 const printer_state_t *backend_get_state(void) { state_reads++; return &observed; }
 int backend_has_active_print_context(void) { return observed.is_printing; }
@@ -73,7 +74,13 @@ int __wrap_system(const char *command)
 }
 
 static lv_obj_t *root_create(void) { return lv_obj_create(lv_screen_active()); }
-static const screen_ops_t root_screen = { .name = "root", .create = root_create };
+static void root_refresh(void) { root_refreshes++; }
+static const screen_ops_t root_screen = {
+    .name = "root",
+    .create = root_create,
+    .refresh = root_refresh,
+    .refresh_period_ms = 250,
+};
 
 static void flush_frame(lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
 {
@@ -139,11 +146,22 @@ int main(int argc, char **argv)
     lv_display_set_flush_cb(display, flush_frame);
     screen_mgr_init();
     screen_mgr_push(&root_screen);
+    assert(root_refreshes == 1);
+    lv_tick_inc(250);
+    lv_timer_handler();
+    assert(root_refreshes == 2);
 
     observed.connected = true;
     observed.is_printing = true;
     observed.time_left = 120;
     screen_mgr_push(&screen_print);
+    unsigned reads_on_reveal = state_reads;
+    lv_tick_inc(250);
+    lv_timer_handler();
+    assert(state_reads == reads_on_reveal);
+    lv_tick_inc(250);
+    lv_timer_handler();
+    assert(state_reads == reads_on_reveal + 1 && root_refreshes == 2);
     unsigned visible = tick_count(8);
     assert(find_label(lv_screen_active(), "Left 2 min"));
 
