@@ -125,7 +125,10 @@ list(REMOVE_DUPLICATES LVGL_SOURCES)
 get_filename_component(LVGL_SELECTED_REAL "${LVGL_DIR}" REALPATH)
 get_filename_component(LVGL_PINNED_REAL "${CMAKE_CURRENT_SOURCE_DIR}/lib/lvgl" REALPATH)
 if(LVGL_SELECTED_REAL STREQUAL LVGL_PINNED_REAL)
-    find_package(Git REQUIRED)
+    find_program(LVGL_PATCH_PROGRAM NAMES patch NO_CMAKE_FIND_ROOT_PATH)
+    if(NOT LVGL_PATCH_PROGRAM)
+        message(FATAL_ERROR "The host patch utility is required to build with Deneb's pinned LVGL sources.")
+    endif()
     set(LVGL_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/lvgl-v9.6-code-scanning.patch")
     set(LVGL_PATCH_INPUT "${CMAKE_CURRENT_BINARY_DIR}/lvgl-patch-input")
     set(LVGL_PATCH_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lvgl-patched")
@@ -148,16 +151,16 @@ if(LVGL_SELECTED_REAL STREQUAL LVGL_PINNED_REAL)
         string(REPLACE "\r\n" "\n" contents "${contents}")
         file(WRITE "${LVGL_PATCH_INPUT}/${source}" "${contents}")
     endforeach()
-    # Treat the staged files as standalone even in an in-tree build.
+    # Apply the patch to the staged files with exact context matching.
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E env "GIT_CEILING_DIRECTORIES=${CMAKE_CURRENT_BINARY_DIR}"
-                "${GIT_EXECUTABLE}" apply --no-index --whitespace=error "${LVGL_PATCH}"
+        COMMAND "${LVGL_PATCH_PROGRAM}" -f -F 0 -p1 -i "${LVGL_PATCH}"
         WORKING_DIRECTORY "${LVGL_PATCH_INPUT}"
         RESULT_VARIABLE LVGL_PATCH_RESULT
-        ERROR_VARIABLE LVGL_PATCH_ERROR
+        OUTPUT_VARIABLE LVGL_PATCH_LOG
+        ERROR_VARIABLE LVGL_PATCH_LOG
     )
     if(NOT LVGL_PATCH_RESULT STREQUAL "0")
-        message(FATAL_ERROR "Could not apply the Deneb LVGL patch: ${LVGL_PATCH_ERROR}")
+        message(FATAL_ERROR "Could not apply the Deneb LVGL patch: ${LVGL_PATCH_LOG}")
     endif()
     foreach(source IN LISTS LVGL_PATCH_SOURCES)
         set(original "${LVGL_DIR}/${source}")
