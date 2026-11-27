@@ -155,6 +155,13 @@ install(TARGETS deneb-api deneb-mdns DESTINATION /usr/bin)
 # Host-only connection regressions exercise production server/client code.
 if(NOT CMAKE_CROSSCOMPILING)
 enable_testing()
+add_executable(deneb-mdns-tests tests/test_mdns.c)
+foreach(function popen fopen getifaddrs freeifaddrs if_nametoindex inet_ntop
+                 socket bind fcntl close setsockopt clock_gettime select recvfrom sendto)
+    target_link_options(deneb-mdns-tests PRIVATE "-Wl,--wrap=${function}")
+endforeach()
+add_test(NAME deneb-mdns-tests COMMAND deneb-mdns-tests)
+set_tests_properties(deneb-mdns-tests PROPERTIES TIMEOUT 5)
 add_executable(deneb-sse-tests tests/test_sse.c)
 target_include_directories(deneb-sse-tests PRIVATE src ../common/print)
 target_compile_options(deneb-sse-tests PRIVATE -ffunction-sections -fdata-sections)
