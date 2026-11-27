@@ -35,4 +35,44 @@ timers.clear();
 retry();
 assert.equal(sources.length, 3);
 api.disconnectSSE();
-console.log('SSE client lifecycle passed');
+
+async function testStatusFallback() {
+    const updates = [];
+    const requests = [];
+    api.onStatus(data => updates.push(data.status));
+    api.get = path => {
+        assert.equal(path, '/printer');
+        return new Promise(resolve => requests.push(resolve));
+    };
+
+    api.connectSSE();
+    const startup = api.pollStatus();
+    requests.shift()({status: 'idle'});
+    await startup;
+    assert.deepEqual(updates, ['idle']);
+
+    const delayed = api.pollStatus();
+    sources.at(-1).onmessage({data: '{"status":"printing"}'});
+    api.disconnectSSE();
+    requests.shift()({status: 'idle'});
+    await delayed;
+    assert.deepEqual(updates, ['idle', 'printing'], 'a delayed poll cannot replace streamed status');
+
+    const disconnected = api.pollStatus();
+    requests.shift()({status: 'offline'});
+    await disconnected;
+    assert.deepEqual(updates, ['idle', 'printing', 'offline']);
+
+    api.connectSSE();
+    sources.at(-1).onmessage({data: '{"status":"idle"}'});
+    api.pollStatus();
+    assert.equal(requests.length, 0, 'an active status stream owns display updates');
+    api.disconnectSSE();
+}
+
+testStatusFallback().then(() => {
+    console.log('SSE client lifecycle and status fallback passed');
+}).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
