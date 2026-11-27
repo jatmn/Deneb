@@ -1132,21 +1132,32 @@ static int ws_write_all(ws_client_t *ws, const uint8_t *buf, size_t len)
     return 0;
 }
 
-static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
+enum { WS_READ_IDLE = 2 };
+
+static int ws_read_bytes(ws_client_t *ws, uint8_t *buf, size_t len, bool allow_idle)
 {
     size_t used = 0;
     int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
     while (used < len && !g_stop && monotonic_ms() < deadline) {
         int n = mbedtls_ssl_read(&ws->ssl, buf + used, len - used);
-        // Mbed TLS can yield while parsing a ticket, then report its receipt.
         if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
-            n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
+            n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
+            // Finish any held TLS message before yielding an idle WebSocket.
+            if (allow_idle && used == 0 && n != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                !mbedtls_ssl_check_pending(&ws->ssl))
+                return WS_READ_IDLE;
             continue;
+        }
         if (n <= 0)
             return -1;
         used += (size_t)n;
     }
     return used == len ? 0 : -1;
+}
+
+static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
+{
+    return ws_read_bytes(ws, buf, len, false);
 }
 
 static int base64_encode(const uint8_t *input, size_t input_len,
@@ -1357,8 +1368,9 @@ static int ws_read_text(ws_client_t *ws, char *buf, size_t buf_size)
 
     while (true) {
         uint8_t h[2];
-        if (ws_read_exact(ws, h, 2) < 0)
-            return -1;
+        int rc = ws_read_bytes(ws, h, sizeof(h), !in_text);
+        if (rc != 0)
+            return rc;
         bool fin = (h[0] & 0x80) != 0;
         int opcode = h[0] & 0x0f;
         bool masked = (h[1] & 0x80) != 0;
@@ -2545,6 +2557,8 @@ int main(void)
                           current_state);
                 break;
             }
+            if (rc == WS_READ_IDLE)
+                continue;
             last_rx = monotonic_ms();
             if (rc == 0)
                 handle_cloud_message(pub, &ws, msg, &current_state,

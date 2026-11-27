@@ -1,7 +1,16 @@
 /* SPDX-License-Identifier: MPL-2.0 */
+#include <mbedtls/ssl.h>
+
+static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len);
+static int fixture_ssl_check_pending(const mbedtls_ssl_context *ssl);
+
+#define mbedtls_ssl_read fixture_ssl_read
+#define mbedtls_ssl_check_pending fixture_ssl_check_pending
 #define main deneb_connector_main
 #include "../src/main.c"
 #undef main
+#undef mbedtls_ssl_check_pending
+#undef mbedtls_ssl_read
 #include <arpa/inet.h>
 #include <assert.h>
 #include <sys/wait.h>
@@ -16,6 +25,30 @@ typedef struct {
     mbedtls_ssl_protocol_version version;
     bool expect_success;
 } test_tls_server_t;
+
+static bool ticket_only_read;
+static unsigned ticket_reads;
+
+static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len)
+{
+    if (!ticket_only_read)
+        return mbedtls_ssl_read(ssl, buf, len);
+    switch (++ticket_reads) {
+    case 1:
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    case 2:
+        return MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
+    default:
+        return MBEDTLS_ERR_SSL_TIMEOUT;
+    }
+}
+
+static int fixture_ssl_check_pending(const mbedtls_ssl_context *ssl)
+{
+    if (ticket_only_read)
+        return ticket_reads == 1;
+    return mbedtls_ssl_check_pending(ssl);
+}
 
 static void serve_websocket(test_tls_server_t *server)
 {
@@ -75,6 +108,11 @@ static void serve_websocket(test_tls_server_t *server)
                            "Sec-WebSocket-Accept: %s\r\n\r\n", accept);
         assert(len > 0 && (size_t)len < sizeof(response));
         assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
+        if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
+            uint8_t ping[6];
+            assert(mbedtls_ssl_read(&ssl, ping, sizeof(ping)) == (int)sizeof(ping));
+            assert(ping[0] == 0x89 && ping[1] == 0x80);
+        }
         const uint8_t frame[] = {0x81, 2, 'o', 'k'};
         assert(mbedtls_ssl_write(&ssl, frame, sizeof(frame)) == (int)sizeof(frame));
     } else {
@@ -117,6 +155,15 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     bool connected = client.connected;
     if (connected) {
         char message[16];
+        if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
+            // Simulate a completed ticket read before any WebSocket frame bytes arrive.
+            ticket_reads = 0;
+            ticket_only_read = true;
+            assert(ws_read_text(&client, message, sizeof(message)) == WS_READ_IDLE);
+            assert(ticket_reads == 2);
+            ticket_only_read = false;
+            assert(ws_send_control(&client, 0x9, NULL, 0) == 0);
+        }
         assert(ws_read_text(&client, message, sizeof(message)) == 0);
         assert(strcmp(message, "ok") == 0);
     }
