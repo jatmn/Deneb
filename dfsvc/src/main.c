@@ -36,6 +36,7 @@
 #include <zmq.h>
 
 #include "print_job_file.h"
+#include "ws_upgrade_header.h"
 
 #define IPC_BASE "tcp://127.0.0.1:"
 #define GERSHWIN_PUB_BASE 5546
@@ -1331,11 +1332,6 @@ static int ws_expected_accept(const char *key, char out[32])
                          digest, sizeof(digest), &digest_len) != PSA_SUCCESS)
         return -1;
     return base64_encode(digest, digest_len, out, 32);
-}
-
-static bool ws_upgrade_header_is_text(const char *header, size_t length)
-{
-    return memchr(header, '\0', length) == NULL;
 }
 
 static bool header_value_matches(const char *headers, const char *name,
