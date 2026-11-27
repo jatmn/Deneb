@@ -1,14 +1,18 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include <mbedtls/ssl.h>
+#include <string.h>
 
 static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len);
 static int fixture_ssl_check_pending(const mbedtls_ssl_context *ssl);
+static void *fixture_memchr(const void *buf, int byte, size_t len);
 
 #define mbedtls_ssl_read fixture_ssl_read
 #define mbedtls_ssl_check_pending fixture_ssl_check_pending
+#define memchr fixture_memchr
 #define main deneb_connector_main
 #include "../src/main.c"
 #undef main
+#undef memchr
 #undef mbedtls_ssl_check_pending
 #undef mbedtls_ssl_read
 #include <arpa/inet.h>
@@ -24,6 +28,7 @@ typedef struct {
     const char *key_file;
     mbedtls_ssl_protocol_version version;
     bool expect_success;
+    bool reject_upgrade;
 } test_tls_server_t;
 
 static bool count_upgrade_reads;
@@ -31,6 +36,19 @@ static unsigned upgrade_reads;
 static int first_retry;
 static unsigned retry_reads;
 static ws_client_t *retry_client;
+static bool reject_upgrade;
+static unsigned upgrade_header_checks;
+
+static void *fixture_memchr(const void *buf, int byte, size_t len)
+{
+    if (reject_upgrade && byte == '\0') {
+        const char *header = buf;
+        assert(len >= 4 && memcmp(header + len - 4, "\r\n\r\n", 4) == 0);
+        upgrade_header_checks++;
+        return (void *)buf;
+    }
+    return memchr(buf, byte, len);
+}
 
 static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len)
 {
@@ -123,7 +141,9 @@ static void serve_websocket(test_tls_server_t *server)
                            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
                            "Sec-WebSocket-Accept: %s\r\n\r\n", accept);
         assert(len > 0 && (size_t)len < sizeof(response));
-        if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
+        if (server->reject_upgrade) {
+            assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
+        } else if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
             assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
             expect_client_ping(&ssl);
             const uint8_t frame[] = {0x81, 2, 'o', 'k'};
@@ -225,9 +245,14 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     ws_client_t client;
     count_upgrade_reads = true;
     upgrade_reads = 0;
+    reject_upgrade = server->reject_upgrade;
+    upgrade_header_checks = 0;
     int rc = ws_connect(&client, &url, ca_directory);
     count_upgrade_reads = false;
+    reject_upgrade = false;
     bool connected = client.connected;
+    if (server->reject_upgrade)
+        assert(upgrade_header_checks == 1 && rc < 0 && !connected);
     if (connected && server->version == MBEDTLS_SSL_VERSION_TLS1_2) {
         assert_buffered_frames(&client);
     } else if (connected) {
@@ -247,8 +272,9 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     ws_free(&client);
     int status;
     assert(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    assert((rc == 0) == server->expect_success);
-    assert(connected == server->expect_success);
+    bool expect_connected = server->expect_success && !server->reject_upgrade;
+    assert((rc == 0) == expect_connected);
+    assert(connected == expect_connected);
 }
 
 int main(int argc, char **argv)
@@ -266,6 +292,9 @@ int main(int argc, char **argv)
         .expect_success = true,
     };
     assert_connection(&server, "localhost", argv[3]);
+    server.reject_upgrade = true;
+    assert_connection(&server, "localhost", argv[3]);
+    server.reject_upgrade = false;
     server.expect_success = false;
     assert_connection(&server, "127.0.0.1", argv[3]);
     assert_connection(&server, "localhost", argv[4]);
