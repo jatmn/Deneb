@@ -65,6 +65,15 @@ function assertNewest(history, last) {
         assert.equal(id(history[i]), id(history[i - 1]) + 1);
 }
 
+function fileMode(file) {
+    const fd = fs.openSync(file, 'r');
+    try {
+        return fs.fstatSync(fd).mode & 0o777;
+    } finally {
+        fs.closeSync(fd);
+    }
+}
+
 async function main() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dh-'));
     const directory = path.join(root, 'tmp');
@@ -81,7 +90,7 @@ async function main() {
             start(writerBinary, [first, count, pause].map(String), root, mode);
         const initial = append(0, 20);
         assert.equal((await initial.done).code, 0, initial.error);
-        assert.equal(fs.statSync(historyFile).mode & 0o777, 0o666 & ~process.umask());
+        assert.equal(fileMode(historyFile), 0o664 & ~process.umask());
         const writer = append(20, 500, 2);
         let latest = 19;
         let observed = 0;
@@ -90,7 +99,7 @@ async function main() {
             const next = id(history.at(-1));
             assert.ok(next >= latest);
             assertNewest(history, next);
-            assert.ok(fs.statSync(historyFile).size <= limit);
+            assert.ok(fs.readFileSync(historyFile).length <= limit);
             if (next > latest && next < 519) observed++;
             latest = next;
             await delay(5);
@@ -112,8 +121,13 @@ async function main() {
         const records = legacy.map((item) => JSON.stringify(item, null, 2));
         contents = ' \n[\n' + records.join(',\n') + '\n]\n' + ' '.repeat(limit);
         assert.ok(Buffer.byteLength(contents) > 65536);
-        fs.writeFileSync(historyFile, contents);
-        fs.chmodSync(historyFile, 0o640);
+        const legacyFile = fs.openSync(historyFile, 'w');
+        try {
+            fs.writeFileSync(legacyFile, contents);
+            fs.fchmodSync(legacyFile, 0o640);
+        } finally {
+            fs.closeSync(legacyFile);
+        }
         history = (await getJobs(socket)).history;
         assertNewest(history, 1399);
         assert.deepEqual(history, legacy.slice(-history.length));
@@ -122,7 +136,7 @@ async function main() {
 
         const migration = append(1400);
         assert.equal((await migration.done).code, 0, migration.error);
-        assert.equal(fs.statSync(historyFile).mode & 0o777, 0o640);
+        assert.equal(fileMode(historyFile), 0o640);
         contents = fs.readFileSync(historyFile, 'utf8');
         assert.ok(Buffer.byteLength(contents) <= limit);
         history = JSON.parse(contents);
@@ -145,23 +159,41 @@ async function main() {
         assert.deepEqual((await getJobs(socket)).history, history);
         assert.deepEqual(fs.readdirSync(directory).sort(),
             ['deneb-print-history.json', 'deneb-print-history.json.tmp']);
-        assert.ok(fs.statSync(historyFile + '.tmp').size <= limit);
+        assert.ok(fs.readFileSync(historyFile + '.tmp').length <= limit);
 
         const retried = append(1401);
         assert.equal((await retried.done).code, 0, retried.error);
         assertNewest((await getJobs(socket)).history, 1401);
         assert.deepEqual(fs.readdirSync(directory), ['deneb-print-history.json']);
 
-        fs.writeFileSync(historyFile, '[{"name":"incomplete');
-        const invalid = append(1403);
-        assert.equal((await invalid.done).code, 1);
-        assert.equal(fs.readFileSync(historyFile, 'utf8'), '[{"name":"incomplete');
-        assert.deepEqual((await getJobs(socket)).history, []);
+        const oversizedRecord = { uuid: 'job-1402', name: 'x'.repeat(limit) };
+        fs.writeFileSync(historyFile, JSON.stringify([...legacy.slice(-3), oversizedRecord]));
+        assert.deepEqual((await getJobs(socket)).history, legacy.slice(-3));
+        const oversizedAppend = await append(1403).done;
+        assert.equal(oversizedAppend.code, 0);
+        history = (await getJobs(socket)).history;
+        assert.deepEqual(history.slice(0, -1), legacy.slice(-3));
+        assert.equal(id(history.at(-1)), 1403);
+        assert.ok(fs.readFileSync(historyFile).length <= limit);
+
+        const damagedHistories = [
+            '',
+            '[{"name":"incomplete',
+            '[' + records.join(',\n') + ',{"name":}]',
+        ];
+        for (const damaged of damagedHistories) {
+            fs.writeFileSync(historyFile, damaged);
+            assert.deepEqual((await getJobs(socket)).history, []);
+            assert.equal((await append(1404, 1, 0, 'fail').done).code, 1);
+            assert.equal(fs.readFileSync(historyFile, 'utf8'), damaged);
+            assert.equal((await append(1404, 2).done).code, 0);
+            assert.deepEqual((await getJobs(socket)).history.map(id), [1404, 1405]);
+        }
 
         fs.writeFileSync(historyFile, ' [\n ]\n');
-        const empty = append(1404);
+        const empty = append(1406);
         assert.equal((await empty.done).code, 0, empty.error);
-        assert.deepEqual((await getJobs(socket)).history.map(id), [1404]);
+        assert.deepEqual((await getJobs(socket)).history.map(id), [1406]);
     } finally {
         for (const run of children)
             if (!run.finished) run.child.kill('SIGKILL');

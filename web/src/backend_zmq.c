@@ -267,7 +267,8 @@ static void append_print_history(const printer_state_t *prev,
     entry.progress = prev->progress;
     entry.started_at = (long long)current_print_start_time;
     entry.finished_at = (long long)time(NULL);
-    deneb_print_history_append_entry(DENEB_PRINT_HISTORY_PATH, &entry);
+    if (deneb_print_history_append_entry(DENEB_PRINT_HISTORY_PATH, &entry) != 0)
+        fprintf(stderr, "deneb-api: failed to save completed print history\n");
     current_print_start_time = 0;
 }
 
