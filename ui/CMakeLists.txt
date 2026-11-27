@@ -120,6 +120,59 @@ foreach(pattern IN LISTS LVGL_SOURCE_GLOBS)
 endforeach()
 list(REMOVE_DUPLICATES LVGL_SOURCES)
 
+# Apply the v9.6 fixes to copies of the sources used by the pinned build.
+# A custom LVGL checkout can target a different revision.
+get_filename_component(LVGL_SELECTED_REAL "${LVGL_DIR}" REALPATH)
+get_filename_component(LVGL_PINNED_REAL "${CMAKE_CURRENT_SOURCE_DIR}/lib/lvgl" REALPATH)
+if(LVGL_SELECTED_REAL STREQUAL LVGL_PINNED_REAL)
+    find_program(LVGL_PATCH_PROGRAM NAMES patch NO_CMAKE_FIND_ROOT_PATH)
+    if(NOT LVGL_PATCH_PROGRAM)
+        message(FATAL_ERROR "The host patch utility is required to build with Deneb's pinned LVGL sources.")
+    endif()
+    set(LVGL_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/lvgl-v9.6-code-scanning.patch")
+    set(LVGL_PATCH_INPUT "${CMAKE_CURRENT_BINARY_DIR}/lvgl-patch-input")
+    set(LVGL_PATCH_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/lvgl-patched")
+    set(LVGL_PATCH_SOURCES
+        src/core/lv_refr.c
+        src/draw/lv_draw_buf.c
+        src/draw/sw/lv_draw_sw_arc.c
+        src/draw/sw/lv_draw_sw_box_shadow.c
+        src/draw/sw/lv_draw_sw_img.c
+        src/fs/lv_fs.c
+        src/misc/lv_array.c
+        src/misc/lv_text.c
+        src/themes/default/lv_theme_default.c
+    )
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVGL_PATCH}")
+    foreach(source IN LISTS LVGL_PATCH_SOURCES)
+        set(original "${LVGL_DIR}/${source}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${original}")
+        file(READ "${original}" contents)
+        string(REPLACE "\r\n" "\n" contents "${contents}")
+        file(WRITE "${LVGL_PATCH_INPUT}/${source}" "${contents}")
+    endforeach()
+    # Apply the patch to the staged files with exact context matching.
+    execute_process(
+        COMMAND "${LVGL_PATCH_PROGRAM}" -f -F 0 -p1 -i "${LVGL_PATCH}"
+        WORKING_DIRECTORY "${LVGL_PATCH_INPUT}"
+        RESULT_VARIABLE LVGL_PATCH_RESULT
+        OUTPUT_VARIABLE LVGL_PATCH_LOG
+        ERROR_VARIABLE LVGL_PATCH_LOG
+    )
+    if(NOT LVGL_PATCH_RESULT STREQUAL "0")
+        message(FATAL_ERROR "Could not apply the Deneb LVGL patch: ${LVGL_PATCH_LOG}")
+    endif()
+    foreach(source IN LISTS LVGL_PATCH_SOURCES)
+        set(original "${LVGL_DIR}/${source}")
+        set(patched "${LVGL_PATCH_OUTPUT}/${source}")
+        configure_file("${LVGL_PATCH_INPUT}/${source}" "${patched}" COPYONLY)
+        get_filename_component(original_dir "${original}" DIRECTORY)
+        set_source_files_properties("${patched}" PROPERTIES INCLUDE_DIRECTORIES "${original_dir}")
+        list(REMOVE_ITEM LVGL_SOURCES "${original}")
+        list(APPEND LVGL_SOURCES "${patched}")
+    endforeach()
+endif()
+
 # Let a failed rounded-border mask allocation reach LVGL's recovery branch.
 # Keep the pinned checkout clean and leave other assertions enabled.
 set(LVGL_BORDER_SOURCE "${LVGL_DIR}/src/draw/sw/lv_draw_sw_border.c")
@@ -327,6 +380,11 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
     add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
+
+    add_executable(deneb-lvgl-compatibility-tests tests/test_lvgl_compatibility.c)
+    target_include_directories(deneb-lvgl-compatibility-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-lvgl-compatibility-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-lvgl-compatibility-tests COMMAND deneb-lvgl-compatibility-tests)
 
     add_executable(deneb-lvgl-border-tests tests/test_border_allocation.c)
     target_include_directories(deneb-lvgl-border-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})

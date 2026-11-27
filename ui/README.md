@@ -140,7 +140,8 @@ powershell -ExecutionPolicy Bypass -File tools/build-update-release.ps1
 ### Host build (for code testing, no display)
 
 Host builds are WSL/Linux builds with stub drivers. Visual Studio/MSVC is not a
-supported toolchain for Deneb C targets.
+supported toolchain for Deneb C targets. Builds with the pinned LVGL sources
+use the host `patch` utility, which Debian's `build-essential` provides.
 
 ```bash
 cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug

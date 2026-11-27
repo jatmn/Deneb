@@ -4,5 +4,6 @@
 *.json text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+ui/patches/*.patch text eol=lf
 tools/fixtures/deneb-printsvc-cli-selftest.legacy text eol=lf
 
