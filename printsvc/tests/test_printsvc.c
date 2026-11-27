@@ -4135,6 +4135,13 @@ static void test_pending_job_metadata_write_file(void)
     deneb_pending_job_init(&job, "/home/3D/deneb-uploads/write-test.gcode");
     job.tracker = 77;
     assert(deneb_pending_job_write_file(&job, path) == 0);
+    assert(chmod(path, 0664) == 0);
+    mode_t previous_mask = umask(0002);
+    assert(deneb_pending_job_write_file(&job, path) == 0);
+    umask(previous_mask);
+    struct stat pending_file;
+    assert(stat(path, &pending_file) == 0);
+    assert((pending_file.st_mode & 0777) == 0664);
     assert(deneb_pending_job_file_load(path, &loaded) == 0);
     assert(loaded.tracker == 77);
     assert(strcmp(loaded.path, "/home/3D/deneb-uploads/write-test.gcode") == 0);

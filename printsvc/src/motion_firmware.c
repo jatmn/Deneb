@@ -58,7 +58,7 @@ static int read_cache_hash(const char *path, char out_hex[65])
 
 static int write_cache_hash(const char *path, const char hash[65])
 {
-    FILE *f = deneb_fopen_write(path);
+    FILE *f = deneb_fopen_write(path, 0644);
     if (!f)
         return -1;
     int ok = fprintf(f, "%s\n", hash) == 65;

@@ -1113,7 +1113,7 @@ static const char *df_state_name(int state)
 
 static void write_status_file(int state, const char *pin)
 {
-    FILE *fp = deneb_fopen_write(DF_STATUS_FILE);
+    FILE *fp = deneb_fopen_write(DF_STATUS_FILE, 0644);
     if (!fp)
         return;
     if (pin && pin[0])

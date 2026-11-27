@@ -235,7 +235,7 @@ int deneb_material_catalog_store_file(const char *path,
     if (n < 0 || (size_t)n >= sizeof(record_path))
         return -1;
 
-    out = deneb_fopen_write(record_path);
+    out = deneb_fopen_write(record_path, 0644);
     if (!out)
         return -1;
     fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, *version);

@@ -238,7 +238,7 @@ int deneb_pending_job_write_file(const deneb_pending_job_t *job,
     if (n < 0 || (size_t)n >= sizeof(tmp_path))
         return -1;
 
-    f = deneb_fopen_write(tmp_path);
+    f = deneb_fopen_write(tmp_path, 0664);
     if (!f)
         return -1;
     if (fwrite(json, 1, (size_t)len, f) != (size_t)len) {

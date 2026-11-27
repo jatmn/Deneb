@@ -445,7 +445,7 @@ int deneb_pending_job_file_mark_handled(const char *path)
         !strstr(buf, "\"status\":\"wait_user_action\""))
         return 0;
 
-    f = deneb_fopen_write(path);
+    f = deneb_fopen_write(path, 0644);
     if (!f)
         return -1;
 

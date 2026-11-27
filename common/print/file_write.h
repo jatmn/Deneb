@@ -7,9 +7,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
-static inline FILE *deneb_fopen_write(const char *path)
+static inline FILE *deneb_fopen_write(const char *path, mode_t create_mode)
 {
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, create_mode);
     if (fd < 0)
         return NULL;
 

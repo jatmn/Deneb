@@ -788,7 +788,7 @@ static int write_all_bytes(const char *path, const unsigned char *data,
     if (!path || !data)
         return -1;
 
-    f = deneb_fopen_write(path);
+    f = deneb_fopen_write(path, 0644);
     if (!f)
         return -1;
     written = fwrite(data, 1, size, f);
