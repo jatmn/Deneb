@@ -52,7 +52,7 @@ int print_conflict_has_pending(void);
 void screen_network_set_catalog_placeholder_mode(int enabled);
 #endif
 
-static volatile int running = 1;
+static volatile sig_atomic_t running = 1;
 
 static const char *program_basename(const char *path)
 {
@@ -66,11 +66,62 @@ static void signal_handler(int sig)
     running = 0;
 }
 
-static uint32_t custom_tick_get(void)
+static uint32_t monotonic_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+    return (uint32_t)ts.tv_sec * 1000u + (uint32_t)(ts.tv_nsec / 1000000);
+}
+
+static uint32_t time_remaining_ms(uint32_t now, uint32_t start, uint32_t period)
+{
+    uint32_t elapsed = now - start;
+    return elapsed < period ? period - elapsed : 0;
+}
+
+static void run_main_loop(void)
+{
+    enum { STATUS_POLL_MS = 50, CONFLICT_POLL_MS = 1000 };
+    uint32_t now = monotonic_ms();
+    uint32_t last_status_poll = now - STATUS_POLL_MS;
+#ifndef BACKEND_COMM_STUB
+    uint32_t last_conflict_poll = now - CONFLICT_POLL_MS;
+#endif
+
+    while (running) {
+        uint32_t lvgl_wait = lv_timer_handler();
+        now = monotonic_ms();
+        uint32_t lvgl_checked_at = now;
+
+        if (now - last_status_poll >= STATUS_POLL_MS) {
+            last_status_poll = now;
+            backend_poll();
+            now = monotonic_ms();
+        }
+
+#ifndef BACKEND_COMM_STUB
+        if (now - last_conflict_poll >= CONFLICT_POLL_MS) {
+            last_conflict_poll = now;
+            const char *current = screen_mgr_current_name();
+            if (strcmp(current, "print_conflict.title") != 0 &&
+                print_conflict_has_pending()) {
+                screen_mgr_push(&screen_print_conflict);
+                /* The new screen can schedule timers earlier than lvgl_wait. */
+                continue;
+            }
+            now = monotonic_ms();
+        }
+#endif
+
+        uint32_t wait_ms = time_remaining_ms(now, last_status_poll, STATUS_POLL_MS);
+#ifndef BACKEND_COMM_STUB
+        wait_ms = LV_MIN(wait_ms, time_remaining_ms(now, last_conflict_poll, CONFLICT_POLL_MS));
+#endif
+        if (lvgl_wait != LV_NO_TIMER_READY)
+            wait_ms = LV_MIN(wait_ms, time_remaining_ms(now, lvgl_checked_at, lvgl_wait));
+        if (running && wait_ms > 0)
+            usleep(wait_ms * 1000u);
+    }
 }
 
 #ifdef BACKEND_COMM_STUB
@@ -230,6 +281,8 @@ int main(int argc, char *argv[])
     signal(SIGTERM, signal_handler);
 
     lv_init();
+    if (!screenshot_dir)
+        lv_tick_set_cb(monotonic_ms);
     deneb_fonts_init();
     locale_init(lang);
 
@@ -285,34 +338,7 @@ int main(int argc, char *argv[])
     syslog(LOG_INFO, "entered main loop");
 #endif
 
-    uint32_t last_status_poll = 0;
-    uint32_t last_conflict_poll = 0;
-
-    while (running) {
-        uint32_t now = custom_tick_get();
-
-        lv_tick_inc(5);
-        lv_timer_handler();
-
-        /* Poll backend status every 50ms (20Hz) */
-        if (now - last_status_poll >= 50) {
-            backend_poll();
-            last_status_poll = now;
-        }
-
-#ifndef BACKEND_COMM_STUB
-        if (now - last_conflict_poll >= 1000) {
-            const char *current = screen_mgr_current_name();
-            if (strcmp(current, "print_conflict.title") != 0 &&
-                print_conflict_has_pending()) {
-                screen_mgr_push(&screen_print_conflict);
-            }
-            last_conflict_poll = now;
-        }
-#endif
-
-        usleep(5000); /* 5ms */
-    }
+    run_main_loop();
 
     fprintf(stderr, "deneb-ui: shutting down\n");
 #if !defined(_WIN32)
