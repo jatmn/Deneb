@@ -14,7 +14,7 @@ const defaultGuid = '00000000-0000-0000-0000-000000000000';
 const pla = '506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9';
 const petg = '1cbfaeb3-1906-4b26-b2e7-6f777a8c197a';
 
-function getPrinter(socketPath) {
+function getPrinter(socketPath, timeout = 2000) {
     return new Promise((resolve, reject) => {
         const req = http.get({socketPath, path: '/cluster-api/v1/printers', agent: false}, (res) => {
             let body = '';
@@ -33,7 +33,7 @@ function getPrinter(socketPath) {
             });
         });
         req.once('error', reject);
-        req.setTimeout(2000, () => req.destroy(new Error('Cluster request timeout')));
+        req.setTimeout(timeout, () => req.destroy(new Error('Cluster request timeout')));
     });
 }
 
@@ -46,6 +46,10 @@ async function main() {
 option=\${3:-$2}
 printf '%s\\n' "$option" >> uci-calls
 if [ -f fail-always ] && IFS= read -r failing < fail-always && [ "$option" = "$failing" ]; then
+    if [ -f fail-slow ]; then
+        rm fail-slow
+        sleep 5.1
+    fi
     printf 'uci: I/O error\\n' >&2
     exit 1
 fi
@@ -139,7 +143,9 @@ exit 1
         const beforePersistent = calls().length;
         assert.deepEqual(await getPrinter(socketPath), first);
         assert.equal(calls().length, beforePersistent + 6);
-        assert.deepEqual(await getPrinter(socketPath), first);
+        // A refresh taking longer than the interval must still get a cooldown.
+        store('fail-slow', '');
+        assert.deepEqual(await getPrinter(socketPath, 8000), first);
         assert.equal(calls().length, beforePersistent + 12, 'one retry must be immediate');
         for (let i = 0; i < 3; i++)
             assert.deepEqual(await getPrinter(socketPath), first);

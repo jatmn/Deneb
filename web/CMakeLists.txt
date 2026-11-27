@@ -189,7 +189,7 @@ if(NODE_EXECUTABLE)
         add_test(NAME deneb-cluster-configuration-tests COMMAND "${NODE_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tests/test_cluster_configuration.cjs"
             "$<TARGET_FILE:deneb-api-upload-fixture>")
-        set_tests_properties(deneb-cluster-configuration-tests PROPERTIES TIMEOUT 15)
+        set_tests_properties(deneb-cluster-configuration-tests PROPERTIES TIMEOUT 20)
 
         find_program(LIGHTTPD_EXECUTABLE lighttpd)
         find_program(UNZIP_EXECUTABLE unzip)

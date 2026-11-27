@@ -74,7 +74,7 @@ typedef struct {
 /* Only the cluster printer route in the API loop reads and writes this cache. */
 static struct {
     configuration_file_version_t files[CONFIGURATION_FILE_COUNT];
-    time_t last_attempt;
+    struct timespec last_attempt;
     bool timed_attempt;
     bool published;
     unsigned failures;
@@ -246,8 +246,11 @@ static void refresh_configuration(const char *hostname)
     }
     /* One immediate retry handles an isolated failure. Subsequent failures
      * reuse the refresh interval until the observed configuration changes. */
+    time_t elapsed = clock_valid ? now.tv_sec - configuration.last_attempt.tv_sec : 0;
+    if (clock_valid && now.tv_nsec < configuration.last_attempt.tv_nsec)
+        elapsed--;
     bool recent = clock_valid && configuration.timed_attempt &&
-                  now.tv_sec - configuration.last_attempt < CONFIGURATION_MAX_AGE_SECONDS;
+                  elapsed < CONFIGURATION_MAX_AGE_SECONDS;
     if (unchanged && recent && configuration.failures != 1)
         return;
 
@@ -266,9 +269,9 @@ static void refresh_configuration(const char *hostname)
     } else if (configuration.failures < CONFIGURATION_FAILURE_LIMIT) {
         configuration.failures++;
     }
-    configuration.timed_attempt = clock_valid;
-    if (clock_valid)
-        configuration.last_attempt = now.tv_sec;
+    /* A slow UCI command must not consume the cooldown after a failure. */
+    configuration.timed_attempt =
+        clock_gettime(CLOCK_MONOTONIC, &configuration.last_attempt) == 0;
 }
 
 static int json_member_value_end(const char *start, const char *limit,
