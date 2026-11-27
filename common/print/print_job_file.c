@@ -27,6 +27,8 @@
 #define DENEB_THUMB_RGB565_BYTES \
     (DENEB_THUMB_TARGET_SIZE * DENEB_THUMB_TARGET_SIZE * 2)
 #define DENEB_UFP_THUMB_MAX_CANDIDATES 16
+/* Bound optional preview discovery even when no entries qualify. */
+#define DENEB_UFP_THUMB_MAX_RECORDS 256
 #define DENEB_UFP_MEMBER_MAX 256
 #define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
 /* Allow DEFLATE overhead for previews near the uncompressed size limit. */
@@ -667,7 +669,9 @@ static size_t list_ufp_thumbnail_members(
         return 0;
     }
 
-    while (count < max_candidates) {
+    for (size_t scanned = 0;
+         scanned < DENEB_UFP_THUMB_MAX_RECORDS && count < max_candidates;
+         scanned++) {
         unsigned char hdr[46];
         uint16_t name_len;
         uint16_t extra_len;
