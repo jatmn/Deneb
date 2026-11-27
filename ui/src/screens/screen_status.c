@@ -149,20 +149,19 @@ static void set_temp_label(lv_obj_t *label, float cur, float target)
     set_label_text(label, text);
 }
 
-static void set_time_left_label(lv_obj_t *label, const printer_state_t *s)
+static void set_time_left_label(lv_obj_t *label, int job_active, int time_left)
 {
     if (!label)
         return;
 
-    if (!s || !backend_has_active_print_context() || s->time_left <= 0) {
+    if (!job_active || time_left <= 0) {
         set_label_text(label, "Left --:--");
         return;
     }
 
     char text[24];
-    int seconds = s->time_left;
     snprintf(text, sizeof(text), "Left %d:%02d:%02d",
-             seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+             time_left / 3600, (time_left % 3600) / 60, time_left % 60);
     set_label_text(label, text);
 }
 
@@ -252,32 +251,27 @@ static void update_timer_cb(lv_timer_t *timer)
     }
 
     char resolved_name[128];
-    backend_get_print_display_name(resolved_name, sizeof(resolved_name));
-    int has_print_name = backend_has_print_name(resolved_name);
-    int job_active = backend_has_active_print_context();
-
-    if (!job_active && !has_print_name)
-        backend_clear_print_display_context_if_idle();
+    deneb_print_context_flags_t context =
+        backend_get_print_display_context(resolved_name, sizeof(resolved_name));
+    int job_active = context.has_active_context;
+    int aborting = backend_has_abort_print_context();
+    deneb_print_display_state_t display_state = deneb_print_display_state_with_req(
+        s->connected, s->has_error, s->is_paused, s->is_printing, aborting,
+        context.has_preparing_context, s->time_total, s->current_req);
 
     const char *display_name = locale_get("status.no_file");
     if (job_active && resolved_name[0])
         display_name = resolved_name;
 
     /* Printer state */
-    set_label_text(
-        state_label,
-        locale_get(display_state_locale_key(deneb_print_display_state_with_req(
-            s->connected, s->has_error, s->is_paused, s->is_printing,
-            backend_has_abort_print_context(),
-            backend_has_preparing_print_context(), s->time_total,
-            s->current_req))));
+    set_label_text(state_label, locale_get(display_state_locale_key(display_state)));
 
     /* Temperatures */
     set_temp_label(nozzle_temp_label, s->nozzle_temp_cur, s->nozzle_temp_set);
     set_temp_label(bed_temp_label, s->bed_temp_cur, s->bed_temp_set);
 
     /* Time remaining */
-    set_time_left_label(time_left_label, s);
+    set_time_left_label(time_left_label, job_active, s->time_left);
 
     /* Progress */
     int pct = (int)s->progress;
@@ -291,25 +285,14 @@ static void update_timer_cb(lv_timer_t *timer)
     if (!backend_is_stop_print_inflight())
         stop_inflight = 0;
 
-    if (!job_active && !has_print_name &&
-        s->time_total <= 0 &&
-        s->time_left <= 0 &&
-        s->bed_temp_set <= 0.0f &&
-        s->nozzle_temp_set <= 0.0f)
-        backend_clear_print_display_context_if_idle();
-
-    int aborting = backend_has_abort_print_context();
-    int pausing = deneb_print_display_state_with_req(
-        s->connected, s->has_error, s->is_paused, s->is_printing,
-        aborting, backend_has_preparing_print_context(), s->time_total,
-        s->current_req) == DENEB_PRINT_DISPLAY_STATE_PAUSING;
+    int pausing = display_state == DENEB_PRINT_DISPLAY_STATE_PAUSING;
     if (pause_resume_label)
         set_label_text(pause_resume_label,
                        locale_get(s->is_paused ? "print.resume" : "print.pause"));
     set_btn_enabled(pause_resume_btn,
                     ((job_active && s->is_printing) || s->is_paused) &&
                     !aborting && !pausing);
-    set_btn_enabled(stop_btn, backend_has_stoppable_print_context() &&
+    set_btn_enabled(stop_btn, context.has_stoppable_context &&
                                   !stop_inflight &&
                                   !backend_is_stop_print_inflight());
 

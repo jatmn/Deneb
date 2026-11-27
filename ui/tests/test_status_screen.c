@@ -12,21 +12,21 @@ static unsigned stops;
 static unsigned flushes;
 
 const printer_state_t *backend_get_state(void) { return &observed; }
-int backend_get_print_display_name(char *out, size_t size)
-{
-    snprintf(out, size, "%s", observed.filename);
-    return out[0] ? 0 : -1;
-}
-int backend_has_print_name(const char *name) { return name[0] != '\0'; }
 int backend_has_active_print_context(void)
 {
     return observed.is_printing || observed.is_paused;
 }
-int backend_has_preparing_print_context(void) { return 0; }
+deneb_print_context_flags_t backend_get_print_display_context(char *out, size_t size)
+{
+    snprintf(out, size, "%s", observed.filename);
+    return (deneb_print_context_flags_t){
+        .has_active_context = backend_has_active_print_context(),
+        .has_stoppable_context = observed.is_printing,
+    };
+}
 int backend_has_stoppable_print_context(void) { return observed.is_printing; }
 int backend_has_abort_print_context(void) { return stops != 0; }
 int backend_is_stop_print_inflight(void) { return stops != 0; }
-void backend_clear_print_display_context_if_idle(void) {}
 int backend_pause_print(void) { pauses++; return 0; }
 int backend_resume_print(void) { resumes++; return 0; }
 int backend_stop_print(void) { stops++; return 0; }

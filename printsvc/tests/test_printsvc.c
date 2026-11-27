@@ -24,6 +24,7 @@
 #include "job_streamer.h"
 #include "background_action.h"
 #include <sys/ioctl.h>
+#include <sys/inotify.h>
 #include <sys/socket.h>
 #include "macro_control.h"
 #include "macro_registry.h"
@@ -3054,6 +3055,70 @@ static void test_status_payload_filename_resolution(void)
                                           out, sizeof(out));
     assert(out[0] == '\0');
     assert(retained[0] == '\0');
+}
+
+static void test_status_payload_pending_file_opens(void)
+{
+    deneb_status_filename_context_t curr = {0};
+    deneb_status_filename_context_t prev = {0};
+    deneb_pending_job_t pending;
+    struct inotify_event event;
+    char retained[128] = "";
+    char out[128];
+
+    deneb_pending_job_init(&pending, "/home/3D/first.gcode");
+    pending.tracker = 42;
+    pending.material_change_required = 1;
+    assert(deneb_pending_job_write_default(&pending) == 0);
+
+    int monitor = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    assert(monitor >= 0);
+    /* The close separates successive opens so inotify cannot coalesce them. */
+    assert(inotify_add_watch(monitor, DENEB_PENDING_JOB_PATH,
+                             IN_OPEN | IN_CLOSE_NOWRITE) >= 0);
+
+    deneb_status_payload_resolve_filename_value(
+        "/home/3D/printing.gcode", 1, &curr, &prev,
+        retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "printing.gcode") == 0);
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
+
+    retained[0] = '\0';
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(out[0] == '\0');
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
+
+    curr.req = DENEB_PRINT_REQ_PREPARE;
+    prev.filename = "previous.gcode";
+    snprintf(retained, sizeof(retained), "%s", "retained.gcode");
+    deneb_status_payload_resolve_filename_value(
+        DENEB_PRINT_MACRO_HOME_AND_CENTER_HEAD, 1, &curr, &prev,
+        retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "first.gcode") == 0);
+    assert(strcmp(retained, "retained.gcode") == 0);
+    assert(read(monitor, &event, sizeof(event)) == (ssize_t)sizeof(event));
+    assert(event.mask == IN_OPEN);
+    assert(read(monitor, &event, sizeof(event)) == (ssize_t)sizeof(event));
+    assert(event.mask == IN_CLOSE_NOWRITE);
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
+    assert(close(monitor) == 0);
+
+    deneb_pending_job_init(&pending, "/home/3D/replacement.gcode");
+    pending.tracker = 43;
+    assert(deneb_pending_job_write_default(&pending) == 0);
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "replacement.gcode") == 0);
+    assert(deneb_pending_job_file_clear_default() == 0);
+
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "retained.gcode") == 0);
+    retained[0] = '\0';
+    deneb_status_payload_resolve_filename_value(
+        NULL, 0, &curr, &prev, retained, sizeof(retained), out, sizeof(out));
+    assert(strcmp(out, "previous.gcode") == 0);
 }
 
 static void test_gcode_command_helpers(void)
@@ -7438,6 +7503,7 @@ int main(int argc, char **argv)
     test_printer_status_response();
     test_json_field_helpers();
     test_status_payload_filename_resolution();
+    test_status_payload_pending_file_opens();
     test_gcode_command_helpers();
     test_frame_light_helpers();
     test_parse_int_helpers();
