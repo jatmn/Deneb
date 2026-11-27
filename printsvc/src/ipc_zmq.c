@@ -50,15 +50,6 @@ static long long monotonic_ms(void)
     return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
-static int service_has_active_work(const deneb_print_service_t *svc)
-{
-    return svc &&
-           (svc->job_active || svc->gcode_queue_active ||
-            svc->abort_cleanup_pending || svc->finish_cleanup_pending ||
-            svc->pause_policy_pending || svc->pause_position_probe_pending ||
-            svc->resume_policy_pending || svc->heater_wait.active);
-}
-
 static void configure_status_pub(void *pub)
 {
     int hwm = DENEB_PRINTSVC_STATUS_HWM;
@@ -134,7 +125,7 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
 
     for (;;) {
         zmq_pollitem_t items[] = {{rep, 0, ZMQ_POLLIN, 0}};
-        int timeout = service_has_active_work(svc) ?
+        int timeout = deneb_print_service_has_active_work(svc) ?
                           DENEB_PRINTSVC_ACTIVE_POLL_MS :
                           DENEB_PRINTSVC_IDLE_POLL_MS;
         int rc = zmq_poll(items, 1, timeout);
@@ -161,7 +152,7 @@ int deneb_printsvc_ipc_run(deneb_print_service_t *svc)
         poll_job_burst(svc);
         {
             long long now_ms = monotonic_ms();
-            int status_publish_ms = service_has_active_work(svc) ?
+            int status_publish_ms = deneb_print_service_has_active_work(svc) ?
                                         DENEB_PRINTSVC_ACTIVE_STATUS_PUBLISH_MS :
                                         DENEB_PRINTSVC_IDLE_STATUS_PUBLISH_MS;
             if (last_status_publish_ms == 0 ||

@@ -76,10 +76,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+static long long test_monotonic_ms = -1;
+
+int __real_clock_gettime(clockid_t clock, struct timespec *ts);
+
+int __wrap_clock_gettime(clockid_t clock, struct timespec *ts)
+{
+    if (clock != CLOCK_MONOTONIC || test_monotonic_ms < 0)
+        return __real_clock_gettime(clock, ts);
+
+    ts->tv_sec = test_monotonic_ms / 1000;
+    ts->tv_nsec = test_monotonic_ms % 1000 * 1000000;
+    return 0;
+}
 
 static void write_build_volume_fixture(const char *path,
                                        const char *bounds_metadata);
@@ -5583,7 +5598,7 @@ static void controller_acknowledge(int fd, uint8_t sequence, const char *report)
     controller_send(fd, frame, (size_t)len);
 }
 
-static void start_pause_controller_fixture(deneb_print_service_t *svc, int wire[2])
+static void start_active_controller_fixture(deneb_print_service_t *svc, int wire[2])
 {
     deneb_print_service_init(svc);
     assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, wire) == 0);
@@ -5604,8 +5619,10 @@ static void test_pause_rejects_periodic_position_report(void)
     deneb_print_service_t svc;
     int wire[2];
     char reply[256];
-    start_pause_controller_fixture(&svc, wire);
-    svc.temperature_poll_ticks = 3;
+    start_active_controller_fixture(&svc, wire);
+    test_monotonic_ms = 1000;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    test_monotonic_ms = 1040;
     assert(deneb_print_service_poll_motion(&svc) == 0);
     uint8_t temperature = expect_controller_command(wire[1], "M105");
     uint8_t periodic = expect_controller_command(wire[1], "M114");
@@ -5627,7 +5644,7 @@ static void test_pause_rejects_periodic_position_report(void)
     expect_controller_quiet(wire[1]);
 
     /* Temperature polling continues, but cannot send another position request. */
-    svc.temperature_poll_ticks = 3;
+    test_monotonic_ms = 1080;
     assert(deneb_print_service_poll_motion(&svc) == 0);
     temperature = expect_controller_command(wire[1], "M105");
     expect_controller_quiet(wire[1]);
@@ -5642,6 +5659,7 @@ static void test_pause_rejects_periodic_position_report(void)
     expect_controller_quiet(wire[1]);
     close(wire[1]);
     deneb_print_service_close(&svc);
+    test_monotonic_ms = -1;
 }
 
 static void test_pause_drains_before_capturing_position(void)
@@ -5649,7 +5667,7 @@ static void test_pause_drains_before_capturing_position(void)
     deneb_print_service_t svc;
     int wire[2];
     char reply[256];
-    start_pause_controller_fixture(&svc, wire);
+    start_active_controller_fixture(&svc, wire);
     assert(deneb_motion_sender_send_gcode(&svc.flow, &svc.serial, 1, "G1 X32") == 0);
     uint8_t move = expect_controller_command(wire[1], "G1 X32");
     assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
@@ -5690,7 +5708,7 @@ static void test_abort_during_unacknowledged_pause_drain(void)
         deneb_print_service_t svc;
         int wire[2];
         char reply[256];
-        start_pause_controller_fixture(&svc, wire);
+        start_active_controller_fixture(&svc, wire);
         svc.status.bed_t_set = 50.0f;
         svc.status.head_t_set = 195.0f;
         assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
@@ -5732,7 +5750,7 @@ static void test_pause_handshake_yields_to_abort_and_fault(void)
             deneb_print_service_t svc;
             int wire[2];
             char reply[256];
-            start_pause_controller_fixture(&svc, wire);
+            start_active_controller_fixture(&svc, wire);
             assert(deneb_printsvc_ipc_handle_frame(&svc, "PAUSE<{}",
                                                    reply, sizeof(reply)) == 0);
             assert(deneb_print_service_poll_motion(&svc) == 0);
@@ -6203,36 +6221,38 @@ static void test_service_poll_motion_stub(void)
 static void test_service_startup_status_probe(void)
 {
     deneb_print_service_t svc;
-    FILE *serial_file;
-    int serial_fd;
-    uint8_t buf[512];
-    ssize_t n;
-
-    deneb_print_service_init(&svc);
-    serial_file = tmpfile();
-    assert(serial_file != NULL);
-    serial_fd = dup(fileno(serial_file));
-    assert(serial_fd >= 0);
-    svc.serial.fd = serial_fd;
-    svc.serial_ready = 1;
+    int wire[2];
+    start_active_controller_fixture(&svc, wire);
+    svc.job_active = 0;
     svc.startup_status_probe_pending = 1;
     svc.firmware_probe_pending = 1;
 
+    test_monotonic_ms = 0;
     assert(deneb_print_service_poll_motion(&svc) == 0);
     assert(!svc.startup_status_probe_pending);
     assert(svc.firmware_probe_pending);
     assert(svc.firmware_probe_attempts == 1);
-    assert(svc.temperature_poll_ticks == 0);
     assert(deneb_flow_inflight(&svc.flow) == 3);
-    assert(lseek(serial_fd, 0, SEEK_SET) == 0);
-    n = read(serial_fd, buf, sizeof(buf));
-    assert(n > 0);
-    assert(buffer_contains_bytes(buf, (size_t)n, "M115"));
-    assert(buffer_contains_bytes(buf, (size_t)n, "M105"));
-    assert(buffer_contains_bytes(buf, (size_t)n, "M114"));
+    uint8_t version = expect_controller_command(wire[1], "M115");
+    uint8_t temperature = expect_controller_command(wire[1], "M105");
+    uint8_t position = expect_controller_command(wire[1], "M114");
+    controller_acknowledge(wire[1], version, NULL);
+    controller_acknowledge(wire[1], temperature, NULL);
+    controller_acknowledge(wire[1], position, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    test_monotonic_ms = 999;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    test_monotonic_ms = 1000;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_command(wire[1], "M105");
+    expect_controller_command(wire[1], "M114");
+    expect_controller_quiet(wire[1]);
+    assert(svc.firmware_probe_pending && svc.firmware_probe_attempts == 1);
 
+    close(wire[1]);
     deneb_print_service_close(&svc);
-    fclose(serial_file);
+    test_monotonic_ms = -1;
 }
 
 static void test_service_firmware_probe_retries_until_bounded(void)
@@ -6305,37 +6325,105 @@ static void test_service_firmware_probe_retries_until_bounded(void)
     fclose(serial_file);
 }
 
-static void test_service_periodic_status_poll_omits_version_probe(void)
+static void acknowledge_status_probes(int fd, const char *temperature_report)
+{
+    uint8_t temperature = expect_controller_command(fd, "M105");
+    uint8_t position = expect_controller_command(fd, "M114");
+    expect_controller_quiet(fd);
+    controller_acknowledge(fd, temperature, temperature_report);
+    controller_acknowledge(fd, position, NULL);
+}
+
+static void test_service_idle_status_probe_ignores_rpc_wakes(void)
 {
     deneb_print_service_t svc;
-    FILE *serial_file;
-    int serial_fd;
-    uint8_t buf[512];
-    ssize_t n;
+    int wire[2];
+    start_active_controller_fixture(&svc, wire);
+    svc.job_active = 0;
 
-    deneb_print_service_init(&svc);
-    serial_file = tmpfile();
-    assert(serial_file != NULL);
-    serial_fd = dup(fileno(serial_file));
-    assert(serial_fd >= 0);
-    svc.serial.fd = serial_fd;
-    svc.serial_ready = 1;
-    svc.startup_status_probe_pending = 0;
-    svc.temperature_poll_ticks = 3;
-
+    test_monotonic_ms = 0;
     assert(deneb_print_service_poll_motion(&svc) == 0);
-    assert(!svc.startup_status_probe_pending);
-    assert(svc.temperature_poll_ticks == 0);
-    assert(deneb_flow_inflight(&svc.flow) == 2);
-    assert(lseek(serial_fd, 0, SEEK_SET) == 0);
-    n = read(serial_fd, buf, sizeof(buf));
-    assert(n > 0);
-    assert(!buffer_contains_bytes(buf, (size_t)n, "M115"));
-    assert(buffer_contains_bytes(buf, (size_t)n, "M105"));
-    assert(buffer_contains_bytes(buf, (size_t)n, "M114"));
+    for (int i = 0; i < 100; ++i)
+        assert(deneb_print_service_poll_motion(&svc) == 0);
+    test_monotonic_ms = 999;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    test_monotonic_ms = 1000;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    acknowledge_status_probes(wire[1], NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    expect_controller_quiet(wire[1]);
 
+    close(wire[1]);
     deneb_print_service_close(&svc);
-    fclose(serial_file);
+    test_monotonic_ms = -1;
+}
+
+static void test_service_active_and_heating_status_probes(void)
+{
+    deneb_print_service_t svc;
+    int wire[2];
+    start_active_controller_fixture(&svc, wire);
+    svc.job_active = 0;
+
+    test_monotonic_ms = 0;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    deneb_heater_wait_start(&svc.heater_wait, 60.0f, 210.0f, 1.0f);
+    for (test_monotonic_ms = 1; test_monotonic_ms < 40; ++test_monotonic_ms)
+        assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    acknowledge_status_probes(wire[1], "T:48.0 /210.0 B:40.0 /60.0\n");
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(svc.heater_wait.active);
+    assert(svc.status.head_t_cur == 48.0f && svc.status.bed_t_cur == 40.0f);
+    expect_controller_quiet(wire[1]);
+
+    svc.heater_wait.active = 0;
+    svc.job_active = 1;
+    test_monotonic_ms = 79;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    test_monotonic_ms = 80;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    acknowledge_status_probes(wire[1], NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    expect_controller_quiet(wire[1]);
+
+    close(wire[1]);
+    deneb_print_service_close(&svc);
+    test_monotonic_ms = -1;
+}
+
+static void test_service_status_probe_waits_for_busy_flow(void)
+{
+    deneb_print_service_t svc;
+    int wire[2];
+    start_active_controller_fixture(&svc, wire);
+
+    test_monotonic_ms = 0;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(deneb_motion_sender_send_gcode(&svc.flow, &svc.serial, 1, "G1 X32") == 0);
+    uint8_t move = expect_controller_command(wire[1], "G1 X32");
+    test_monotonic_ms = 2000;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    assert(deneb_flow_inflight(&svc.flow) == 1);
+
+    controller_acknowledge(wire[1], move, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    acknowledge_status_probes(wire[1], NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    test_monotonic_ms = 2039;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    expect_controller_quiet(wire[1]);
+    test_monotonic_ms = 2040;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    acknowledge_status_probes(wire[1], NULL);
+
+    close(wire[1]);
+    deneb_print_service_close(&svc);
+    test_monotonic_ms = -1;
 }
 
 static void test_heater_wait(void)
@@ -7648,7 +7736,9 @@ int main(int argc, char **argv)
     test_service_poll_motion_stub();
     test_service_startup_status_probe();
     test_service_firmware_probe_retries_until_bounded();
-    test_service_periodic_status_poll_omits_version_probe();
+    test_service_idle_status_probe_ignores_rpc_wakes();
+    test_service_active_and_heating_status_probes();
+    test_service_status_probe_waits_for_busy_flow();
     test_service_proto_desync_resyncs_active_job();
     test_heater_wait();
     test_sha256();

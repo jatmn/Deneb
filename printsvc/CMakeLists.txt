@@ -171,6 +171,7 @@ add_executable(deneb-printsvc-tests
 target_link_libraries(deneb-printsvc-tests PRIVATE
     deneb-printsvc-core
     "-Wl,--wrap=deneb_gcode_stream_close"
+    "-Wl,--wrap=clock_gettime"
 )
 
 enable_testing()

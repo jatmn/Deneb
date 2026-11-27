@@ -7,7 +7,11 @@
 #include "motion_sender.h"
 #include "pause_resume_control.h"
 
-#define DENEB_PRINTSVC_TEMP_POLL_TICKS 4
+#include <time.h>
+
+/* Match the nominal cadence of four IPC waits at 250 ms idle or 10 ms active. */
+#define DENEB_PRINTSVC_IDLE_STATUS_PROBE_MS 1000
+#define DENEB_PRINTSVC_ACTIVE_STATUS_PROBE_MS 40
 #define DENEB_PRINTSVC_FIRMWARE_PROBE_INTERVAL_TICKS 20
 #define DENEB_PRINTSVC_FIRMWARE_PROBE_MAX_ATTEMPTS 6
 
@@ -57,6 +61,42 @@ int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc)
 static int status_has_firmware(const deneb_print_service_t *svc)
 {
     return svc && svc->status.firmware[0] != '\0';
+}
+
+int deneb_print_service_has_active_work(const deneb_print_service_t *svc)
+{
+    return svc &&
+           (svc->job_active || svc->gcode_queue_active ||
+            svc->abort_cleanup_pending || svc->finish_cleanup_pending ||
+            svc->pause_policy_pending || svc->pause_position_probe_pending ||
+            svc->resume_policy_pending || svc->heater_wait.active);
+}
+
+static long long status_probe_clock_ms(void)
+{
+    struct timespec ts;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return -1;
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+static int status_probe_due(deneb_print_service_t *svc)
+{
+    long long now = status_probe_clock_ms();
+    if (now < 0)
+        return 0;
+    if (svc->last_status_probe_ms < 0)
+        svc->last_status_probe_ms = now;
+
+    int interval = deneb_print_service_has_active_work(svc) ?
+        DENEB_PRINTSVC_ACTIVE_STATUS_PROBE_MS : DENEB_PRINTSVC_IDLE_STATUS_PROBE_MS;
+    if (now - svc->last_status_probe_ms < interval)
+        return 0;
+
+    /* Start the next interval here, even if flow delayed this probe. */
+    svc->last_status_probe_ms = now;
+    return 1;
 }
 
 static int send_status_probe(deneb_print_service_t *svc, int include_version)
@@ -110,7 +150,7 @@ int deneb_print_service_open_motion(deneb_print_service_t *svc)
     svc->firmware_probe_pending = 1;
     svc->firmware_probe_ticks = 0;
     svc->firmware_probe_attempts = 0;
-    svc->temperature_poll_ticks = 0;
+    svc->last_status_probe_ms = -1;
     return 0;
 }
 
@@ -139,7 +179,7 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
         int probe_rc = send_status_probe(svc, 1);
         if (probe_rc == 0) {
             svc->startup_status_probe_pending = 0;
-            svc->temperature_poll_ticks = 0;
+            svc->last_status_probe_ms = status_probe_clock_ms();
             svc->firmware_probe_ticks = 0;
             svc->firmware_probe_attempts++;
         }
@@ -172,9 +212,8 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
     if (svc->serial_ready &&
         !svc->startup_status_probe_pending &&
         deneb_flow_inflight(&svc->flow) == 0 &&
-        ++svc->temperature_poll_ticks >= DENEB_PRINTSVC_TEMP_POLL_TICKS) {
+        status_probe_due(svc)) {
         int poll_rc = send_status_probe(svc, 0);
-        svc->temperature_poll_ticks = 0;
         if (poll_rc != 0 && rc == 0)
             rc = poll_rc;
     }

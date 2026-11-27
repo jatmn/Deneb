@@ -16,6 +16,7 @@ void deneb_service_context_init(deneb_print_service_t *svc)
     deneb_heater_wait_init(&svc->heater_wait);
     svc->serial.fd = -1;
     svc->job_stream.fd = -1;
+    svc->last_status_probe_ms = -1;
 }
 
 int deneb_service_context_motion_runtime(deneb_print_service_t *svc,
