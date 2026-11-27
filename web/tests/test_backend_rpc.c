@@ -20,10 +20,12 @@ static void publish_until(void *pub, deneb_manual_state_t manual_state)
     char frame[128];
     int n = snprintf(frame, sizeof(frame),
                      "10001<{\"manualId\":\"9\",\"manualState\":%d}", (int)manual_state);
+    uint32_t previous_update = state.last_update_ms;
     for (int i = 0; i < 400; ++i) {
         assert(zmq_send(pub, frame, (size_t)n, 0) == n);
         backend_zmq_poll();
-        if (state.connected && state.manual_id == 9 && state.manual_state == manual_state)
+        if (state.connected && state.last_update_ms != previous_update &&
+            state.manual_id == 9 && state.manual_state == manual_state)
             return;
         struct timespec pause = {0, 5000000};
         nanosleep(&pause, NULL);
@@ -44,6 +46,10 @@ static void test_status_projects_manual_ownership(void)
     assert(zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) == 0);
     const deneb_manual_state_t states[] = {
         DENEB_MANUAL_RUNNING, DENEB_MANUAL_CANCELLING, DENEB_MANUAL_COMPLETE};
+    uint64_t revision = 0;
+    assert(!status_event);
+    publish_until(pub, states[0]);
+    assert(!status_event); /* Receiving status without an SSE consumer is lazy. */
     for (size_t i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
         publish_until(pub, states[i]);
         int allowed = states[i] == DENEB_MANUAL_COMPLETE;
@@ -51,13 +57,26 @@ static void test_status_projects_manual_ownership(void)
         deneb_printer_status_response_t response;
         backend_zmq_get_printer_status_response(&response);
         assert(response.manual_action_allowed == allowed);
-        assert(strstr(backend_zmq_get_status_json(),
-                      allowed ? "\"manual_action_allowed\":true" :
-                                "\"manual_action_allowed\":false"));
+        size_t len;
+        uint64_t current_revision;
+        const char *event = backend_zmq_get_status_event(&len, &current_revision);
+        assert(event && len == strlen(event) && current_revision > revision);
+        assert(strstr(event, allowed ? "\"manual_action_allowed\":true" :
+                                       "\"manual_action_allowed\":false"));
+        revision = current_revision;
+        publish_until(pub, states[i]);
+        assert(backend_zmq_get_status_event(&len, &current_revision) == event);
+        assert(current_revision == revision);
     }
     zmq_close(status_sock);
     status_sock = NULL;
     zmq_close(pub);
+    state.last_update_ms -= DENEB_STATUS_STALE_MS;
+    backend_zmq_poll();
+    size_t len;
+    uint64_t expired_revision;
+    const char *event = backend_zmq_get_status_event(&len, &expired_revision);
+    assert(event && strstr(event, "\"connected\":false") && expired_revision > revision);
 }
 #endif
 

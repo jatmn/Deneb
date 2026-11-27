@@ -57,8 +57,9 @@ int backend_zmq_resume(void);
 int backend_zmq_abort(void);
 int backend_zmq_stop_print(void);
 
-/* Get pre-serialized status JSON string. */
-const char *backend_zmq_get_status_json(void);
+/* Borrow the current complete SSE event until the next call or deinit.
+ * On success, len and revision are filled and revision is nonzero. */
+const char *backend_zmq_get_status_event(size_t *len, uint64_t *revision);
 deneb_print_backend_t backend_zmq_get_print_backend(void);
 const char *backend_zmq_get_print_backend_name(void);
 const char *backend_zmq_get_print_backend_status_url(void);
