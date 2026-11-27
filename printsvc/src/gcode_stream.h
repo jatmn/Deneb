@@ -2,7 +2,7 @@
 #ifndef DENEB_PRINTSVC_GCODE_STREAM_H
 #define DENEB_PRINTSVC_GCODE_STREAM_H
 
-#include "config.h"
+#include "gcode_rewrite.h"
 
 #include <stddef.h>
 
@@ -15,8 +15,7 @@ typedef struct {
     int eof;
     unsigned long line_number;
     int has_prime_cmd;
-    char pending[DENEB_PRINTSVC_MAX_COMMANDS][DENEB_PRINTSVC_MAX_GCODE_LINE];
-    size_t pending_count;
+    deneb_gcode_rewrite_t pending;
     size_t pending_index;
     int last_wait_for_bed;
     int last_wait_for_nozzle;
