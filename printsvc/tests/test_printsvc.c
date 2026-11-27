@@ -23,6 +23,7 @@
 #include "job_lifecycle.h"
 #include "job_streamer.h"
 #include "background_action.h"
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include "macro_control.h"
 #include "macro_registry.h"
@@ -1639,6 +1640,9 @@ static void test_serial_transport_buffers_partial_lines(void)
     assert(write(pipefd[1], tail, sizeof(tail) - 1) == sizeof(tail) - 1);
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 7);
     assert(strcmp(line, "o0005A6") == 0);
+    int queued = -1;
+    assert(ioctl(pipefd[0], FIONREAD, &queued) == 0);
+    assert(queued == 0);
     assert(deneb_serial_read_line(&serial, line, sizeof(line)) == 0);
     assert(line[0] == '\0');
     assert(deneb_serial_read_line(&serial, line, 3) == 2);
@@ -4658,6 +4662,87 @@ static void test_material_catalog_helpers(void)
     remove(material_path);
 }
 
+static void test_material_catalog_scan_boundaries(void)
+{
+    const char *path = "/tmp/deneb-material-scan.xml";
+    const char *guid = "506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9";
+    char parsed_guid[64];
+    char fields[96];
+    int version;
+    FILE *f = fopen(path, "wb");
+
+    assert(f != NULL);
+    /* The version opener and closer straddle separate read boundaries. */
+    fprintf(f, "%*s<version>\t+7 %*s</version><GUID>\n%*s%s\t</GUID>",
+            508, "", 502, "", 620, "", guid);
+    assert(fclose(f) == 0);
+    assert(deneb_material_catalog_parse_file(path, parsed_guid,
+                                            sizeof(parsed_guid), &version) == 0);
+    assert(strcmp(parsed_guid, guid) == 0 && version == 7);
+
+    int fields_len = snprintf(fields, sizeof(fields), "<GUID>%s</GUID>"
+                              "<version>8</version>", guid);
+    assert(fields_len > 0 && (size_t)fields_len < sizeof(fields));
+
+    /* A pipe exposes how much input the parser consumes beyond the metadata. */
+    int material_pipe[2];
+    char material[4096];
+    char pipe_path[64];
+    const char suffix[] = "</description></material>";
+    int prefix_len = snprintf(material, sizeof(material),
+                              "<material>%s<description>", fields);
+    assert(prefix_len > 0 && (size_t)prefix_len < 512);
+    memset(material + prefix_len, 'x', sizeof(material) - (size_t)prefix_len);
+    memcpy(material + sizeof(material) - (sizeof(suffix) - 1),
+           suffix, sizeof(suffix) - 1);
+    assert(pipe(material_pipe) == 0);
+    assert(write(material_pipe[1], material, sizeof(material)) == (ssize_t)sizeof(material));
+    assert(close(material_pipe[1]) == 0);
+    snprintf(pipe_path, sizeof(pipe_path), "/proc/self/fd/%d", material_pipe[0]);
+    assert(deneb_material_catalog_parse_file(pipe_path, parsed_guid,
+                                            sizeof(parsed_guid), &version) == 0);
+    assert(strcmp(parsed_guid, guid) == 0 && version == 8);
+    assert(read(material_pipe[0], material, sizeof(material)) == (ssize_t)sizeof(material) - 512);
+    assert(close(material_pipe[0]) == 0);
+
+    for (int past_limit = 0; past_limit <= 1; ++past_limit) {
+        f = fopen(path, "wb");
+        assert(f != NULL);
+        fprintf(f, "%*s%s", 128 * 1024 - fields_len + past_limit, "", fields);
+        assert(fclose(f) == 0);
+        int result = deneb_material_catalog_parse_file(path, parsed_guid,
+                                                       sizeof(parsed_guid),
+                                                       &version);
+        if (past_limit) {
+            assert(result != 0);
+        } else {
+            assert(result == 0);
+            assert(strcmp(parsed_guid, guid) == 0 && version == 8);
+        }
+    }
+
+    const char *invalid_suffixes[] = {
+        "",
+        "<version>7</versio",
+        "<version> </version><version>9</version>",
+    };
+    for (size_t i = 0; i < sizeof(invalid_suffixes) / sizeof(*invalid_suffixes); ++i) {
+        f = fopen(path, "wb");
+        assert(f != NULL);
+        fprintf(f, "<GUID>%s</GUID>%s", guid, invalid_suffixes[i]);
+        assert(fclose(f) == 0);
+        assert(deneb_material_catalog_parse_file(path, parsed_guid,
+                                                sizeof(parsed_guid), &version) != 0);
+    }
+    f = fopen(path, "wb");
+    assert(f != NULL);
+    fprintf(f, "<GUID>%s</GUID>%c<version>7</version>", guid, 0);
+    assert(fclose(f) == 0);
+    assert(deneb_material_catalog_parse_file(path, parsed_guid,
+                                            sizeof(parsed_guid), &version) != 0);
+    assert(remove(path) == 0);
+}
+
 static void test_macro_safety(void)
 {
     char path[256];
@@ -7373,6 +7458,7 @@ int main(int argc, char **argv)
     test_pending_job_registration_policy();
     test_print_job_file_metadata();
     test_material_catalog_helpers();
+    test_material_catalog_scan_boundaries();
     test_status_frame();
     test_crc_and_packet();
     test_macro_safety();
