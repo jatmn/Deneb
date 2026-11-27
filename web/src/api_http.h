@@ -8,6 +8,7 @@
 #define API_HTTP_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define HTTP_MAX_PATH    256
 #define HTTP_MAX_HEADERS 16
@@ -46,8 +47,8 @@ typedef struct {
     size_t body_cap;
     int keep_alive;
     int prepare_print_upload;
-    /* For SSE */
-    int is_sse;
+    /* Nonzero for an SSE response, including the initial event revision. */
+    uint64_t sse_revision;
     /* For Digest auth challenge */
     char auth_challenge[256];
 } http_response_t;

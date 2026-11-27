@@ -137,9 +137,10 @@ function pausedLocale(apiSocket) {
     };
 }
 
-function liveStatus(port) {
+function liveStatus(port, token) {
     const client = { events: 0 };
-    const req = request(port, '/api/v1/deneb/events', {}, (response) => {
+    const pathname = '/api/v1/deneb/events' + (token ? '?token=' + encodeURIComponent(token) : '');
+    const req = request(port, pathname, {}, (response) => {
         try {
             assert.equal(response.statusCode, 200);
             assert.match(response.headers['content-type'], /^text\/event-stream\b/);
@@ -152,7 +153,11 @@ function liveStatus(port) {
             pending += chunk;
             let end;
             while ((end = pending.indexOf('\n\n')) !== -1) {
-                if (pending.slice(0, end) === 'data: {}') client.events++;
+                const event = pending.slice(0, end);
+                if (event.startsWith('data: ')) {
+                    client.lastEvent = event;
+                    client.events++;
+                }
                 pending = pending.slice(end + 2);
             }
         });
@@ -324,12 +329,13 @@ function extractorState(pid) {
     }
 }
 
-async function assertResponsive(port, clients, phase) {
+async function assertResponsive(port, clients, advanceStatus, phase) {
     const before = clients.map((client) => client.events);
+    const expected = advanceStatus();
     const freshEvents = withinDeadline('Four fresh SSE updates exceeded the deadline ' + phase, () =>
         clients.every((client, index) => {
             if (client.error) throw client.error;
-            return client.events > before[index];
+            return client.events > before[index] && client.lastEvent === expected;
         }));
     const replies = Promise.all([get(port, STATUS_PATH), get(port, STATUS_PATH)]).then((results) => {
         for (const result of results) {
@@ -344,6 +350,14 @@ async function assertResponsive(port, clients, phase) {
 
 async function main() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'du-'));
+    let statusRevision = 1;
+    function advanceStatus() {
+        ++statusRevision;
+        const pending = path.join(root, 'next-status-revision');
+        fs.writeFileSync(pending, String(statusRevision));
+        fs.renameSync(pending, path.join(root, 'status-revision'));
+        return 'data: ' + JSON.stringify({ revision: statusRevision, fixture: '0'.repeat(1100) });
+    }
     const extractionStarted = path.join(root, 'extraction-started');
     const releaseExtraction = path.join(root, 'release-extraction');
     const delayExtraction = path.join(root, 'delay-extraction');
@@ -430,14 +444,14 @@ async function main() {
         await withinDeadline('Four SSE streams did not start through lighttpd', () =>
             clients.every((client) => {
                 if (client.error) throw client.error;
-                return client.events > 0;
+                return client.events === 1 && client.lastEvent === 'data: {}';
             }));
         const active = [api.pid, proxy.pid].map(countDescriptors);
         assert.ok(active[0] >= baseline[1] + SSE_CLIENTS, 'API accepted four SSE clients');
 
         const interrupted = startUpload(port, archive, 'interrupted.ufp');
         await withinDeadline('Partial multipart data did not reach the API', uploadedBodyExists);
-        await assertResponsive(port, clients, 'during incomplete upload');
+        await assertResponsive(port, clients, advanceStatus, 'during incomplete upload');
         const overflow = await startUpload(port, archive, 'over-budget.ufp', {
             declaredLength: 50 * 1024 * 1024
         }).finish();
@@ -445,7 +459,7 @@ async function main() {
         assert.equal(JSON.parse(overflow.data).message, 'Upload failed');
         interrupted.cancel();
 
-        await assertResponsive(port, clients, 'after cancellation');
+        await assertResponsive(port, clients, advanceStatus, 'after cancellation');
         await withinDeadline('Cancellation did not release proxy/API upload resources', () =>
             fs.readdirSync(temp).length === 0 &&
             countDescriptors(api.pid) === active[0] && countDescriptors(proxy.pid) === active[1] &&
@@ -465,7 +479,7 @@ async function main() {
         assert.deepEqual(otherSpoolEntries, []);
         assert.match(staged, /^\.upload-/);
         assert.deepEqual(fs.readdirSync(path.join(spool, staged)), ['job']);
-        await assertResponsive(port, clients, 'while a later-cancelled UFP is extracted');
+        await assertResponsive(port, clients, advanceStatus, 'while a later-cancelled UFP is extracted');
         // A TCP FIN after the full body is also a valid write-side half-close.
         // Send a reset so the proxy recognizes that the client discarded its reply.
         cancelled.reset();
@@ -497,11 +511,11 @@ async function main() {
 
         const complete = startUpload(port, archive, 'completed.ufp');
         await withinDeadline('Second partial upload did not reach the API', uploadedBodyExists);
-        await assertResponsive(port, clients, 'during the subsequent upload');
+        await assertResponsive(port, clients, advanceStatus, 'during the subsequent upload');
         armExtraction();
         const completing = complete.finish();
         await blockedExtractor();
-        await assertResponsive(port, clients, 'while UFP extraction is blocked');
+        await assertResponsive(port, clients, advanceStatus, 'while UFP extraction is blocked');
         fs.writeSync(releaseFd, 'continue\n');
         const result = await completing;
         fs.rmSync(delayExtraction);
@@ -519,7 +533,7 @@ async function main() {
 
         // The proxy still translates chunked requests for the Content-Length API.
         const chunkedRetry = startUpload(port, archive, 'completed.ufp', { chunked: true });
-        await assertResponsive(port, clients, 'during a chunked multipart upload');
+        await assertResponsive(port, clients, advanceStatus, 'during a chunked multipart upload');
         const duplicate = await chunkedRetry.finish();
         assert.equal(duplicate.code, 200, duplicate.data);
         assert.equal(JSON.parse(duplicate.data).message, 'Print job already queued');
@@ -555,7 +569,7 @@ async function main() {
             'application/json; boundary=' + boundary,
             Buffer.from(JSON.stringify({ password })), Buffer.from('\r\n'));
         await withinDeadline('JSON login did not enter the spooled POST path', uploadedBodyExists);
-        await assertResponsive(port, clients, 'during the spooled JSON login');
+        await assertResponsive(port, clients, advanceStatus, 'during the spooled JSON login');
         const loginReply = await login.finish();
         assert.match(loginReply, /^HTTP\/1\.1 200 OK\r\n/);
         const { token } = JSON.parse(loginReply.slice(loginReply.indexOf('\r\n\r\n') + 4));
@@ -572,7 +586,7 @@ async function main() {
         ];
         await withinDeadline('Eight partial uploads did not reach the API', () =>
             fs.readdirSync(temp).filter((name) => name.startsWith('deneb-upload-')).length === 8);
-        await assertResponsive(port, clients, 'with eight pending multipart uploads');
+        await assertResponsive(port, clients, advanceStatus, 'with eight pending multipart uploads');
         const accepted = await uploads[0].finish();
         assert.match(accepted, /^HTTP\/1\.1 200 OK\r\n/);
         assert.match(accepted, /Print job already queued/);
@@ -613,7 +627,7 @@ async function main() {
         const fullLocale = Buffer.from(localeBody(65536));
         const paused = pausedLocale(apiSocket);
         await paused.started;
-        await assertResponsive(port, clients, 'while a locale reader paused');
+        await assertResponsive(port, clients, advanceStatus, 'while a locale reader paused');
         await withinDeadline('Paused reader did not retain the pending API response', () =>
             countDescriptors(api.pid) === active[0] + 1 && sockets.size === SSE_CLIENTS + 1);
         const received = await paused.finish();
@@ -632,8 +646,19 @@ async function main() {
         await withinDeadline('Paused responses did not release their sockets', () =>
             countDescriptors(api.pid) === active[0] && sockets.size === SSE_CLIENTS);
 
+        const latestStatus = clients[0].lastEvent;
         for (const client of clients) client.close();
         await withinDeadline('Client, API, or lighttpd descriptors did not return to idle', () =>
+            sockets.size === 0 &&
+            [process.pid, api.pid, proxy.pid].every((pid, index) => countDescriptors(pid) === baseline[index]));
+
+        const reconnected = liveStatus(port, token);
+        await withinDeadline('Reconnected SSE stream missed the current status', () => {
+            if (reconnected.error) throw reconnected.error;
+            return reconnected.events === 1 && reconnected.lastEvent === latestStatus;
+        });
+        reconnected.close();
+        await withinDeadline('Reconnected SSE stream did not release its descriptors', () =>
             sockets.size === 0 &&
             [process.pid, api.pid, proxy.pid].every((pid, index) => countDescriptors(pid) === baseline[index]));
 
