@@ -257,6 +257,17 @@ static void set_display_or_empty(char *dst, size_t dst_sz, const char *value)
         dst[0] = '\0';
 }
 
+static int resolve_pending_display_name(char *out, size_t out_sz)
+{
+    char pending_name[128];
+
+    if (deneb_pending_job_file_default_display_name(
+            pending_name, sizeof(pending_name)) != 0 || !pending_name[0])
+        return 0;
+    set_display_or_empty(out, out_sz, pending_name);
+    return 1;
+}
+
 void deneb_status_payload_resolve_filename_value(
     const char *file,
     int has_file,
@@ -267,44 +278,32 @@ void deneb_status_payload_resolve_filename_value(
     char *out,
     size_t out_sz)
 {
-    char pending_name[128];
-    int has_pending_name;
+    int transient;
     int hold;
 
     if (!curr || !prev || !out || out_sz == 0)
         return;
 
     out[0] = '\0';
-    has_pending_name =
-        deneb_pending_job_file_default_display_name(pending_name,
-                                                    sizeof(pending_name)) == 0 &&
-        pending_name[0] != '\0';
+    transient = has_file && deneb_print_file_is_transient(file);
 
     if (has_file && file && file[0]) {
-        if (deneb_print_file_is_transient(file)) {
-            if (has_pending_name)
-                set_display_or_empty(out, out_sz, pending_name);
-            else if (retained && retained[0])
-                set_display_or_empty(out, out_sz, retained);
-            else if (prev->filename && prev->filename[0] &&
-                     deneb_print_file_is_candidate(prev->filename))
-                set_display_or_empty(out, out_sz, prev->filename);
-        } else if (!deneb_print_file_is_candidate(file)) {
+        if (!transient && deneb_print_file_is_candidate(file)) {
+            set_display_or_empty(out, out_sz, file);
+            if (retained && retained_sz > 0)
+                set_display_or_empty(retained, retained_sz, file);
+        } else if (!transient || !resolve_pending_display_name(out, out_sz)) {
             if (retained && retained[0])
                 set_display_or_empty(out, out_sz, retained);
             else if (prev->filename && prev->filename[0] &&
                      deneb_print_file_is_candidate(prev->filename))
                 set_display_or_empty(out, out_sz, prev->filename);
-        } else {
-            set_display_or_empty(out, out_sz, file);
-            if (retained && retained_sz > 0)
-                set_display_or_empty(retained, retained_sz, file);
         }
     }
 
     hold = deneb_status_payload_should_hold_filename(curr, prev);
-    if (!out[0] && hold && has_pending_name)
-        set_display_or_empty(out, out_sz, pending_name);
+    if (!out[0] && hold && !transient)
+        resolve_pending_display_name(out, out_sz);
     if (!out[0] && hold && retained && retained[0])
         set_display_or_empty(out, out_sz, retained);
     if (!out[0] && hold && prev->filename && prev->filename[0] &&
