@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@ typedef struct {
     FILE *file;
     off_t offset;
     int c;
+    bool repair_utf8;
 } history_input_t;
 
 typedef enum {
@@ -34,6 +36,7 @@ typedef struct {
     off_t end;
     uint64_t eligible_bytes;
     int has_oversized_record;
+    bool repair_utf8;
 } history_layout_t;
 
 typedef struct {
@@ -107,19 +110,21 @@ static int valid_utf8_trailing_byte(int c, int lead)
     return c >= min && c <= max;
 }
 
-static int scan_utf8(history_input_t *in)
+static void scan_utf8(history_input_t *in)
 {
     int lead = in->c;
     int count = utf8_trailing_bytes(lead);
     if (!count)
-        return -1;
+        in->repair_utf8 = true;
     while (count-- > 0) {
         advance(in);
-        if (!valid_utf8_trailing_byte(in->c, lead))
-            return -1;
+        if (!valid_utf8_trailing_byte(in->c, lead)) {
+            in->repair_utf8 = true;
+            return;
+        }
         lead = 0;
     }
-    return 0;
+    advance(in);
 }
 
 static int scan_string(history_input_t *in)
@@ -143,8 +148,9 @@ static int scan_string(history_input_t *in)
             } else if (in->c <= 0 || !strchr("\"\\/bfnrt", in->c)) {
                 return -1;
             }
-        } else if (in->c >= 0x80 && scan_utf8(in) != 0) {
-            return -1;
+        } else if (in->c >= 0x80) {
+            scan_utf8(in);
+            continue;
         }
         advance(in);
     }
@@ -319,12 +325,57 @@ static history_status_t inspect_history(FILE *file, size_t budget, history_layou
         layout->end = record.end;
         layout->eligible_bytes += (uint64_t)length + 1;
     }
-    if (next == 0)
+    if (next == 0) {
+        layout->repair_utf8 = in.repair_utf8;
         return HISTORY_OK;
+    }
     return ferror(file) ? HISTORY_IO_FAILED : HISTORY_MALFORMED;
 }
 
-static int copy_slice(int fd, off_t offset, size_t length, history_output_t *out)
+/* Repair old byte-truncated names without changing the retained byte count.
+ * Defer a partial character at a block boundary to the next read. */
+static size_t repair_history_utf8(char *text, size_t length, bool last_block)
+{
+    size_t i = 0;
+    while (i < length) {
+        int lead = (unsigned char)text[i];
+        if (lead < 0x80) {
+            i++;
+            continue;
+        }
+        size_t trailing = (size_t)utf8_trailing_bytes(lead);
+        if (trailing >= length - i && !last_block)
+            break;
+
+        size_t j = 1;
+        while (j <= trailing && j < length - i &&
+               valid_utf8_trailing_byte((unsigned char)text[i + j], lead)) {
+            lead = 0;
+            j++;
+        }
+        if (trailing == 0 || j <= trailing)
+            text[i++] = '?';
+        else
+            i += j;
+    }
+    return i;
+}
+
+static int read_history_chunk(int fd, char *buffer, size_t count, off_t offset)
+{
+    for (size_t received = 0; received < count;) {
+        ssize_t n = pread(fd, buffer + received, count - received, offset + (off_t)received);
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            return -1;
+        received += (size_t)n;
+    }
+    return 0;
+}
+
+static int copy_slice(int fd, off_t offset, size_t length, bool repair_utf8,
+                      history_output_t *out)
 {
     if (length > out->capacity - out->length)
         return -1;
@@ -332,14 +383,14 @@ static int copy_slice(int fd, off_t offset, size_t length, history_output_t *out
     while (length > 0) {
         char *dest = out->file ? chunk : out->buffer + out->length;
         size_t count = out->file && length > sizeof(chunk) ? sizeof(chunk) : length;
-        ssize_t n = pread(fd, dest, count, offset);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0 || (out->file && fwrite(dest, 1, (size_t)n, out->file) != (size_t)n))
+        if (read_history_chunk(fd, dest, count, offset) != 0)
             return -1;
-        offset += n;
-        out->length += (size_t)n;
-        length -= (size_t)n;
+        size_t copied = repair_utf8 ? repair_history_utf8(dest, count, count == length) : count;
+        if (out->file && fwrite(dest, 1, copied, out->file) != copied)
+            return -1;
+        offset += (off_t)copied;
+        out->length += copied;
+        length -= copied;
     }
     return 0;
 }
@@ -362,7 +413,8 @@ static int copy_contiguous_history(FILE *file, const history_layout_t *layout,
             return -1;
         start = in.offset;
     }
-    return copy_slice(fileno(file), start, (size_t)(layout->end - start), out);
+    return copy_slice(fileno(file), start, (size_t)(layout->end - start),
+                      layout->repair_utf8, out);
 }
 
 /* Individually oversized objects are omitted; use a comma to bridge each gap. */
@@ -399,7 +451,7 @@ static int copy_retained_history(FILE *file, const history_layout_t *layout,
             }
             out->length++;
         }
-        if (copy_slice(fileno(file), record.start, (size_t)length, out) != 0)
+        if (copy_slice(fileno(file), record.start, (size_t)length, layout->repair_utf8, out) != 0)
             return -1;
     }
     return next;

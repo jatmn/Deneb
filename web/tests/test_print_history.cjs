@@ -39,13 +39,13 @@ function start(binary, args, cwd, mode) {
 function getJobs(socketPath) {
     return new Promise((resolve, reject) => {
         const req = http.get({ socketPath, path: '/api/v1/deneb/print_jobs', agent: false }, (res) => {
-            let body = '';
-            res.setEncoding('utf8').on('data', (chunk) => { body += chunk; });
+            const chunks = [];
+            res.on('data', (chunk) => chunks.push(chunk));
             res.on('error', reject);
             res.on('end', () => {
                 try {
                     assert.equal(res.statusCode, 200);
-                    resolve(JSON.parse(body));
+                    resolve(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))));
                 } catch (err) { reject(err); }
             });
         });
@@ -171,6 +171,31 @@ async function main() {
         assert.deepEqual(history.slice(0, -1), legacy.slice(-3));
         assert.equal(id(history.at(-1)), 1403);
         assert.ok(fs.readFileSync(historyFile).length <= limit);
+
+        const before = legacy.at(-2);
+        const after = legacy.at(-1);
+        const name = 'a'.repeat(126);
+        const prefix = JSON.stringify(before) + ',{"uuid":"job-1500","name":"' + name;
+        const divider = '","detail":"';
+        // Use a complete multibyte character on the 1 KiB copy boundary.
+        const detail = 'x'.repeat(1023 - Buffer.byteLength(prefix + divider) - 1) + 'é';
+        const legacyBytes = Buffer.concat([
+            Buffer.from('[' + prefix), Buffer.from([0xc3]),
+            Buffer.from(divider + detail + '"},' + JSON.stringify(after) + ']'),
+        ]);
+        const recovered = [before, { uuid: 'job-1500', name: name + '?', detail }, after];
+        fs.writeFileSync(historyFile, legacyBytes);
+        assert.deepEqual((await getJobs(socket)).history, recovered);
+        assert.deepEqual(fs.readFileSync(historyFile), legacyBytes);
+        assert.equal((await append(1501, 1, 0, 'fail').done).code, 1);
+        assert.deepEqual(fs.readFileSync(historyFile), legacyBytes);
+        assert.equal((await append(1501).done).code, 0);
+        const repairedBytes = fs.readFileSync(historyFile);
+        assert.ok(repairedBytes.length <= limit);
+        history = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(repairedBytes));
+        assert.deepEqual(history.slice(0, -1), recovered);
+        assert.equal(id(history.at(-1)), 1501);
+        assert.deepEqual((await getJobs(socket)).history, history);
 
         const damagedHistories = [
             '',
