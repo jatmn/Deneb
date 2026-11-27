@@ -107,8 +107,8 @@ payload, not copied from stock notices.
 These components are used to generate or render the public docs site. They are
 not installed on the printer.
 
-- Hugo extended 0.166.0, Apache-2.0, https://github.com/gohugoio/hugo
-- Hextra, MIT, https://github.com/imfing/hextra (Hugo module)
+- Hugo 0.170.1, Apache-2.0, https://github.com/gohugoio/hugo
+- Hextra v0.13.0, MIT, https://github.com/imfing/hextra (Hugo module)
 - FlexSearch 0.8.143, Apache-2.0, https://github.com/nextapps-de/flexsearch
   (fetched at build; pin in `website/vendor-pins/flexsearch.bundle.min.js.sha256`)
 - Space Grotesk, OFL-1.1, loaded from https://fonts.bunny.net
