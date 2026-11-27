@@ -25,8 +25,8 @@ int backend_zmq_init(void);
 /* Get the ZMQ SUB socket fd for epoll registration. Returns -1 if not available. */
 int backend_zmq_get_fd(void);
 
-/* Poll for new status data. Call when epoll signals data available. */
-void backend_zmq_poll(void);
+/* Expire stale state and process a bounded batch. True means more data is ready. */
+bool backend_zmq_poll(void);
 
 /* Get cached printer state. */
 const printer_state_t *backend_zmq_get_state(void);
