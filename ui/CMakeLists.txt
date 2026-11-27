@@ -54,6 +54,7 @@ endif()
 
 # LVGL source
 set(LVGL_DIR "${CMAKE_SOURCE_DIR}/lib/lvgl" CACHE PATH "LVGL source directory")
+get_filename_component(LVGL_DIR "${LVGL_DIR}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 if(NOT EXISTS "${LVGL_DIR}/src")
     message(FATAL_ERROR
