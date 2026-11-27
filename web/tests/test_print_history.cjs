@@ -121,13 +121,9 @@ async function main() {
         const records = legacy.map((item) => JSON.stringify(item, null, 2));
         contents = ' \n[\n' + records.join(',\n') + '\n]\n' + ' '.repeat(limit);
         assert.ok(Buffer.byteLength(contents) > 65536);
-        const legacyFile = fs.openSync(historyFile, 'w');
-        try {
-            fs.writeFileSync(legacyFile, contents);
-            fs.fchmodSync(legacyFile, 0o640);
-        } finally {
-            fs.closeSync(legacyFile);
-        }
+        const legacyFile = path.join(directory, 'legacy-history.json');
+        fs.writeFileSync(legacyFile, contents, { flag: 'wx', mode: 0o640 });
+        fs.renameSync(legacyFile, historyFile);
         history = (await getJobs(socket)).history;
         assertNewest(history, 1399);
         assert.deepEqual(history, legacy.slice(-history.length));
@@ -136,7 +132,7 @@ async function main() {
 
         const migration = append(1400);
         assert.equal((await migration.done).code, 0, migration.error);
-        assert.equal(fileMode(historyFile), 0o640);
+        assert.equal(fileMode(historyFile), 0o640 & ~process.umask());
         contents = fs.readFileSync(historyFile, 'utf8');
         assert.ok(Buffer.byteLength(contents) <= limit);
         history = JSON.parse(contents);
