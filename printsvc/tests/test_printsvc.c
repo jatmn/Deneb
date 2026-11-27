@@ -3759,6 +3759,12 @@ static void test_status_payload_helpers(void)
     assert(payload.pos_x == 2.5f);
     assert(payload.time_total == 200 && payload.time_left == 0);
     assert(!payload.has_native_active && !payload.has_error);
+
+    const char embedded_nul[] = "{\"X\":7}\0{\"denebActive\":true}";
+    assert(deneb_status_payload_parse_span(embedded_nul, sizeof(embedded_nul) - 1,
+                                           &payload) == 0);
+    assert(payload.pos_x == 7.0f && !payload.has_native_active);
+
     const char truncated[] = {'"', 'X', '"', ':', '"', '7', '\\'};
     assert(deneb_status_payload_parse_span(truncated, sizeof(truncated),
                                            &payload) == 0);
