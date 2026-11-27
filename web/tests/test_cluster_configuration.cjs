@@ -45,6 +45,10 @@ async function main() {
     store('bin/uci', `#!/bin/sh
 option=\${3:-$2}
 printf '%s\\n' "$option" >> uci-calls
+if [ -f fail-always ] && IFS= read -r failing < fail-always && [ "$option" = "$failing" ]; then
+    printf 'uci: I/O error\\n' >&2
+    exit 1
+fi
 if [ -f fail-once ]; then
     IFS=' ' read -r failing mode < fail-once
     if [ "$option" = "$failing" ]; then
@@ -130,6 +134,22 @@ exit 1
             assert.ok(calls().length > failed, 'refresh must retry before cache expiry');
         }
 
+        store('fail-always', 'ultimaker.option.host_guid\n');
+        store('config/ultimaker', config + '# repeated failure\n');
+        const beforePersistent = calls().length;
+        assert.deepEqual(await getPrinter(socketPath), first);
+        assert.equal(calls().length, beforePersistent + 6);
+        assert.deepEqual(await getPrinter(socketPath), first);
+        assert.equal(calls().length, beforePersistent + 12, 'one retry must be immediate');
+        for (let i = 0; i < 3; i++)
+            assert.deepEqual(await getPrinter(socketPath), first);
+        assert.equal(calls().length, beforePersistent + 12, 'persistent failure reran UCI on every poll');
+        await delay(5100);
+        assert.deepEqual(await getPrinter(socketPath), first);
+        assert.equal(calls().length, beforePersistent + 18, 'failed refresh was never retried');
+        fs.unlinkSync(path.join(tmp, 'fail-always'));
+
+        // The new delta must trigger an immediate refresh despite the recent failure.
         store('delta/ultimaker', 'ultimaker.option.printer_name=Staged Name\n');
         assert.equal((await getPrinter(socketPath)).friendly_name, 'Staged Name');
         fs.unlinkSync(path.join(tmp, 'delta/ultimaker'));

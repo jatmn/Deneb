@@ -50,18 +50,19 @@ static const char *const configuration_files[] = {
 };
 
 enum { CONFIGURATION_FILE_COUNT = sizeof(configuration_files) / sizeof(configuration_files[0]),
-       CONFIGURATION_MAX_AGE_SECONDS = 5 };
+       CONFIGURATION_MAX_AGE_SECONDS = 5,
+       CONFIGURATION_FAILURE_LIMIT = 2 };
 
 typedef struct {
     dev_t device;
     ino_t inode;
     off_t size;
     struct timespec changed;
+    int error;
     bool present;
 } configuration_file_version_t;
 
 typedef struct {
-    char hostname[64];
     char friendly_name[64];
     char guid[48];
     char current_firmware[32];
@@ -73,9 +74,11 @@ typedef struct {
 /* Only the cluster printer route in the API loop reads and writes this cache. */
 static struct {
     configuration_file_version_t files[CONFIGURATION_FILE_COUNT];
-    time_t refreshed;
+    time_t last_attempt;
+    bool timed_attempt;
     bool published;
-    bool fresh;
+    unsigned failures;
+    char hostname[64];
     cluster_configuration_t snapshot;
 } configuration;
 
@@ -208,7 +211,6 @@ static bool load_configuration(cluster_configuration_t *next, const char *hostna
     if (!deneb_print_is_cluster_guid(next->material_guid))
         next->material_guid[0] = '\0';
 
-    snprintf(next->hostname, sizeof(next->hostname), "%s", hostname);
     return complete;
 }
 
@@ -216,9 +218,7 @@ static void refresh_configuration(const char *hostname)
 {
     struct timespec now;
     bool clock_valid = clock_gettime(CLOCK_MONOTONIC, &now) == 0;
-    bool unchanged = configuration.fresh && clock_valid &&
-                     now.tv_sec - configuration.refreshed < CONFIGURATION_MAX_AGE_SECONDS &&
-                     strcmp(hostname, configuration.snapshot.hostname) == 0;
+    bool unchanged = strcmp(hostname, configuration.hostname) == 0;
     bool stat_complete = true;
 
     /* Observe the versions before reading UCI. A concurrent write then
@@ -227,33 +227,48 @@ static void refresh_configuration(const char *hostname)
         struct stat st;
         configuration_file_version_t observed = {0};
         if (stat(configuration_files[i], &st) == 0) {
-            observed = (configuration_file_version_t){st.st_dev, st.st_ino, st.st_size,
-                                                     st.st_ctim, true};
+            observed = (configuration_file_version_t){
+                .device = st.st_dev, .inode = st.st_ino, .size = st.st_size,
+                .changed = st.st_ctim, .present = true,
+            };
         } else if (errno != ENOENT && errno != ENOTDIR) {
+            observed.error = errno;
             stat_complete = false;
-            unchanged = false;
         }
         configuration_file_version_t *cached = &configuration.files[i];
         if (cached->present != observed.present || cached->device != observed.device ||
             cached->inode != observed.inode || cached->size != observed.size ||
+            cached->error != observed.error ||
             cached->changed.tv_sec != observed.changed.tv_sec ||
             cached->changed.tv_nsec != observed.changed.tv_nsec)
             unchanged = false;
         *cached = observed;
     }
-    if (unchanged)
+    /* One immediate retry handles an isolated failure. Subsequent failures
+     * reuse the refresh interval until the observed configuration changes. */
+    bool recent = clock_valid && configuration.timed_attempt &&
+                  now.tv_sec - configuration.last_attempt < CONFIGURATION_MAX_AGE_SECONDS;
+    if (unchanged && recent && configuration.failures != 1)
         return;
 
+    if (!unchanged) {
+        configuration.failures = 0;
+        snprintf(configuration.hostname, sizeof(configuration.hostname), "%s", hostname);
+    }
     cluster_configuration_t next = {0};
     bool complete = load_configuration(&next, hostname);
     complete &= stat_complete;
     if (complete || !configuration.published)
         configuration.snapshot = next;
-    if (complete)
+    if (complete) {
         configuration.published = true;
-    configuration.fresh = complete && clock_valid;
-    if (configuration.fresh)
-        configuration.refreshed = now.tv_sec;
+        configuration.failures = 0;
+    } else if (configuration.failures < CONFIGURATION_FAILURE_LIMIT) {
+        configuration.failures++;
+    }
+    configuration.timed_attempt = clock_valid;
+    if (clock_valid)
+        configuration.last_attempt = now.tv_sec;
 }
 
 static int json_member_value_end(const char *start, const char *limit,
