@@ -45,7 +45,9 @@
 #define CONNECT_SERVICE "digitalfactory::connector::connect"
 #define DISCONNECT_SERVICE "digitalfactory::connector::disconnect"
 #define DF_HANDLING_SERVICE "coordinator::digitalfactory::handling"
+#ifndef API_SOCKET_PATH
 #define API_SOCKET_PATH "/var/run/deneb-api.sock"
+#endif
 #define DF_DOWNLOAD_DIR "/tmp"
 #define DF_FD_PATH "/proc/self/fd/%d"
 #define DF_STATUS_FILE "/tmp/deneb-df-status"
@@ -233,14 +235,97 @@ static int socket_write_all(int fd, const void *buf, size_t len)
     return 0;
 }
 
+static ssize_t socket_read(int fd, char *buf, size_t len)
+{
+    ssize_t n;
+    do {
+        n = read(fd, buf, len);
+    } while (n < 0 && errno == EINTR);
+    return n;
+}
+
+/* Deneb's HTTP server normally sends Content-Length and closes the socket. */
+static int local_content_length(const char *headers, size_t capacity, size_t *size)
+{
+    const char field[] = "Content-Length:";
+    *size = capacity;
+    const char *line = strstr(headers, "\r\n");
+    while (line) {
+        line += 2;
+        if (strncasecmp(line, field, sizeof(field) - 1) == 0) {
+            const char *value = line + sizeof(field) - 1;
+            value += strspn(value, " \t");
+            if (*value < '0' || *value > '9')
+                return -1;
+            char *end;
+            errno = 0;
+            unsigned long length = strtoul(value, &end, 10);
+            end += strspn(end, " \t");
+            if (errno == ERANGE || length >= capacity || strncmp(end, "\r\n", 2) != 0)
+                return -1;
+            *size = (size_t)length;
+            return 0;
+        }
+        line = strstr(line, "\r\n");
+    }
+    return 0;
+}
+
+static int local_api_read_response(int fd, char *headers, size_t header_size,
+                                   char *out, size_t out_size)
+{
+    size_t used = 0;
+    char *separator = NULL;
+    while (!separator && used < header_size - 1) {
+        size_t scan = used > 3 ? used - 3 : 0;
+        ssize_t n = socket_read(fd, headers + used, header_size - 1 - used);
+        if (n <= 0)
+            return -1;
+        used += (size_t)n;
+        headers[used] = '\0';
+        separator = strstr(headers + scan, "\r\n\r\n");
+    }
+    if (!separator)
+        return -1;
+    char *payload = separator + 4;
+    separator[2] = '\0';
+    int status_code;
+    char after_status;
+    size_t expected;
+    if (sscanf(headers, "HTTP/%*s %3d%c", &status_code, &after_status) != 2 ||
+        status_code < 100 || (after_status != ' ' && after_status != '\r') ||
+        local_content_length(headers, out_size, &expected) != 0)
+        return -1;
+
+    size_t limit = expected < out_size ? expected : out_size - 1;
+    used -= (size_t)(payload - headers);
+    if (used > limit)
+        return -1;
+    memcpy(out, payload, used);
+    while (used < limit) {
+        ssize_t n = socket_read(fd, out + used, limit - used);
+        if (n < 0)
+            return -1;
+        if (n == 0)
+            break;
+        used += (size_t)n;
+    }
+    /* The private API closes after each reply, including declared-length replies. */
+    if ((expected < out_size && used != expected) ||
+        (used == limit && socket_read(fd, headers, 1) != 0))
+        return -1;
+    if (memchr(out, '\0', used))
+        return -1;
+    out[used] = '\0';
+    return status_code;
+}
+
 static int local_api_request(const char *method, const char *path,
                              const char *body, char *out, size_t out_size)
 {
     int fd = -1;
     struct sockaddr_un addr;
-    char req[768];
-    char resp[12288];
-    size_t used = 0;
+    char headers[1024];
     int status_code = -1;
 
     if (!out || out_size == 0)
@@ -261,7 +346,7 @@ static int local_api_request(const char *method, const char *path,
         goto out;
 
     int body_len = body ? (int)strlen(body) : 0;
-    int n = snprintf(req, sizeof(req),
+    int n = snprintf(headers, sizeof(headers),
                      "%s %s HTTP/1.1\r\n"
                      "Host: deneb.local\r\n"
                      "Connection: close\r\n"
@@ -270,31 +355,14 @@ static int local_api_request(const char *method, const char *path,
                      "\r\n"
                      "%s",
                      method, path, body_len, body ? body : "");
-    if (n <= 0 || (size_t)n >= sizeof(req))
+    if (n <= 0 || (size_t)n >= sizeof(headers))
         goto out;
-    if (socket_write_all(fd, req, (size_t)n) < 0)
+    if (socket_write_all(fd, headers, (size_t)n) < 0)
         goto out;
 
-    while (used + 1 < sizeof(resp)) {
-        ssize_t r = read(fd, resp + used, sizeof(resp) - used - 1);
-        if (r <= 0)
-            break;
-        used += (size_t)r;
-    }
-    if (used + 1 >= sizeof(resp))
-        goto out;
-    resp[used] = '\0';
-    if (sscanf(resp, "HTTP/%*s %d", &status_code) != 1)
-        goto out;
-    char *payload = strstr(resp, "\r\n\r\n");
-    if (!payload)
-        goto out;
-    payload += 4;
-    if (strlen(payload) >= out_size) {
-        status_code = -1;
-        goto out;
-    }
-    snprintf(out, out_size, "%s", payload);
+    status_code = local_api_read_response(fd, headers, sizeof(headers), out, out_size);
+    if (status_code < 0)
+        out[0] = '\0';
 
 out:
     if (fd >= 0)
@@ -1380,14 +1448,18 @@ static int ws_send_text(ws_client_t *ws, const char *text)
         return -1;
     memcpy(hdr + h, mask, 4);
     h += 4;
-    uint8_t *payload = malloc(len);
-    if (!payload)
+    if (ws_write_all(ws, hdr, h) < 0)
         return -1;
-    for (size_t i = 0; i < len; i++)
-        payload[i] = ((const uint8_t *)text)[i] ^ mask[i % 4];
-    int rc = ws_write_all(ws, hdr, h) == 0 && ws_write_all(ws, payload, len) == 0 ? 0 : -1;
-    free(payload);
-    return rc;
+    uint8_t payload[1024];
+    for (size_t offset = 0; offset < len;) {
+        size_t count = len - offset < sizeof(payload) ? len - offset : sizeof(payload);
+        for (size_t i = 0; i < count; i++)
+            payload[i] = ((const uint8_t *)text)[offset + i] ^ mask[(offset + i) % sizeof(mask)];
+        if (ws_write_all(ws, payload, count) < 0)
+            return -1;
+        offset += count;
+    }
+    return 0;
 }
 
 static int ws_read_text(ws_client_t *ws, char *buf, size_t buf_size)
@@ -1915,20 +1987,51 @@ static void build_connection_request(char *out, size_t out_size)
              cluster_json, safe_host_guid, safe_ip, safe_host_name, safe_version);
 }
 
-static void build_status_response(char *out, size_t out_size)
+static bool build_local_status_response(char *out, size_t out_size)
 {
-    char printers[4096];
-    char jobs[8192];
-    if (local_api_request("GET", "/cluster-api/v1/printers", NULL,
-                          printers, sizeof(printers)) == 200 &&
-        local_api_request("GET", "/cluster-api/v1/print_jobs", NULL,
-                          jobs, sizeof(jobs)) == 200) {
-        snprintf(out, out_size,
-                 "{\"payload\":{\"print_jobs\":%s,\"printers\":%s,"
-                 "\"recently_completed\":[]},\"type\":\"status_response\"}",
-                 json_array_or_empty(jobs), json_array_or_empty(printers));
-        return;
-    }
+    static const char prefix[] = "{\"payload\":{\"print_jobs\":";
+    static const char separator[] = ",\"printers\":";
+    static const char suffix[] = ",\"recently_completed\":[]},\"type\":\"status_response\"}";
+    const size_t overhead = sizeof(prefix) + sizeof(separator) + sizeof(suffix) - 3;
+
+    if (out_size <= overhead ||
+        local_api_request("GET", "/cluster-api/v1/printers", NULL,
+                          out, out_size < 4096 ? out_size : 4096) != 200)
+        return false;
+
+    const char *printers = json_array_or_empty(out);
+    size_t printers_size = strlen(printers);
+    if (printers_size >= out_size - overhead)
+        return false;
+
+    /* Keep the printer array at the end while receiving jobs into the front. */
+    char *saved_printers = out + out_size - printers_size;
+    memmove(saved_printers, printers, printers_size);
+    char *jobs_body = out + sizeof(prefix) - 1;
+    size_t jobs_capacity = out_size - overhead - printers_size;
+    if (local_api_request("GET", "/cluster-api/v1/print_jobs", NULL,
+                          jobs_body, jobs_capacity < 8192 ? jobs_capacity : 8192) != 200)
+        return false;
+
+    const char *jobs = json_array_or_empty(jobs_body);
+    size_t jobs_size = strlen(jobs);
+    if (jobs_size >= jobs_capacity)
+        return false;
+
+    memcpy(out, prefix, sizeof(prefix) - 1);
+    memmove(jobs_body, jobs, jobs_size);
+    char *cursor = jobs_body + jobs_size;
+    memcpy(cursor, separator, sizeof(separator) - 1);
+    cursor += sizeof(separator) - 1;
+    memmove(cursor, saved_printers, printers_size);
+    memcpy(cursor + printers_size, suffix, sizeof(suffix));
+    return true;
+}
+
+static bool build_status_response(char *out, size_t out_size)
+{
+    if (build_local_status_response(out, out_size))
+        return true;
 
     char host_guid[64], host_name[64], friendly_name[64], version[32], latest_version[32], update_status[32], material[48], nozzle[24], nozzle_id[32], ip[64], status[64];
     char safe_host_guid[128], safe_host_name[128], safe_friendly_name[128], safe_version[64], safe_ip[128];
@@ -1988,7 +2091,7 @@ static void build_status_response(char *out, size_t out_size)
                  "\"guid\":\"%s\",", safe_material);
     else
         material_guid_json[0] = '\0';
-    snprintf(out, out_size,
+    int n = snprintf(out, out_size,
              "{\"payload\":{\"print_jobs\":[],\"printers\":[{\"build_plate\":{\"type\":\"glass\"},"
              "\"configuration\":[{\"extruder_index\":0,\"material\":{\"brand\":\"Generic\","
              "\"color\":\"Generic\",%s\"material\":\"%s\"},"
@@ -2004,6 +2107,7 @@ static void build_status_response(char *out, size_t out_size)
              safe_version, safe_friendly_name, safe_ip, safe_latest_version,
              safe_status,
              safe_host_name, safe_host_guid);
+    return n >= 0 && (size_t)n < out_size;
 }
 
 static void handle_print_job_action_request(ws_client_t *ws, const char *msg)
@@ -2362,9 +2466,10 @@ static void handle_cloud_message(void *pub, ws_client_t *ws, const char *msg,
             return;
         if (last_status_request && *current_state == DF_STATE_CONNECTED)
             *last_status_request = monotonic_ms();
-        build_status_response(out, sizeof(out));
-        log_protocol_message("send", out);
-        (void)ws_send_text(ws, out);
+        if (build_status_response(out, sizeof(out))) {
+            log_protocol_message("send", out);
+            (void)ws_send_text(ws, out);
+        }
     } else if (strstr(msg, "\"type\":\"print_request\"") ||
                strstr(msg, "\"type\": \"print_request\"")) {
         handle_print_request(ws, msg);
