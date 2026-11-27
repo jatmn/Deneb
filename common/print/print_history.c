@@ -485,7 +485,7 @@ void deneb_print_history_read_default_array_or_empty(char *out, size_t out_sz)
 static void format_utc_time(long long unix_time, char *out, size_t out_sz)
 {
     time_t t = (time_t)unix_time;
-    struct tm *tm;
+    struct tm utc;
 
     if (!out || out_sz == 0)
         return;
@@ -493,12 +493,11 @@ static void format_utc_time(long long unix_time, char *out, size_t out_sz)
     if (unix_time <= 0)
         return;
 
-    tm = gmtime(&t);
-    if (!tm)
+    if (!gmtime_r(&t, &utc))
         return;
     snprintf(out, out_sz, "%04d-%02d-%02dT%02d:%02d:%02dZ",
-             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-             tm->tm_hour, tm->tm_min, tm->tm_sec);
+             utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+             utc.tm_hour, utc.tm_min, utc.tm_sec);
 }
 
 static size_t utf8_character_length(const unsigned char *text)
