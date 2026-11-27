@@ -111,6 +111,11 @@ int main(void)
     run_main_loop();
     assert(sleeps == 7 && status_polls == 1 && conflict_checks == 1);
 
+    /* A 5 ms poll leaves 3 ms until the 8 ms LVGL deadline. */
+    reset_fixture(2000, 8, 8, 5);
+    run_main_loop();
+    assert(sleeps == 1 && status_polls == 1 && conflict_checks == 1);
+
     /* A slow poll passes both the LVGL and backend deadlines. */
     reset_fixture(2000, 81, 8, 73);
     run_main_loop();
