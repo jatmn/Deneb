@@ -492,13 +492,13 @@ static void *prepare_print_upload(void *unused)
     return NULL;
 }
 
-static void collect_print_upload(void)
+static bool collect_print_upload(bool status_pending)
 {
     upload_t *upload = preparation.upload;
     int fd = upload->client_fd;
     int respond = running && fd >= 0 && !upload_peer_gone(fd);
     if (respond && preparation.prepared) {
-        backend_zmq_poll();
+        status_pending = backend_zmq_poll();
         api_print_job_commit_upload(&preparation.files, &preparation.response);
     }
     api_print_job_release_upload(&preparation.files);
@@ -511,6 +511,7 @@ static void collect_print_upload(void)
         if (fd >= 0)
             close_client(fd);
     }
+    return status_pending;
 }
 
 static void start_print_preparation(void)
@@ -537,7 +538,7 @@ static void start_print_preparation(void)
             return;
         set_upload_failed(&preparation.response);
         preparation.prepared = 0;
-        collect_print_upload();
+        (void)collect_print_upload(false);
     }
 }
 
@@ -841,7 +842,7 @@ int main(int argc, char *argv[])
         /* Process peer disconnects before publishing a finished upload. */
         if (preparation_finished && preparation.upload) {
             pthread_join(preparation.thread, NULL);
-            collect_print_upload();
+            status_pending = collect_print_upload(status_pending);
         }
         start_print_preparation();
     }
@@ -853,7 +854,7 @@ shutdown:
     }
     if (preparation.upload) {
         pthread_join(preparation.thread, NULL);
-        collect_print_upload();
+        (void)collect_print_upload(false);
     }
 
     while (pending_responses)

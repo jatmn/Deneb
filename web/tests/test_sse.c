@@ -8,6 +8,14 @@ static char status_event[1200];
 static uint64_t status_revision = 1;
 static int snapshot_requests;
 static printer_state_t printer_state;
+static bool poll_result;
+static unsigned status_polls;
+
+bool backend_zmq_poll(void)
+{
+    status_polls++;
+    return poll_result;
+}
 
 const printer_state_t *backend_zmq_get_state(void)
 {
@@ -24,6 +32,49 @@ int api_print_job_prepare_upload(const char *boundary, const char *upload_path,
     assert(strcmp(upload_path, UPLOAD_FILE_TEMPLATE) == 0);
     assert(!atomic_load(cancelled));
     return 0;
+}
+
+void api_print_job_commit_upload(const api_print_upload_t *upload, http_response_t *resp)
+{
+    (void)upload;
+    resp->status_code = 200;
+}
+
+void api_print_job_release_upload(const api_print_upload_t *upload)
+{
+    (void)upload;
+}
+
+int api_http_serialize_headers(const http_response_t *resp, char *dest, size_t size)
+{
+    assert(resp->status_code == 200);
+    return snprintf(dest, size, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+}
+
+static void test_upload_status_pending(void)
+{
+    for (int ready = 0; ready < 2; ready++) {
+        int peer[2];
+        assert(socketpair(AF_UNIX, SOCK_STREAM, 0, peer) == 0);
+        uploads[0] = (upload_t){ .client_fd = peer[0], .temp_fd = -1,
+                                 .request = calloc(1, sizeof(upload_request_t)) };
+        assert(uploads[0].request);
+        preparation.upload = &uploads[0];
+        preparation.prepared = 1;
+        poll_result = ready != 0;
+        assert(collect_print_upload(!poll_result) == poll_result);
+        assert(!preparation.upload);
+        assert(close(peer[1]) == 0);
+    }
+    assert(status_polls == 2);
+
+    uploads[0] = (upload_t){ .client_fd = -1, .temp_fd = -1,
+                             .request = calloc(1, sizeof(upload_request_t)) };
+    assert(uploads[0].request);
+    preparation.upload = &uploads[0];
+    preparation.prepared = 0;
+    assert(collect_print_upload(true));
+    assert(!preparation.upload && status_polls == 2);
 }
 
 static void test_event_wait(void)
@@ -97,6 +148,7 @@ int main(void)
     assert(epoll_fd >= 0);
     signal(SIGPIPE, SIG_IGN);
     test_event_wait();
+    test_upload_status_pending();
     uint64_t now = monotonic_ms();
     sse_push_status(now);
     assert(snapshot_requests == 0);
