@@ -118,6 +118,17 @@ static void test_local_http(void)
     assert(local_api_request("GET", STATUS, NULL, out, 8) == -1 && !out[0]);
     assert(local_api_request("GET", STATUS, NULL, out, sizeof(out)) == -1 && !out[0]);
     finish_replies(pid);
+
+    int pair[2];
+    const char response[] = "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\n\"idle\"";
+    char headers[128];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+    assert(socket_write_all(pair[0], response, sizeof(response) - 1) == 0);
+    assert(shutdown(pair[0], SHUT_WR) == 0);
+    assert(local_api_read_response(pair[1], headers, sizeof(headers), out, sizeof(out)) == 200);
+    assert(strcmp(out, "\"idle\"") == 0);
+    close(pair[0]);
+    close(pair[1]);
 }
 
 static void make_array(char *out, size_t length, char fill)

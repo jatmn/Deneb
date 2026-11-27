@@ -310,7 +310,8 @@ static int local_api_read_response(int fd, char *headers, size_t header_size,
             break;
         used += (size_t)n;
     }
-    if (expected < out_size ? used != expected :
+    /* The private API closes after each reply, including declared-length replies. */
+    if ((expected < out_size && used != expected) ||
         (used == limit && socket_read(fd, headers, 1) != 0))
         return -1;
     if (memchr(out, '\0', used))
