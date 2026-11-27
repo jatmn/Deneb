@@ -5,9 +5,10 @@ ZMQ_VERSION=4.3.5
 ZMQ_URL="https://github.com/zeromq/libzmq/releases/download/v$ZMQ_VERSION/zeromq-$ZMQ_VERSION.tar.gz"
 ZMQ_SHA256=6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43
 
-MBEDTLS_VERSION=2.28.8
-MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v$MBEDTLS_VERSION.tar.gz"
-MBEDTLS_SHA256=4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213
+MBEDTLS_VERSION=4.1.2
+MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$MBEDTLS_VERSION/mbedtls-$MBEDTLS_VERSION.tar.bz2"
+MBEDTLS_SHA256=392215e5e4846df04e2f4c4516079303bd73edde837d8f3e68fb4d4d7ddf0126
+TF_PSA_CRYPTO_VERSION=1.1.2
 
 LIGHTTPD_VERSION=1.4.85
 LIGHTTPD_URL="https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$LIGHTTPD_VERSION.tar.xz"
@@ -28,8 +29,9 @@ native_dependency_fingerprint() (
             sha256sum build-musl-static/build/lighttpd
             ;;
         mbedtls)
-            printf '%s\n' "$MBEDTLS_VERSION" "$MBEDTLS_URL" "$MBEDTLS_SHA256"
-            sha256sum lib/libmbedtls.a lib/libmbedcrypto.a lib/libmbedx509.a include/mbedtls/*.h
+            printf '%s\n' "$MBEDTLS_VERSION" "$MBEDTLS_URL" "$MBEDTLS_SHA256" "$TF_PSA_CRYPTO_VERSION"
+            sha256sum lib/libmbedtls.a lib/libmbedx509.a lib/libtfpsacrypto.a \
+                include/mbedtls/*.h include/psa/*.h include/tf-psa-crypto/*.h
             ;;
         *) return 1 ;;
     esac

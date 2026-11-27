@@ -28,14 +28,10 @@
 #include <unistd.h>
 
 #include <mbedtls/base64.h>
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
-#include <mbedtls/sha1.h>
 #include <mbedtls/ssl.h>
-#include <mbedtls/version.h>
 #include <mbedtls/x509_crt.h>
+#include <psa/crypto.h>
 #include <zmq.h>
 
 #include "print_job_file.h"
@@ -88,10 +84,9 @@ typedef struct {
     mbedtls_net_context net;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_x509_crt ca;
     bool connected;
+    bool immediate_read;
 } ws_client_t;
 
 static void on_signal(int sig)
@@ -1122,8 +1117,6 @@ static void ws_free(ws_client_t *ws)
     mbedtls_net_free(&ws->net);
     mbedtls_ssl_free(&ws->ssl);
     mbedtls_ssl_config_free(&ws->conf);
-    mbedtls_ctr_drbg_free(&ws->ctr_drbg);
-    mbedtls_entropy_free(&ws->entropy);
     mbedtls_x509_crt_free(&ws->ca);
     memset(ws, 0, sizeof(*ws));
 }
@@ -1140,21 +1133,55 @@ static int ws_write_all(ws_client_t *ws, const uint8_t *buf, size_t len)
     return 0;
 }
 
-static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
+enum { WS_READ_IDLE = 2 };
+
+static int ws_tls_send(void *context, const unsigned char *buf, size_t len)
+{
+    ws_client_t *ws = context;
+    return mbedtls_net_send(&ws->net, buf, len);
+}
+
+static int ws_tls_receive(void *context, unsigned char *buf, size_t len, uint32_t timeout)
+{
+    ws_client_t *ws = context;
+    if (!ws->immediate_read)
+        return mbedtls_net_recv_timeout(&ws->net, buf, len, timeout);
+
+    ssize_t n = recv(ws->net.fd, buf, len, MSG_DONTWAIT);
+    if (n >= 0)
+        return (int)n;
+    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+
+static int ws_read_bytes(ws_client_t *ws, uint8_t *buf, size_t len, bool allow_idle)
 {
     size_t used = 0;
-    while (used < len) {
+    int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
+    while (used < len && !g_stop && monotonic_ms() < deadline) {
+        // TLS may consume a control record and fetch again in the same read.
+        ws->immediate_read = allow_idle && used == 0;
         int n = mbedtls_ssl_read(&ws->ssl, buf + used, len - used);
+        ws->immediate_read = false;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
+            n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
+            // Finish any held TLS message before yielding an idle WebSocket.
+            if (allow_idle && used == 0 && n != MBEDTLS_ERR_SSL_WANT_WRITE &&
+                !mbedtls_ssl_check_pending(&ws->ssl))
+                return WS_READ_IDLE;
+            continue;
+        }
         if (n <= 0)
             return -1;
         used += (size_t)n;
     }
-    return 0;
+    return used == len ? 0 : -1;
 }
 
-static int ws_random(ws_client_t *ws, uint8_t *buf, size_t len)
+static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
 {
-    return mbedtls_ctr_drbg_random(&ws->ctr_drbg, buf, len) == 0 ? 0 : -1;
+    return ws_read_bytes(ws, buf, len, false);
 }
 
 static int base64_encode(const uint8_t *input, size_t input_len,
@@ -1169,10 +1196,10 @@ static int base64_encode(const uint8_t *input, size_t input_len,
     return 0;
 }
 
-static int ws_make_key(ws_client_t *ws, char out[25])
+static int ws_make_key(char out[25])
 {
     uint8_t nonce[16];
-    if (ws_random(ws, nonce, sizeof(nonce)) < 0)
+    if (psa_generate_random(nonce, sizeof(nonce)) != PSA_SUCCESS)
         return -1;
     return base64_encode(nonce, sizeof(nonce), out, 25);
 }
@@ -1185,13 +1212,11 @@ static int ws_expected_accept(const char *key, char out[32])
     int n = snprintf(input, sizeof(input), "%s%s", key, guid);
     if (n <= 0 || (size_t)n >= sizeof(input))
         return -1;
-#if MBEDTLS_VERSION_NUMBER >= 0x02070000
-    if (mbedtls_sha1_ret((const unsigned char *)input, strlen(input), digest) != 0)
+    size_t digest_len;
+    if (psa_hash_compute(PSA_ALG_SHA_1, (const uint8_t *)input, (size_t)n,
+                         digest, sizeof(digest), &digest_len) != PSA_SUCCESS)
         return -1;
-#else
-    mbedtls_sha1((const unsigned char *)input, strlen(input), digest);
-#endif
-    return base64_encode(digest, sizeof(digest), out, 32);
+    return base64_encode(digest, digest_len, out, 32);
 }
 
 static bool header_value_matches(const char *headers, const char *name,
@@ -1231,7 +1256,7 @@ static int ws_send_control(ws_client_t *ws, uint8_t opcode,
     uint8_t mask[4];
     if (len > 125)
         return -1;
-    if (ws_random(ws, mask, sizeof(mask)) < 0)
+    if (psa_generate_random(mask, sizeof(mask)) != PSA_SUCCESS)
         return -1;
     hdr[h++] = (uint8_t)(0x80 | (opcode & 0x0f));
     hdr[h++] = (uint8_t)(0x80 | len);
@@ -1254,20 +1279,17 @@ static void ws_send_close(ws_client_t *ws)
     (void)ws_send_control(ws, 0x8, NULL, 0);
 }
 
-static int ws_connect(ws_client_t *ws, const df_url_t *url)
+static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_directory)
 {
     memset(ws, 0, sizeof(*ws));
     mbedtls_net_init(&ws->net);
     mbedtls_ssl_init(&ws->ssl);
     mbedtls_ssl_config_init(&ws->conf);
-    mbedtls_entropy_init(&ws->entropy);
-    mbedtls_ctr_drbg_init(&ws->ctr_drbg);
     mbedtls_x509_crt_init(&ws->ca);
 
-    if (mbedtls_ctr_drbg_seed(&ws->ctr_drbg, mbedtls_entropy_func,
-                              &ws->entropy, (const unsigned char *)"deneb-dfsvc", 11) != 0)
+    if (psa_crypto_init() != PSA_SUCCESS)
         return -1;
-    (void)mbedtls_x509_crt_parse_path(&ws->ca, "/etc/ssl/certs");
+    (void)mbedtls_x509_crt_parse_path(&ws->ca, ca_directory);
     if (mbedtls_net_connect(&ws->net, url->host, url->port, MBEDTLS_NET_PROTO_TCP) != 0)
         return -1;
     if (mbedtls_ssl_config_defaults(&ws->conf, MBEDTLS_SSL_IS_CLIENT,
@@ -1276,12 +1298,12 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
         return -1;
     mbedtls_ssl_conf_authmode(&ws->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&ws->conf, &ws->ca, NULL);
-    mbedtls_ssl_conf_rng(&ws->conf, mbedtls_ctr_drbg_random, &ws->ctr_drbg);
+    mbedtls_ssl_conf_read_timeout(&ws->conf, DF_WS_PING_TIMEOUT_MS);
     if (mbedtls_ssl_setup(&ws->ssl, &ws->conf) != 0)
         return -1;
     if (mbedtls_ssl_set_hostname(&ws->ssl, url->host) != 0)
         return -1;
-    mbedtls_ssl_set_bio(&ws->ssl, &ws->net, mbedtls_net_send, mbedtls_net_recv, NULL);
+    mbedtls_ssl_set_bio(&ws->ssl, ws, ws_tls_send, NULL, ws_tls_receive);
     int rc;
     while ((rc = mbedtls_ssl_handshake(&ws->ssl)) != 0) {
         if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE)
@@ -1292,7 +1314,7 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
 
     char key[25];
     char expected_accept[32];
-    if (ws_make_key(ws, key) < 0 || ws_expected_accept(key, expected_accept) < 0)
+    if (ws_make_key(key) < 0 || ws_expected_accept(key, expected_accept) < 0)
         return -1;
     char req[768];
     int n = snprintf(req, sizeof(req),
@@ -1311,11 +1333,9 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url)
     char resp[1024];
     size_t used = 0;
     while (used + 1 < sizeof(resp)) {
-        int r = mbedtls_ssl_read(&ws->ssl, (unsigned char *)resp + used, 1);
-        if (r <= 0)
+        if (ws_read_exact(ws, (unsigned char *)resp + used, 1) < 0)
             return -1;
-        used += (size_t)r;
-        resp[used] = '\0';
+        resp[++used] = '\0';
         if (strstr(resp, "\r\n\r\n"))
             break;
     }
@@ -1350,7 +1370,7 @@ static int ws_send_text(ws_client_t *ws, const char *text)
         return -1;
     }
     uint8_t mask[4];
-    if (ws_random(ws, mask, sizeof(mask)) < 0)
+    if (psa_generate_random(mask, sizeof(mask)) != PSA_SUCCESS)
         return -1;
     memcpy(hdr + h, mask, 4);
     h += 4;
@@ -1371,8 +1391,9 @@ static int ws_read_text(ws_client_t *ws, char *buf, size_t buf_size)
 
     while (true) {
         uint8_t h[2];
-        if (ws_read_exact(ws, h, 2) < 0)
-            return -1;
+        int rc = ws_read_bytes(ws, h, sizeof(h), !in_text);
+        if (rc != 0)
+            return rc;
         bool fin = (h[0] & 0x80) != 0;
         int opcode = h[0] & 0x0f;
         bool masked = (h[1] & 0x80) != 0;
@@ -2485,7 +2506,7 @@ int main(void)
         current_pin[0] = '\0';
         publish_status(pub, current_state, current_pin);
         ws_client_t ws;
-        if (ws_connect(&ws, &url) < 0) {
+        if (ws_connect(&ws, &url, "/etc/ssl/certs") < 0) {
             log_line("warn", "cloud websocket connect failed");
             ws_free(&ws);
             current_state = DF_STATE_RECONNECTING;
@@ -2559,6 +2580,8 @@ int main(void)
                           current_state);
                 break;
             }
+            if (rc == WS_READ_IDLE)
+                continue;
             last_rx = monotonic_ms();
             if (rc == 0)
                 handle_cloud_message(pub, &ws, msg, &current_state,
