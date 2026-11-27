@@ -4126,20 +4126,35 @@ static void test_pending_job_metadata(void)
 
 static void test_pending_job_metadata_write_file(void)
 {
-    const char *path = "/tmp/deneb-pending-job-write-test.json";
+    const char *tmp = getenv("TMPDIR");
+    char dir[256], path[sizeof(dir) + sizeof("/pending.json")];
     deneb_pending_job_t job;
     deneb_pending_job_file_t loaded;
     deneb_pending_job_conflict_prompt_t prompt;
     char pending_json[8192];
 
+    int length = snprintf(dir, sizeof(dir), "%s/deneb-pending-job-XXXXXX",
+                          tmp ? tmp : "/tmp");
+    assert(length >= 0 && (size_t)length < sizeof(dir) && mkdtemp(dir));
+    snprintf(path, sizeof(path), "%s/pending.json", dir);
+
     deneb_pending_job_init(&job, "/home/3D/deneb-uploads/write-test.gcode");
     job.tracker = 77;
+    mode_t previous_mask = umask(0027);
     assert(deneb_pending_job_write_file(&job, path) == 0);
+    struct stat pending_file;
+    assert(stat(path, &pending_file) == 0);
+    assert((pending_file.st_mode & 0777) == 0640);
+
+    assert(chmod(path, 0600) == 0);
+    umask(0022);
+    assert(deneb_pending_job_write_file(&job, path) == 0);
+    assert(stat(path, &pending_file) == 0);
+    assert((pending_file.st_mode & 0777) == 0600);
+
     assert(chmod(path, 0664) == 0);
-    mode_t previous_mask = umask(0002);
     assert(deneb_pending_job_write_file(&job, path) == 0);
     umask(previous_mask);
-    struct stat pending_file;
     assert(stat(path, &pending_file) == 0);
     assert((pending_file.st_mode & 0777) == 0664);
     assert(deneb_pending_job_file_load(path, &loaded) == 0);
@@ -4172,6 +4187,7 @@ static void test_pending_job_metadata_write_file(void)
     assert(deneb_pending_job_file_conflict_prompt(NULL, &prompt) != 0);
     assert(deneb_pending_job_file_conflict_prompt(&loaded, NULL) != 0);
     assert(deneb_pending_job_file_clear(path) == 0);
+    assert(rmdir(dir) == 0);
 
     assert(deneb_pending_job_file_clear_default() == 0);
     deneb_pending_job_file_read_default_array_or_empty(pending_json,

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job.h"
-#include "file_write.h"
 #include "pending_job_file.h"
 #include "json_string.h"
 #include "print_control.h"
@@ -8,9 +7,13 @@
 #include "printer_identity.h"
 #include "print_state_rules.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 void deneb_pending_job_init(deneb_pending_job_t *job, const char *path)
 {
@@ -238,23 +241,35 @@ int deneb_pending_job_write_file(const deneb_pending_job_t *job,
     if (n < 0 || (size_t)n >= sizeof(tmp_path))
         return -1;
 
-    f = deneb_fopen_write(tmp_path, 0664);
-    if (!f)
+    struct stat previous;
+    int preserve_mode = 0;
+    if (lstat(path, &previous) == 0)
+        preserve_mode = S_ISREG(previous.st_mode);
+    else if (errno != ENOENT)
         return -1;
-    if (fwrite(json, 1, (size_t)len, f) != (size_t)len) {
-        fclose(f);
-        remove(tmp_path);
+
+    /* The API event loop is the only writer of this staging file. */
+    if (unlink(tmp_path) != 0 && errno != ENOENT)
+        return -1;
+    int fd = open(tmp_path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+                  preserve_mode ? 0600 : 0664);
+    if (fd < 0)
+        return -1;
+    f = fdopen(fd, "wb");
+    if (!f) {
+        close(fd);
+        unlink(tmp_path);
         return -1;
     }
-    if (fclose(f) != 0) {
-        remove(tmp_path);
-        return -1;
-    }
-    if (rename(tmp_path, path) < 0) {
-        remove(tmp_path);
-        return -1;
-    }
-    return 0;
+
+    /* Keep replacement data private until it has the live file's mode. */
+    int written = fwrite(json, 1, (size_t)len, f) == (size_t)len &&
+                  (!preserve_mode ||
+                   (fflush(f) == 0 && fchmod(fd, previous.st_mode & 0777) == 0));
+    if (fclose(f) == 0 && written && rename(tmp_path, path) == 0)
+        return 0;
+    unlink(tmp_path);
+    return -1;
 }
 
 int deneb_pending_job_write_default(const deneb_pending_job_t *job)
