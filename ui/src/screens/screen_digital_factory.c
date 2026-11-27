@@ -8,9 +8,15 @@
 #include "locale.h"
 #include "lvgl.h"
 
+#include <errno.h>
+#include <fcntl.h>
+#include <spawn.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static lv_obj_t *df_screen = NULL;
 static lv_obj_t *info_label = NULL;
@@ -19,22 +25,27 @@ static lv_obj_t *connect_button = NULL;
 static lv_obj_t *disconnect_button = NULL;
 static lv_timer_t *status_timer = NULL;
 static int disconnect_armed = 0;
+static bool binding_known;
+static bool cloud_bound;
+static uint32_t binding_checked_at;
 
 #define DF_LOCK_DIR "/tmp/deneb-df-lock"
+#ifndef DF_STATUS_FILE
+#define DF_STATUS_FILE "/tmp/deneb-df-status"
+#endif
+#define DF_BINDING_REFRESH_MS 5000
 
-static int status_value(const char *status, const char *key,
-                        char *out, size_t out_size);
+extern char **environ;
 
-static void read_command(char *dst, size_t dst_size, const char *cmd)
+static void read_status(char *dst, size_t dst_size)
 {
-    if (dst_size == 0)
-        return;
     dst[0] = '\0';
-    FILE *fp = popen(cmd, "r");
+    FILE *fp = fopen(DF_STATUS_FILE, "re");
     if (!fp)
         return;
-    fgets(dst, dst_size, fp);
-    pclose(fp);
+    if (!fgets(dst, dst_size, fp))
+        dst[0] = '\0';
+    fclose(fp);
     size_t len = strlen(dst);
     while (len > 0 && (dst[len - 1] == '\n' || dst[len - 1] == '\r'))
         dst[--len] = '\0';
@@ -45,33 +56,64 @@ static int bridge_is_busy(void)
     return system("[ -d " DF_LOCK_DIR " ]") == 0;
 }
 
-static int has_cloud_binding(void)
+static bool query_cloud_binding(void)
 {
-    return system("uci -q get ultimaker.option.cluster_id >/dev/null 2>&1") == 0;
+    char *argv[] = {"uci", "-q", "get", "ultimaker.option.cluster_id", NULL};
+    posix_spawn_file_actions_t actions;
+    pid_t pid;
+    int status;
+
+    int rc = posix_spawn_file_actions_init(&actions);
+    if (rc != 0)
+        return false;
+    rc = posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null",
+                                          O_WRONLY, 0);
+    if (rc == 0)
+        rc = posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
+    if (rc == 0)
+        rc = posix_spawnp(&pid, argv[0], &actions, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    if (rc != 0)
+        return false;
+
+    pid_t waited;
+    do {
+        waited = waitpid(pid, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    return waited == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-static int is_active_df_state(const char *status)
+static bool has_cloud_binding(void)
 {
-    char state[32];
-
-    if (!status_value(status, "state", state, sizeof(state)))
-        return 0;
-    return strcmp(state, "connected") == 0 ||
-           strcmp(state, "reconnecting") == 0 ||
-           strcmp(state, "connecting") == 0 ||
-           strcmp(state, "enter_pin") == 0 ||
-           strcmp(state, "disconnecting") == 0;
+    uint32_t now = lv_tick_get();
+    if (!binding_known || now - binding_checked_at >= DF_BINDING_REFRESH_MS) {
+        cloud_bound = query_cloud_binding();
+        binding_checked_at = now;
+        binding_known = true;
+    }
+    return cloud_bound;
 }
+
+static int status_value(const char *status, const char *key,
+                        char *out, size_t out_size);
 
 static void update_button_states(const char *status)
 {
-    int disconnecting = status && strstr(status, "state=disconnecting");
-    int can_disconnect = !disconnecting &&
-                         (has_cloud_binding() || is_active_df_state(status));
+    char state[32] = "";
+    status_value(status, "state", state, sizeof(state));
+    bool connected = strcmp(state, "connected") == 0;
+    bool disconnecting = strcmp(state, "disconnecting") == 0;
+    bool active = connected || strcmp(state, "reconnecting") == 0 ||
+                  strcmp(state, "connecting") == 0 || strcmp(state, "enter_pin") == 0;
+
+    /* Recheck immediately if a pairing or disconnect phase ends. */
+    if (active || disconnecting)
+        binding_known = false;
+    bool can_disconnect = !disconnecting && (active || has_cloud_binding());
 
     if (!connect_button)
         goto disconnect;
-    if (status && strstr(status, "state=connected"))
+    if (connected)
         lv_obj_add_state(connect_button, LV_STATE_DISABLED);
     else
         lv_obj_remove_state(connect_button, LV_STATE_DISABLED);
@@ -176,8 +218,7 @@ static void refresh_status(void)
     char status[160];
     char display[160];
 
-    read_command(status, sizeof(status),
-                 "cat /tmp/deneb-df-status 2>/dev/null || true");
+    read_status(status, sizeof(status));
     if (status[0] && status_label) {
         format_status_text(status, display, sizeof(display));
         lv_label_set_text(status_label, display);
@@ -204,8 +245,7 @@ static void connect_cb(lv_event_t *e)
         return;
     }
 
-    read_command(status, sizeof(status),
-                 "cat /tmp/deneb-df-status 2>/dev/null || true");
+    read_status(status, sizeof(status));
     refresh_only = strstr(status, "state=enter_pin") != NULL ||
                    strstr(status, "state=connected") != NULL;
 
@@ -229,6 +269,7 @@ static void connect_cb(lv_event_t *e)
            ">/tmp/deneb-df-status 2>&1; "
            "rmdir " DF_LOCK_DIR " 2>/dev/null) & "
            "fi");
+    binding_known = false;
     if (refresh_only && status[0]) {
         char display[160];
         format_status_text(status, display, sizeof(display));
@@ -342,6 +383,7 @@ static void df_destroy(void)
     connect_button = NULL;
     disconnect_button = NULL;
     disconnect_armed = 0;
+    binding_known = false;
 }
 
 const screen_ops_t screen_digital_factory = {
