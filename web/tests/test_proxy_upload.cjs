@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { createHash, randomBytes } = require('node:crypto');
+const { once } = require('node:events');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -14,6 +15,7 @@ const [apiBinary, lighttpd, packagedConfig, cmake, unzip, digestFixture] = proce
 const DEADLINE_MS = 2000;
 const SSE_CLIENTS = 4;
 const STATUS_PATH = '/api/v1/printer/status';
+const LOCALE_PATH = '/api/v1/deneb/locale/test';
 const UPLOAD_PATH = '/cluster-api/v1/print_jobs';
 const AUTH_UPLOAD_PATH = '/api/v1/print_job';
 const boundary = 'deneb-host-upload';
@@ -86,17 +88,53 @@ function collect(response, resolve, reject) {
     response.on('data', (chunk) => chunks.push(chunk));
     response.once('error', reject);
     response.once('end', () => resolve({
-        code: response.statusCode, data: Buffer.concat(chunks).toString()
+        code: response.statusCode, headers: response.headers, data: Buffer.concat(chunks).toString()
     }));
 }
 
-function status(port) {
+function get(port, pathname) {
     return new Promise((resolve, reject) => {
-        const req = request(port, STATUS_PATH, {}, (response) => collect(response, resolve, reject));
+        const req = request(port, pathname, {}, (response) => collect(response, resolve, reject));
         req.once('error', reject);
-        req.setTimeout(DEADLINE_MS, () => req.destroy(new Error('REST status deadline exceeded')));
+        req.setTimeout(DEADLINE_MS, () => req.destroy(new Error('GET deadline exceeded for ' + pathname)));
         req.end();
     });
+}
+
+function localeBody(length) {
+    const prefix = '{"example":"';
+    const suffix = 'é"}\n';
+    return prefix + 'x'.repeat(length - Buffer.byteLength(prefix + suffix)) + suffix;
+}
+
+function pausedLocale(apiSocket) {
+    const flag = path.join(path.dirname(apiSocket), 'small-send-buffer');
+    fs.writeFileSync(flag, '', { flag: 'wx' });
+    const socket = net.createConnection({ path: apiSocket, allowHalfOpen: true, highWaterMark: 1024 });
+    trackSocket(socket);
+    socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error('Paused locale response timed out')));
+    const received = [];
+    const reply = new Promise((resolve, reject) => {
+        socket.once('error', reject);
+        socket.once('end', () => resolve(Buffer.concat(received)));
+        socket.once('close', () => reject(new Error('Locale socket closed before reply')));
+    });
+    reply.catch(() => {});
+    socket.pause();
+    const started = once(socket, 'readable').then(() => {
+        assert.equal(fs.existsSync(flag), false, 'API did not arm the slow-reader socket');
+    });
+    socket.once('connect', () => socket.end(
+        'GET ' + LOCALE_PATH + ' HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'));
+    return {
+        started,
+        finish: () => {
+            socket.on('data', (chunk) => received.push(chunk));
+            socket.resume();
+            return reply;
+        },
+        disconnect: () => socket.destroy()
+    };
 }
 
 function liveStatus(port) {
@@ -277,6 +315,15 @@ function countDescriptors(pid) {
     return fs.readdirSync('/proc/' + pid + '/fd').length;
 }
 
+function extractorState(pid) {
+    try {
+        return fs.readFileSync('/proc/' + pid + '/status', 'utf8').match(/^State:\s*(.*)$/m)?.[1];
+    } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        return 'exited';
+    }
+}
+
 async function assertResponsive(port, clients, phase) {
     const before = clients.map((client) => client.events);
     const freshEvents = withinDeadline('Four fresh SSE updates exceeded the deadline ' + phase, () =>
@@ -284,7 +331,7 @@ async function assertResponsive(port, clients, phase) {
             if (client.error) throw client.error;
             return client.events > before[index];
         }));
-    const replies = Promise.all([status(port), status(port)]).then((results) => {
+    const replies = Promise.all([get(port, STATUS_PATH), get(port, STATUS_PATH)]).then((results) => {
         for (const result of results) {
             assert.equal(result.code, 200);
             assert.equal(JSON.parse(result.data), 'idle');
@@ -369,7 +416,7 @@ async function main() {
         await withinDeadline('deneb-api socket did not start', () => fs.existsSync(apiSocket));
         const proxy = startService(lighttpd, ['-D', '-f', config], root).process;
         await withinDeadline('lighttpd did not start listening', () => children[1].log.includes('server started'));
-        assert.equal((await status(port)).code, 200);
+        assert.equal((await get(port, STATUS_PATH)).code, 200);
         await withinDeadline('REST client socket did not close', () => sockets.size === 0);
         const baseline = [process.pid, api.pid, proxy.pid].map(countDescriptors);
 
@@ -408,9 +455,21 @@ async function main() {
         // A TCP FIN after the full body is also a valid write-side half-close.
         // Send a reset so the proxy recognizes that the client discarded its reply.
         cancelled.reset();
-        await withinDeadline('Finalization cancellation did not release its child and temp files', () =>
-            !fs.existsSync('/proc/' + cancelledPid) && fs.readdirSync(temp).length === 0 &&
-            countDescriptors(api.pid) === active[0] && countDescriptors(proxy.pid) === active[1]);
+        try {
+            await withinDeadline('Finalization cancellation did not release its child and temp files', () =>
+                !fs.existsSync('/proc/' + cancelledPid) && fs.readdirSync(temp).length === 0 &&
+                countDescriptors(api.pid) === active[0] && countDescriptors(proxy.pid) === active[1]);
+        } catch (error) {
+            console.error('Upload finalization cancellation', {
+                extractorPid: cancelledPid,
+                extractorState: extractorState(cancelledPid),
+                tempFiles: fs.readdirSync(temp),
+                apiDescriptors: { actual: countDescriptors(api.pid), expected: active[0] },
+                proxyDescriptors: { actual: countDescriptors(proxy.pid), expected: active[1] },
+                clientSockets: { actual: sockets.size, expected: SSE_CLIENTS }
+            });
+            throw error;
+        }
         assert.equal(fs.existsSync(pendingJob), false);
         assert.equal(fs.existsSync(spool), false);
 
@@ -513,6 +572,44 @@ async function main() {
         assert.match(digestRejected, /^HTTP\/1\.1 401 Unauthorized\r\n/);
         assert.deepEqual(JSON.parse(fs.readFileSync(pendingJob, 'utf8')), pending);
 
+        // Keep response I/O tests separate from the upload cancellation sequence.
+        const locales = path.join(root, 'locales');
+        fs.mkdirSync(locales);
+        const localePath = path.join(locales, 'test.json');
+        for (const length of [65023, 65024, 65025, 65536]) {
+            const expected = localeBody(length);
+            fs.writeFileSync(localePath, expected);
+            const response = await get(port, LOCALE_PATH);
+            assert.equal(response.code, 200);
+            assert.equal(response.headers['content-length'], String(length), 'locale Content-Length');
+            assert.ok(Buffer.from(response.data).equals(Buffer.from(expected)), 'byte-exact locale response');
+            assert.deepEqual(JSON.parse(response.data), JSON.parse(expected));
+        }
+        await withinDeadline('Locale proxy sockets did not close', () =>
+            countDescriptors(api.pid) === active[0] && sockets.size === SSE_CLIENTS);
+
+        const fullLocale = Buffer.from(localeBody(65536));
+        const paused = pausedLocale(apiSocket);
+        await paused.started;
+        await assertResponsive(port, clients, 'while a locale reader paused');
+        await withinDeadline('Paused reader did not retain the pending API response', () =>
+            countDescriptors(api.pid) === active[0] + 1 && sockets.size === SSE_CLIENTS + 1);
+        const received = await paused.finish();
+        const headerEnd = received.indexOf('\r\n\r\n');
+        assert.ok(headerEnd > 0);
+        const headers = received.subarray(0, headerEnd + 2).toString();
+        assert.match(headers, /^HTTP\/1\.1 200 OK\r\n/);
+        assert.match(headers, /\r\nContent-Length: 65536\r\n/);
+        const body = received.subarray(headerEnd + 4);
+        assert.equal(body.length, fullLocale.length, 'paused reader received the declared body length');
+        assert.ok(body.equals(fullLocale), 'byte-exact locale response after resuming');
+
+        const abandoned = pausedLocale(apiSocket);
+        await abandoned.started;
+        abandoned.disconnect();
+        await withinDeadline('Paused responses did not release their sockets', () =>
+            countDescriptors(api.pid) === active[0] && sockets.size === SSE_CLIENTS);
+
         for (const client of clients) client.close();
         await withinDeadline('Client, API, or lighttpd descriptors did not return to idle', () =>
             sockets.size === 0 &&
@@ -528,6 +625,14 @@ async function main() {
         assert.equal(api.exitCode, 0);
         assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
         assert.deepEqual(fs.readdirSync(spool), ['completed.gcode']);
+
+        fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=0\n');
+        startService(apiBinary, [], root);
+        await withinDeadline('Authenticated deneb-api socket did not start', () => fs.existsSync(apiSocket));
+        const unauthorized = await get(port, '/api/v1/auth/verify');
+        assert.equal(unauthorized.code, 401);
+        assert.match(unauthorized.headers['www-authenticate'], /^Digest realm="[^"]+", nonce="[a-f0-9]+", qop="auth"$/);
+        assert.deepEqual(JSON.parse(unauthorized.data), { message: 'Unauthorized' });
     } catch (error) {
         for (const child of children) process.stderr.write(child.log);
         throw error;

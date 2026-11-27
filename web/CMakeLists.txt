@@ -170,12 +170,14 @@ if(NODE_EXECUTABLE)
     find_program(UNZIP_EXECUTABLE unzip)
     if(BUILD_HOST_STUB AND LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
         # Use the normal API code with an isolated, per-test working directory.
-        add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES})
+        add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES} tests/small_send_buffer.c)
+        target_link_options(deneb-api-upload-fixture PRIVATE -Wl,--wrap=accept4)
         target_include_directories(deneb-api-upload-fixture PRIVATE ${DENEB_API_INCLUDE_DIRS})
         target_compile_definitions(deneb-api-upload-fixture PRIVATE
             BACKEND_ZMQ_STUB
             DENEB_API_SOCKET_PATH="api.sock"
             DENEB_API_AUTH_CONFIG_PATH="web-auth.conf"
+            DENEB_API_LOCALE_DIR="locales"
             DENEB_UPLOAD_TEMP_DIR="tmp"
             DENEB_PRINT_JOB_SPOOL_DIR="spool"
             DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"

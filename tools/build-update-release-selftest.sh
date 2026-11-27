@@ -18,12 +18,17 @@ cp "$script_dir/build-update-release.sh" "$script_dir/native-dependency-pins.sh"
 touch "$zmq_root/build-musl/lib/libzmq.a"
 
 # Distinct compiler paths emulate a pinned toolchain and another installation.
-# Both invoke host cc so the fixture runs without release cross dependencies.
-cat > "$toolchain" <<'EOF'
+# The wrapper picks a runtime from its resolved location and invoked name.
+wrapper_path="${toolchain%-gcc}-wrapper.sh"
+cat > "$wrapper_path" <<'EOF'
 #!/bin/sh
-exec cc "$@"
+wrapper=$(readlink -f "$0") || exit 1
+library_dir=fixture-lib
+case "$0" in *-custom) library_dir=custom-lib ;; esac
+exec cc "-L${wrapper%/*}/../$library_dir" "$@"
 EOF
-chmod +x "$toolchain"
+chmod +x "$wrapper_path"
+ln -s "${wrapper_path##*/}" "$toolchain"
 cp "$toolchain" "$toolchain-other"
 
 make_project() {
@@ -134,7 +139,6 @@ gcc_lib="$DENEB_TOOLCHAIN_ROOT/lib/gcc/$MIPS_TOOLCHAIN_TARGET/$MIPS_TOOLCHAIN_GC
 mkdir -p "$gcc_lib"
 touch "$DENEB_TOOLCHAIN_ROOT/info.mk" \
     "$toolchain.bin" "$DENEB_TOOLCHAIN_ROOT/bin/$MIPS_TOOLCHAIN_TARGET-g++.bin" \
-    "$DENEB_TOOLCHAIN_ROOT/bin/$MIPS_TOOLCHAIN_TARGET-wrapper.sh" \
     "$DENEB_TOOLCHAIN_ROOT/lib/libstdc++.a" "$DENEB_TOOLCHAIN_ROOT/lib/libssp_nonshared.a" \
     "$gcc_lib/libgcc.a" "$gcc_lib/libgcc_eh.a"
 export FIXTURE_RUNTIME_DIR="$fixture/runtime libs"
@@ -143,10 +147,11 @@ mkdir -p "$FIXTURE_RUNTIME_DIR"
 # linker name so the host compiler can still use its own libc.
 ln -s "$DENEB_TOOLCHAIN_ROOT/lib/libc.a" "$FIXTURE_RUNTIME_DIR/libfixture.a"
 make_runtime() {
+    local archive=${2:-"$DENEB_TOOLCHAIN_ROOT/lib/libc.a"}
     printf 'int runtime_value(void) { return %s; }\n' "$1" > "$fixture/runtime.c"
     cc -c "$fixture/runtime.c" -o "$fixture/runtime.o"
-    ar rcs "$DENEB_TOOLCHAIN_ROOT/lib/libc.a" "$fixture/runtime.o"
-    touch -t 200001010000 "$DENEB_TOOLCHAIN_ROOT/lib/libc.a"
+    ar rcs "$archive" "$fixture/runtime.o"
+    touch -t 200001010000 "$archive"
 }
 
 lighttpd_proof="$fixture/lighttpd-proof"
@@ -198,3 +203,37 @@ mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$mismatched_build" lighttpd build/li
 test -x "$mismatched_output"
 test ! -e "$mismatched_output.deneb-runtime.receipt"
 printf '%s\n' 'Warm cache with the expected root and a different compiler keeps its output without a pinned receipt.'
+
+# A wrapper can have the same inode and still resolve to a different sysroot.
+alternate_root="$fixture/alternate toolchain"
+alternate_compiler="$alternate_root/bin/$MIPS_TOOLCHAIN_TARGET-gcc"
+mkdir -p "$alternate_root/bin" "$alternate_root/fixture-lib"
+alternate_wrapper="$alternate_root/bin/${wrapper_path##*/}"
+ln "$wrapper_path" "$alternate_wrapper"
+ln -s "${alternate_wrapper##*/}" "$alternate_compiler"
+test "$wrapper_path" -ef "$alternate_wrapper"
+make_runtime 33 "$alternate_root/fixture-lib/libfixture.a"
+alternate_build="$fixture/hardlinked-toolchain-build"
+cmake -S "$lighttpd_proof" -B "$alternate_build" -DCMAKE_C_COMPILER:FILEPATH="$alternate_compiler" \
+    -DMUSL_CROSS:PATH="$DENEB_TOOLCHAIN_ROOT" >/dev/null
+cmake --build "$alternate_build" --target lighttpd >/dev/null
+mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$alternate_build" lighttpd build/lighttpd
+alternate_output="$alternate_build/build/lighttpd"
+test "$("$alternate_output")" = 33
+test ! -e "$alternate_output.deneb-runtime.receipt"
+printf '%s\n' 'A hard-linked wrapper in a different toolchain directory leaves runtime provenance unverified.'
+
+# A symlink with another tool name can resolve to the same wrapper but run a
+# different driver. The resolved wrapper alone does not identify that driver.
+custom_compiler="${toolchain%-gcc}-custom"
+ln -s "${wrapper_path##*/}" "$custom_compiler"
+mkdir -p "$DENEB_TOOLCHAIN_ROOT/custom-lib"
+make_runtime 44 "$DENEB_TOOLCHAIN_ROOT/custom-lib/libfixture.a"
+custom_build="$fixture/custom-driver-build"
+cmake -S "$lighttpd_proof" -B "$custom_build" -DCMAKE_C_COMPILER:FILEPATH="$custom_compiler" >/dev/null
+cmake --build "$custom_build" --target lighttpd >/dev/null
+mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$custom_build" lighttpd build/lighttpd
+custom_output="$custom_build/build/lighttpd"
+test "$("$custom_output")" = 44
+test ! -e "$custom_output.deneb-runtime.receipt"
+printf '%s\n' 'An alias selecting a different driver leaves runtime provenance unverified.'

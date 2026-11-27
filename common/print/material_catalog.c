@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -99,43 +100,116 @@ static int parse_nonnegative_int(const char *value, int *out)
     return 0;
 }
 
+typedef struct {
+    const char *open_tag;
+    const char *close_tag;
+    char *value;
+    size_t capacity;
+    size_t matched;
+    size_t length;
+    size_t trimmed;
+    int opened;
+    int done;
+} material_tag_t;
+
+static int scan_material_tag(material_tag_t *tag, unsigned char ch)
+{
+    if (tag->done)
+        return 0;
+
+    if (!tag->opened) {
+        if (ch == (unsigned char)tag->open_tag[tag->matched]) {
+            if (tag->open_tag[++tag->matched] == '\0') {
+                tag->opened = 1;
+                tag->matched = 0;
+            }
+        } else {
+            /* The only possible overlapping prefix is another '<'. */
+            tag->matched = ch == '<';
+        }
+        return 0;
+    }
+
+    if (tag->matched || ch == '<') {
+        /* Neither field accepts '<' within its value. */
+        if (ch != (unsigned char)tag->close_tag[tag->matched])
+            return -1;
+        if (tag->close_tag[++tag->matched] == '\0') {
+            if (tag->trimmed == 0)
+                return -1;
+            tag->value[tag->trimmed] = '\0';
+            tag->done = 1;
+        }
+        return 0;
+    }
+
+    int whitespace = isspace(ch);
+    if (!tag->length && whitespace)
+        return 0;
+    if (tag->length < tag->capacity - 1)
+        tag->value[tag->length] = (char)ch;
+    ++tag->length;
+    if (!whitespace) {
+        if (tag->length >= tag->capacity)
+            return -1;
+        tag->trimmed = tag->length;
+    }
+    return 0;
+}
+
 int deneb_material_catalog_parse_file(const char *path,
                                       char *guid, size_t guid_sz,
                                       int *version)
 {
-    FILE *f;
-    char *xml;
-    size_t n;
+    unsigned char chunk[512];
+    size_t remaining = 128 * 1024;
+    char guid_value[64];
     char version_str[32];
-    int ok;
+    material_tag_t guid_tag = {
+        .open_tag = "<GUID>", .close_tag = "</GUID>", .value = guid_value,
+        .capacity = guid_sz < sizeof(guid_value) ? guid_sz : sizeof(guid_value)
+    };
+    material_tag_t version_tag = {
+        .open_tag = "<version>", .close_tag = "</version>",
+        .value = version_str, .capacity = sizeof(version_str)
+    };
+    int result = -1;
 
     if (!path || !guid || guid_sz == 0 || !version)
         return -1;
 
-    f = fopen(path, "rb");
-    if (!f)
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
         return -1;
 
-    xml = malloc(131073);
-    if (!xml) {
-        fclose(f);
-        return -1;
+    while (remaining > 0) {
+        size_t request = remaining < sizeof(chunk) ? remaining : sizeof(chunk);
+        ssize_t n = read(fd, chunk, request);
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            break;
+        remaining -= (size_t)n;
+
+        for (ssize_t i = 0; i < n; ++i) {
+            if (chunk[i] == '\0' ||
+                scan_material_tag(&guid_tag, chunk[i]) < 0 ||
+                scan_material_tag(&version_tag, chunk[i]) < 0)
+                goto done;
+            if (guid_tag.done && version_tag.done) {
+                if (deneb_material_catalog_guid_is_safe(guid_value) &&
+                    parse_nonnegative_int(version_str, version) == 0) {
+                    memcpy(guid, guid_value, guid_tag.trimmed + 1);
+                    result = 0;
+                }
+                goto done;
+            }
+        }
     }
 
-    n = fread(xml, 1, 131072, f);
-    fclose(f);
-    xml[n] = '\0';
-
-    ok = deneb_material_catalog_copy_tag_value(xml, "GUID", guid, guid_sz) == 0 &&
-         deneb_material_catalog_copy_tag_value(xml, "version", version_str,
-                                               sizeof(version_str)) == 0 &&
-         deneb_material_catalog_guid_is_safe(guid);
-    if (ok) {
-        ok = parse_nonnegative_int(version_str, version) == 0;
-    }
-
-    free(xml);
-    return ok ? 0 : -1;
+done:
+    close(fd);
+    return result;
 }
 
 int deneb_material_catalog_store_file(const char *path,

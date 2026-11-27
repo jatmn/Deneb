@@ -72,8 +72,8 @@ int api_http_parse(http_request_t *req, const char *raw, size_t len);
 /* Route a parsed request to the appropriate handler. */
 void api_http_route(const http_request_t *req, http_response_t *resp);
 
-/* Serialize response to raw HTTP bytes. Returns bytes written. */
-int api_http_serialize(const http_response_t *resp, char *buf, size_t cap);
+/* Serialize only the HTTP response headers. Returns bytes written or -1. */
+int api_http_serialize_headers(const http_response_t *resp, char *buf, size_t cap);
 
 /* Initialize a response with defaults. */
 void api_http_response_init(http_response_t *resp);

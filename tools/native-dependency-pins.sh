@@ -122,9 +122,15 @@ mips_uses_pinned_compiler() (
     [ -f "$mips_record" ] || exit 1
     mips_compiler=$(sed -n 's/^set(CMAKE_C_COMPILER "\(.*\)")$/\1/p' "$mips_record") || exit 1
     case "$mips_compiler" in
-        /*) [ "$mips_compiler" -ef "$mips_expected_compiler" ] ;;
+        /*) ;;
         *) exit 1 ;;
     esac
+    # OpenWrt selects the driver from the invoked name and the sysroot from
+    # the resolved wrapper path.
+    [ "${mips_compiler##*-}" = "${mips_expected_compiler##*-}" ] || exit 1
+    mips_compiler=$(readlink -e -- "$mips_compiler") || exit 1
+    mips_expected_bin=$(readlink -e -- "${mips_expected_compiler%/*}") || exit 1
+    [ "$mips_compiler" = "$mips_expected_bin/$MIPS_TOOLCHAIN_TARGET-wrapper.sh" ]
 )
 
 mips_release_build() (
