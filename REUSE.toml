@@ -19,6 +19,12 @@ SPDX-FileCopyrightText = "UltiMaker fdm_materials contributors"
 SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
+path = ["common/lodepng/lodepng.c", "common/lodepng/lodepng.h"]
+precedence = "override"
+SPDX-FileCopyrightText = "2005-2026 Lode Vandevenne"
+SPDX-License-Identifier = "Zlib"
+
+[[annotations]]
 path = "notices/MBEDTLS-2.28.8-LICENSE.txt"
 precedence = "override"
 SPDX-FileCopyrightText = "Mbed TLS contributors"

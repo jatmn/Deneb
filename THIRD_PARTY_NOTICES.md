@@ -86,17 +86,26 @@ under `ui/lib/lvgl/src/stdlib/builtin`:
   `ui/lib/lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt`
 - `tlsf`, BSD-style license, notice in
   `ui/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt`
-- `LodePNG` 20230410, copyright 2005-2023 Lode Vandevenne, zlib-style
-  license, notice retained in `ui/lib/lvgl/src/libs/lodepng/lodepng.c` and
-  `lodepng.h`
 
 These notices are retained in the LVGL submodule and included in release
 packages.
 
+### LodePNG
+
+- Version `20261102`, [upstream source at 7b2893e](https://github.com/lvandeve/lodepng/tree/7b2893e35891c0c85bee5595caafaf3c2044b409)
+- Copyright (c) 2005-2026 Lode Vandevenne
+- Zlib license retained in `common/lodepng/lodepng.c` and `lodepng.h` and
+  included in release packages as `LODEPNG_LICENSE.txt`
+
+Deneb uses this snapshot in all four native executables that consume LodePNG.
+The touchscreen build retains LVGL's allocation, filesystem, and draw-buffer
+integration. The print service, web API, and Digital Factory service build the
+same source with only the inflate/zlib decoder enabled.
+
 ## Package Inventory Reconciliation
 
 Audited 2026-07-22. Current `.deneb` packages redistribute Deneb's MPL-2.0
-components, LVGL and its selected bundled helpers (including LodePNG), libzmq
+components, LVGL and its selected bundled helpers, LodePNG 20261102, libzmq
 4.3.5, mbedTLS 2.28.8, and lighttpd 1.4.85. The Cura plugin is distributed
 separately under LGPL-3.0-or-later; the material identifier dataset is retained
 in source form under CC0-1.0. The stock legal screen was used only as a

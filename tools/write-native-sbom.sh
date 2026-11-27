@@ -155,6 +155,19 @@ $(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libgcc@$MIPS_TOOLC
     },
     {
       "type": "library",
+      "bom-ref": "lodepng",
+      "name": "LodePNG",
+      "version": "20261102",
+      "purl": "pkg:github/lvandeve/lodepng@7b2893e35891c0c85bee5595caafaf3c2044b409",
+      "licenses": [{"license": {"id": "Zlib"}}],
+      "externalReferences": [{
+        "type": "distribution",
+        "url": "https://codeload.github.com/lvandeve/lodepng/tar.gz/7b2893e35891c0c85bee5595caafaf3c2044b409",
+        "hashes": [{"alg": "SHA-256", "content": "e0b571062acdbe187fd4e8b0ff46f6e7d1b634457ff1a4b383aaac4c78bfd59b"}]
+      }]
+    },
+    {
+      "type": "library",
       "bom-ref": "lvgl",
       "name": "LVGL",
       "version": "$lvgl_revision",
@@ -166,7 +179,7 @@ $(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libgcc@$MIPS_TOOLC
     }
   ],
   "dependencies": [
-    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "musl", "libstdc++", "libgcc", "lvgl"]}
+    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "musl", "libstdc++", "libgcc", "lodepng", "lvgl"]}
   ]
 }
 EOF
