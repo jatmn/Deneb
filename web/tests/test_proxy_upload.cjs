@@ -84,15 +84,15 @@ function collect(response, resolve, reject) {
     response.on('data', (chunk) => chunks.push(chunk));
     response.once('error', reject);
     response.once('end', () => resolve({
-        code: response.statusCode, data: Buffer.concat(chunks).toString()
+        code: response.statusCode, headers: response.headers, data: Buffer.concat(chunks).toString()
     }));
 }
 
-function status(port) {
+function get(port, pathname) {
     return new Promise((resolve, reject) => {
-        const req = request(port, STATUS_PATH, {}, (response) => collect(response, resolve, reject));
+        const req = request(port, pathname, {}, (response) => collect(response, resolve, reject));
         req.once('error', reject);
-        req.setTimeout(DEADLINE_MS, () => req.destroy(new Error('REST status deadline exceeded')));
+        req.setTimeout(DEADLINE_MS, () => req.destroy(new Error('GET deadline exceeded for ' + pathname)));
         req.end();
     });
 }
@@ -194,7 +194,7 @@ async function assertResponsive(port, clients, phase) {
             if (client.error) throw client.error;
             return client.events > before[index];
         }));
-    const replies = Promise.all([status(port), status(port)]).then((results) => {
+    const replies = Promise.all([get(port, STATUS_PATH), get(port, STATUS_PATH)]).then((results) => {
         for (const result of results) {
             assert.equal(result.code, 200);
             assert.equal(JSON.parse(result.data), 'idle');
@@ -273,7 +273,21 @@ async function main() {
         await withinDeadline('deneb-api socket did not start', () => fs.existsSync(apiSocket));
         const proxy = startService(lighttpd, ['-D', '-f', config], root).process;
         await withinDeadline('lighttpd did not start listening', () => children[1].log.includes('server started'));
-        assert.equal((await status(port)).code, 200);
+        assert.equal((await get(port, STATUS_PATH)).code, 200);
+        const locales = path.join(root, 'locales');
+        fs.mkdirSync(locales);
+        const localePrefix = '{"example":"';
+        const localeSuffix = 'é"}\n';
+        for (const length of [65023, 65024, 65025, 65536]) {
+            const translation = 'x'.repeat(length - Buffer.byteLength(localePrefix + localeSuffix));
+            const body = localePrefix + translation + localeSuffix;
+            fs.writeFileSync(path.join(locales, 'test.json'), body);
+            const response = await get(port, '/api/v1/deneb/locale/test');
+            assert.equal(response.code, 200);
+            assert.equal(response.headers['content-length'], String(length), 'locale Content-Length');
+            assert.ok(Buffer.from(response.data).equals(Buffer.from(body)), 'byte-exact locale response');
+            assert.equal(JSON.parse(response.data).example, translation + 'é');
+        }
         await withinDeadline('REST client socket did not close', () => sockets.size === 0);
         const baseline = [process.pid, api.pid, proxy.pid].map(countDescriptors);
 
@@ -380,6 +394,14 @@ async function main() {
         assert.equal(api.exitCode, 0);
         assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
         assert.deepEqual(fs.readdirSync(spool), ['completed.gcode']);
+
+        fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=0\n');
+        startService(apiBinary, [], root);
+        await withinDeadline('Authenticated deneb-api socket did not start', () => fs.existsSync(apiSocket));
+        const unauthorized = await get(port, '/api/v1/auth/verify');
+        assert.equal(unauthorized.code, 401);
+        assert.match(unauthorized.headers['www-authenticate'], /^Digest realm="[^"]+", nonce="[a-f0-9]+", qop="auth"$/);
+        assert.deepEqual(JSON.parse(unauthorized.data), { message: 'Unauthorized' });
     } catch (error) {
         for (const child of children) process.stderr.write(child.log);
         throw error;

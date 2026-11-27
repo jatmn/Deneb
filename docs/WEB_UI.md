@@ -93,15 +93,16 @@ streaming uploads, SSE, Cura compatibility, and recovery behavior.
 | lighttpd streams SSE responses and `deneb-api` releases the client slot when the proxy disconnects | The host proxy test verifies that all four connections return to the descriptor baseline after disconnect. |
 | lighttpd streams multipart bodies with a known length. The API writes one chunk of up to 8 KiB per ready upload, limits pending bodies to 50 MiB in total, and closes an upload after 30 seconds without progress | REST and SSE can continue while an upload is waiting on the client. The API releases incomplete bodies when the proxy disconnects. Lighttpd decodes chunked requests before forwarding them. |
 | One transient API worker extracts and stages a completed print upload | REST and SSE continue during file preparation. The API loop checks pending-job state and publishes the staged file before native registration. |
-| `deneb-api` carries its own HTTP parser/serializer, header/body limits, keep-alive handling, and 64 KiB response buffer | These are transport responsibilities that could move behind a proven lighttpd application protocol if the total resource cost improves. |
+| `deneb-api` parses requests and sends response headers and bodies separately | The API sends each response's full body from its existing buffer. HTTP framing and connection handling could move behind a proven lighttpd application protocol if the total resource cost improves. |
 | Approximately 80 routes still perform dynamic printer/Cura work | The application service remains necessary even if all generic HTTP transport moves to lighttpd. |
 
 The Web host suite includes `deneb-proxy-upload-tests` when the stub build has
 Node.js, lighttpd, and unzip available. It checks two-second REST replies and
 fresh updates on all four live status streams during an incomplete Cura UFP
 upload, during delayed UFP extraction, and after cancellation. It also checks
-the successful response and stored G-code, descriptor recovery, and extraction
-cleanup when the API shuts down. The installed starvation and descriptor
+byte-exact locale responses through 64 KiB, the Digest challenge response,
+stored G-code, descriptor recovery, and extraction cleanup when the API
+shuts down. The installed starvation and descriptor
 behavior still require a current-package retest.
 
 The frontend should remain framework-free. Product work

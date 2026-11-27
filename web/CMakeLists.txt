@@ -185,6 +185,7 @@ if(NODE_EXECUTABLE)
             LV_CONF_INCLUDE_SIMPLE LV_DISABLE_API_MAPPING BACKEND_ZMQ_STUB
             DENEB_API_SOCKET_PATH="api.sock"
             DENEB_API_AUTH_CONFIG_PATH="web-auth.conf"
+            DENEB_API_LOCALE_DIR="locales"
             DENEB_UPLOAD_TEMP_DIR="tmp"
             DENEB_PRINT_JOB_SPOOL_DIR="spool"
             DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"

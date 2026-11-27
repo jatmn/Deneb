@@ -255,11 +255,14 @@ static void close_client(int fd)
 
 static void send_response(int fd, http_response_t *resp)
 {
-    char out_buf[65536];
-    int out_len = api_http_serialize(resp, out_buf, sizeof(out_buf));
+    char headers[768];
+    int header_len = api_http_serialize_headers(resp, headers, sizeof(headers));
+    int sent = header_len > 0 &&
+        write_all(fd, headers, (size_t)header_len) == 0 &&
+        write_all(fd, resp->body, resp->body_len) == 0;
     free(resp->body);
 
-    if (out_len <= 0 || write_all(fd, out_buf, (size_t)out_len) < 0) {
+    if (!sent) {
         close_client(fd);
     } else if (resp->is_sse) {
         /* Re-register fd to only detect disconnection, not incoming data. */

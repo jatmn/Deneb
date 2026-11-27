@@ -23,6 +23,10 @@
 
 #include "api_auth.h"
 
+#ifndef DENEB_API_LOCALE_DIR
+#define DENEB_API_LOCALE_DIR "/www/deneb/locales"
+#endif
+
 static void generate_token(char *out, size_t len)
 {
     int fd = open("/dev/urandom", O_RDONLY);
@@ -241,7 +245,7 @@ void api_deneb_locale_get(const http_request_t *req, http_response_t *resp)
     if (i == 0) { resp->status_code = 404; api_http_set_body_str(resp, "{}"); return; }
 
     char path[128];
-    snprintf(path, sizeof(path), "/www/deneb/locales/%s.json", safe_lang);
+    snprintf(path, sizeof(path), DENEB_API_LOCALE_DIR "/%s.json", safe_lang);
 
     FILE *f = fopen(path, "r");
     if (!f) {

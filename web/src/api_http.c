@@ -284,7 +284,7 @@ void api_http_route(const http_request_t *req, http_response_t *resp)
     handle_not_found(req, resp);
 }
 
-int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
+int api_http_serialize_headers(const http_response_t *resp, char *buf, size_t cap)
 {
     const char *status_text;
     switch (resp->status_code) {
@@ -303,9 +303,8 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
         default: status_text = "OK"; break;
     }
 
-    /* Clamp Content-Length to what actually fits in the buffer */
-    size_t max_body = cap > 512 ? cap - 512 : 0;  /* reserve space for headers */
-    size_t actual_body_len = resp->body_len < max_body ? resp->body_len : max_body;
+    const char *challenge_prefix = resp->auth_challenge[0] ? "WWW-Authenticate: " : "";
+    const char *challenge_end = resp->auth_challenge[0] ? "\r\n" : "";
 
     int n;
     if (resp->is_sse) {
@@ -318,12 +317,11 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
             "Access-Control-Allow-Origin: *\r\n"
             "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
             "Access-Control-Allow-Headers: Authorization, Content-Type\r\n"
-            "%s%s"
+            "%s%s%s"
             "\r\n",
             resp->status_code, status_text,
             resp->content_type[0] ? resp->content_type : "text/event-stream",
-            resp->auth_challenge[0] ? "WWW-Authenticate: " : "",
-            resp->auth_challenge);
+            challenge_prefix, resp->auth_challenge, challenge_end);
     } else {
         n = snprintf(buf, cap,
         "HTTP/1.1 %d %s\r\n"
@@ -335,23 +333,16 @@ int api_http_serialize(const http_response_t *resp, char *buf, size_t cap)
         "Access-Control-Allow-Origin: *\r\n"
         "Access-Control-Allow-Methods: GET, PUT, POST, DELETE, OPTIONS\r\n"
         "Access-Control-Allow-Headers: Authorization, Content-Type\r\n"
-        "%s%s"
+        "%s%s%s"
         "\r\n",
         resp->status_code, status_text,
         resp->content_type[0] ? resp->content_type : "application/json",
-        actual_body_len,
+        resp->body_len,
         resp->keep_alive ? "keep-alive" : "close",
-        resp->auth_challenge[0] ? "WWW-Authenticate: " : "",
-        resp->auth_challenge);
+        challenge_prefix, resp->auth_challenge, challenge_end);
     }
 
-    if (n < 0 || (size_t)n >= cap) n = (int)cap - 1;
-    if (resp->body && actual_body_len > 0) {
-        memcpy(buf + n, resp->body, actual_body_len);
-        n += (int)actual_body_len;
-    }
-
-    return n;
+    return n < 0 || (size_t)n >= cap ? -1 : n;
 }
 
 void api_http_response_init(http_response_t *resp)
