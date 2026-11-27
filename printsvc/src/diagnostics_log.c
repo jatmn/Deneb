@@ -239,19 +239,24 @@ static int truncate_log(int fd, off_t original, off_t length)
 /* Recover only complete lines, using the open inode and no second file. */
 static int normalize_log(int fd, off_t *size)
 {
-    off_t start = *size > DENEB_DIAG_GENERATION_BYTES ?
-        *size - DENEB_DIAG_GENERATION_BYTES : 0;
+    int oversized = *size > DENEB_DIAG_GENERATION_BYTES;
+    off_t start = oversized ? *size - DENEB_DIAG_GENERATION_BYTES : 0;
     off_t end = *size;
-    if (find_log_end(fd, start, &end) != 0 ||
-        (start > 0 && find_log_start(fd, &start, end) != 0))
+    if (find_log_end(fd, start, &end) == 0 &&
+        (!oversized || find_log_start(fd, &start, end) == 0)) {
+        off_t length = end - start;
+        if (length == *size ||
+            ((!oversized || move_log_tail(fd, start, end) == 0) &&
+             truncate_log(fd, *size, length) == 0)) {
+            *size = length;
+            return 0;
+        }
+    }
+    /* A failed clip can leave records partly moved. Emptying the file needs
+     * no new blocks and keeps the location within its budget. */
+    if (!oversized || ftruncate(fd, 0) != 0)
         return -1;
-    off_t length = end - start;
-    if (length == *size)
-        return 0;
-    if ((start > 0 && move_log_tail(fd, start, end) != 0) ||
-        truncate_log(fd, *size, length) != 0)
-        return -1;
-    *size = length;
+    *size = 0;
     return 0;
 }
 

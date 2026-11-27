@@ -22,6 +22,19 @@
 #define LIMIT (1024 * 1024)
 
 static time_t fixture_seconds = 1;
+static int pwrite_calls;
+static int pwrite_fail_at;
+
+ssize_t __real_pwrite(int fd, const void *buf, size_t count, off_t offset);
+
+ssize_t __wrap_pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+    if (pwrite_fail_at > 0 && ++pwrite_calls == pwrite_fail_at) {
+        errno = ENOSPC;
+        return -1;
+    }
+    return __real_pwrite(fd, buf, count, offset);
+}
 
 int __wrap_clock_gettime(clockid_t clock_id, struct timespec *time)
 {
@@ -67,6 +80,50 @@ static void remove_log(const char *path)
 {
     if (unlink(path) != 0)
         assert(errno == ENOENT);
+}
+
+/* Numbered records of `width` bytes, including the newline. */
+static void write_records(const char *path, unsigned int count, size_t width)
+{
+    char line[1024];
+    assert(width > 8 && width <= sizeof(line));
+    FILE *file = fopen(path, "w");
+    assert(file);
+    for (unsigned int i = 0; i < count; i++) {
+        memset(line, 'x', width - 1);
+        line[width - 1] = '\n';
+        int n = snprintf(line, width, "L%05u ", i);
+        assert(n > 0 && (size_t)n < width);
+        line[n] = 'x';
+        assert(fwrite(line, 1, width, file) == width);
+    }
+    assert(fclose(file) == 0);
+}
+
+/* Return the first record; every line must be complete and records ordered. */
+static int first_record(const char *path)
+{
+    char line[2048];
+    FILE *file = fopen(path, "r");
+    assert(file);
+    int first = -1;
+    int previous = -1;
+    while (fgets(line, sizeof(line), file)) {
+        assert(line[strlen(line) - 1] == '\n');
+        unsigned int index;
+        if (line[0] == 'L') {
+            assert(sscanf(line, "L%u ", &index) == 1);
+            assert((int)index > previous);
+            if (first < 0)
+                first = (int)index;
+            previous = (int)index;
+        } else {
+            assert(strncmp(line, "ts=", 3) == 0 || strncmp(line, "event=", 6) == 0);
+        }
+    }
+    assert(!ferror(file));
+    assert(fclose(file) == 0);
+    return first;
 }
 
 static void test_continuous_rotation(const char *path, const char *archive)
@@ -137,10 +194,95 @@ static void test_legacy_and_external_rotation(void)
     emit_fault(2, "fault after external truncate");
     assert(log_contains(PRIMARY, "fault after external truncate"));
     assert(!log_contains(PRIMARY, "fault after external rename"));
+
+    /* Rotation tools often rename the log and create an empty replacement. */
+    assert(rename(PRIMARY, PRIMARY ".rotated") == 0);
+    FILE *created = fopen(PRIMARY, "w");
+    assert(created && fclose(created) == 0);
+    off_t rotated_bytes = log_stat(PRIMARY ".rotated").st_size;
+    fixture_seconds += 61;
+    emit_fault(3, "fault after rename and create");
+    assert(log_contains(PRIMARY, "fault after rename and create"));
+    assert(log_stat(PRIMARY ".rotated").st_size == rotated_bytes);
     deneb_diagnostics_log_close();
     remove_log(PRIMARY);
     remove_log(PRIMARY PREVIOUS);
     remove_log(PRIMARY ".external");
+    remove_log(PRIMARY ".rotated");
+}
+
+static void test_external_truncate_near_limit(void)
+{
+    unsigned int line = 0;
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    while (log_stat(PRIMARY).st_size <= LIMIT / 4)
+        emit_fault(++line, "fault before external truncate");
+    assert(truncate(PRIMARY, 0) == 0);
+    /* Keep the clock still so only the byte threshold triggers a recheck. */
+    while (log_stat(PRIMARY).st_size <= LIMIT / 4)
+        emit_fault(++line, "fault after external truncate");
+    assert(!log_stat(PRIMARY PREVIOUS).st_ino);
+    deneb_diagnostics_log_close();
+    remove_log(PRIMARY);
+}
+
+static void test_clip_boundaries(void)
+{
+    /* The cut lands exactly after a newline, behind an incomplete record. */
+    write_records(PRIMARY, 600, 1024);
+    FILE *tail = fopen(PRIMARY, "a");
+    assert(tail);
+    for (unsigned int i = 0; i < 1024; i++)
+        assert(fputc('y', tail) == 'y');
+    assert(fclose(tail) == 0);
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    assert(first_record(PRIMARY) == 601 - (LIMIT / 2) / 1024);
+    deneb_diagnostics_log_close();
+
+    /* Both generations are oversized and cut inside a record. */
+    write_records(PRIMARY, 900, 1000);
+    write_records(PRIMARY PREVIOUS, 700, 1000);
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    struct stat active = log_stat(PRIMARY);
+    struct stat previous = log_stat(PRIMARY PREVIOUS);
+    assert(active.st_size <= LIMIT / 2 && previous.st_size <= LIMIT / 2);
+    assert(first_record(PRIMARY) == 376);
+    assert(first_record(PRIMARY PREVIOUS) == 176);
+    deneb_diagnostics_log_close();
+    remove_log(PRIMARY);
+    remove_log(PRIMARY PREVIOUS);
+}
+
+static void test_clip_failure(void)
+{
+    static const struct {
+        const char *path;
+        unsigned int records;
+        int fail_at;
+    } cases[] = {
+        { PRIMARY, 1200, 1 },              /* above 1 MiB, nothing moved */
+        { PRIMARY, 900, 200 },             /* part of the kept window moved */
+        { PRIMARY PREVIOUS, 700, 200 },    /* previous generation */
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        write_records(cases[i].path, cases[i].records, 1000);
+        pwrite_calls = 0;
+        pwrite_fail_at = cases[i].fail_at;
+        assert(deneb_diagnostics_log_open(NULL) == 0);
+        pwrite_fail_at = 0;
+        assert(pwrite_calls >= cases[i].fail_at);
+        assert(log_stat(cases[i].path).st_size <= LIMIT / 2);
+        assert(log_stat(PRIMARY).st_size + log_stat(PRIMARY PREVIOUS).st_size <= LIMIT);
+        assert(!log_stat(FALLBACK).st_ino);
+        (void)first_record(cases[i].path);
+        deneb_diagnostics_log_close();
+        assert(deneb_diagnostics_log_open(NULL) == 0);
+        (void)first_record(PRIMARY);
+        deneb_diagnostics_log_close();
+        remove_log(PRIMARY);
+        remove_log(PRIMARY PREVIOUS);
+        remove_log(FALLBACK);
+    }
 }
 
 static void test_oversize_in_place(void)
@@ -280,6 +422,9 @@ int main(void)
     test_write_failure();
     test_copytruncate_and_short_write();
     test_custom_write_failure();
+    test_external_truncate_near_limit();
+    test_clip_boundaries();
+    test_clip_failure();
     assert(rmdir("primary") == 0);
     assert(rmdir("fallback") == 0);
     assert(chdir("/") == 0);
