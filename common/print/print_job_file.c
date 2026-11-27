@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #define _GNU_SOURCE
 #include "print_job_file.h"
+#include "file_write.h"
 
 #include "lodepng.h"
 #include "print_state_rules.h"
@@ -803,7 +804,7 @@ static int write_all_bytes(const char *path, const unsigned char *data,
     if (!path || !data)
         return -1;
 
-    f = fopen(path, "wbe");
+    f = deneb_fopen_write(path, 0644);
     if (!f)
         return -1;
     written = fwrite(data, 1, size, f);

@@ -35,6 +35,7 @@
 #include <psa/crypto.h>
 #include <zmq.h>
 
+#include "file_write.h"
 #include "print_job_file.h"
 #include "ws_upgrade_header.h"
 
@@ -217,9 +218,9 @@ static void clear_pair_request(void)
 
 static void create_pair_request(void)
 {
-    FILE *fp = fopen(DF_PAIR_REQUEST_FILE, "w");
-    if (fp)
-        fclose(fp);
+    int fd = open(DF_PAIR_REQUEST_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd >= 0)
+        close(fd);
 }
 
 
@@ -1112,7 +1113,7 @@ static const char *df_state_name(int state)
 
 static void write_status_file(int state, const char *pin)
 {
-    FILE *fp = fopen(DF_STATUS_FILE, "w");
+    FILE *fp = deneb_fopen_write(DF_STATUS_FILE, 0644);
     if (!fp)
         return;
     if (pin && pin[0])

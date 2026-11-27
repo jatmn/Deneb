@@ -8,6 +8,7 @@
  */
 
 #include "fb_driver.h"
+#include "file_write.h"
 #include "fb_draw_buffer.h"
 
 #include <fcntl.h>
@@ -192,7 +193,7 @@ int fb_driver_save_ppm(const char *path)
 {
     if (!fb_mem) return -1;
 
-    FILE *f = fopen(path, "wb");
+    FILE *f = deneb_fopen_write(path, 0644);
     if (!f) return -1;
 
     fprintf(f, "P6\n%d %d\n255\n", FB_WIDTH, FB_HEIGHT);

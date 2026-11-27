@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job_file.h"
+#include "file_write.h"
 #include "command_format.h"
 #include "json_field.h"
 #include "json_file.h"
@@ -444,7 +445,7 @@ int deneb_pending_job_file_mark_handled(const char *path)
         !strstr(buf, "\"status\":\"wait_user_action\""))
         return 0;
 
-    f = fopen(path, "wb");
+    f = deneb_fopen_write(path, 0644);
     if (!f)
         return -1;
 
