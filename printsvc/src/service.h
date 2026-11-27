@@ -73,7 +73,8 @@ typedef struct {
     float paused_nozzle_setpoint;
     float job_nozzle_resume_setpoint;
     unsigned int planner_starvation_count;
-    unsigned int temperature_poll_ticks;
+    long long last_status_probe_ms;
+    int periodic_status_probe_inflight;
     int startup_status_probe_pending;
     int firmware_probe_pending;
     unsigned int firmware_probe_ticks;
@@ -86,6 +87,7 @@ int deneb_print_service_handle_command(deneb_print_service_t *svc,
                                        const deneb_command_t *cmd,
                                        char *reply, size_t reply_sz);
 int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc);
+int deneb_print_service_has_active_work(const deneb_print_service_t *svc);
 int deneb_print_service_poll_motion(deneb_print_service_t *svc);
 int deneb_print_service_poll_job(deneb_print_service_t *svc);
 void deneb_print_service_refresh_diagnostics(deneb_print_service_t *svc);
