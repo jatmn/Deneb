@@ -18,11 +18,60 @@
 #include "print_profile.h"
 #include "print_state_rules.h"
 
+#include <arpa/inet.h>
 #include <errno.h>
+#include <ifaddrs.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+
+#ifndef DENEB_CLUSTER_UCI_CONFIG_DIR
+#define DENEB_CLUSTER_UCI_CONFIG_DIR "/etc/config"
+#endif
+#ifndef DENEB_CLUSTER_UCI_DELTA_DIR
+#define DENEB_CLUSTER_UCI_DELTA_DIR "/tmp/.uci"
+#endif
+#ifndef DENEB_CLUSTER_UCI_OVERRIDE_DIR
+#define DENEB_CLUSTER_UCI_OVERRIDE_DIR "/var/run/uci"
+#endif
+
+/* UCI reads may see the committed, staged, or runtime override package. */
+static const char *const configuration_files[] = {
+    DENEB_CLUSTER_UCI_CONFIG_DIR "/ultimaker",
+    DENEB_CLUSTER_UCI_CONFIG_DIR "/deneb",
+    DENEB_CLUSTER_UCI_DELTA_DIR "/ultimaker",
+    DENEB_CLUSTER_UCI_DELTA_DIR "/deneb",
+    DENEB_CLUSTER_UCI_OVERRIDE_DIR "/ultimaker",
+    DENEB_CLUSTER_UCI_OVERRIDE_DIR "/deneb",
+};
+
+enum { CONFIGURATION_FILE_COUNT = sizeof(configuration_files) / sizeof(configuration_files[0]),
+       CONFIGURATION_MAX_AGE_SECONDS = 5 };
+
+typedef struct {
+    dev_t device;
+    ino_t inode;
+    off_t size;
+    struct timespec changed;
+    bool present;
+} configuration_file_version_t;
+
+/* Only the cluster printer route in the API loop reads and writes this cache. */
+static struct {
+    configuration_file_version_t files[CONFIGURATION_FILE_COUNT];
+    time_t refreshed;
+    bool valid;
+    char hostname[64];
+    char friendly_name[64];
+    char guid[48];
+    char current_firmware[32];
+    char latest_firmware[32];
+    char nozzle_id[24];
+    char material_guid[48];
+} configuration;
 
 static int persist_uploaded_material(const http_request_t *req);
 static void write_cluster_materials_response(http_response_t *resp);
@@ -50,23 +99,20 @@ static void format_utc_time(time_t timestamp, char *dst, size_t dst_size)
 
 static void read_local_ip(char *dst, size_t dst_size)
 {
-    FILE *fp;
-
-    if (!dst || dst_size == 0)
+    struct ifaddrs *interfaces;
+    snprintf(dst, dst_size, "127.0.0.1");
+    if (getifaddrs(&interfaces) != 0)
         return;
-    dst[0] = '\0';
-    fp = popen("ip -4 addr show | awk '/inet / && $2 !~ /^127/ { sub(\"/.*\", \"\", $2); print $2; exit }'",
-               "r");
-    if (!fp) {
-        snprintf(dst, dst_size, "127.0.0.1");
-        return;
+    for (const struct ifaddrs *ifa = interfaces; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+        const struct sockaddr_in *address = (const struct sockaddr_in *)ifa->ifa_addr;
+        if ((ntohl(address->sin_addr.s_addr) >> 24) == 127)
+            continue;
+        if (inet_ntop(AF_INET, &address->sin_addr, dst, dst_size))
+            break;
     }
-    if (!fgets(dst, dst_size, fp))
-        dst[0] = '\0';
-    pclose(fp);
-    dst[strcspn(dst, "\r\n")] = '\0';
-    if (dst[0] == '\0')
-        snprintf(dst, dst_size, "127.0.0.1");
+    freeifaddrs(interfaces);
 }
 
 static void read_uci_line(const char *option,
@@ -89,6 +135,49 @@ static void read_uci_line(const char *option,
     dst[strcspn(dst, "\r\n")] = '\0';
     if (dst[0] == '\0')
         snprintf(dst, dst_size, "%s", fallback ? fallback : "");
+}
+
+static void refresh_configuration(const char *hostname)
+{
+    struct timespec now;
+    bool clock_valid = clock_gettime(CLOCK_MONOTONIC, &now) == 0;
+    bool unchanged = configuration.valid && clock_valid &&
+                     now.tv_sec - configuration.refreshed < CONFIGURATION_MAX_AGE_SECONDS &&
+                     strcmp(hostname, configuration.hostname) == 0;
+
+    /* Observe the versions before reading UCI. A concurrent write then
+     * invalidates any snapshot that raced it on the next request. */
+    for (size_t i = 0; i < CONFIGURATION_FILE_COUNT; i++) {
+        struct stat st;
+        configuration_file_version_t observed = {0};
+        if (stat(configuration_files[i], &st) == 0)
+            observed = (configuration_file_version_t){st.st_dev, st.st_ino, st.st_size,
+                                                     st.st_ctim, true};
+        configuration_file_version_t *cached = &configuration.files[i];
+        if (cached->present != observed.present || cached->device != observed.device ||
+            cached->inode != observed.inode || cached->size != observed.size ||
+            cached->changed.tv_sec != observed.changed.tv_sec ||
+            cached->changed.tv_nsec != observed.changed.tv_nsec)
+            unchanged = false;
+        *cached = observed;
+    }
+    if (unchanged)
+        return;
+
+    deneb_printer_identity_friendly_name(configuration.friendly_name,
+                                         sizeof(configuration.friendly_name));
+    deneb_printer_identity_guid(configuration.guid, sizeof(configuration.guid));
+    read_uci_line("ultimaker.version.nr", DENEB_VERSION, configuration.current_firmware,
+                  sizeof(configuration.current_firmware));
+    read_uci_line("ultimaker.version.latest", " ", configuration.latest_firmware,
+                  sizeof(configuration.latest_firmware));
+    deneb_print_profile_read_loaded_nozzle_id(configuration.nozzle_id,
+                                             sizeof(configuration.nozzle_id));
+    deneb_print_profile_read_loaded_cluster_material_guid(configuration.material_guid,
+                                                          sizeof(configuration.material_guid));
+    snprintf(configuration.hostname, sizeof(configuration.hostname), "%s", hostname);
+    configuration.refreshed = clock_valid ? now.tv_sec : 0;
+    configuration.valid = clock_valid;
 }
 
 static int json_member_value_end(const char *start, const char *limit,
@@ -193,13 +282,9 @@ static int serve_pending_cluster_job(http_response_t *resp)
 
 static void write_configuration(json_writer_t *w)
 {
-    char nozzle_id[24];
-    char material_guid[48];
     char material_type[32];
     char material_color[32];
-    deneb_print_profile_read_loaded_nozzle_id(nozzle_id, sizeof(nozzle_id));
-    deneb_print_profile_read_loaded_cluster_material_guid(material_guid,
-                                                          sizeof(material_guid));
+    const char *material_guid = configuration.material_guid;
     deneb_print_profile_material_type_from_guid(material_guid, material_type,
                                                 sizeof(material_type));
     deneb_print_profile_material_color_from_guid(material_guid, material_color,
@@ -209,7 +294,7 @@ static void write_configuration(json_writer_t *w)
     json_arr_open(w);
     json_obj_open(w);
     json_int(w, "extruder_index", 0);
-    json_str(w, "print_core_id", nozzle_id);
+    json_str(w, "print_core_id", configuration.nozzle_id);
     json_key(w, "material");
     json_obj_open(w);
     if (material_guid[0])
@@ -286,43 +371,34 @@ void api_cluster_printers_get(const http_request_t *req, http_response_t *resp)
 {
     (void)req;
     char hostname[64];
-    char friendly_name[64];
-    char guid[48];
     char ip_address[64];
-    char current_firmware[32];
-    char latest_firmware[32];
     const char *firmware_update_status = "up_to_date";
     char buf[2048];
     json_writer_t w;
 
     deneb_printer_identity_hostname(hostname, sizeof(hostname));
-    deneb_printer_identity_friendly_name(friendly_name, sizeof(friendly_name));
-    deneb_printer_identity_guid(guid, sizeof(guid));
+    refresh_configuration(hostname);
     read_local_ip(ip_address, sizeof(ip_address));
-    read_uci_line("ultimaker.version.nr", DENEB_VERSION, current_firmware,
-                  sizeof(current_firmware));
-    read_uci_line("ultimaker.version.latest", " ", latest_firmware,
-                  sizeof(latest_firmware));
-    if (strcmp(latest_firmware, " ") != 0 &&
-        strcmp(latest_firmware, current_firmware) != 0)
+    if (strcmp(configuration.latest_firmware, " ") != 0 &&
+        strcmp(configuration.latest_firmware, configuration.current_firmware) != 0)
         firmware_update_status = "update_available";
 
     json_init(&w, buf, sizeof(buf));
     json_arr_open(&w);
     json_obj_open(&w);
     json_bool(&w, "enabled", 1);
-    json_str(&w, "friendly_name", friendly_name);
+    json_str(&w, "friendly_name", configuration.friendly_name);
     json_str(&w, "machine_variant", DENEB_PRINT_PROFILE_MACHINE_VARIANT);
     json_str(&w, "status",
              deneb_print_cluster_printer_status_label(
                  backend_zmq_get_status_label()));
     json_str(&w, "unique_name", hostname);
-    json_str(&w, "uuid", guid);
+    json_str(&w, "uuid", configuration.guid);
     write_configuration(&w);
-    json_str(&w, "firmware_version", current_firmware);
+    json_str(&w, "firmware_version", configuration.current_firmware);
     json_str(&w, "ip_address", ip_address);
     json_str(&w, "firmware_update_status", firmware_update_status);
-    json_str(&w, "latest_available_firmware", latest_firmware);
+    json_str(&w, "latest_available_firmware", configuration.latest_firmware);
     json_key(&w, "build_plate");
     json_obj_open(&w);
     json_str(&w, "type", "glass");

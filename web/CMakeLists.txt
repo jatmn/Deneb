@@ -176,12 +176,20 @@ if(NODE_EXECUTABLE)
             DENEB_API_SOCKET_PATH="api.sock"
             DENEB_API_AUTH_CONFIG_PATH="web-auth.conf"
             DENEB_API_LOCALE_DIR="locales"
+            DENEB_CLUSTER_UCI_CONFIG_DIR="config"
+            DENEB_CLUSTER_UCI_DELTA_DIR="delta"
+            DENEB_CLUSTER_UCI_OVERRIDE_DIR="override"
             DENEB_UPLOAD_TEMP_DIR="tmp"
             DENEB_PRINT_JOB_SPOOL_DIR="spool"
             DENEB_PRINT_HISTORY_PATH="tmp/deneb-print-history.json"
             DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"
             DENEB_ACTIVE_THUMB_PATH="deneb-active-thumb.rgb565")
         target_link_libraries(deneb-api-upload-fixture PRIVATE m pthread crypt)
+        add_test(NAME deneb-cluster-configuration-tests COMMAND "${NODE_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/test_cluster_configuration.cjs"
+            "$<TARGET_FILE:deneb-api-upload-fixture>")
+        set_tests_properties(deneb-cluster-configuration-tests PROPERTIES TIMEOUT 15)
+
         find_program(LIGHTTPD_EXECUTABLE lighttpd)
         find_program(UNZIP_EXECUTABLE unzip)
         if(LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
