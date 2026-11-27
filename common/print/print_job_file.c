@@ -9,8 +9,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <poll.h>
 #include <signal.h>
 #include <spawn.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -348,27 +350,47 @@ int deneb_print_job_file_replace_extension(const char *name,
     return 0;
 }
 
-static int extract_ufp_member(const char *ufp_path, const char *member,
-                              const char *gcode_path,
-                              const atomic_bool *cancelled)
+static int drain_ufp_model(int reader, int output, const atomic_bool *cancelled)
+{
+    char buf[8192];
+    struct pollfd ready = { .fd = reader, .events = POLLIN };
+    bool has_output = false;
+
+    while (!atomic_load(cancelled)) {
+        int rc = poll(&ready, 1, 20);
+        if (rc == 0 || (rc < 0 && errno == EINTR))
+            continue;
+        if (rc < 0)
+            return -1;
+        ssize_t n = read(reader, buf, sizeof(buf));
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            return n == 0 && has_output ? 0 : -1;
+
+        for (ssize_t done = 0; done < n;) {
+            ssize_t written = write(output, buf + done, (size_t)(n - done));
+            if (written < 0 && errno == EINTR)
+                continue;
+            if (written <= 0)
+                return -1;
+            done += written;
+        }
+        has_output = true;
+    }
+    errno = ECANCELED;
+    return -1;
+}
+
+static int spawn_ufp_extractor(const char *ufp_path, const char *member, int writer,
+                               pid_t *pid)
 {
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attrs;
-    int status = 0;
-    pid_t pid;
-    struct stat st;
-
-    if (atomic_load(cancelled)) {
-        errno = ECANCELED;
-        return -1;
-    }
     int rc = posix_spawn_file_actions_init(&actions);
-    if (rc != 0) {
-        errno = rc;
-        return -1;
-    }
-    rc = posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, gcode_path,
-                                         O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (rc != 0)
+        return rc;
+    rc = posix_spawn_file_actions_adddup2(&actions, writer, STDOUT_FILENO);
     if (rc == 0)
         rc = posix_spawnattr_init(&attrs);
     if (rc == 0) {
@@ -377,38 +399,63 @@ static int extract_ufp_member(const char *ufp_path, const char *member,
             rc = posix_spawnattr_setpgroup(&attrs, 0);
         char *argv[] = { "unzip", "-p", (char *)ufp_path, (char *)member, NULL };
         if (rc == 0)
-            rc = posix_spawnp(&pid, argv[0], &actions, &attrs, argv, environ);
+            rc = posix_spawnp(pid, argv[0], &actions, &attrs, argv, environ);
         posix_spawnattr_destroy(&attrs);
     }
     posix_spawn_file_actions_destroy(&actions);
-    if (rc != 0) {
-        errno = rc;
+    return rc;
+}
+
+static int extract_ufp_member(const char *ufp_path, const char *member,
+                              const char *gcode_path,
+                              const atomic_bool *cancelled)
+{
+    if (atomic_load(cancelled)) {
+        errno = ECANCELED;
         return -1;
     }
 
+    int stream[2];
+    if (pipe2(stream, O_CLOEXEC) < 0)
+        return -1;
+    int output = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    pid_t pid;
+    int rc = output < 0 ? errno : spawn_ufp_extractor(ufp_path, member, stream[1], &pid);
+    close(stream[1]);
+
+    /* Observe staging writes here. Some unzip versions exit successfully even
+     * after writing only part of a member to redirected stdout. */
+    bool copied = rc == 0 && drain_ufp_model(stream[0], output, cancelled) == 0;
+    close(stream[0]);
+    if (output >= 0 && close(output) < 0)
+        copied = false;
+
     /* The worker owns this process group until the child has been reaped. */
-    const struct timespec delay = { .tv_nsec = 20000000L };
-    for (;;) {
-        if (atomic_load(cancelled)) {
-            kill(-pid, SIGKILL);
-            while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-            unlink(gcode_path);
-            errno = ECANCELED;
-            return -1;
+    if (rc == 0) {
+        const struct timespec delay = { .tv_nsec = 20000000L };
+        for (;;) {
+            if (!copied || atomic_load(cancelled)) {
+                kill(-pid, SIGKILL);
+                while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+                break;
+            }
+            int status;
+            pid_t exited = waitpid(pid, &status, WNOHANG);
+            if (exited == pid) {
+                if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+                    return 0;
+                break;
+            }
+            if (exited < 0 && errno != EINTR)
+                break;
+            nanosleep(&delay, NULL);
         }
-        pid_t exited = waitpid(pid, &status, WNOHANG);
-        if (exited == pid)
-            break;
-        if (exited < 0 && errno != EINTR)
-            return -1;
-        nanosleep(&delay, NULL);
     }
-    if (stat(gcode_path, &st) == 0 && st.st_size > 0)
-        return 0;
-    unlink(gcode_path);
-    if (!WIFEXITED(status))
-        return -2;
-    return WEXITSTATUS(status) != 0 ? WEXITSTATUS(status) : -3;
+    if (output >= 0)
+        unlink(gcode_path);
+    if (atomic_load(cancelled))
+        errno = ECANCELED;
+    return -1;
 }
 
 static int contains_ci(const char *haystack, const char *needle)

@@ -347,6 +347,7 @@ async function main() {
     const extractionStarted = path.join(root, 'extraction-started');
     const releaseExtraction = path.join(root, 'release-extraction');
     const delayExtraction = path.join(root, 'delay-extraction');
+    const failExtraction = path.join(root, 'fail-extraction');
     let releaseFd;
     function armExtraction() {
         fs.rmSync(extractionStarted, { force: true });
@@ -371,6 +372,10 @@ async function main() {
         fs.mkdirSync(bin);
         fs.writeFileSync(path.join(bin, 'unzip'), [
             '#!/bin/sh',
+            'if [ -f "$DENEB_FAIL_EXTRACTION" ]; then',
+            '    printf ";TIME:12\\n"',
+            '    exit 50',
+            'fi',
             'if [ "$3" = "3D/model.gcode" ] && [ -f "$DENEB_DELAY_EXTRACTION" ]; then',
             '    printf "%s\\n" "$$" > "$DENEB_EXTRACTION_STARTED"',
             '    IFS= read -r release < "$DENEB_RELEASE_EXTRACTION" || exit 1',
@@ -409,6 +414,7 @@ async function main() {
             ...process.env,
             PATH: bin + path.delimiter + process.env.PATH,
             DENEB_REAL_UNZIP: unzip,
+            DENEB_FAIL_EXTRACTION: failExtraction,
             DENEB_DELAY_EXTRACTION: delayExtraction,
             DENEB_EXTRACTION_STARTED: extractionStarted,
             DENEB_RELEASE_EXTRACTION: releaseExtraction
@@ -451,6 +457,14 @@ async function main() {
         const cancelled = startUpload(port, archive, 'cancelled-finalization.ufp');
         void cancelled.finish();
         const cancelledPid = await blockedExtractor();
+        const [receiveSpool, ...otherTempFiles] = fs.readdirSync(temp);
+        assert.deepEqual(otherTempFiles, []);
+        assert.match(receiveSpool, /^deneb-upload-/);
+        assert.deepEqual(fs.readFileSync(path.join(temp, receiveSpool)), archive);
+        const [staged, ...otherSpoolEntries] = fs.readdirSync(spool);
+        assert.deepEqual(otherSpoolEntries, []);
+        assert.match(staged, /^\.upload-/);
+        assert.deepEqual(fs.readdirSync(path.join(spool, staged)), ['job']);
         await assertResponsive(port, clients, 'while a later-cancelled UFP is extracted');
         // A TCP FIN after the full body is also a valid write-side half-close.
         // Send a reset so the proxy recognizes that the client discarded its reply.
@@ -471,7 +485,15 @@ async function main() {
             throw error;
         }
         assert.equal(fs.existsSync(pendingJob), false);
-        assert.equal(fs.existsSync(spool), false);
+        assert.deepEqual(fs.readdirSync(spool), []);
+
+        fs.writeFileSync(failExtraction, '');
+        const failedExtraction = await startUpload(port, archive, 'failed-extraction.ufp').finish();
+        fs.rmSync(failExtraction);
+        assert.equal(failedExtraction.code, 400, failedExtraction.data);
+        assert.equal(JSON.parse(failedExtraction.data).message, 'Failed to extract UFP model.gcode');
+        assert.deepEqual(fs.readdirSync(spool), []);
+        assert.deepEqual(fs.readdirSync(temp), []);
 
         const complete = startUpload(port, archive, 'completed.ufp');
         await withinDeadline('Second partial upload did not reach the API', uploadedBodyExists);
@@ -714,7 +736,53 @@ async function testThumbnailUploads() {
     }
 }
 
-main().then(testThumbnailUploads).catch((error) => {
+async function testMultipartFileRange() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'du-'));
+    const temp = path.join(root, 'tmp');
+    const apiSocket = path.join(root, 'api.sock');
+    const contentType = 'multipart/form-data; boundary=' + boundary;
+    let api;
+    try {
+        fs.mkdirSync(temp);
+        fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
+        api = startService(apiBinary, [], root, process.env);
+        await withinDeadline('deneb-api multipart socket did not start', () => fs.existsSync(apiSocket));
+
+        const field = (name, value) => '--' + boundary +
+            '\r\nContent-Disposition: form-data; name="' + name + '"\r\n\r\n' + value + '\r\n';
+        const headers = Buffer.from(field('cloud_job_id', 'cloud-fixture') + '--' + boundary +
+            '\r\nContent-Disposition: form-data; name="file"; filename="range.gcode"\r\n\r\n');
+        const text = Buffer.from(';TIME:12\n; file bytes\0\r\n--' + boundary + '-text\r\n;');
+        // The real delimiter starts at the end of the first parser buffer.
+        const gcode = Buffer.concat([text, Buffer.alloc(8190 - headers.length - text.length, 0x61)]);
+        const uuid = '12345678-1234-4567-89ab-1234567890ab';
+        const suffix = Buffer.from('\r\n' + field('job_instance_uuid', uuid) +
+            field('job_instance_uuid', 'aaaaaaaa-bbbb-4ccc-adef-1234567890ab') + field('owner', 'Cura') +
+            '--' + boundary + '--\r\n');
+
+        const truncated = await startSocketPost(apiSocket, UPLOAD_PATH, contentType, headers, gcode).finish();
+        assert.match(truncated, /^HTTP\/1\.1 400 Bad Request\r\n/);
+        assert.deepEqual(fs.readdirSync(temp), []);
+
+        const uploaded = await startSocketPost(apiSocket, UPLOAD_PATH, contentType,
+            Buffer.concat([headers, gcode]), suffix).finish();
+        assert.match(uploaded, /^HTTP\/1\.1 201 Created\r\n/);
+        assert.deepEqual(fs.readFileSync(path.join(root, 'spool/range.gcode')), gcode);
+        const pending = JSON.parse(fs.readFileSync(path.join(temp, 'deneb-cluster-print-job.json'), 'utf8'));
+        assert.equal(pending[0].uuid, uuid);
+        assert.equal(pending[0].cloud_job_id, 'cloud-fixture');
+        assert.equal(pending[0].owner, 'Cura');
+    } catch (error) {
+        if (api) process.stderr.write(api.log);
+        throw error;
+    } finally {
+        for (const socket of sockets) socket.destroy();
+        if (api) await stopService(api);
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+}
+
+main().then(testThumbnailUploads).then(testMultipartFileRange).catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });

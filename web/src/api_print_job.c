@@ -355,117 +355,135 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     resp->prepare_print_upload = 1;
 }
 
+static int write_upload_range(int input, const multipart_range_t *file,
+                              const char *path, const atomic_bool *cancelled)
+{
+    int output = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+    if (output < 0)
+        return -1;
+    int rc = copy_multipart_range(input, output, file, cancelled);
+    if (close(output) < 0)
+        rc = -1;
+    return rc;
+}
+
+static void prepare_upload_thumbnail(const char *archive, api_print_upload_t *upload)
+{
+    char path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-thumb-upload-XXXXXX";
+    int fd = mkostemp(path, O_CLOEXEC);
+    if (fd < 0)
+        return;
+    close(fd);
+    if (deneb_print_job_file_extract_ufp_thumbnail(archive, path) == 0)
+        snprintf(upload->staged_thumbnail, sizeof(upload->staged_thumbnail), "%s", path);
+    else
+        unlink(path);
+}
+
 int api_print_job_prepare_upload(const char *boundary, const char *upload_path,
                                  api_print_upload_t *upload,
                                  http_response_t *resp,
                                  const atomic_bool *cancelled)
 {
-    char gcode_path[256] = "";
-    char filename[128] = "upload.gcode";
-    char validation_message[256];
-
-    if (extract_multipart_file(boundary, upload_path,
-                               gcode_path, sizeof(gcode_path),
-                               filename, sizeof(filename)) < 0) {
+    char filename[128];
+    char extracted_name[sizeof(filename)];
+    char validation_message[256] = "";
+    multipart_range_t file;
+    multipart_field_t fields[] = {
+        { .name = "job_instance_uuid", .value = upload->job_instance_uuid,
+          .capacity = sizeof(upload->job_instance_uuid) },
+        { .name = "cloud_job_id", .value = upload->cloud_job_id,
+          .capacity = sizeof(upload->cloud_job_id) },
+        { .name = "owner", .value = upload->owner,
+          .capacity = sizeof(upload->owner) },
+    };
+    int input = open(upload_path, O_RDWR | O_CLOEXEC);
+    int result = -1;
+    if (input < 0 || parse_multipart_upload(input, boundary, &file,
+            filename, sizeof(filename), fields, sizeof(fields) / sizeof(fields[0]),
+            cancelled) < 0) {
         fprintf(stderr, "deneb-api: print upload rejected: failed to extract multipart file\n");
         set_message_response(resp, 400, "Failed to extract file from upload");
-        return -1;
+        goto done;
     }
-    (void)extract_multipart_field(boundary, upload_path,
-                                  "job_instance_uuid", upload->job_instance_uuid,
-                                  sizeof(upload->job_instance_uuid));
-    (void)extract_multipart_field(boundary, upload_path,
-                                  "cloud_job_id", upload->cloud_job_id,
-                                  sizeof(upload->cloud_job_id));
-    (void)extract_multipart_field(boundary, upload_path,
-                                  "owner", upload->owner, sizeof(upload->owner));
 
-    if (deneb_print_job_file_has_extension(filename, ".ufp")) {
-        char extracted_path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-model-XXXXXX";
-        char extracted_name[sizeof(filename)];
-        int fd = mkostemp(extracted_path, O_CLOEXEC);
-
-        if (fd >= 0)
-            close(fd);
-        if (fd < 0 ||
-            deneb_print_job_file_replace_extension(
-                filename, ".gcode", extracted_name,
-                sizeof(extracted_name)) < 0 ||
-            deneb_print_job_file_extract_ufp_model_gcode(
-                gcode_path, extracted_path, cancelled) < 0) {
-            if (fd >= 0)
-                unlink(extracted_path);
-            unlink(gcode_path);
-            if (!atomic_load(cancelled))
-                fprintf(stderr,
-                        "deneb-api: print upload rejected: failed to extract UFP model.gcode from %s\n",
-                        filename);
+    bool ufp = deneb_print_job_file_has_extension(filename, ".ufp");
+    const char *job_name = filename;
+    if (ufp) {
+        if (deneb_print_job_file_replace_extension(filename, ".gcode", extracted_name,
+                                                    sizeof(extracted_name)) < 0) {
             set_message_response(resp, 400, "Failed to extract UFP model.gcode");
-            return -1;
+            goto done;
         }
-
-        if (!atomic_load(cancelled)) {
-            char thumb_path[] = DENEB_UPLOAD_TEMP_DIR "/deneb-ufp-thumb-upload-XXXXXX";
-            int thumb_fd = mkostemp(thumb_path, O_CLOEXEC);
-            if (thumb_fd >= 0) {
-                close(thumb_fd);
-                if (deneb_print_job_file_extract_ufp_thumbnail(gcode_path, thumb_path) == 0)
-                    snprintf(upload->staged_thumbnail, sizeof(upload->staged_thumbnail),
-                             "%s", thumb_path);
-                else
-                    unlink(thumb_path);
-            }
-        }
-        unlink(gcode_path);
-        snprintf(gcode_path, sizeof(gcode_path), "%s", extracted_path);
-        snprintf(filename, sizeof(filename), "%s", extracted_name);
-        upload->ufp_normalized = 1;
-        fprintf(stderr, "deneb-api: normalized UFP upload to extracted G-code %s\n", filename);
+        job_name = extracted_name;
     }
+    if (atomic_load(cancelled))
+        goto done;
 
-    if (atomic_load(cancelled)) {
-        unlink(gcode_path);
-        return -1;
-    }
-    validation_message[0] = '\0';
-    if (deneb_print_job_file_validate_build_volume_path(
-            gcode_path, validation_message, sizeof(validation_message)) < 0) {
-        fprintf(stderr,
-                "deneb-api: print upload build-volume validation failed for %s: %s\n",
-                filename, validation_message[0] ? validation_message : "Invalid print job metadata");
-        unlink(gcode_path);
-        set_message_response(resp, 422,
-                             validation_message[0] ? validation_message : "Invalid print job metadata");
-        return -1;
-    }
-
-    if (deneb_print_job_file_upload_storage_plan(filename, &upload->storage) < 0) {
+    if (deneb_print_job_file_upload_storage_plan(job_name, &upload->storage) < 0) {
         fprintf(stderr, "deneb-api: failed to prepare print spool path for %s: %s\n",
-                filename, strerror(errno));
-        unlink(gcode_path);
+                job_name, strerror(errno));
         set_message_response(resp, 500, "Failed to prepare print storage");
-        return -1;
+        goto done;
     }
 
-    /* Stage on the destination filesystem so publication is a single rename. */
+    /* The private directory keeps publication atomic and bulk scratch off /tmp. */
     char dir[] = DENEB_PRINT_JOB_SPOOL_DIR "/.upload-XXXXXX";
-    if ((mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) == 0 || errno == EEXIST) &&
-        mkdtemp(dir)) {
-        char staged[sizeof(upload->staged_gcode)];
-        snprintf(staged, sizeof(staged), "%s/job", dir);
-        snprintf(upload->staged_directory, sizeof(upload->staged_directory), "%s", dir);
-        if (deneb_print_job_file_store_upload(gcode_path, staged, cancelled) == 0)
-            snprintf(upload->staged_gcode, sizeof(upload->staged_gcode), "%s", staged);
-    }
-    if (!upload->staged_gcode[0]) {
+    if ((mkdir(DENEB_PRINT_JOB_SPOOL_DIR, 0755) < 0 && errno != EEXIST) || !mkdtemp(dir)) {
         fprintf(stderr, "deneb-api: failed to stage print file for %s: %s\n",
                 upload->storage.dest_path, strerror(errno));
-        unlink(gcode_path);
         set_message_response(resp, 500, "Failed to save file");
-        return -1;
+        goto done;
+    }
+    snprintf(upload->staged_directory, sizeof(upload->staged_directory), "%s", dir);
+    snprintf(upload->staged_gcode, sizeof(upload->staged_gcode), "%s/job", dir);
+
+    if (ufp) {
+        /* The worker owns these bytes until join. Move the archive toward
+         * offset zero using forward positioned reads before each write. */
+        if (lseek(input, 0, SEEK_SET) < 0 ||
+            copy_multipart_range(input, input, &file, cancelled) < 0 ||
+            ftruncate(input, file.length) < 0) {
+            set_message_response(resp, 500, "Failed to save file");
+            goto done;
+        }
+        int extracted = deneb_print_job_file_extract_ufp_model_gcode(
+            upload_path, upload->staged_gcode, cancelled);
+        if (extracted == 0 && !atomic_load(cancelled))
+            prepare_upload_thumbnail(upload_path, upload);
+        if (extracted != 0) {
+            if (!atomic_load(cancelled))
+                fprintf(stderr, "deneb-api: print upload rejected: failed to extract UFP model.gcode from %s\n",
+                        filename);
+            set_message_response(resp, 400, "Failed to extract UFP model.gcode");
+            goto done;
+        }
+        upload->ufp_normalized = 1;
+        fprintf(stderr, "deneb-api: normalized UFP upload to extracted G-code %s\n", job_name);
+    } else if (write_upload_range(input, &file, upload->staged_gcode, cancelled) < 0) {
+        fprintf(stderr, "deneb-api: failed to stage print file for %s: %s\n",
+                upload->storage.dest_path, strerror(errno));
+        set_message_response(resp, 500, "Failed to save file");
+        goto done;
     }
 
-    return 0;
+    if (atomic_load(cancelled))
+        goto done;
+    if (deneb_print_job_file_validate_build_volume_path(
+            upload->staged_gcode, validation_message, sizeof(validation_message)) < 0) {
+        fprintf(stderr,
+                "deneb-api: print upload build-volume validation failed for %s: %s\n",
+                job_name, validation_message[0] ? validation_message : "Invalid print job metadata");
+        set_message_response(resp, 422,
+                             validation_message[0] ? validation_message : "Invalid print job metadata");
+        goto done;
+    }
+
+    result = 0;
+done:
+    if (input >= 0)
+        close(input);
+    return result;
 }
 
 void api_print_job_release_upload(const api_print_upload_t *upload)
