@@ -1265,6 +1265,11 @@ static int ws_expected_accept(const char *key, char out[32])
     return base64_encode(digest, digest_len, out, 32);
 }
 
+static bool ws_upgrade_header_is_text(const char *header, size_t length)
+{
+    return memchr(header, '\0', length) == NULL;
+}
+
 static bool header_value_matches(const char *headers, const char *name,
                                  const char *expected)
 {
@@ -1398,7 +1403,7 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
 
     end += 4;
     size_t header_len = (size_t)(end - resp);
-    if (memchr(resp, '\0', header_len))
+    if (!ws_upgrade_header_is_text(resp, header_len))
         return -1;
     ws->upgrade_tail_len = used - header_len;
     memcpy(ws->upgrade_tail, end, ws->upgrade_tail_len);
