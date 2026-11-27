@@ -103,34 +103,11 @@ if "$rebuild_lighttpd"; then
     rm -f "$lighttpd_root.tar.xz"
 fi
 
-uses_pinned_compiler() {
-    local build=$1 version active_version compiler
-    version=$(awk -F= '
-        /^CMAKE_CACHE_MAJOR_VERSION:INTERNAL=[0-9]+$/ { major = $2 }
-        /^CMAKE_CACHE_MINOR_VERSION:INTERNAL=[0-9]+$/ { minor = $2 }
-        /^CMAKE_CACHE_PATCH_VERSION:INTERNAL=[0-9]+$/ { patch = $2 }
-        END { if (major != "" && minor != "" && patch != "") print major "." minor "." patch }
-    ' "$build/CMakeCache.txt")
-    [ -n "$version" ] || return 1
-    active_version=$(cmake --version | sed -n '1s/^cmake version //p') || return 1
-    [ -n "$active_version" ] || return 1
-    # A different CMake version can load a stale compiler record on configure.
-    if [ "$version" != "$active_version" ]; then
-        printf 'CMake version mismatch in %s: configured with %s, running %s. Use CMake %s to reuse it.\n' \
-            "$build" "$version" "$active_version" "$version" >&2
-        return 1
-    fi
-    local record="$build/CMakeFiles/$version/CMakeCCompiler.cmake"
-    [ -f "$record" ] || return 1
-    compiler=$(sed -n 's/^set(CMAKE_C_COMPILER "\(.*\)")$/\1/p' "$record") || return 1
-    [[ "$compiler" = /* && "$compiler" -ef "$toolchain" ]]
-}
-
 configure_component() {
     local source=$1 build=$2 toolchain_file=$3
     shift 3
     if [ -f "$build/CMakeCache.txt" ]; then
-        uses_pinned_compiler "$build" || die "Existing build directory is not configured for the pinned mipsel musl compiler: $build. Choose a different build directory."
+        mips_uses_pinned_compiler "$build" "$toolchain" || die "Existing build directory is not configured for the pinned mipsel musl compiler: $build. Choose a different build directory."
         cmake -S "$source" -B "$build" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel "$@" -DZMQ_INCLUDE_DIR="$zmq_include"
     else
         cmake -S "$source" -B "$build" -DCMAKE_TOOLCHAIN_FILE="$toolchain_file" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel "$@" -DZMQ_INCLUDE_DIR="$zmq_include"
@@ -146,7 +123,7 @@ test -x "$repo_root/printsvc/$build_directory/deneb-printsvc"
 [ -d "$lighttpd_root/src" ] || die "Missing lighttpd source at $lighttpd_root; re-run with --rebuild-lighttpd."
 printf '%s\n' 'PLUGIN_INIT(mod_access)' 'PLUGIN_INIT(mod_alias)' 'PLUGIN_INIT(mod_indexfile)' 'PLUGIN_INIT(mod_staticfile)' 'PLUGIN_INIT(mod_setenv)' 'PLUGIN_INIT(mod_proxy)' > "$lighttpd_root/src/plugin-static.h"
 if [ -f "$lighttpd_root/build-musl-static/CMakeCache.txt" ]; then
-    uses_pinned_compiler "$lighttpd_root/build-musl-static" || die "Existing lighttpd build directory is not configured for the pinned mipsel musl compiler: $lighttpd_root/build-musl-static. Rebuild it with --rebuild-lighttpd."
+    mips_uses_pinned_compiler "$lighttpd_root/build-musl-static" "$toolchain" || die "Existing lighttpd build directory is not configured for the pinned mipsel musl compiler: $lighttpd_root/build-musl-static. Rebuild it with --rebuild-lighttpd."
 else
     cmake -S "$lighttpd_root" -B "$lighttpd_root/build-musl-static" -DCMAKE_TOOLCHAIN_FILE="$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_STATIC=ON -DWITH_PCRE=OFF -DWITH_PCRE2=OFF -DWITH_ZLIB=OFF -DWITH_BZIP=OFF -DWITH_BROTLI=OFF -DWITH_ZSTD=OFF -DWITH_OPENSSL=OFF -DWITH_MBEDTLS=OFF -DWITH_WOLFSSL=OFF -DWITH_GNUTLS=OFF
 fi

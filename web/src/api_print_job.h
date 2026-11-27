@@ -37,7 +37,7 @@ typedef struct {
     int ufp_normalized;
 } api_print_upload_t;
 
-int api_print_job_prepare_upload(const http_request_t *req,
+int api_print_job_prepare_upload(const char *boundary, const char *upload_path,
                                  api_print_upload_t *upload,
                                  http_response_t *resp,
                                  const atomic_bool *cancelled);

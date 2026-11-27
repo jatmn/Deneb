@@ -128,7 +128,14 @@ $(source_metadata lighttpd "$lighttpd_root" "$LIGHTTPD_VERSION" "pkg:generic/lig
       "type": "library",
       "bom-ref": "mbedtls",
       "name": "Mbed TLS",
-$(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tls/mbedtls@v$MBEDTLS_VERSION" \
+$(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tls/mbedtls@mbedtls-$MBEDTLS_VERSION" \
+    '{"expression": "Apache-2.0 OR GPL-2.0-or-later"}' "$MBEDTLS_URL" "$MBEDTLS_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "tf-psa-crypto",
+      "name": "TF-PSA-Crypto",
+$(source_metadata mbedtls "$mbedtls_root" "$TF_PSA_CRYPTO_VERSION" "pkg:github/mbed-tls/tf-psa-crypto@tf-psa-crypto-$TF_PSA_CRYPTO_VERSION" \
     '{"expression": "Apache-2.0 OR GPL-2.0-or-later"}' "$MBEDTLS_URL" "$MBEDTLS_SHA256")
     },
     {
@@ -179,7 +186,8 @@ $(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libgcc@$MIPS_TOOLC
     }
   ],
   "dependencies": [
-    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "musl", "libstdc++", "libgcc", "lodepng", "lvgl"]}
+    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "tf-psa-crypto", "musl", "libstdc++", "libgcc", "lodepng", "lvgl"]},
+    {"ref": "mbedtls", "dependsOn": ["tf-psa-crypto"]}
   ]
 }
 EOF

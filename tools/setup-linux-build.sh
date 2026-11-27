@@ -13,14 +13,14 @@ repo=$(cd "$repo_input" && pwd)
 build_root="$repo/build/deneb-cross/openwrt-$MIPS_TOOLCHAIN_RELEASE"
 
 missing=
-for command in cc cmake curl file git make pkg-config python3 sha256sum tar xz zstd; do
+for command in bzip2 cc cmake curl file git make pkg-config python3 sha256sum tar xz zstd; do
     if ! command -v "$command" >/dev/null 2>&1; then
         missing="$missing $command"
     fi
 done
 if [ -n "$missing" ]; then
     echo "Missing host tools:$missing" >&2
-    echo "Install them with: sudo apt-get update && sudo apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils zstd" >&2
+    echo "Install them with: sudo apt-get update && sudo apt-get install --no-install-recommends build-essential bzip2 ca-certificates cmake curl file git make pkg-config python3 tar xz-utils zstd" >&2
     exit 1
 fi
 

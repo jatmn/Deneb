@@ -20,9 +20,10 @@ ZMQ_VERSION=4.3.5
 ZMQ_URL="https://github.com/zeromq/libzmq/releases/download/v$ZMQ_VERSION/zeromq-$ZMQ_VERSION.tar.gz"
 ZMQ_SHA256=6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43
 
-MBEDTLS_VERSION=2.28.8
-MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v$MBEDTLS_VERSION.tar.gz"
-MBEDTLS_SHA256=4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213
+MBEDTLS_VERSION=4.1.2
+MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$MBEDTLS_VERSION/mbedtls-$MBEDTLS_VERSION.tar.bz2"
+MBEDTLS_SHA256=392215e5e4846df04e2f4c4516079303bd73edde837d8f3e68fb4d4d7ddf0126
+TF_PSA_CRYPTO_VERSION=1.1.2
 
 LIGHTTPD_VERSION=1.4.85
 LIGHTTPD_URL="https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$LIGHTTPD_VERSION.tar.xz"
@@ -51,8 +52,9 @@ native_dependency_fingerprint() (
             sha256sum build-musl-static/build/lighttpd
             ;;
         mbedtls)
-            printf '%s\n' "$MBEDTLS_VERSION" "$MBEDTLS_URL" "$MBEDTLS_SHA256"
-            sha256sum lib/libmbedtls.a lib/libmbedcrypto.a lib/libmbedx509.a include/mbedtls/*.h
+            printf '%s\n' "$MBEDTLS_VERSION" "$MBEDTLS_URL" "$MBEDTLS_SHA256" "$TF_PSA_CRYPTO_VERSION"
+            sha256sum lib/libmbedtls.a lib/libmbedx509.a lib/libtfpsacrypto.a \
+                include/mbedtls/*.h include/psa/*.h include/tf-psa-crypto/*.h
             ;;
         *) return 1 ;;
     esac
@@ -96,6 +98,35 @@ mips_runtime_output_verified() (
     [ "$expected" = "$recorded" ]
 )
 
+# Check the selected C compiler for the CMake version that owns the active cache.
+mips_uses_pinned_compiler() (
+    mips_cache_dir=$1
+    mips_expected_compiler=$2
+    [ -f "$mips_cache_dir/CMakeCache.txt" ] || exit 1
+    mips_version=$(awk -F= '
+        /^CMAKE_CACHE_MAJOR_VERSION:INTERNAL=[0-9]+$/ { major = $2 }
+        /^CMAKE_CACHE_MINOR_VERSION:INTERNAL=[0-9]+$/ { minor = $2 }
+        /^CMAKE_CACHE_PATCH_VERSION:INTERNAL=[0-9]+$/ { patch = $2 }
+        END { if (major != "" && minor != "" && patch != "") print major "." minor "." patch }
+    ' "$mips_cache_dir/CMakeCache.txt")
+    [ -n "$mips_version" ] || exit 1
+    mips_active_version=$(cmake --version | sed -n '1s/^cmake version //p') || exit 1
+    [ -n "$mips_active_version" ] || exit 1
+    # A different CMake version can load a stale compiler record on configure.
+    if [ "$mips_version" != "$mips_active_version" ]; then
+        printf 'CMake version mismatch in %s: configured with %s, running %s. Use CMake %s to reuse it.\n' \
+            "$mips_cache_dir" "$mips_version" "$mips_active_version" "$mips_version" >&2
+        exit 1
+    fi
+    mips_record="$mips_cache_dir/CMakeFiles/$mips_version/CMakeCCompiler.cmake"
+    [ -f "$mips_record" ] || exit 1
+    mips_compiler=$(sed -n 's/^set(CMAKE_C_COMPILER "\(.*\)")$/\1/p' "$mips_record") || exit 1
+    case "$mips_compiler" in
+        /*) [ "$mips_compiler" -ef "$mips_expected_compiler" ] ;;
+        *) exit 1 ;;
+    esac
+)
+
 mips_release_build() (
     mips_toolchain_root=$1
     mips_build_dir=$2
@@ -104,15 +135,19 @@ mips_release_build() (
 
     # CMake need not track archives that the compiler links implicitly.
     # Discard only the final link outputs when their proof is missing or stale.
-    mips_key=$(mips_toolchain_key "$mips_toolchain_root") || mips_key=
-    if [ -n "$mips_key" ]; then
-        for binary do
-            mips_output="$mips_build_dir/$binary"
-            if ! mips_runtime_output_verified "$mips_key" "$mips_output" "$mips_output"; then
-                rm -f -- "$mips_output" "$mips_output.deneb-runtime.receipt" || exit 1
-            fi
-        done
+    mips_compiler="$mips_toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-gcc"
+    mips_key=
+    if mips_uses_pinned_compiler "$mips_build_dir" "$mips_compiler"; then
+        mips_key=$(mips_toolchain_key "$mips_toolchain_root") || mips_key=
     fi
+    for binary do
+        mips_output="$mips_build_dir/$binary"
+        if [ -z "$mips_key" ]; then
+            rm -f -- "$mips_output.deneb-runtime.receipt" || exit 1
+        elif ! mips_runtime_output_verified "$mips_key" "$mips_output" "$mips_output"; then
+            rm -f -- "$mips_output" "$mips_output.deneb-runtime.receipt" || exit 1
+        fi
+    done
 
     if [ -n "$mips_target" ]; then
         cmake --build "$mips_build_dir" --target "$mips_target" --parallel "$(nproc)" || exit "$?"
@@ -120,7 +155,14 @@ mips_release_build() (
         cmake --build "$mips_build_dir" --parallel "$(nproc)" || exit "$?"
     fi
 
-    [ -n "$mips_key" ] && [ "$(mips_toolchain_key "$mips_toolchain_root")" = "$mips_key" ] || exit 0
+    [ -n "$mips_key" ] || exit 0
+    if ! mips_uses_pinned_compiler "$mips_build_dir" "$mips_compiler" ||
+        [ "$(mips_toolchain_key "$mips_toolchain_root")" != "$mips_key" ]; then
+        for binary do
+            rm -f -- "$mips_build_dir/$binary.deneb-runtime.receipt" || exit 1
+        done
+        exit 0
+    fi
     for binary do
         mips_output="$mips_build_dir/$binary"
         (

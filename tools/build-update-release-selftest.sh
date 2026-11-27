@@ -185,3 +185,16 @@ release --build-directory proof --web-build-directory proof --lighttpd-root "$li
 expect_result 47 'Reached fixture packager'
 test "$runtime_inode" = "$(stat -c %i "$api_executable")"
 printf '%s\n' 'Backdated runtime replacement relinks warm lighttpd and unchanged verified links are reused.'
+
+# WSL admits the warm directory from MUSL_CROSS. The compiler record must
+# still match before any runtime receipt can be reused or written.
+mismatched_build="$wrong_lighttpd/build-musl-static"
+cmake -S "$wrong_lighttpd" -B "$mismatched_build" -DMUSL_CROSS:PATH="$DENEB_TOOLCHAIN_ROOT" >/dev/null
+grep -Fxq "MUSL_CROSS:PATH=$DENEB_TOOLCHAIN_ROOT" "$mismatched_build/CMakeCache.txt"
+cmake --build "$mismatched_build" --target lighttpd >/dev/null
+mismatched_output="$mismatched_build/build/lighttpd"
+mips_runtime_fingerprint "$runtime_key" "$mismatched_output" > "$mismatched_output.deneb-runtime.receipt"
+mips_release_build "$DENEB_TOOLCHAIN_ROOT" "$mismatched_build" lighttpd build/lighttpd
+test -x "$mismatched_output"
+test ! -e "$mismatched_output.deneb-runtime.receipt"
+printf '%s\n' 'Warm cache with the expected root and a different compiler keeps its output without a pinned receipt.'
