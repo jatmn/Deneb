@@ -541,8 +541,9 @@ async function main() {
         // Keep the pending job while making the spool path unusable for staging.
         const savedSpool = path.join(root, 'saved-spool');
         fs.renameSync(spool, savedSpool);
+        const blocker = fs.openSync(spool, 'wx', 0o600);
         try {
-            fs.writeFileSync(spool, 'not a directory');
+            fs.closeSync(blocker);
             const failedStage = await startUpload(port, archive, 'completed.ufp').finish();
             assert.equal(failedStage.code, 500, failedStage.data);
             assert.equal(JSON.parse(failedStage.data).message, 'Failed to save file');
