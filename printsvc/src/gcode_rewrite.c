@@ -125,26 +125,31 @@ static int rewrite_prime_command(const char *line, deneb_gcode_rewrite_t *rewrit
     return 1;
 }
 
-void deneb_gcode_rewrite_init(deneb_gcode_rewrite_t *rewrite)
-{
-    if (rewrite)
-        memset(rewrite, 0, sizeof(*rewrite));
-}
-
-int deneb_gcode_rewrite_line(const char *line, deneb_gcode_rewrite_t *rewrite)
+int deneb_gcode_rewrite_special(const char *line, deneb_gcode_rewrite_t *rewrite)
 {
     if (!line || !rewrite)
         return -1;
 
-    deneb_gcode_rewrite_init(rewrite);
+    rewrite->count = 0;
+    rewrite->wait_for_bed = 0;
+    rewrite->wait_for_nozzle = 0;
+    rewrite->wait_target = 0.0f;
 
     if (command_starts_with(line, "M117"))
-        return 0;
+        return 1;
     if (rewrite_wait_command(line, rewrite))
         return 1;
     if (rewrite_prime_command(line, rewrite))
         return 1;
+    return 0;
+}
 
-    rewrite_add(rewrite, line);
-    return 1;
+int deneb_gcode_rewrite_line(const char *line, deneb_gcode_rewrite_t *rewrite)
+{
+    int rc = deneb_gcode_rewrite_special(line, rewrite);
+    if (rc < 0)
+        return -1;
+    if (rc == 0)
+        rewrite_add(rewrite, line);
+    return rewrite->count > 0;
 }
