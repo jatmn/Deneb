@@ -25,8 +25,9 @@ freely, subject to the following restrictions:
 
 /*
 Deneb modification: retain LVGL heap and filesystem calls and its draw-buffer
-output contract when built for the touchscreen. Standalone service builds use
-libc and compile only the inflate/zlib decoder. See docs/SOURCE_PROVENANCE.md.
+output contract when built for the touchscreen, and use size_t for scanline
+sizing. Standalone service builds use libc and compile only the inflate/zlib
+decoder. See docs/SOURCE_PROVENANCE.md.
 */
 
 /*
@@ -4444,13 +4445,14 @@ static void Adam7_getpassvalues(unsigned passw[7], unsigned passh[7], size_t fil
 
   filter_passstart[0] = padded_passstart[0] = passstart[0] = 0;
   for(i = 0; i != 7; ++i) {
+    size_t scanline = lodepng_get_raw_size_idat(passw[i], 1u, bpp);
+    size_t pixels = (size_t)passh[i] * passw[i];
     /*if passw[i] is 0, it's 0 bytes, not 1 (no filtertype-byte)*/
-    filter_passstart[i + 1] = filter_passstart[i]
-                            + ((passw[i] && passh[i]) ? passh[i] * (1u + (passw[i] * bpp + 7u) / 8u) : 0);
+    filter_passstart[i + 1] = filter_passstart[i] + (passw[i] ? (size_t)passh[i] * scanline : 0);
     /*bits padded if needed to fill full byte at end of each scanline*/
-    padded_passstart[i + 1] = padded_passstart[i] + passh[i] * ((passw[i] * bpp + 7u) / 8u);
+    padded_passstart[i + 1] = padded_passstart[i] + (size_t)passh[i] * (scanline - 1u);
     /*only padded at end of reduced image*/
-    passstart[i + 1] = passstart[i] + (passh[i] * passw[i] * bpp + 7u) / 8u;
+    passstart[i + 1] = passstart[i] + (pixels / 8u) * bpp + ((pixels & 7u) * bpp + 7u) / 8u;
   }
 }
 
@@ -4837,9 +4839,10 @@ static unsigned postProcessScanlines(unsigned char* out, unsigned char* in,
   if(bpp == 0) return 31; /*error: invalid colortype*/
 
   if(info_png->interlace_method == 0) {
-    if(bpp < 8 && w * bpp != ((w * bpp + 7u) / 8u) * 8u) {
+    size_t linebits = (size_t)w * bpp;
+    if(bpp < 8 && (linebits & 7u)) {
       CERROR_TRY_RETURN(unfilter(in, in, w, h, bpp));
-      removePaddingBits(out, in, w * bpp, ((w * bpp + 7u) / 8u) * 8u, h);
+      removePaddingBits(out, in, linebits, ((linebits + 7u) / 8u) * 8u, h);
     }
     /*we can immediately filter into the out buffer, no other steps needed*/
     else CERROR_TRY_RETURN(unfilter(out, in, w, h, bpp));
@@ -4854,10 +4857,11 @@ static unsigned postProcessScanlines(unsigned char* out, unsigned char* in,
       /*TODO: possible efficiency improvement: if in this reduced image the bits fit nicely in 1 scanline,
       move bytes instead of bits or move not at all*/
       if(bpp < 8) {
+        size_t linebits = (size_t)passw[i] * bpp;
         /*remove padding bits in scanlines; after this there still may be padding
         bits between the different reduced images: each reduced image still starts nicely at a byte*/
-        removePaddingBits(&in[passstart[i]], &in[padded_passstart[i]], passw[i] * bpp,
-                          ((passw[i] * bpp + 7u) / 8u) * 8u, passh[i]);
+        removePaddingBits(&in[passstart[i]], &in[padded_passstart[i]],
+                          linebits, ((linebits + 7u) / 8u) * 8u, passh[i]);
       }
     }
 

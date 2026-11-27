@@ -234,7 +234,7 @@ set(DENEB_SOURCES
 
 add_executable(deneb-ui ${DENEB_SOURCES} ${LVGL_SOURCES} "${LODEPNG_DIR}/lodepng.c")
 
-target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING)
+target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING LODEPNG_NO_COMPILE_ENCODER)
 
 target_include_directories(deneb-ui PRIVATE
     ${CMAKE_SOURCE_DIR}/config       # lv_conf.h

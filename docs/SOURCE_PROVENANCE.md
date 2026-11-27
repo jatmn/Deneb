@@ -41,9 +41,10 @@ observed interoperability behavior.
 
 LodePNG's upstream `lodepng.cpp` is compiled as C. To refresh the snapshot, copy
 the pinned upstream source and header, retain the license headers, and reapply
-the marked LVGL integration in `lodepng.c`. The LVGL adapter uses the vendored
-header and receives a draw buffer owned by LVGL's image-cache handlers. The
-native services use libc and the existing zlib-only build flags.
+the marked LVGL integration and scanline sizing changes in `lodepng.c`. The
+LVGL adapter uses the vendored header and receives a draw buffer owned by LVGL's
+image-cache handlers. The touchscreen builds the PNG decoder. The native
+services use libc and the existing zlib-only build flags.
 
 When a dependency version or generated dataset changes:
 
