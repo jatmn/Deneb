@@ -6475,6 +6475,74 @@ static void test_service_slow_status_probes_allow_job_progress(void)
     test_monotonic_ms = -1;
 }
 
+static void test_service_slow_status_probes_allow_cold_job_homing_drain(void)
+{
+    deneb_print_service_t svc;
+    int wire[2];
+    char path[256], frame[352], reply[128];
+    const char *tmp = getenv("TMPDIR");
+    int length = snprintf(path, sizeof(path), "%s/deneb-cold-job-XXXXXX",
+                          tmp ? tmp : "/tmp");
+    assert(length >= 0 && (size_t)length < sizeof(path));
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+    const char gcode[] = "G1 X1\n";
+    assert(write(fd, gcode, sizeof(gcode) - 1) == (ssize_t)(sizeof(gcode) - 1));
+    assert(close(fd) == 0);
+
+    start_active_controller_fixture(&svc, wire);
+    svc.job_active = 0;
+    snprintf(frame, sizeof(frame),
+             "JOB<{\"file\":\"%s\",\"bedTset\":45,\"headTset\":180}", path);
+    assert(deneb_printsvc_ipc_handle_frame(&svc, frame, reply, sizeof(reply)) == 0);
+    assert(unlink(path) == 0);
+    assert(svc.heater_wait.active);
+
+    test_monotonic_ms = 1000;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    uint8_t home = expect_controller_command(wire[1], "G28");
+    assert(deneb_print_service_poll_job(&svc) == 0);
+
+    test_monotonic_ms = 1010;
+    controller_acknowledge(wire[1], home, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    uint8_t park = expect_controller_command(wire[1], "G0 X105 Y0 F9000");
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    int homing_drain_stage = svc.job_prepare_stage;
+
+    test_monotonic_ms = 1050;
+    controller_acknowledge(wire[1], park, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_prepare_stage == homing_drain_stage);
+    acknowledge_status_probes(wire[1], "T:20.0 /180.0 B:20.0 /45.0\n");
+
+    test_monotonic_ms = 1100;
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(svc.job_prepare_stage != homing_drain_stage);
+    assert(svc.heater_wait.active);
+    assert(!deneb_heater_wait_ready(&svc.heater_wait, &svc.status));
+    expect_controller_quiet(wire[1]);
+
+    /* The next tick can collect temperatures even though heating blocks work. */
+    test_monotonic_ms = 1110;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    acknowledge_status_probes(wire[1], "T:180.0 /180.0 B:45.0 /45.0\n");
+
+    test_monotonic_ms = 1160;
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    assert(!svc.heater_wait.active);
+
+    close(wire[1]);
+    deneb_print_service_close(&svc);
+    test_monotonic_ms = -1;
+}
+
 static void test_heater_wait(void)
 {
     deneb_heater_wait_t wait;
@@ -7789,6 +7857,7 @@ int main(int argc, char **argv)
     test_service_active_and_heating_status_probes();
     test_service_status_probe_waits_for_busy_flow();
     test_service_slow_status_probes_allow_job_progress();
+    test_service_slow_status_probes_allow_cold_job_homing_drain();
     test_service_proto_desync_resyncs_active_job();
     test_heater_wait();
     test_sha256();

@@ -202,11 +202,10 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
     if (svc->serial_ready &&
         !svc->startup_status_probe_pending &&
         deneb_flow_inflight(&svc->flow) == 0) {
-        /* Let the job poll use the window just released by periodic probes.
-         * Heater waits still need temperature reports to make progress. */
+        /* Give the job poll one turn with the newly drained window. If work
+         * is waiting for heat, telemetry can resume on the next poll. */
         int yield_to_job = svc->periodic_status_probe_inflight &&
-                           (svc->job_active || svc->gcode_queue_active) &&
-                           !svc->heater_wait.active;
+                           (svc->job_active || svc->gcode_queue_active);
         svc->periodic_status_probe_inflight = 0;
         if (!yield_to_job && status_probe_due(svc)) {
             int poll_rc = send_status_probe(svc, 0);
