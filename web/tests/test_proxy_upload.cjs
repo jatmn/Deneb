@@ -737,7 +737,9 @@ async function testThumbnailUploads() {
 
         // The 2048 x 512 image ranks below the ineligible 1024 x 1025 image.
         const eligible = upFilteredRgbaPng(2048, 512, [0xff000080, 0x00ff0080, 0x0000ff80, 0xffff0080]);
-        const mixed = await halfClosedUpload(apiSocket, makeArchive(overBudget, eligible), 'mixed-preview.ufp');
+        const oversizedMember = Buffer.concat([upFilteredRgbaPng(116, 116, [0xff0000ff]), Buffer.alloc(2 * 1024 * 1024)]);
+        const mixed = await halfClosedUpload(apiSocket,
+            makeArchive(oversizedMember, overBudget, eligible), 'mixed-preview.ufp');
         assert.match(mixed, /^HTTP\/1\.1 201 Created\r\n/);
         assert.equal(fs.readFileSync(path.join(root, 'spool/mixed-preview.gcode'), 'utf8'), gcode);
         const expectedPreview = Buffer.alloc(116 * 116 * 2);

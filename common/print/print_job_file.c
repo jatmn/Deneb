@@ -29,6 +29,8 @@
 #define DENEB_UFP_THUMB_MAX_CANDIDATES 16
 #define DENEB_UFP_MEMBER_MAX 256
 #define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
+/* Allow DEFLATE overhead for previews near the uncompressed size limit. */
+#define DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES (DENEB_UFP_THUMB_MAX_BYTES + 64U * 1024U)
 /*
  * Include one filter byte per row and admit 1024 x 1024 RGBA. The pinned
  * LodePNG can reserve for a final 65,535-byte stored block before checking
@@ -730,6 +732,12 @@ static int extract_zip_candidate(const char *ufp_path,
 
     *out = NULL;
     *out_size = 0;
+    if (candidate->compressed_size == 0 ||
+        candidate->compressed_size > DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES ||
+        (candidate->method == 0 &&
+         candidate->compressed_size != candidate->uncompressed_size))
+        return -1;
+
     f = fopen(ufp_path, "rbe");
     if (!f)
         return -1;
