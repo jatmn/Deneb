@@ -47,7 +47,7 @@ static deneb_print_backend_route_t backend_route = {
 
 int backend_zmq_init(void) { fprintf(stderr, "backend_zmq: stub mode\n"); state.connected = true; return 0; }
 int backend_zmq_get_fd(void) { return -1; }
-void backend_zmq_poll(void) {}
+bool backend_zmq_poll(void) { return false; }
 const printer_state_t *backend_zmq_get_state(void) { return &state; }
 const char *backend_zmq_get_status_event(size_t *len, uint64_t *revision)
 {
@@ -428,6 +428,7 @@ int backend_zmq_init(void)
     configure_status_socket(status_sock);
     if (zmq_connect(status_sock, backend_route.status_url) < 0) goto fail;
     if (zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) < 0) goto fail;
+    if (backend_zmq_get_fd() < 0) goto fail;
 
     /* RPC REQ socket */
     if (create_rpc_socket() < 0) goto fail;
@@ -453,21 +454,32 @@ int backend_zmq_get_fd(void)
     return fd;
 }
 
-void backend_zmq_poll(void)
+static bool status_readable(void)
+{
+    int events;
+    size_t length = sizeof(events);
+    return zmq_getsockopt(status_sock, ZMQ_EVENTS, &events, &length) == 0 &&
+           (events & ZMQ_POLLIN);
+}
+
+bool backend_zmq_poll(void)
 {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     if (deneb_status_state_expire(&state, (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000)))
         ++status_revision;
-    if (!status_sock) return;
+    if (!status_sock) return false;
 
-    for (int i = 0; i < MAX_STATUS_MSGS; i++) {
+    /* ZMQ_FD is edge-triggered. Refresh ZMQ_EVENTS after each receive,
+     * including the last one in a full batch. */
+    bool readable = status_readable();
+    for (int i = 0; i < MAX_STATUS_MSGS && readable; i++, readable = status_readable()) {
         zmq_msg_t msg;
         zmq_msg_init(&msg);
         int rc = zmq_msg_recv(&msg, status_sock, ZMQ_DONTWAIT);
         if (rc < 0) {
             zmq_msg_close(&msg);
-            break;
+            return status_readable();
         }
 
         const char *data = (const char *)zmq_msg_data(&msg);
@@ -501,6 +513,7 @@ void backend_zmq_poll(void)
 
         zmq_msg_close(&msg);
     }
+    return readable;
 }
 
 const printer_state_t *backend_zmq_get_state(void)
