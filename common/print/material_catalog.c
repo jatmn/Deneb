@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "material_catalog.h"
+#include "file_write.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -234,7 +235,7 @@ int deneb_material_catalog_store_file(const char *path,
     if (n < 0 || (size_t)n >= sizeof(record_path))
         return -1;
 
-    out = fopen(record_path, "w");
+    out = deneb_fopen_write(record_path);
     if (!out)
         return -1;
     fprintf(out, "{\"guid\":\"%s\",\"version\":%d}", guid, *version);

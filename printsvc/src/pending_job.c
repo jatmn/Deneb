@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "pending_job.h"
+#include "file_write.h"
 #include "pending_job_file.h"
 #include "json_string.h"
 #include "print_control.h"
@@ -237,7 +238,7 @@ int deneb_pending_job_write_file(const deneb_pending_job_t *job,
     if (n < 0 || (size_t)n >= sizeof(tmp_path))
         return -1;
 
-    f = fopen(tmp_path, "wb");
+    f = deneb_fopen_write(tmp_path);
     if (!f)
         return -1;
     if (fwrite(json, 1, (size_t)len, f) != (size_t)len) {

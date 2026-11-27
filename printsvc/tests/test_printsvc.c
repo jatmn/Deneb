@@ -4732,9 +4732,15 @@ static void test_material_catalog_helpers(void)
                                              &version) == 0);
     assert(strcmp(parsed_guid, guid) == 0);
     assert(version == 7);
+    mode_t old_mask = umask(0);
     assert(deneb_material_catalog_store_file(material_path, catalog_dir,
                                              parsed_guid, sizeof(parsed_guid),
                                              &version) == 0);
+    umask(old_mask);
+    struct stat record;
+    assert(stat("/tmp/deneb-material-catalog/506c9f0d-e3aa-4bd4-b2d2-23e2425b1aa9.json",
+                &record) == 0);
+    assert((record.st_mode & 0777) == 0644);
     assert(deneb_material_catalog_build_response("[{\"guid\":\"stock\"}]",
                                                  catalog_dir, &body,
                                                  &body_len) == 0);

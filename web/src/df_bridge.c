@@ -32,6 +32,7 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
 
 #else
 
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -39,6 +40,7 @@ int deneb_df_bridge_run(const char *action, int timeout_seconds,
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <zmq.h>
 
 #if !defined(_WIN32)
@@ -496,9 +498,9 @@ static int read_map_value(zmq_msg_t *msg, const char *key, mp_reader_t *value)
 
 static void create_pair_request_file(void)
 {
-    FILE *fp = fopen(DF_PAIR_REQUEST_FILE, "w");
-    if (fp)
-        fclose(fp);
+    int fd = open(DF_PAIR_REQUEST_FILE, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd >= 0)
+        close(fd);
 }
 
 static void clear_pair_request_file(void)
