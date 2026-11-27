@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #undef NDEBUG
+#ifndef _LARGEFILE64_SOURCE
+#define _LARGEFILE64_SOURCE
+#endif
 #include "drivers/fb_driver.h"
 #include "lvgl.h"
 
@@ -19,6 +22,11 @@ int __wrap_open(const char *path, int flags, ...)
 {
     assert(strcmp(path, "/dev/fb0") == 0 && flags == O_RDWR);
     return DEVICE_FD;
+}
+
+int __wrap_open64(const char *path, int flags, ...)
+{
+    return __wrap_open(path, flags);
 }
 
 int __wrap_ioctl(int fd, unsigned long request, ...)
@@ -49,6 +57,12 @@ void *__wrap_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off
     assert(!addr && len == sizeof(framebuffer) && offset == 0);
     assert(prot == (PROT_READ | PROT_WRITE) && flags == MAP_SHARED && fd == DEVICE_FD);
     return framebuffer;
+}
+
+void *__wrap_mmap64(void *addr, size_t len, int prot, int flags, int fd, off64_t offset)
+{
+    assert(offset == 0);
+    return __wrap_mmap(addr, len, prot, flags, fd, 0);
 }
 
 int __wrap_msync(void *addr, size_t len, int flags)

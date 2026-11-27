@@ -311,8 +311,9 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     add_executable(deneb-framebuffer-tests tests/test_framebuffer.c src/drivers/fb_driver.c)
     target_include_directories(deneb-framebuffer-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-framebuffer-tests PRIVATE deneb-lvgl m pthread)
-    target_link_options(deneb-framebuffer-tests PRIVATE -Wl,--wrap=open -Wl,--wrap=ioctl
-        -Wl,--wrap=mmap -Wl,--wrap=msync -Wl,--wrap=munmap -Wl,--wrap=close)
+    target_link_options(deneb-framebuffer-tests PRIVATE
+        -Wl,--wrap=open -Wl,--wrap=open64 -Wl,--wrap=ioctl
+        -Wl,--wrap=mmap -Wl,--wrap=mmap64 -Wl,--wrap=msync -Wl,--wrap=munmap -Wl,--wrap=close)
     add_test(NAME deneb-framebuffer-tests COMMAND deneb-framebuffer-tests)
 
     add_executable(deneb-status-screen-tests
