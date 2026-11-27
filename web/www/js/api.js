@@ -12,7 +12,8 @@ Deneb.api = {
     sseSource: null,
     sseRetry: null,
     sseHasSnapshot: false,
-    sseStatusVersion: 0,
+    statusSequence: 0,
+    lastStatusSequence: 0,
     statusCallbacks: [],
 
     request: function(method, path, body) {
@@ -98,7 +99,7 @@ Deneb.api = {
             try {
                 var data = JSON.parse(e.data);
                 self.sseHasSnapshot = true;
-                self.sseStatusVersion++;
+                self.lastStatusSequence = ++self.statusSequence;
                 for (var i = 0; i < self.statusCallbacks.length; i++) {
                     self.statusCallbacks[i](data);
                 }
@@ -107,6 +108,7 @@ Deneb.api = {
         source.onerror = function() {
             if (self.sseSource !== source) return;
             self.disconnectSSE();
+            self.pollStatus();
             self.sseRetry = setTimeout(function() {
                 self.sseRetry = null;
                 self.connectSSE();
@@ -146,9 +148,10 @@ Deneb.api = {
     pollStatus: function() {
         if (this.sseHasSnapshot) return;
         var self = this;
-        var version = this.sseStatusVersion;
+        var sequence = ++this.statusSequence;
         return this.get('/printer').then(function(data) {
-            if (version !== self.sseStatusVersion) return;
+            if (sequence < self.lastStatusSequence) return;
+            self.lastStatusSequence = sequence;
             for (var i = 0; i < self.statusCallbacks.length; i++) {
                 self.statusCallbacks[i](data);
             }

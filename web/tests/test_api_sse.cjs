@@ -15,6 +15,7 @@ const context = {
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../www/js/api.js'), 'utf8'), context);
 const api = context.Deneb.api;
+api.get = () => Promise.reject(new Error('REST unavailable'));
 api.connectSSE();
 const oldError = sources[0].onerror;
 oldError();
@@ -64,9 +65,24 @@ async function testStatusFallback() {
     assert.deepEqual(updates, ['idle', 'printing', 'offline']);
 
     api.connectSSE();
-    sources.at(-1).onmessage({data: '{"status":"idle"}'});
+    const printing = sources.at(-1);
+    printing.onmessage({data: '{"status":"printing"}'});
     api.pollStatus();
     assert.equal(requests.length, 0, 'an active status stream owns display updates');
+    printing.onerror();
+    assert.equal(timers.size, 1, 'reconnect remains scheduled');
+    assert.equal(requests.length, 1, 'a broken status stream starts REST fallback');
+    requests.shift()({status: 'paused'});
+    await Promise.resolve();
+    assert.deepEqual(updates, ['idle', 'printing', 'offline', 'printing', 'paused']);
+
+    const older = api.pollStatus();
+    const newer = api.pollStatus();
+    requests.pop()({status: 'idle'});
+    await newer;
+    requests.shift()({status: 'paused'});
+    await older;
+    assert.equal(updates.at(-1), 'idle', 'an older fallback reply cannot replace a newer one');
     api.disconnectSSE();
 }
 
