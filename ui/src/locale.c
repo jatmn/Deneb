@@ -3,34 +3,24 @@
  *
  * Locale/i18n implementation.
  * Loads JSON locale files from /etc/deneb/locales/<lang>.json
- * Uses a simple key-value store (no full JSON parser dependency).
- * Falls back to embedded English defaults for missing keys.
- *
- * Design: Minimal memory. One locale loaded at a time.
- * JSON parsing uses a lightweight state machine, not a library.
+ * Keeps embedded English defaults and a compact overlay for one locale.
  */
 
 #include "locale.h"
 
-#include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef LOCALE_DIR
 #define LOCALE_DIR      "/etc/deneb/locales"
+#endif
+#define MAX_FILE_SIZE   32768
 #define MAX_ENTRIES     256
 #define MAX_KEY_LEN     48
 #define MAX_VAL_LEN     128
 #define MAX_LANG_LEN    16
-
-typedef struct {
-    char key[MAX_KEY_LEN];
-    char val[MAX_VAL_LEN];
-} locale_entry_t;
-
-static locale_entry_t entries[MAX_ENTRIES];
-static int entry_count = 0;
-static char current_lang[MAX_LANG_LEN] = "en";
 
 /* Embedded English defaults - matches en.json */
 static const struct { const char *key; const char *val; } en_defaults[] = {
@@ -266,8 +256,38 @@ static const struct { const char *key; const char *val; } en_defaults[] = {
     {"digital_factory.status_pin_fmt", "PIN: %s"},
     {"digital_factory.status_cloud_signin_required", "Cloud sign-in required"},
     {"digital_factory.status_disconnect_failed", "Disconnect failed"},
-    {NULL, NULL}
 };
+
+enum { EN_DEFAULT_COUNT = sizeof(en_defaults) / sizeof(en_defaults[0]) };
+
+typedef struct {
+    int extra_count;
+    uint16_t value_offsets[MAX_ENTRIES]; /* 0 means no override, others are one-based. */
+    uint16_t extra_keys[MAX_ENTRIES - EN_DEFAULT_COUNT];
+    char strings[];
+} locale_catalog_t;
+
+static locale_catalog_t *catalog;
+static bool initialized;
+static char current_lang[MAX_LANG_LEN] = "en";
+
+static int find_default(const char *key)
+{
+    for (int i = 0; i < EN_DEFAULT_COUNT; i++) {
+        if (strcmp(en_defaults[i].key, key) == 0)
+            return i;
+    }
+    return -1;
+}
+
+static int find_extra(const locale_catalog_t *loaded, const char *key)
+{
+    for (int i = 0; i < loaded->extra_count; i++) {
+        if (strcmp(loaded->strings + loaded->extra_keys[i], key) == 0)
+            return i;
+    }
+    return -1;
+}
 
 static int hex_value(char c)
 {
@@ -389,12 +409,13 @@ static int decode_json_string(const char *start, const char *end,
  * Does NOT handle nested objects, arrays, or non-string values.
  * This is intentional: locale files are flat key-value maps.
  */
-static int parse_locale_json(const char *json, locale_entry_t *out, int max_entries)
+static size_t parse_locale_json(locale_catalog_t *loaded)
 {
-    int count = 0;
-    const char *p = json;
+    int parsed = 0;
+    const char *p = loaded->strings;
+    char *packed = loaded->strings;
 
-    while (*p && count < max_entries) {
+    while (*p && parsed < MAX_ENTRIES) {
         /* Find next key */
         p = strchr(p, '"');
         if (!p) break;
@@ -415,7 +436,7 @@ static int parse_locale_json(const char *json, locale_entry_t *out, int max_entr
         /* Read value */
         const char *val_start = p;
         while (*p) {
-            if (*p == '\\') {
+            if (*p == '\\' && p[1]) {
                 p += 2; /* skip escaped char */
                 continue;
             }
@@ -426,94 +447,113 @@ static int parse_locale_json(const char *json, locale_entry_t *out, int max_entr
         size_t val_len = p - val_start;
         p++; /* skip closing quote */
 
-        /* Store entry */
-        if (key_len < MAX_KEY_LEN) {
-            memcpy(out[count].key, key_start, key_len);
-            out[count].key[key_len] = '\0';
-            if (!decode_json_string(val_start, val_start + val_len,
-                                    out[count].val, MAX_VAL_LEN))
-                continue;
-            count++;
+        char key[MAX_KEY_LEN];
+        char value[MAX_VAL_LEN];
+        if (key_len >= sizeof(key) ||
+            !decode_json_string(val_start, val_start + val_len, value, sizeof(value)))
+            continue;
+        parsed++;
+        memcpy(key, key_start, key_len);
+        key[key_len] = '\0';
+
+        int slot = find_default(key);
+        if (slot < 0) {
+            int extra = find_extra(loaded, key);
+            if (extra < 0) {
+                if (loaded->extra_count == MAX_ENTRIES - EN_DEFAULT_COUNT)
+                    continue;
+                extra = loaded->extra_count++;
+                loaded->extra_keys[extra] = packed - loaded->strings;
+                memcpy(packed, key, key_len + 1);
+                packed += key_len + 1;
+            }
+            slot = EN_DEFAULT_COUNT + extra;
+        } else if (strcmp(value, en_defaults[slot].val) == 0) {
+            loaded->value_offsets[slot] = 0;
+            continue;
         }
+
+        /* Each packed pair is shorter than its JSON tokens already consumed. */
+        loaded->value_offsets[slot] = packed - loaded->strings + 1;
+        size_t value_size = strlen(value) + 1;
+        memcpy(packed, value, value_size);
+        packed += value_size;
     }
 
-    return count;
+    return packed - loaded->strings;
+}
+
+static locale_catalog_t *load_catalog(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        fprintf(stderr, "locale: %s not found, using English defaults\n", path);
+        return NULL;
+    }
+
+    locale_catalog_t *loaded = NULL;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        long size = ftell(f);
+        if (size > 0 && size < MAX_FILE_SIZE && fseek(f, 0, SEEK_SET) == 0) {
+            loaded = malloc(sizeof(*loaded) + size + 1);
+            if (loaded && fread(loaded->strings, 1, size, f) != (size_t)size) {
+                free(loaded);
+                loaded = NULL;
+            }
+            if (loaded)
+                loaded->strings[size] = '\0';
+        }
+    }
+    fclose(f);
+    if (!loaded)
+        return NULL;
+
+    memset(loaded, 0, offsetof(locale_catalog_t, strings));
+    size_t packed = parse_locale_json(loaded);
+    if (packed == 0) {
+        free(loaded);
+        return NULL;
+    }
+    locale_catalog_t *compact = realloc(loaded, sizeof(*loaded) + packed);
+    return compact ? compact : loaded;
 }
 
 int locale_init(const char *lang)
 {
-    entry_count = 0;
-    memset(entries, 0, sizeof(entries));
-
-    /* Load embedded English defaults first */
-    for (int i = 0; en_defaults[i].key; i++) {
-        strncpy(entries[entry_count].key, en_defaults[i].key, MAX_KEY_LEN - 1);
-        strncpy(entries[entry_count].val, en_defaults[i].val, MAX_VAL_LEN - 1);
-        entry_count++;
-        if (entry_count >= MAX_ENTRIES) break;
-    }
-
-    /* If not English, try to load from disk */
-    if (lang && strcmp(lang, "en") != 0) {
-        char path[128];
+    char path[128];
+    bool translated = lang && strcmp(lang, "en") != 0;
+    if (translated)
         snprintf(path, sizeof(path), "%s/%s.json", LOCALE_DIR, lang);
 
-        FILE *f = fopen(path, "r");
-        if (f) {
-            fseek(f, 0, SEEK_END);
-            long size = ftell(f);
-            fseek(f, 0, SEEK_SET);
+    if (lang != current_lang)
+        snprintf(current_lang, sizeof(current_lang), "%s", lang ? lang : "en");
 
-            if (size > 0 && size < 32768) {
-                char *buf = malloc(size + 1);
-                if (buf) {
-                    fread(buf, 1, size, f);
-                    buf[size] = '\0';
-
-                    /* Parse and overlay on defaults */
-                    locale_entry_t loaded[MAX_ENTRIES];
-                    int loaded_count = parse_locale_json(buf, loaded, MAX_ENTRIES);
-
-                    for (int i = 0; i < loaded_count; i++) {
-                        /* Find existing entry and update, or add new */
-                        int found = 0;
-                        for (int j = 0; j < entry_count; j++) {
-                            if (strcmp(entries[j].key, loaded[i].key) == 0) {
-                                strncpy(entries[j].val, loaded[i].val, MAX_VAL_LEN - 1);
-                                found = 1;
-                                break;
-                            }
-                        }
-                        if (!found && entry_count < MAX_ENTRIES) {
-                            entries[entry_count] = loaded[i];
-                            entry_count++;
-                        }
-                    }
-
-                    free(buf);
-                }
-            }
-            fclose(f);
-        } else {
-            fprintf(stderr, "locale: %s not found, using English defaults\n", path);
-        }
-    }
-
-    strncpy(current_lang, lang ? lang : "en", MAX_LANG_LEN - 1);
-    current_lang[MAX_LANG_LEN - 1] = '\0';
-
-    fprintf(stderr, "locale: loaded %d entries for '%s'\n", entry_count, current_lang);
+    free(catalog);
+    catalog = translated ? load_catalog(path) : NULL;
+    initialized = true;
+    fprintf(stderr, "locale: loaded %d entries for '%s'\n",
+            EN_DEFAULT_COUNT + (catalog ? catalog->extra_count : 0), current_lang);
     return 0;
 }
 
 const char *locale_get(const char *key)
 {
-    for (int i = 0; i < entry_count; i++) {
-        if (strcmp(entries[i].key, key) == 0)
-            return entries[i].val;
+    if (!initialized)
+        return key;
+
+    int slot = find_default(key);
+    if (catalog) {
+        if (slot < 0) {
+            int extra = find_extra(catalog, key);
+            if (extra < 0)
+                return key;
+            slot = EN_DEFAULT_COUNT + extra;
+        }
+        uint16_t offset = catalog->value_offsets[slot];
+        if (offset)
+            return catalog->strings + offset - 1;
     }
-    /* Key not found - return key itself as last resort */
-    return key;
+    return slot >= 0 ? en_defaults[slot].val : key;
 }
 
 static void locale_append_text(char *out, size_t out_size, size_t *used,
@@ -587,6 +627,7 @@ const char *locale_current(void)
 
 void locale_deinit(void)
 {
-    entry_count = 0;
-    memset(entries, 0, sizeof(entries));
+    free(catalog);
+    catalog = NULL;
+    initialized = false;
 }

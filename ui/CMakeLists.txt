@@ -276,6 +276,12 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_link_options(deneb-ui-loop-tests PRIVATE -Wl,--gc-sections)
     add_test(NAME deneb-ui-loop-tests COMMAND deneb-ui-loop-tests)
 
+    add_executable(deneb-locale-tests tests/test_locale.c src/locale.c)
+    target_include_directories(deneb-locale-tests PRIVATE src)
+    target_compile_definitions(deneb-locale-tests PRIVATE LOCALE_DIR=".")
+    add_test(NAME deneb-locale-tests
+        COMMAND deneb-locale-tests "${CMAKE_CURRENT_SOURCE_DIR}/locales")
+
     add_executable(deneb-lvgl-png-tests tests/test_lodepng.c)
     target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
