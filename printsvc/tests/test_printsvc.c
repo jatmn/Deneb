@@ -84,16 +84,12 @@
 
 static long long test_monotonic_ms = -1;
 
-int __real_clock_gettime(clockid_t clock, struct timespec *ts);
+long long __real_deneb_service_context_monotonic_ms(void);
 
-int __wrap_clock_gettime(clockid_t clock, struct timespec *ts)
+long long __wrap_deneb_service_context_monotonic_ms(void)
 {
-    if (clock != CLOCK_MONOTONIC || test_monotonic_ms < 0)
-        return __real_clock_gettime(clock, ts);
-
-    ts->tv_sec = test_monotonic_ms / 1000;
-    ts->tv_nsec = test_monotonic_ms % 1000 * 1000000;
-    return 0;
+    return test_monotonic_ms >= 0 ? test_monotonic_ms :
+                                   __real_deneb_service_context_monotonic_ms();
 }
 
 static void write_build_volume_fixture(const char *path,
@@ -6426,6 +6422,59 @@ static void test_service_status_probe_waits_for_busy_flow(void)
     test_monotonic_ms = -1;
 }
 
+static void test_service_slow_status_probes_allow_job_progress(void)
+{
+    deneb_print_service_t svc;
+    int wire[2];
+    char path[256];
+    const char *tmp = getenv("TMPDIR");
+    int length = snprintf(path, sizeof(path), "%s/deneb-slow-probes-XXXXXX",
+                          tmp ? tmp : "/tmp");
+    assert(length >= 0 && (size_t)length < sizeof(path));
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+    const char gcode[] = "G1 X1\nG1 X2\n";
+    assert(write(fd, gcode, sizeof(gcode) - 1) == (ssize_t)(sizeof(gcode) - 1));
+    assert(close(fd) == 0);
+
+    start_active_controller_fixture(&svc, wire);
+    assert(deneb_gcode_stream_open(&svc.job_stream, path) == 0);
+    assert(unlink(path) == 0);
+
+    test_monotonic_ms = 1000;
+    assert(deneb_print_service_poll_motion(&svc) == 0);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    uint8_t first_line = expect_controller_command(wire[1], "G1 X1");
+
+    test_monotonic_ms = 1050;
+    controller_acknowledge(wire[1], first_line, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    acknowledge_status_probes(wire[1], NULL);
+
+    /* The serial ACKs reach the next IPC tick after the 40 ms deadline. */
+    test_monotonic_ms = 1100;
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    uint8_t second_line = expect_controller_command(wire[1], "G1 X2");
+
+    test_monotonic_ms = 1150;
+    controller_acknowledge(wire[1], second_line, NULL);
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 0);
+    acknowledge_status_probes(wire[1], NULL);
+
+    test_monotonic_ms = 1200;
+    assert(deneb_print_service_poll_motion(&svc) > 0);
+    assert(deneb_print_service_poll_job(&svc) == 1);
+    assert(svc.finish_cleanup_pending);
+    expect_controller_quiet(wire[1]);
+
+    close(wire[1]);
+    deneb_print_service_close(&svc);
+    test_monotonic_ms = -1;
+}
+
 static void test_heater_wait(void)
 {
     deneb_heater_wait_t wait;
@@ -7739,6 +7788,7 @@ int main(int argc, char **argv)
     test_service_idle_status_probe_ignores_rpc_wakes();
     test_service_active_and_heating_status_probes();
     test_service_status_probe_waits_for_busy_flow();
+    test_service_slow_status_probes_allow_job_progress();
     test_service_proto_desync_resyncs_active_job();
     test_heater_wait();
     test_sha256();

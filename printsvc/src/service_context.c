@@ -5,6 +5,15 @@
 
 #include <string.h>
 
+long long deneb_service_context_monotonic_ms(void)
+{
+    struct timespec ts;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return -1;
+    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
 void deneb_service_context_init(deneb_print_service_t *svc)
 {
     if (!svc)
@@ -104,6 +113,7 @@ void deneb_service_context_close(deneb_print_service_t *svc)
     svc->abort_pause_drain_deadline_ms = 0;
     svc->finish_cleanup_pending = 0;
     svc->finish_cleanup_index = 0;
+    svc->periodic_status_probe_inflight = 0;
     svc->startup_status_probe_pending = 0;
     svc->firmware_probe_pending = 0;
     svc->firmware_probe_ticks = 0;

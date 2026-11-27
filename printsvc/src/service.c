@@ -7,8 +7,6 @@
 #include "motion_sender.h"
 #include "pause_resume_control.h"
 
-#include <time.h>
-
 /* Match the nominal cadence of four IPC waits at 250 ms idle or 10 ms active. */
 #define DENEB_PRINTSVC_IDLE_STATUS_PROBE_MS 1000
 #define DENEB_PRINTSVC_ACTIVE_STATUS_PROBE_MS 40
@@ -72,18 +70,9 @@ int deneb_print_service_has_active_work(const deneb_print_service_t *svc)
             svc->resume_policy_pending || svc->heater_wait.active);
 }
 
-static long long status_probe_clock_ms(void)
-{
-    struct timespec ts;
-
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-        return -1;
-    return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
-}
-
 static int status_probe_due(deneb_print_service_t *svc)
 {
-    long long now = status_probe_clock_ms();
+    long long now = deneb_service_context_monotonic_ms();
     if (now < 0)
         return 0;
     if (svc->last_status_probe_ms < 0)
@@ -151,6 +140,7 @@ int deneb_print_service_open_motion(deneb_print_service_t *svc)
     svc->firmware_probe_ticks = 0;
     svc->firmware_probe_attempts = 0;
     svc->last_status_probe_ms = -1;
+    svc->periodic_status_probe_inflight = 0;
     return 0;
 }
 
@@ -179,7 +169,7 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
         int probe_rc = send_status_probe(svc, 1);
         if (probe_rc == 0) {
             svc->startup_status_probe_pending = 0;
-            svc->last_status_probe_ms = status_probe_clock_ms();
+            svc->last_status_probe_ms = deneb_service_context_monotonic_ms();
             svc->firmware_probe_ticks = 0;
             svc->firmware_probe_attempts++;
         }
@@ -211,11 +201,19 @@ int deneb_print_service_poll_motion(deneb_print_service_t *svc)
     }
     if (svc->serial_ready &&
         !svc->startup_status_probe_pending &&
-        deneb_flow_inflight(&svc->flow) == 0 &&
-        status_probe_due(svc)) {
-        int poll_rc = send_status_probe(svc, 0);
-        if (poll_rc != 0 && rc == 0)
-            rc = poll_rc;
+        deneb_flow_inflight(&svc->flow) == 0) {
+        /* Let the job poll use the window just released by periodic probes.
+         * Heater waits still need temperature reports to make progress. */
+        int yield_to_job = svc->periodic_status_probe_inflight &&
+                           (svc->job_active || svc->gcode_queue_active) &&
+                           !svc->heater_wait.active;
+        svc->periodic_status_probe_inflight = 0;
+        if (!yield_to_job && status_probe_due(svc)) {
+            int poll_rc = send_status_probe(svc, 0);
+            svc->periodic_status_probe_inflight = deneb_flow_inflight(&svc->flow) != 0;
+            if (poll_rc != 0 && rc == 0)
+                rc = poll_rc;
+        }
     }
     return rc;
 }

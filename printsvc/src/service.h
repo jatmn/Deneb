@@ -74,6 +74,7 @@ typedef struct {
     float job_nozzle_resume_setpoint;
     unsigned int planner_starvation_count;
     long long last_status_probe_ms;
+    int periodic_status_probe_inflight;
     int startup_status_probe_pending;
     int firmware_probe_pending;
     unsigned int firmware_probe_ticks;

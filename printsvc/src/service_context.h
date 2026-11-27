@@ -6,6 +6,7 @@
 #include "motion_runtime.h"
 #include "service.h"
 
+long long deneb_service_context_monotonic_ms(void);
 void deneb_service_context_init(deneb_print_service_t *svc);
 int deneb_service_context_motion_runtime(deneb_print_service_t *svc,
                                          deneb_motion_runtime_t *runtime);
