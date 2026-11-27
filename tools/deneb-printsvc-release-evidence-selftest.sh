@@ -23,16 +23,16 @@ done
 sed 's/^\$repoWsl = ConvertTo-WslPath \$repoRoot$/\$repoWsl = \$repoRoot/' \
     "$repo_root/tools/build-update-release.ps1" > "$fixture/tools/build-update-release.ps1"
 
-mkdir -p "$build/mipsel-linux-musl-cross/bin" \
+mkdir -p "$build/toolchain-mipsel_24kc_gcc-14.3.0_musl/bin" \
     "$build/zeromq-4.3.5/build-musl/lib" "$build/zeromq-4.3.5/include" \
     "$build/lighttpd-1.4.85/src" "$build/lighttpd-1.4.85/build-musl-static/build" \
-    "$fixture"/{ui,web,printsvc,dfsvc}/build-musl
+    "$fixture"/{ui,web,printsvc,dfsvc}/build-musl-openwrt
 touch "$build/zeromq-4.3.5/build-musl/lib/libzmq.a"
-for binary in "$build/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc" \
+for binary in "$build/toolchain-mipsel_24kc_gcc-14.3.0_musl/bin/mipsel-openwrt-linux-musl-gcc" \
     "$build/lighttpd-1.4.85/build-musl-static/build/lighttpd" \
-    "$fixture/ui/build-musl/deneb-ui" "$fixture/web/build-musl/deneb-api" \
-    "$fixture/web/build-musl/deneb-mdns" "$fixture/printsvc/build-musl/deneb-printsvc" \
-    "$fixture/dfsvc/build-musl/deneb-dfsvc" "$scratch/bin/cmake" "$scratch/bin/make"; do
+    "$fixture/ui/build-musl-openwrt/deneb-ui" "$fixture/web/build-musl-openwrt/deneb-api" \
+    "$fixture/web/build-musl-openwrt/deneb-mdns" "$fixture/printsvc/build-musl-openwrt/deneb-printsvc" \
+    "$fixture/dfsvc/build-musl-openwrt/deneb-dfsvc" "$scratch/bin/cmake" "$scratch/bin/make"; do
     printf '#!/bin/sh\nexit 0\n' > "$binary"
     chmod +x "$binary"
 done
@@ -78,7 +78,23 @@ printf 'compare:%s\n' "$@" >> "$EVIDENCE_CALLS"
 echo 'Stopped at fixture comparator' >&2
 exit 23
 EOF
-chmod +x "$scratch/bin/wsl"
+FIXTURE_HOST_READELF=$(command -v readelf)
+export FIXTURE_HOST_READELF
+cat > "$scratch/bin/readelf" <<'EOF'
+#!/bin/sh
+if [ "${FIXTURE_REAL_READELF:-0}" = 1 ]; then
+    exec "$FIXTURE_HOST_READELF" "$@"
+fi
+cat <<'HEADERS'
+Class: ELF32
+Data: 2's complement, little endian
+Type: EXEC (Executable file)
+Machine: MIPS R3000
+Flags: 0x70001005, noreorder, cpic, o32, mips32r2
+FP ABI: Soft float
+HEADERS
+EOF
+chmod +x "$scratch/bin/wsl" "$scratch/bin/readelf"
 export PATH="$scratch/bin:$PATH"
 unset DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
 export DENEB_BUILD_ROOT="$build"
@@ -143,6 +159,16 @@ echo 'PASS: Linux wrapper preserves supplemental verifier and comparator argumen
 check_failure 'Stopped at fixture comparator' run_powershell
 echo 'PASS: PowerShell wrapper preserves supplemental verifier and comparator arguments'
 
+# Both release wrappers still enforce ABI when no toolchain receipt exists.
+ui_binary="$fixture/ui/build-musl-openwrt/deneb-ui"
+cp "$ui_binary" "$scratch/valid-ui"
+cp /bin/true "$ui_binary"
+: > "$scratch/expected"
+FIXTURE_REAL_READELF=1 check_failure 'is not a static MT7688 soft-float executable' run_linux
+FIXTURE_REAL_READELF=1 check_failure 'is not a static MT7688 soft-float executable' run_powershell
+mv "$scratch/valid-ui" "$ui_binary"
+echo 'PASS: both release wrappers reject incompatible ELF input without a runtime receipt'
+
 with_evidence > "$scratch/expected"
 INVALID_EVIDENCE=$SECOND_EVIDENCE check_failure "Rejected invalid fixture evidence: $SECOND_EVIDENCE" \
     run_linux "$FIRST_EVIDENCE" "$SECOND_EVIDENCE"
@@ -202,7 +228,7 @@ rmdir "$package.sbom.cdx.json"
 run_powershell
 grep -Fq "\"version\": \"$revision\"" "$package.sbom.cdx.json"
 grep -Fq "\"version\": \"$lvgl_revision\"" "$package.sbom.cdx.json"
-test "$(grep -c '"value": "unverified"' "$package.sbom.cdx.json")" -eq 4
+test "$(grep -c '"value": "unverified"' "$package.sbom.cdx.json")" -eq 7
 (cd "$fixture/dist" && sha256sum -c "Deneb_Update_fixture.deneb.sha256")
 echo 'PASS: Windows checkout revisions survive WSL ownership and SBOM failure leaves no checksum'
 
@@ -224,3 +250,40 @@ if native_dependency_verified libzmq "$zmq_root"; then
     exit 1
 fi
 echo 'PASS: mismatched pins and modified dependency inputs invalidate receipts'
+
+# A pinned toolchain receipt identifies the static runtimes in the SBOM.
+toolchain_root="$build/$MIPS_TOOLCHAIN_MEMBER"
+gcc_lib="$toolchain_root/lib/gcc/$MIPS_TOOLCHAIN_TARGET/$MIPS_TOOLCHAIN_GCC_VERSION"
+mkdir -p "$gcc_lib"
+touch "$toolchain_root/info.mk" \
+    "$toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-gcc.bin" \
+    "$toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-g++.bin" \
+    "$toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-wrapper.sh" \
+    "$toolchain_root/lib/libc.a" "$toolchain_root/lib/libstdc++.a" \
+    "$toolchain_root/lib/libssp_nonshared.a" "$gcc_lib/libgcc.a" "$gcc_lib/libgcc_eh.a"
+record_native_dependency mips-toolchain "$toolchain_root"
+native_dependency_verified mips-toolchain "$toolchain_root"
+
+write_fixture_sbom() {
+    sh "$fixture/tools/write-native-sbom.sh" "$package" "$zmq_root" "$build/lighttpd-$LIGHTTPD_VERSION" \
+        "$build/mbedtls-$MBEDTLS_VERSION-mipsel" "$toolchain_root" "$revision" "$lvgl_revision"
+}
+write_fixture_sbom
+if grep -Fq "$MIPS_TOOLCHAIN_URL" "$package.sbom.cdx.json"; then
+    echo 'A toolchain receipt without a matching package receipt was accepted' >&2
+    exit 1
+fi
+printf 'mips_runtime_receipt: %s\n' "$(mips_toolchain_key "$toolchain_root")" > "$scratch/manifest.txt"
+tar cf "$package" -C "$scratch" manifest.txt
+write_fixture_sbom
+grep -Fq "$MIPS_TOOLCHAIN_URL" "$package.sbom.cdx.json"
+grep -Fq "pkg:generic/musl@$MIPS_TOOLCHAIN_MUSL_VERSION" "$package.sbom.cdx.json"
+grep -Fq "pkg:generic/libstdc%2B%2B@$MIPS_TOOLCHAIN_GCC_VERSION" "$package.sbom.cdx.json"
+grep -Fq "pkg:generic/libgcc@$MIPS_TOOLCHAIN_GCC_VERSION" "$package.sbom.cdx.json"
+printf '%s\n' 'changed fixture runtime' > "$gcc_lib/libgcc_eh.a"
+write_fixture_sbom
+if grep -Fq "$MIPS_TOOLCHAIN_URL" "$package.sbom.cdx.json"; then
+    echo 'A modified static runtime retained pinned provenance in the SBOM' >&2
+    exit 1
+fi
+echo 'PASS: runtime SBOM provenance requires matching package and toolchain receipts'
