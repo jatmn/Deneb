@@ -166,9 +166,7 @@ if(NODE_EXECUTABLE)
         COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_api_sse.cjs")
     add_test(NAME deneb-browser-motion-tests
         COMMAND "${NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_ui_motion.cjs")
-    find_program(LIGHTTPD_EXECUTABLE lighttpd)
-    find_program(UNZIP_EXECUTABLE unzip)
-    if(BUILD_HOST_STUB AND LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
+    if(BUILD_HOST_STUB)
         # Use the normal API code with an isolated, per-test working directory.
         add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES} tests/small_send_buffer.c)
         target_link_options(deneb-api-upload-fixture PRIVATE -Wl,--wrap=accept4)
@@ -180,17 +178,33 @@ if(NODE_EXECUTABLE)
             DENEB_API_LOCALE_DIR="locales"
             DENEB_UPLOAD_TEMP_DIR="tmp"
             DENEB_PRINT_JOB_SPOOL_DIR="spool"
+            DENEB_PRINT_HISTORY_PATH="tmp/deneb-print-history.json"
             DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"
             DENEB_ACTIVE_THUMB_PATH="deneb-active-thumb.rgb565")
         target_link_libraries(deneb-api-upload-fixture PRIVATE m pthread crypt)
-        add_executable(deneb-upload-digest-fixture tests/upload_digest_fixture.c src/md5.c)
-        target_include_directories(deneb-upload-digest-fixture PRIVATE src)
-        add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
-            "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}"
-            "$<TARGET_FILE:deneb-upload-digest-fixture>")
-        set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
+        find_program(LIGHTTPD_EXECUTABLE lighttpd)
+        find_program(UNZIP_EXECUTABLE unzip)
+        if(LIGHTTPD_EXECUTABLE AND UNZIP_EXECUTABLE)
+            add_executable(deneb-upload-digest-fixture tests/upload_digest_fixture.c src/md5.c)
+            target_include_directories(deneb-upload-digest-fixture PRIVATE src)
+            add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
+                "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}"
+                "$<TARGET_FILE:deneb-upload-digest-fixture>")
+            set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
+        endif()
+
+        add_executable(deneb-print-history-fixture tests/print_history_fixture.c
+            ../common/print/print_history.c ../common/print/json_string.c)
+        target_include_directories(deneb-print-history-fixture PRIVATE ../common/print)
+        target_compile_definitions(deneb-print-history-fixture PRIVATE
+            DENEB_PRINT_HISTORY_PATH="tmp/deneb-print-history.json")
+        target_link_options(deneb-print-history-fixture PRIVATE -Wl,--wrap=rename)
+        add_test(NAME deneb-print-history-tests COMMAND "${NODE_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/test_print_history.cjs"
+            "$<TARGET_FILE:deneb-api-upload-fixture>" "$<TARGET_FILE:deneb-print-history-fixture>")
+        set_tests_properties(deneb-print-history-tests PROPERTIES TIMEOUT 20)
     endif()
 endif()
 

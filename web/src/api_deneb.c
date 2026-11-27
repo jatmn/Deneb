@@ -321,7 +321,8 @@ void api_deneb_print_jobs_get(const http_request_t *req, http_response_t *resp)
     json_raw(&w, "pending", file_buf);
 
     /* History */
-    deneb_print_history_read_default_array_or_empty(file_buf, sizeof(file_buf));
+    deneb_print_history_read_default_array_or_empty(file_buf,
+                                                   DENEB_PRINT_HISTORY_MAX_BYTES + 1);
     json_raw(&w, "history", file_buf);
 
     json_obj_close(&w);
