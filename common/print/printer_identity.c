@@ -64,11 +64,25 @@ void deneb_printer_identity_friendly_name(char *out, size_t out_sz)
     deneb_printer_identity_copy_line_or_default(line, hostname, out, out_sz);
 }
 
+void deneb_printer_identity_normalize_guid(const char *value,
+                                            char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return;
+
+    deneb_printer_identity_copy_line_or_default(value,
+                                                DENEB_PRINTER_DEFAULT_GUID,
+                                                out, out_sz);
+    for (size_t i = 0; out[i]; i++)
+        out[i] = (char)tolower((unsigned char)out[i]);
+    if (!deneb_print_is_cluster_guid(out))
+        snprintf(out, out_sz, "%s", DENEB_PRINTER_DEFAULT_GUID);
+}
+
 void deneb_printer_identity_guid(char *out, size_t out_sz)
 {
     FILE *f;
     char line[96] = "";
-    size_t i;
 
     if (!out || out_sz == 0)
         return;
@@ -79,13 +93,7 @@ void deneb_printer_identity_guid(char *out, size_t out_sz)
         (void)fgets(line, sizeof(line), f);
         pclose(f);
     }
-    deneb_printer_identity_copy_line_or_default(line,
-                                                DENEB_PRINTER_DEFAULT_GUID,
-                                                out, out_sz);
-    for (i = 0; out[i]; i++)
-        out[i] = (char)tolower((unsigned char)out[i]);
-    if (!deneb_print_is_cluster_guid(out))
-        snprintf(out, out_sz, "%s", DENEB_PRINTER_DEFAULT_GUID);
+    deneb_printer_identity_normalize_guid(line, out, out_sz);
 }
 
 void deneb_printer_identity_display_id(char *out, size_t out_sz)
