@@ -19,6 +19,9 @@ typedef struct screen_ops {
     lv_obj_t *(*create)(void);      /* Create and return the screen object */
     void (*destroy)(void);          /* Cleanup when screen is popped */
     bool show_back;                 /* Show back button in header */
+    /* Optional display-only update on reveal and at this period while visible. */
+    void (*refresh)(void);
+    uint32_t refresh_period_ms;
 } screen_ops_t;
 
 /**

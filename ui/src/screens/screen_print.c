@@ -20,7 +20,6 @@ static lv_obj_t *file_list = NULL;
 static lv_obj_t *status_msg = NULL;
 static lv_obj_t *preview_label = NULL;
 static lv_obj_t *time_left_label = NULL;
-static lv_timer_t *print_timer = NULL;
 
 #define MAX_FILES 32
 #define MAX_FILENAME 64
@@ -71,12 +70,6 @@ static void update_print_runtime(void)
 
     format_duration(s->time_left, duration, sizeof(duration));
     lv_label_set_text_fmt(time_left_label, "Left %s", duration);
-}
-
-static void print_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    update_print_runtime();
 }
 
 static void scan_print_files(const char *path)
@@ -347,18 +340,12 @@ static lv_obj_t *print_create(void)
 
     /* Initial scan */
     refresh_btn_cb(NULL);
-    update_print_runtime();
-    print_timer = lv_timer_create(print_timer_cb, 500, NULL);
 
     return print_screen;
 }
 
 static void print_destroy(void)
 {
-    if (print_timer) {
-        lv_timer_delete(print_timer);
-        print_timer = NULL;
-    }
     print_screen = NULL;
     file_list = NULL;
     status_msg = NULL;
@@ -373,4 +360,6 @@ const screen_ops_t screen_print = {
     .create = print_create,
     .destroy = print_destroy,
     .show_back = true,
+    .refresh = update_print_runtime,
+    .refresh_period_ms = 500,
 };

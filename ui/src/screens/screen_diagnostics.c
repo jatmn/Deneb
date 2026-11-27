@@ -19,7 +19,6 @@ static lv_obj_t *status_label = NULL;
 static lv_obj_t *air_label = NULL;
 static lv_obj_t *build_temp_label = NULL;
 static lv_obj_t *fan_label = NULL;
-static lv_timer_t *diag_timer = NULL;
 static int fan_on = 0;
 
 static void update_diag_labels(void)
@@ -37,12 +36,6 @@ static void update_diag_labels(void)
     lv_label_set_text_fmt(fan_label, locale_get("diagnostics.fan_fmt"),
                           fan_on ? locale_get("diagnostics.on")
                                  : locale_get("diagnostics.off"));
-}
-
-static void diag_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    update_diag_labels();
 }
 
 static void fan_toggle_cb(lv_event_t *e)
@@ -144,18 +137,11 @@ static lv_obj_t *diagnostics_create(void)
     lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);
     lv_obj_set_style_text_font(status_label, &deneb_font_12, 0);
 
-    update_diag_labels();
-    diag_timer = lv_timer_create(diag_timer_cb, 1000, NULL);
-
     return diagnostics_screen;
 }
 
 static void diagnostics_destroy(void)
 {
-    if (diag_timer) {
-        lv_timer_delete(diag_timer);
-        diag_timer = NULL;
-    }
     diagnostics_screen = NULL;
     status_label = NULL;
     air_label = NULL;
@@ -168,4 +154,6 @@ const screen_ops_t screen_diagnostics = {
     .create = diagnostics_create,
     .destroy = diagnostics_destroy,
     .show_back = true,
+    .refresh = update_diag_labels,
+    .refresh_period_ms = 1000,
 };

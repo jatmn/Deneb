@@ -27,7 +27,6 @@ static lv_obj_t *y_pos_label = NULL;
 static lv_obj_t *z_pos_label = NULL;
 static lv_obj_t *step_label = NULL;
 static lv_obj_t *jog_status_label = NULL;
-static lv_timer_t *pos_timer = NULL;
 
 static const int step_sizes[] = {1, 10, 50};
 static int current_step_idx = 1;
@@ -58,9 +57,8 @@ static void update_step_label(void)
         lv_label_set_text_fmt(step_label, "%d mm", step_sizes[current_step_idx]);
 }
 
-static void pos_timer_cb(lv_timer_t *timer)
+static void update_position(void)
 {
-    (void)timer;
     const printer_state_t *s = backend_get_state();
     if (x_pos_label)
         set_position_label(x_pos_label, "X", s->pos_x);
@@ -289,17 +287,11 @@ static lv_obj_t *jog_create(void)
     lv_obj_set_style_text_font(z_pos_label, &deneb_font_12, 0);
     lv_obj_align(z_pos_label, LV_ALIGN_RIGHT_MID, 0, 0);
 
-    pos_timer = lv_timer_create(pos_timer_cb, 250, NULL);
-
     return jog_screen;
 }
 
 static void jog_destroy(void)
 {
-    if (pos_timer) {
-        lv_timer_delete(pos_timer);
-        pos_timer = NULL;
-    }
     jog_screen = NULL;
     x_pos_label = NULL;
     y_pos_label = NULL;
@@ -313,4 +305,6 @@ const screen_ops_t screen_jog = {
     .create = jog_create,
     .destroy = jog_destroy,
     .show_back = true,
+    .refresh = update_position,
+    .refresh_period_ms = 250,
 };

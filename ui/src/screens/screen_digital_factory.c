@@ -24,7 +24,6 @@ static lv_obj_t *info_label = NULL;
 static lv_obj_t *status_label = NULL;
 static lv_obj_t *connect_button = NULL;
 static lv_obj_t *disconnect_button = NULL;
-static lv_timer_t *status_timer = NULL;
 static int disconnect_armed = 0;
 static bool binding_known;
 static bool cloud_bound;
@@ -232,12 +231,6 @@ static void refresh_status(void)
     update_button_states(status);
 }
 
-static void status_timer_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    refresh_status();
-}
-
 static void connect_cb(lv_event_t *e)
 {
     char status[160];
@@ -370,18 +363,11 @@ static lv_obj_t *df_create(void)
     lv_label_set_text(disconnect_lbl, locale_get("digital_factory.disconnect"));
     lv_obj_center(disconnect_lbl);
 
-    status_timer = lv_timer_create(status_timer_cb, 1000, NULL);
-    refresh_status();
-
     return df_screen;
 }
 
 static void df_destroy(void)
 {
-    if (status_timer) {
-        lv_timer_delete(status_timer);
-        status_timer = NULL;
-    }
     df_screen = NULL;
     info_label = NULL;
     status_label = NULL;
@@ -396,4 +382,6 @@ const screen_ops_t screen_digital_factory = {
     .create = df_create,
     .destroy = df_destroy,
     .show_back = true,
+    .refresh = refresh_status,
+    .refresh_period_ms = 1000,
 };

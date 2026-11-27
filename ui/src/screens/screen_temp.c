@@ -18,7 +18,6 @@ static lv_obj_t *bed_cur_label = NULL;
 static lv_obj_t *bed_target_label = NULL;
 static lv_obj_t *nozzle_slider = NULL;
 static lv_obj_t *bed_slider = NULL;
-static lv_timer_t *temp_timer = NULL;
 
 static int temp_actions_allowed(void)
 {
@@ -33,9 +32,8 @@ static void set_celsius_label(lv_obj_t *label, float temp)
 }
 
 /* Live temperature update from backend */
-static void temp_timer_cb(lv_timer_t *timer)
+static void update_temperatures(void)
 {
-    (void)timer;
     const printer_state_t *s = backend_get_state();
     if (nozzle_cur_label)
         set_celsius_label(nozzle_cur_label, s->nozzle_temp_cur);
@@ -189,18 +187,11 @@ static lv_obj_t *temp_create(void)
                           locale_get("temp.cooldown"));
     lv_obj_center(cd_lbl);
 
-    /* Live temp update timer */
-    temp_timer = lv_timer_create(temp_timer_cb, 500, NULL);
-
     return temp_screen;
 }
 
 static void temp_destroy(void)
 {
-    if (temp_timer) {
-        lv_timer_delete(temp_timer);
-        temp_timer = NULL;
-    }
     temp_screen = NULL;
     nozzle_cur_label = NULL;
     nozzle_target_label = NULL;
@@ -215,4 +206,6 @@ const screen_ops_t screen_temp = {
     .create = temp_create,
     .destroy = temp_destroy,
     .show_back = true,
+    .refresh = update_temperatures,
+    .refresh_period_ms = 500,
 };

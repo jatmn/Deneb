@@ -45,7 +45,7 @@ static void expect_status(uint32_t at, bool can_connect, bool can_disconnect,
 {
     struct stat calls;
     tick = at;
-    status_timer_cb(NULL);
+    refresh_status();
     assert(lv_obj_has_state(connect_button, LV_STATE_DISABLED) == !can_connect);
     assert(lv_obj_has_state(disconnect_button, LV_STATE_DISABLED) == !can_disconnect);
     assert(strcmp(lv_label_get_text(status_label), label) == 0);
