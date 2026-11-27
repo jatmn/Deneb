@@ -743,6 +743,7 @@ static int extract_zip_candidate(const char *ufp_path,
     if (!ufp_path || !candidate || !out || !out_size)
         return -1;
 
+    const uint32_t compressed_size = candidate->compressed_size;
     *out = NULL;
     *out_size = 0;
     f = fopen(ufp_path, "rbe");
@@ -758,24 +759,23 @@ static int extract_zip_candidate(const char *ufp_path,
     extra_len = read_le16(local + 28);
     data_offset = candidate->local_header_offset + 30U + name_len +
                   extra_len;
-    if (candidate->compressed_size > DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES)
+    if (compressed_size > DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES)
         goto done;
-    compressed = malloc(candidate->compressed_size);
+    compressed = malloc(compressed_size);
     if (!compressed)
         goto done;
 
-    if (read_file_at(f, data_offset, compressed,
-                     candidate->compressed_size) < 0) {
+    if (read_file_at(f, data_offset, compressed, compressed_size) < 0) {
         free(compressed);
         goto done;
     }
 
     if (candidate->method == 0) {
         inflated = compressed;
-        inflated_size = candidate->compressed_size;
+        inflated_size = compressed_size;
         compressed = NULL;
     } else {
-        if (inflate_zip_deflate(compressed, candidate->compressed_size,
+        if (inflate_zip_deflate(compressed, compressed_size,
                                 candidate->uncompressed_size, &inflated,
                                 &inflated_size) != 0) {
             free(compressed);
