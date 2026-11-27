@@ -89,6 +89,11 @@ Normal ACK, line-number, and `flow_last_response` churn is heartbeat-throttled
 so logs do not grow rapidly during healthy serial traffic. Resend, reject,
 error, state change, latency, and lifecycle information remains visible.
 
+Each location retains up to 1 MiB, split between the current log and one
+`deneb-printsvc.log.deneb-previous` generation. The daemon rotates full
+generations and rechecks the active file periodically to follow external
+rename or truncate operations.
+
 Continue measuring diagnostics log size during active soaks.
 
 ## Host Build
