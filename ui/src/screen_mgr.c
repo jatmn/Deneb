@@ -16,10 +16,40 @@ static int stack_top = -1;
 static lv_obj_t *header_bar = NULL;
 static lv_obj_t *header_title = NULL;
 static lv_obj_t *back_btn = NULL;
+static lv_timer_t *refresh_timer = NULL;
 
 static void update_header(void);
 static void invalidate_screen(void);
 static void back_btn_click_cb(lv_event_t *e);
+
+static void refresh_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    stack[stack_top]->refresh();
+}
+
+static void pause_refresh(void)
+{
+    if (refresh_timer)
+        lv_timer_pause(refresh_timer);
+}
+
+static void refresh_visible_screen(void)
+{
+    const screen_ops_t *ops = stack[stack_top];
+
+    if (!ops->refresh)
+        return;
+
+    ops->refresh();
+    if (!refresh_timer) {
+        refresh_timer = lv_timer_create(refresh_timer_cb, ops->refresh_period_ms, NULL);
+    } else {
+        lv_timer_set_period(refresh_timer, ops->refresh_period_ms);
+        lv_timer_reset(refresh_timer);
+        lv_timer_resume(refresh_timer);
+    }
+}
 
 void screen_mgr_init(void)
 {
@@ -62,6 +92,7 @@ void screen_mgr_push(const screen_ops_t *ops)
         return;
     }
 
+    pause_refresh();
     if (stack_top >= 0 && screen_objs[stack_top]) {
         lv_obj_add_flag(screen_objs[stack_top], LV_OBJ_FLAG_HIDDEN);
     }
@@ -71,6 +102,7 @@ void screen_mgr_push(const screen_ops_t *ops)
     screen_objs[stack_top] = ops->create();
     lv_obj_set_style_text_font(screen_objs[stack_top], &deneb_font_14, 0);
 
+    refresh_visible_screen();
     update_header();
     invalidate_screen();
 }
@@ -82,6 +114,7 @@ void screen_mgr_pop(void)
         return;
     }
 
+    pause_refresh();
     if (stack[stack_top]->destroy)
         stack[stack_top]->destroy();
     if (screen_objs[stack_top]) {
@@ -94,6 +127,7 @@ void screen_mgr_pop(void)
     if (screen_objs[stack_top])
         lv_obj_remove_flag(screen_objs[stack_top], LV_OBJ_FLAG_HIDDEN);
 
+    refresh_visible_screen();
     update_header();
     invalidate_screen();
 }
@@ -105,6 +139,7 @@ void screen_mgr_replace(const screen_ops_t *ops)
         return;
     }
 
+    pause_refresh();
     if (stack[stack_top]->destroy)
         stack[stack_top]->destroy();
     if (screen_objs[stack_top]) {
@@ -116,6 +151,7 @@ void screen_mgr_replace(const screen_ops_t *ops)
     screen_objs[stack_top] = ops->create();
     lv_obj_set_style_text_font(screen_objs[stack_top], &deneb_font_14, 0);
 
+    refresh_visible_screen();
     update_header();
     invalidate_screen();
 }
@@ -125,6 +161,7 @@ void screen_mgr_rebuild_stack(void)
     if (stack_top < 0)
         return;
 
+    pause_refresh();
     for (int i = 0; i <= stack_top; i++) {
         if (stack[i] && stack[i]->destroy)
             stack[i]->destroy();
@@ -145,6 +182,7 @@ void screen_mgr_rebuild_stack(void)
             lv_obj_add_flag(screen_objs[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    refresh_visible_screen();
     update_header();
     invalidate_screen();
 }

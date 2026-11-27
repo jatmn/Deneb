@@ -24,7 +24,7 @@ original Deneb work. It is an engineering inventory, not legal advice.
 | Print-service macros and G-code policies | Public G-code/controller documentation and observed printer behavior | Current Deneb implementation | MPL-2.0 | Minimal Deneb-authored sequences; no stock macro file copied |
 | Hugo | `gohugoio/hugo` | 0.170.1 (pinned in `website/vendor-pins/hugo.version`; `hugo_0.170.1_linux-amd64.tar.gz` SHA-256 `841a5462853aefc9942e4de1e8a5d75584b6a5181941e6ad3f1d745190e03cd8`) | Apache-2.0 | Public-site generator only; not a printer runtime |
 | Hextra | `github.com/imfing/hextra` | v0.13.0, locked by `website/go.sum` | MIT | Docs theme for `website/` |
-| FlexSearch | `nextapps-de/flexsearch` via the npm registry | 0.8.143 in `website/package-lock.json`, bundle SHA-256 `433e941a8a573ebb9931fc16fc75266ab6b93f569ac2fb4f3dc66882e0416f4c` | Apache-2.0 | Only the verified browser bundle is copied into the generated static site |
+| FlexSearch | `nextapps-de/flexsearch` via the npm registry | 0.8.212 in `website/package-lock.json`, bundle SHA-256 `62e33d2d18493ebd341e5692df6e0c7fc74a24bf038f2770f903f6da19525003` | Apache-2.0 | Only the verified browser bundle is copied into the generated static site |
 | Space Grotesk | Bunny Fonts / OFL project | Runtime CSS from `fonts.bunny.net` | OFL-1.1 | Public-site webfont |
 | IBM Plex Sans and IBM Plex Mono | Bunny Fonts / OFL project | Runtime CSS from `fonts.bunny.net` | OFL-1.1 | Public-site webfonts |
 
