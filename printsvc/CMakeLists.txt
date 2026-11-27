@@ -174,6 +174,18 @@ enable_testing()
 add_test(NAME deneb-printsvc-tests COMMAND deneb-printsvc-tests)
 
 if(BUILD_HOST_STUB)
+    add_executable(deneb-diagnostics-rotation-tests
+        tests/test_diagnostics_rotation.c
+        src/diagnostics_log.c
+    )
+    target_compile_definitions(deneb-diagnostics-rotation-tests PRIVATE
+        DENEB_PRINTSVC_DIAGNOSTIC_LOG="primary/printsvc.log"
+        DENEB_PRINTSVC_DIAGNOSTIC_LOG_FALLBACK="fallback/printsvc.log"
+    )
+    target_link_libraries(deneb-diagnostics-rotation-tests PRIVATE
+        deneb-printsvc-core -Wl,--wrap=clock_gettime)
+    add_test(NAME deneb-diagnostics-rotation-tests COMMAND deneb-diagnostics-rotation-tests)
+
     add_executable(deneb-motion-firmware-verify src/motion_firmware_verify.c)
     add_executable(deneb-motion-firmware-verify-tests tests/test_motion_firmware_verify.c)
     target_link_libraries(deneb-motion-firmware-verify-tests PRIVATE deneb-printsvc-core)
