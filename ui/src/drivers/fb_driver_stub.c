@@ -6,12 +6,13 @@
  */
 
 #include "fb_driver.h"
+#include "fb_draw_buffer.h"
 #include <stdio.h>
 #include <string.h>
-#include "lvgl.h"
 
 static lv_display_t *disp = NULL;
-static uint16_t frame[320 * 240];
+static uint16_t frame[FB_WIDTH * FB_HEIGHT];
+_Alignas(LV_DRAW_BUF_ALIGN) static uint8_t buf[FB_DRAW_BYTES];
 
 static void fb_flush_cb(lv_display_t *d, const lv_area_t *area, uint8_t *px_map)
 {
@@ -24,7 +25,7 @@ static void fb_flush_cb(lv_display_t *d, const lv_area_t *area, uint8_t *px_map)
     const uint8_t *src_row = px_map;
 
     for (int32_t y = area->y1; y <= area->y2; y++) {
-        uint16_t *dst = &frame[(size_t)y * 320U + (size_t)area->x1];
+        uint16_t *dst = &frame[(size_t)y * FB_WIDTH + (size_t)area->x1];
         memcpy(dst, src_row, row_bytes);
         src_row += src_stride;
     }
@@ -36,11 +37,10 @@ int fb_driver_init(void)
 {
     memset(frame, 0, sizeof(frame));
 
-    disp = lv_display_create(320, 240);
+    disp = lv_display_create(FB_WIDTH, FB_HEIGHT);
     if (!disp) return -1;
 
-    static lv_color_t buf[320 * 40];
-    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_color_format(disp, FB_COLOR_FORMAT);
     lv_display_set_flush_cb(disp, fb_flush_cb);
     lv_display_set_buffers(disp, buf, NULL, sizeof(buf),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -62,8 +62,8 @@ int fb_driver_save_ppm(const char *path)
     FILE *f = fopen(path, "wb");
     if (!f) return -1;
 
-    fprintf(f, "P6\n320 240\n255\n");
-    for (size_t i = 0; i < 320U * 240U; i++) {
+    fprintf(f, "P6\n%d %d\n255\n", FB_WIDTH, FB_HEIGHT);
+    for (size_t i = 0; i < FB_WIDTH * FB_HEIGHT; i++) {
         uint16_t c = frame[i];
         unsigned char rgb[3] = {
             (unsigned char)(((c >> 11) & 0x1f) * 255 / 31),

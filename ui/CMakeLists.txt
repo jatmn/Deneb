@@ -308,6 +308,13 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
     add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
 
+    add_executable(deneb-framebuffer-tests tests/test_framebuffer.c src/drivers/fb_driver.c)
+    target_include_directories(deneb-framebuffer-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-framebuffer-tests PRIVATE deneb-lvgl m pthread)
+    target_link_options(deneb-framebuffer-tests PRIVATE -Wl,--wrap=open -Wl,--wrap=ioctl
+        -Wl,--wrap=mmap -Wl,--wrap=msync -Wl,--wrap=munmap -Wl,--wrap=close)
+    add_test(NAME deneb-framebuffer-tests COMMAND deneb-framebuffer-tests)
+
     add_executable(deneb-status-screen-tests
         tests/test_status_screen.c
         src/app_fonts.c
