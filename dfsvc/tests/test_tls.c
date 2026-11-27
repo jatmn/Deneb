@@ -1,14 +1,18 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include <mbedtls/ssl.h>
+#include "../src/ws_upgrade_header.h"
 
 static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len);
 static int fixture_ssl_check_pending(const mbedtls_ssl_context *ssl);
+static bool fixture_upgrade_header_is_text(const char *header, size_t length);
 
 #define mbedtls_ssl_read fixture_ssl_read
 #define mbedtls_ssl_check_pending fixture_ssl_check_pending
+#define ws_upgrade_header_is_text fixture_upgrade_header_is_text
 #define main deneb_connector_main
 #include "../src/main.c"
 #undef main
+#undef ws_upgrade_header_is_text
 #undef mbedtls_ssl_check_pending
 #undef mbedtls_ssl_read
 #include <arpa/inet.h>
@@ -24,22 +28,33 @@ typedef struct {
     const char *key_file;
     mbedtls_ssl_protocol_version version;
     bool expect_success;
+    bool reject_upgrade;
 } test_tls_server_t;
 
-static bool ticket_only_read;
-static unsigned ticket_reads;
-static ws_client_t *ticket_client;
+static bool count_upgrade_reads;
+static unsigned upgrade_reads;
+static int first_retry;
+static unsigned retry_reads;
+static ws_client_t *retry_client;
+static bool reject_upgrade;
+
+static bool fixture_upgrade_header_is_text(const char *header, size_t length)
+{
+    return !reject_upgrade && ws_upgrade_header_is_text(header, length);
+}
 
 static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len)
 {
-    if (!ticket_only_read)
+    if (count_upgrade_reads)
+        ++upgrade_reads;
+    if (!first_retry)
         return mbedtls_ssl_read(ssl, buf, len);
-    switch (++ticket_reads) {
+    switch (++retry_reads) {
     case 1:
-        return MBEDTLS_ERR_SSL_WANT_READ;
+        return first_retry;
     case 2: {
-        // A discarded ticket can lead directly to a transport read.
-        int rc = ws_tls_receive(ticket_client, buf, len, 100);
+        // TLS can ask the transport again as it processes control records.
+        int rc = ws_tls_receive(retry_client, buf, len, 100);
         assert(rc == MBEDTLS_ERR_SSL_WANT_READ);
         return rc;
     }
@@ -50,9 +65,16 @@ static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t
 
 static int fixture_ssl_check_pending(const mbedtls_ssl_context *ssl)
 {
-    if (ticket_only_read)
-        return ticket_reads == 1;
+    if (first_retry)
+        return retry_reads == 1;
     return mbedtls_ssl_check_pending(ssl);
+}
+
+static void expect_client_ping(mbedtls_ssl_context *ssl)
+{
+    uint8_t ping[6];
+    assert(mbedtls_ssl_read(ssl, ping, sizeof(ping)) == (int)sizeof(ping));
+    assert(ping[0] == 0x89 && ping[1] == 0x80);
 }
 
 static void serve_websocket(test_tls_server_t *server)
@@ -112,14 +134,31 @@ static void serve_websocket(test_tls_server_t *server)
                            "Upgrade: websocket\r\nConnection: Upgrade\r\n"
                            "Sec-WebSocket-Accept: %s\r\n\r\n", accept);
         assert(len > 0 && (size_t)len < sizeof(response));
-        assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
-        if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
-            uint8_t ping[6];
-            assert(mbedtls_ssl_read(&ssl, ping, sizeof(ping)) == (int)sizeof(ping));
-            assert(ping[0] == 0x89 && ping[1] == 0x80);
+        if (server->reject_upgrade) {
+            assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
+        } else if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
+            assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
+            expect_client_ping(&ssl);
+            const uint8_t frame[] = {0x81, 2, 'o', 'k'};
+            assert(mbedtls_ssl_write(&ssl, frame, sizeof(frame)) == (int)sizeof(frame));
+        } else {
+            /* Split the final CRLF and append a pong and a text frame. */
+            assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len - 1) == len - 1);
+            const uint8_t end_and_frame[] = {'\n', 0x8a, 0, 0x81, 2, 'o', 'k'};
+            assert(mbedtls_ssl_write(&ssl, end_and_frame, sizeof(end_and_frame)) ==
+                   (int)sizeof(end_and_frame));
+            expect_client_ping(&ssl);
+
+            /* One TLS application record. Keep the socket quiet until the client is done. */
+            const uint8_t pong_and_frames[] = {
+                0x8a, 0, 0x81, 3, 'o', 'n', 'e', 0x81, 3, 't', 'w', 'o',
+            };
+            assert(mbedtls_ssl_write(&ssl, pong_and_frames, sizeof(pong_and_frames)) ==
+                   (int)sizeof(pong_and_frames));
+            expect_client_ping(&ssl);
+            const uint8_t pong[] = {0x8a, 0};
+            assert(mbedtls_ssl_write(&ssl, pong, sizeof(pong)) == (int)sizeof(pong));
         }
-        const uint8_t frame[] = {0x81, 2, 'o', 'k'};
-        assert(mbedtls_ssl_write(&ssl, frame, sizeof(frame)) == (int)sizeof(frame));
     } else {
         assert(rc != 0);
     }
@@ -129,6 +168,47 @@ static void serve_websocket(test_tls_server_t *server)
     mbedtls_pk_free(&key);
     mbedtls_x509_crt_free(&cert);
     mbedtls_ssl_ticket_free(&tickets);
+}
+
+static void expect_buffered_frame(ws_client_t *client, const char *expected)
+{
+    assert(mbedtls_net_poll(&client->net, MBEDTLS_NET_POLL_READ, 0) == 0);
+    assert(ws_wait_readable(client, 250) == 1);
+    char message[16];
+    assert(ws_read_text(client, message, sizeof(message)) == 0);
+    assert(strcmp(message, expected) == 0);
+}
+
+static void assert_buffered_frames(ws_client_t *client)
+{
+    assert(upgrade_reads <= 4);
+    char message[16];
+    assert(mbedtls_net_poll(&client->net, MBEDTLS_NET_POLL_READ, 0) == 0);
+    assert(ws_wait_readable(client, 250) == 1);
+    assert(ws_read_text(client, message, sizeof(message)) == 1);
+    expect_buffered_frame(client, "ok");
+    assert(ws_send_control(client, 0x9, NULL, 0) == 0);
+    assert(ws_wait_readable(client, 1000) == 1);
+    assert(ws_read_text(client, message, sizeof(message)) == 1);
+    expect_buffered_frame(client, "one");
+    expect_buffered_frame(client, "two");
+    assert(ws_send_control(client, 0x9, NULL, 0) == 0);
+    assert(ws_wait_readable(client, 1000) == 1);
+    assert(ws_read_text(client, message, sizeof(message)) == 1);
+}
+
+static void assert_idle_retries(ws_client_t *client, char *message, size_t cap)
+{
+    static const int retries[] = {MBEDTLS_ERR_SSL_WANT_READ, MBEDTLS_ERR_SSL_WANT_WRITE,
+                                  MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET};
+    retry_client = client;
+    for (size_t i = 0; i < sizeof(retries) / sizeof(retries[0]); i++) {
+        retry_reads = 0;
+        first_retry = retries[i];
+        assert(ws_read_text(client, message, cap) == WS_READ_IDLE);
+        assert(retry_reads == 2);
+    }
+    first_retry = 0;
 }
 
 static void assert_connection(test_tls_server_t *server, const char *host,
@@ -156,20 +236,22 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     assert(snprintf(url.host, sizeof(url.host), "%s", host) > 0);
     assert(snprintf(url.port, sizeof(url.port), "%u", (unsigned)ntohs(address.sin_port)) > 0);
     ws_client_t client;
+    count_upgrade_reads = true;
+    upgrade_reads = 0;
+    reject_upgrade = server->reject_upgrade;
     int rc = ws_connect(&client, &url, ca_directory);
+    reject_upgrade = false;
+    count_upgrade_reads = false;
     bool connected = client.connected;
-    if (connected) {
+    bool expect_connected = server->expect_success && !server->reject_upgrade;
+    assert((rc == 0) == expect_connected && connected == expect_connected);
+    if (connected && server->version == MBEDTLS_SSL_VERSION_TLS1_2) {
+        assert_buffered_frames(&client);
+    } else if (connected) {
         char message[16];
-        if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
-            // Script ticket processing while the authenticated peer waits for our ping.
-            ticket_client = &client;
-            ticket_reads = 0;
-            ticket_only_read = true;
-            assert(ws_read_text(&client, message, sizeof(message)) == WS_READ_IDLE);
-            assert(ticket_reads == 2);
-            ticket_only_read = false;
-            assert(ws_send_control(&client, 0x9, NULL, 0) == 0);
-        }
+        // The TLS 1.3 peer waits for our ping while these reads yield the loop.
+        assert_idle_retries(&client, message, sizeof(message));
+        assert(ws_send_control(&client, 0x9, NULL, 0) == 0);
         int received = ws_read_text(&client, message, sizeof(message));
         int64_t deadline = monotonic_ms() + 1000;
         while (received == WS_READ_IDLE) {
@@ -182,13 +264,16 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     ws_free(&client);
     int status;
     assert(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    assert((rc == 0) == server->expect_success);
-    assert(connected == server->expect_success);
 }
 
 int main(int argc, char **argv)
 {
     assert(argc == 5);
+    const char text[] = {'o', 'k', '\r', '\n'};
+    const char bytes[] = {'o', 'k', '\0', 'x'};
+    assert(ws_upgrade_header_is_text(text, sizeof(text)));
+    assert(ws_upgrade_header_is_text(bytes, 2));
+    assert(!ws_upgrade_header_is_text(bytes, sizeof(bytes)));
     assert(psa_crypto_init() == PSA_SUCCESS);
     char accept[32];
     assert(ws_expected_accept("dGhlIHNhbXBsZSBub25jZQ==", accept) == 0);
@@ -201,6 +286,9 @@ int main(int argc, char **argv)
         .expect_success = true,
     };
     assert_connection(&server, "localhost", argv[3]);
+    server.reject_upgrade = true;
+    assert_connection(&server, "localhost", argv[3]);
+    server.reject_upgrade = false;
     server.expect_success = false;
     assert_connection(&server, "127.0.0.1", argv[3]);
     assert_connection(&server, "localhost", argv[4]);
