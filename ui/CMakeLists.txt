@@ -118,6 +118,25 @@ foreach(pattern IN LISTS LVGL_SOURCE_GLOBS)
     list(APPEND LVGL_SOURCES ${matched_sources})
 endforeach()
 list(REMOVE_DUPLICATES LVGL_SOURCES)
+
+# Let a failed rounded-border mask allocation reach LVGL's recovery branch.
+# Keep the pinned checkout clean and leave other assertions enabled.
+set(LVGL_BORDER_SOURCE "${LVGL_DIR}/src/draw/sw/lv_draw_sw_border.c")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${LVGL_BORDER_SOURCE}")
+file(READ "${LVGL_BORDER_SOURCE}" LVGL_BORDER_TEXT)
+string(REPLACE "\r\n" "\n" LVGL_BORDER_TEXT "${LVGL_BORDER_TEXT}")
+string(REPLACE "    LV_ASSERT_MALLOC(mask_buf);\n    if(!mask_buf) {"
+               "    if(!mask_buf) {"
+       LVGL_BORDER_FIXED "${LVGL_BORDER_TEXT}")
+if(NOT LVGL_BORDER_FIXED STREQUAL LVGL_BORDER_TEXT)
+    set(LVGL_BORDER_COPY "${CMAKE_CURRENT_BINARY_DIR}/lv_draw_sw_border.c")
+    file(GENERATE OUTPUT "${LVGL_BORDER_COPY}" CONTENT "${LVGL_BORDER_FIXED}")
+    list(REMOVE_ITEM LVGL_SOURCES "${LVGL_BORDER_SOURCE}")
+    list(APPEND LVGL_SOURCES "${LVGL_BORDER_COPY}")
+    set_source_files_properties("${LVGL_BORDER_COPY}" PROPERTIES
+        INCLUDE_DIRECTORIES "${LVGL_DIR}/src/draw/sw")
+endif()
+
 # The LVGL adapter includes its bundled header by relative path.
 set_source_files_properties(
     "${LVGL_DIR}/src/image/lv_lodepng.c"
@@ -307,6 +326,13 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
     add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
+
+    add_executable(deneb-lvgl-border-tests tests/test_border_allocation.c)
+    target_include_directories(deneb-lvgl-border-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-lvgl-border-tests PRIVATE deneb-lvgl m pthread)
+    target_link_options(deneb-lvgl-border-tests PRIVATE -Wl,--wrap=lv_malloc)
+    add_test(NAME deneb-lvgl-border-tests COMMAND deneb-lvgl-border-tests)
+    set_tests_properties(deneb-lvgl-border-tests PROPERTIES TIMEOUT 5)
 
     add_executable(deneb-framebuffer-tests tests/test_framebuffer.c src/drivers/fb_driver.c)
     target_include_directories(deneb-framebuffer-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
