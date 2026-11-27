@@ -75,6 +75,25 @@ static struct {
     http_response_t response;
 } preparation;
 
+typedef struct {
+    char *body;
+    size_t body_len;
+    size_t body_written;
+    size_t header_len;
+    size_t header_written;
+    int keep_alive;
+    int is_sse;
+} response_write_t;
+
+typedef struct pending_response {
+    struct pending_response *next;
+    int fd;
+    response_write_t output;
+    char headers[];
+} pending_response_t;
+
+static pending_response_t *pending_responses;
+
 static void signal_handler(int sig)
 {
     (void)sig;
@@ -88,19 +107,31 @@ static int set_nonblocking(int fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
+enum write_result {
+    WRITE_ERROR,
+    WRITE_BLOCKED,
+    WRITE_COMPLETE
+};
+
+static enum write_result write_progress(int fd, const char *data, size_t len, size_t *written)
+{
+    while (*written < len) {
+        ssize_t nw = write(fd, data + *written, len - *written);
+        if (nw < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return WRITE_BLOCKED;
+            return WRITE_ERROR;
+        }
+        if (nw == 0) return WRITE_ERROR;
+        *written += (size_t)nw;
+    }
+    return WRITE_COMPLETE;
+}
+
 static int write_all(int fd, const char *data, size_t len)
 {
     size_t written = 0;
-    while (written < len) {
-        ssize_t nw = write(fd, data + written, len - written);
-        if (nw < 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
-        if (nw == 0) return -1;
-        written += (size_t)nw;
-    }
-    return 0;
+    return write_progress(fd, data, len, &written) == WRITE_COMPLETE ? 0 : -1;
 }
 
 static uint64_t monotonic_ms(void)
@@ -239,8 +270,27 @@ static void release_upload(upload_t *upload)
     upload->request = NULL;
 }
 
+static pending_response_t **pending_response_slot(int fd)
+{
+    pending_response_t **slot = &pending_responses;
+    while (*slot && (*slot)->fd != fd)
+        slot = &(*slot)->next;
+    return slot;
+}
+
+static void release_response(pending_response_t **slot)
+{
+    pending_response_t *pending = *slot;
+    if (pending) {
+        *slot = pending->next;
+        free(pending->output.body);
+        free(pending);
+    }
+}
+
 static void close_client(int fd)
 {
+    release_response(pending_response_slot(fd));
     upload_t *upload = find_upload(fd);
     if (upload && upload == preparation.upload) {
         upload->client_fd = -1;
@@ -253,30 +303,91 @@ static void close_client(int fd)
     close(fd);
 }
 
+static enum write_result write_response(int fd, const char *headers, response_write_t *output)
+{
+    enum write_result result = write_progress(fd, headers, output->header_len, &output->header_written);
+    if (result != WRITE_COMPLETE)
+        return result;
+    return write_progress(fd, output->body, output->body_len, &output->body_written);
+}
+
+static void finish_response(int fd, int is_sse, int keep_alive, enum write_result result)
+{
+    if (result != WRITE_COMPLETE || (!is_sse && !keep_alive)) {
+        close_client(fd);
+        return;
+    }
+
+    /* SSE only needs disconnect events. Other persistent sockets read again. */
+    struct epoll_event ev = {
+        .events = is_sse ? EPOLLRDHUP | EPOLLHUP | EPOLLERR : EPOLLIN,
+        .data.fd = fd,
+    };
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) < 0)
+        close_client(fd);
+    else if (is_sse)
+        sse_register_client(fd);
+}
+
+static int defer_response(int fd, const char *headers, const response_write_t *output)
+{
+    size_t remaining = output->header_len - output->header_written;
+    pending_response_t *pending = malloc(sizeof(*pending) + remaining);
+    if (!pending)
+        return -1;
+    pending->fd = fd;
+    pending->output = *output;
+    pending->output.header_len = remaining;
+    pending->output.header_written = 0;
+    memcpy(pending->headers, headers + output->header_written, remaining);
+
+    /* A write-side half-close can still read the pending response. */
+    struct epoll_event ev = { .events = EPOLLOUT, .data.fd = fd };
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) < 0) {
+        free(pending);
+        return -1;
+    }
+
+    pending->next = pending_responses;
+    pending_responses = pending;
+    return 0;
+}
+
+static void resume_response(int fd)
+{
+    pending_response_t **slot = pending_response_slot(fd);
+    pending_response_t *pending = *slot;
+    if (!pending)
+        return;
+
+    enum write_result result = write_response(fd, pending->headers, &pending->output);
+    if (result == WRITE_BLOCKED)
+        return;
+    int is_sse = pending->output.is_sse;
+    int keep_alive = pending->output.keep_alive;
+    release_response(slot);
+    finish_response(fd, is_sse, keep_alive, result);
+}
+
 static void send_response(int fd, http_response_t *resp)
 {
     char headers[768];
     int header_len = api_http_serialize_headers(resp, headers, sizeof(headers));
-    int sent = header_len > 0 &&
-        write_all(fd, headers, (size_t)header_len) == 0 &&
-        write_all(fd, resp->body, resp->body_len) == 0;
-    free(resp->body);
-
-    if (!sent) {
-        close_client(fd);
-    } else if (resp->is_sse) {
-        /* Re-register fd to only detect disconnection, not incoming data. */
-        struct epoll_event sev = {
-            .events = EPOLLRDHUP | EPOLLHUP | EPOLLERR,
-            .data.fd = fd,
+    enum write_result result = WRITE_ERROR;
+    if (header_len > 0) {
+        response_write_t output = {
+            .body = resp->body,
+            .body_len = resp->body_len,
+            .header_len = (size_t)header_len,
+            .keep_alive = resp->keep_alive,
+            .is_sse = resp->is_sse,
         };
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &sev) == 0)
-            sse_register_client(fd);
-        else
-            close_client(fd);
-    } else if (!resp->keep_alive) {
-        close_client(fd);
+        result = write_response(fd, headers, &output);
+        if (result == WRITE_BLOCKED && defer_response(fd, headers, &output) == 0)
+            return;
     }
+    free(resp->body);
+    finish_response(fd, resp->is_sse, resp->keep_alive, result);
 }
 
 static void set_upload_failed(http_response_t *resp)
@@ -584,6 +695,8 @@ int main(int argc, char *argv[])
                     receive_upload(upload);
                 } else if (ready & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
                     close_client(fd);
+                } else if (ready & EPOLLOUT) {
+                    resume_response(fd);
                 } else if (!upload && (ready & EPOLLIN)) {
                     handle_client(fd);
                 }
@@ -614,6 +727,9 @@ int main(int argc, char *argv[])
         pthread_join(preparation.thread, NULL);
         collect_print_upload();
     }
+
+    while (pending_responses)
+        close_client(pending_responses->fd);
 
     /* Cleanup SSE clients */
     for (int i = 0; i < sse_client_count; i++) {

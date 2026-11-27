@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
+const { once } = require('node:events');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -13,6 +14,7 @@ const [apiBinary, lighttpd, packagedConfig, cmake, unzip] = process.argv.slice(2
 const DEADLINE_MS = 2000;
 const SSE_CLIENTS = 4;
 const STATUS_PATH = '/api/v1/printer/status';
+const LOCALE_PATH = '/api/v1/deneb/locale/test';
 const UPLOAD_PATH = '/cluster-api/v1/print_jobs';
 const boundary = 'deneb-host-upload';
 const sockets = new Set();
@@ -95,6 +97,35 @@ function get(port, pathname) {
         req.setTimeout(DEADLINE_MS, () => req.destroy(new Error('GET deadline exceeded for ' + pathname)));
         req.end();
     });
+}
+
+function localeBody(length) {
+    const prefix = '{"example":"';
+    const suffix = 'é"}\n';
+    return prefix + 'x'.repeat(length - Buffer.byteLength(prefix + suffix)) + suffix;
+}
+
+function pausedLocale(apiSocket) {
+    const socket = net.createConnection({ path: apiSocket, allowHalfOpen: true, highWaterMark: 1024 });
+    trackSocket(socket);
+    socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error('Paused locale response timed out')));
+    const received = [];
+    const reply = new Promise((resolve, reject) => {
+        socket.on('data', (chunk) => received.push(chunk));
+        socket.once('error', reject);
+        socket.once('end', () => resolve(Buffer.concat(received)));
+        socket.once('close', () => reject(new Error('Locale socket closed before reply')));
+    });
+    reply.catch(() => {});
+    socket.pause();
+    const started = once(socket, 'readable');
+    socket.once('connect', () => socket.end(
+        'GET ' + LOCALE_PATH + ' HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'));
+    return {
+        started,
+        finish: () => { socket.resume(); return reply; },
+        disconnect: () => socket.destroy()
+    };
 }
 
 function liveStatus(port) {
@@ -242,13 +273,19 @@ async function main() {
             ''
         ].join('\n'), { mode: 0o700 });
         fs.mkdirSync(path.join(root, '3D'));
+        fs.mkdirSync(path.join(root, 'Metadata'));
         fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
         // Keep the compressed upload larger than the API's receive chunk.
         const comments = Array.from({ length: 512 }, (_, index) =>
             ';' + createHash('sha256').update(String(index)).digest('hex') + '\n');
         const gcode = ';TIME:12\nG28\n' + comments.join('');
         fs.writeFileSync(path.join(root, '3D', 'model.gcode'), gcode);
-        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip', '3D/model.gcode'], { cwd: root });
+        // A 1×1 opaque red RGBA PNG. The accepted upload must publish a red preview.
+        fs.writeFileSync(path.join(root, 'Metadata', 'thumbnail.png'), Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+            'base64'));
+        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip',
+            '3D/model.gcode', 'Metadata/thumbnail.png'], { cwd: root });
         const archive = fs.readFileSync(path.join(root, 'job.ufp'));
         const uploadedBodyExists = () => fs.readdirSync(temp).some((file) =>
             file.startsWith('deneb-upload-') && fs.statSync(path.join(temp, file), { throwIfNoEntry: false })?.size > 0);
@@ -276,18 +313,7 @@ async function main() {
         assert.equal((await get(port, STATUS_PATH)).code, 200);
         const locales = path.join(root, 'locales');
         fs.mkdirSync(locales);
-        const localePrefix = '{"example":"';
-        const localeSuffix = 'é"}\n';
-        for (const length of [65023, 65024, 65025, 65536]) {
-            const translation = 'x'.repeat(length - Buffer.byteLength(localePrefix + localeSuffix));
-            const body = localePrefix + translation + localeSuffix;
-            fs.writeFileSync(path.join(locales, 'test.json'), body);
-            const response = await get(port, '/api/v1/deneb/locale/test');
-            assert.equal(response.code, 200);
-            assert.equal(response.headers['content-length'], String(length), 'locale Content-Length');
-            assert.ok(Buffer.from(response.data).equals(Buffer.from(body)), 'byte-exact locale response');
-            assert.equal(JSON.parse(response.data).example, translation + 'é');
-        }
+        const localePath = path.join(locales, 'test.json');
         await withinDeadline('REST client socket did not close', () => sockets.size === 0);
         const baseline = [process.pid, api.pid, proxy.pid].map(countDescriptors);
 
@@ -299,6 +325,38 @@ async function main() {
             }));
         const active = [api.pid, proxy.pid].map(countDescriptors);
         assert.ok(active[0] >= baseline[1] + SSE_CLIENTS, 'API accepted four SSE clients');
+
+        const fullLocale = Buffer.from(localeBody(65536));
+        fs.writeFileSync(localePath, fullLocale);
+        const paused = pausedLocale(apiSocket);
+        await paused.started;
+        await assertResponsive(port, clients, 'while a locale reader paused');
+        const received = await paused.finish();
+        const headerEnd = received.indexOf('\r\n\r\n');
+        assert.ok(headerEnd > 0);
+        const headers = received.subarray(0, headerEnd + 2).toString();
+        assert.match(headers, /^HTTP\/1\.1 200 OK\r\n/);
+        assert.match(headers, /\r\nContent-Length: 65536\r\n/);
+        const body = received.subarray(headerEnd + 4);
+        assert.equal(body.length, fullLocale.length, 'paused reader received the declared body length');
+        assert.ok(body.equals(fullLocale), 'byte-exact locale response after resuming');
+
+        const abandoned = pausedLocale(apiSocket);
+        await abandoned.started;
+        abandoned.disconnect();
+        await withinDeadline('Paused responses did not release their sockets', () =>
+            countDescriptors(api.pid) === active[0] && sockets.size === SSE_CLIENTS);
+
+        for (const length of [65023, 65024, 65025, 65536]) {
+            const expected = localeBody(length);
+            fs.writeFileSync(localePath, expected);
+            const response = await get(port, LOCALE_PATH);
+            assert.equal(response.code, 200);
+            assert.equal(response.headers['content-length'], String(length), 'locale Content-Length');
+            assert.ok(Buffer.from(response.data).equals(Buffer.from(expected)), 'byte-exact locale response');
+            assert.deepEqual(JSON.parse(response.data), JSON.parse(expected));
+        }
+        await withinDeadline('Locale proxy sockets did not close', () => sockets.size === SSE_CLIENTS);
 
         const interrupted = startUpload(port, archive, 'interrupted.ufp');
         await withinDeadline('Partial multipart data did not reach the API', uploadedBodyExists);
@@ -347,6 +405,8 @@ async function main() {
         assert.equal(response.message, 'Print job accepted');
         assert.equal(response.name, 'completed.gcode');
         assert.equal(fs.readFileSync(path.join(spool, 'completed.gcode'), 'utf8'), gcode);
+        assert.deepEqual(fs.readFileSync(path.join(root, 'deneb-active-thumb.rgb565')),
+            Buffer.alloc(116 * 116 * 2, Buffer.from([0x00, 0xf8])));
         const pending = JSON.parse(fs.readFileSync(pendingJob, 'utf8'));
         assert.equal(pending.length, 1);
         assert.equal(pending[0].path, 'spool/completed.gcode');
