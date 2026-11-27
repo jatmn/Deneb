@@ -3777,6 +3777,27 @@ static void test_status_payload_helpers(void)
     assert(payload.has_native_stop_allowed);
     assert(!payload.native_stop_allowed);
     assert(payload.is_printing);
+
+    /* A transport span need not be terminated. Later bytes are another frame. */
+    const char frames[] = "{\"unknown\":{},\"file\":\"none\",\"name\":\"cube\\\"one.gcode\","
+                          "\"X\":\"2.5\",\"X\":12,\"Ttot\":\"200\",\"Tleft\":bad}"
+                          "\"denebActive\":true";
+    size_t json_len = sizeof(frames) - sizeof("\"denebActive\":true");
+    assert(deneb_status_payload_parse_span(frames, json_len, &payload) == 0);
+    assert(strcmp(payload.file, "cube\"one.gcode") == 0);
+    assert(payload.pos_x == 2.5f);
+    assert(payload.time_total == 200 && payload.time_left == 0);
+    assert(!payload.has_native_active && !payload.has_error);
+
+    const char embedded_nul[] = "{\"X\":7}\0{\"denebActive\":true}";
+    assert(deneb_status_payload_parse_span(embedded_nul, sizeof(embedded_nul) - 1,
+                                           &payload) == 0);
+    assert(payload.pos_x == 7.0f && !payload.has_native_active);
+
+    const char truncated[] = {'"', 'X', '"', ':', '"', '7', '\\'};
+    assert(deneb_status_payload_parse_span(truncated, sizeof(truncated),
+                                           &payload) == 0);
+    assert(payload.pos_x == 0.0f);
 }
 
 static void test_status_state_helpers(void)

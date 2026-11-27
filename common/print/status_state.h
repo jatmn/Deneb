@@ -103,5 +103,12 @@ int deneb_status_state_apply_json(deneb_backend_status_state_t *state,
                                   size_t retained_filename_sz,
                                   deneb_print_stop_guard_t *stop_guard,
                                   uint32_t now_ms);
+int deneb_status_state_apply_json_span(deneb_backend_status_state_t *state,
+                                       const deneb_backend_status_state_t *prev,
+                                       const char *json, size_t json_len,
+                                       char *retained_filename,
+                                       size_t retained_filename_sz,
+                                       deneb_print_stop_guard_t *stop_guard,
+                                       uint32_t now_ms);
 
 #endif

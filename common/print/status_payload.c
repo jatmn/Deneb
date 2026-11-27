@@ -5,6 +5,7 @@
 #include "pending_job_file.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 void deneb_status_payload_init(deneb_status_payload_t *payload)
@@ -60,15 +61,6 @@ deneb_status_filename_context_t deneb_status_filename_context_from_fields(
     return ctx;
 }
 
-static void copy_json_value(const char *json, const char *key,
-                            char *out, size_t out_sz)
-{
-    if (!out || out_sz == 0)
-        return;
-    if (deneb_json_get_value(json, key, out, out_sz) != 0)
-        out[0] = '\0';
-}
-
 static int string_equals_ci(const char *a, const char *b)
 {
     unsigned char ca;
@@ -111,96 +103,191 @@ static int json_value_has_faults(const char *value)
     return *p != ']';
 }
 
-static int payload_has_native_error(const char *json)
+typedef enum {
+    STATUS_TEXT,
+    STATUS_FLOAT,
+    STATUS_INT,
+    STATUS_TRUTH,
+    STATUS_NAME,
+    STATUS_MANUAL_ID,
+    STATUS_MANUAL_STATE,
+    STATUS_ACTIVE,
+    STATUS_STOP_ALLOWED,
+    STATUS_ERROR_KEY,
+    STATUS_FAULTS,
+    STATUS_STATE
+} status_value_kind_t;
+
+typedef struct {
+    const char *name;
+    unsigned short offset;
+    unsigned short value_size;
+    unsigned char name_size;
+    unsigned char kind;
+} status_field_t;
+
+#define FIELD(name, kind, member) \
+    {name, offsetof(deneb_status_payload_t, member), \
+     sizeof(((deneb_status_payload_t *)0)->member), sizeof(name) - 1, STATUS_##kind}
+#define SPECIAL(name, kind) {name, 0, 0, sizeof(name) - 1, STATUS_##kind}
+
+/* In order of key length for the bounded lookup. */
+static const status_field_t status_fields[] = {
+    FIELD("E", FLOAT, pos_e),
+    FIELD("X", FLOAT, pos_x),
+    FIELD("Y", FLOAT, pos_y),
+    FIELD("Z", FLOAT, pos_z),
+    FIELD("req", TEXT, req),
+    FIELD("Ttot", INT, time_total),
+    FIELD("file", TEXT, file),
+    SPECIAL("name", NAME),
+    FIELD("uuid", TEXT, uuid),
+    FIELD("Tleft", INT, time_left),
+    FIELD("pcbId", INT, pcb_id),
+    FIELD("source", TEXT, source),
+    FIELD("bedTcur", FLOAT, bed_temp_cur),
+    FIELD("bedTset", FLOAT, bed_temp_set),
+    FIELD("flowAck", INT, flow_ack),
+    FIELD("firmware", TEXT, firmware),
+    FIELD("flowSent", INT, flow_sent),
+    FIELD("headTcur", FLOAT, nozzle_temp_cur),
+    FIELD("headTset", FLOAT, nozzle_temp_set),
+    SPECIAL("manualId", MANUAL_ID),
+    SPECIAL("denebState", STATE),
+    FIELD("flowReject", INT, flow_reject),
+    FIELD("flowResend", INT, flow_resend),
+    FIELD("pcbIdValid", TRUTH, pcb_id_valid),
+    SPECIAL("denebActive", ACTIVE),
+    FIELD("machineType", TEXT, machine_type),
+    SPECIAL("manualState", MANUAL_STATE),
+    FIELD("cloud_job_id", TEXT, cloud_job_id),
+    FIELD("flowInflight", INT, flow_inflight),
+    FIELD("denebErrorKey", ERROR_KEY, error_key),
+    FIELD("jobLineNumber", INT, job_line_number),
+    SPECIAL("received_faults", FAULTS),
+    FIELD("topcapIsPresent", TRUTH, topcap_present),
+    FIELD("denebErrorDetail", TEXT, error_detail),
+    SPECIAL("denebStopAllowed", STOP_ALLOWED),
+    FIELD("flowLastResponse", TEXT, flow_last_response),
+    FIELD("topcapTemperature", FLOAT, topcap_temp_cur),
+    FIELD("denebErrorCategory", TEXT, error_category),
+};
+
+#undef FIELD
+#undef SPECIAL
+
+enum { STATUS_FIELD_COUNT = sizeof(status_fields) / sizeof(status_fields[0]) };
+
+static int find_status_field(const char *name, size_t size)
 {
-    char value[64];
+    if (!size || size > status_fields[STATUS_FIELD_COUNT - 1].name_size)
+        return -1;
 
-    if (deneb_json_get_value(json, "received_faults",
-                             value, sizeof(value)) == 0 &&
-        json_value_has_faults(value))
-        return 1;
+    unsigned lower = 0;
+    unsigned upper = STATUS_FIELD_COUNT;
+    while (lower < upper) {
+        unsigned middle = lower + (upper - lower) / 2;
+        if (status_fields[middle].name_size < size)
+            lower = middle + 1;
+        else
+            upper = middle;
+    }
 
-    if (deneb_json_get_value(json, "denebState", value, sizeof(value)) == 0 &&
-        string_equals_ci(value, "error"))
-        return 1;
-
-    if (deneb_json_get_value(json, "denebErrorKey",
-                             value, sizeof(value)) == 0 &&
-        value[0] && !string_equals_ci(value, DENEB_PRINT_NONE_VALUE))
-        return 1;
-
-    return 0;
+    for (unsigned index = lower;
+         index < STATUS_FIELD_COUNT && status_fields[index].name_size == size;
+         index++) {
+        if (memcmp(name, status_fields[index].name, size) == 0)
+            return (int)index;
+    }
+    return -1;
 }
 
-int deneb_status_payload_parse(const char *json,
-                               deneb_status_payload_t *payload)
+static void parse_status_field(const status_field_t *field, const char *value,
+                               size_t size, deneb_status_payload_t *payload,
+                               char *name)
 {
-    char name[256];
-    int topcap_present = 0;
-    int native_active = 0;
-    int native_stop_allowed = 0;
+    char decoded[64];
+    char *target = (char *)payload + field->offset;
 
+    if (field->kind == STATUS_NAME) {
+        if (deneb_json_copy_value_span(value, size, name, sizeof(payload->file)) != 0)
+            name[0] = '\0';
+        return;
+    }
+    if (field->kind == STATUS_TEXT || field->kind == STATUS_ERROR_KEY) {
+        if (deneb_json_copy_value_span(value, size, target, field->value_size) != 0)
+            target[0] = '\0';
+        if (field->kind == STATUS_TEXT)
+            return;
+        /* The error flag has always accepted a wider key than the display. */
+    }
+
+    size_t decoded_size = sizeof(decoded);
+    if (field->kind == STATUS_TRUTH || field->kind == STATUS_ACTIVE ||
+        field->kind == STATUS_STOP_ALLOWED || field->kind == STATUS_MANUAL_ID)
+        decoded_size = 32;
+    if (deneb_json_copy_value_span(value, size, decoded, decoded_size) != 0)
+        return;
+
+    switch (field->kind) {
+    case STATUS_FLOAT: *(float *)target = strtof(decoded, NULL); break;
+    case STATUS_INT: *(int *)target = (int)strtol(decoded, NULL, 10); break;
+    case STATUS_TRUTH: *(int *)target = deneb_json_value_is_truthy(decoded); break;
+    case STATUS_MANUAL_ID: payload->manual_id = deneb_manual_id_parse(decoded); break;
+    case STATUS_MANUAL_STATE:
+        payload->manual_state = (deneb_manual_state_t)strtol(decoded, NULL, 10);
+        break;
+    case STATUS_ACTIVE:
+        payload->has_native_active = 1;
+        payload->native_active = deneb_json_value_is_truthy(decoded);
+        break;
+    case STATUS_STOP_ALLOWED:
+        payload->has_native_stop_allowed = 1;
+        payload->native_stop_allowed = deneb_json_value_is_truthy(decoded);
+        break;
+    case STATUS_FAULTS: payload->has_error |= json_value_has_faults(decoded); break;
+    case STATUS_STATE: payload->has_error |= string_equals_ci(decoded, "error"); break;
+    case STATUS_ERROR_KEY:
+        payload->has_error |= decoded[0] && !string_equals_ci(decoded, DENEB_PRINT_NONE_VALUE);
+        break;
+    }
+}
+
+int deneb_status_payload_parse_span(const char *json, size_t size,
+                                    deneb_status_payload_t *payload)
+{
     if (!json || !payload)
         return -1;
 
+    char name[sizeof(payload->file)] = "";
+    unsigned char seen[STATUS_FIELD_COUNT] = {0};
     deneb_status_payload_init(payload);
-    payload->nozzle_temp_cur = deneb_json_get_float(json, "headTcur", 0.0f);
-    payload->nozzle_temp_set = deneb_json_get_float(json, "headTset", 0.0f);
-    payload->bed_temp_cur = deneb_json_get_float(json, "bedTcur", 0.0f);
-    payload->bed_temp_set = deneb_json_get_float(json, "bedTset", 0.0f);
-    payload->topcap_temp_cur = deneb_json_get_float(json, "topcapTemperature", 0.0f);
-    if (deneb_json_get_truthy_value(json, "topcapIsPresent",
-                                    &topcap_present) == 0)
-        payload->topcap_present = topcap_present;
+    const char *end = json + size;
+    const char *previous_quote = NULL;
+    /* Match the first raw quoted key, including the legacy duplicate behavior. */
+    for (const char *p = json; p != end && *p; p++) {
+        if (*p != '"')
+            continue;
+        if (previous_quote) {
+            int field = find_status_field(previous_quote + 1,
+                                          (size_t)(p - previous_quote - 1));
+            if (field >= 0 && !seen[field]) {
+                seen[field] = 1;
+                parse_status_field(&status_fields[field], p + 1,
+                                   (size_t)(end - p - 1), payload, name);
+            }
+        }
+        previous_quote = p;
+    }
 
-    payload->pos_x = deneb_json_get_float(json, "X", 0.0f);
-    payload->pos_y = deneb_json_get_float(json, "Y", 0.0f);
-    payload->pos_z = deneb_json_get_float(json, "Z", 0.0f);
-    payload->pos_e = deneb_json_get_float(json, "E", 0.0f);
-    payload->time_total = deneb_json_get_int(json, "Ttot", 0);
-    payload->time_left = deneb_json_get_int(json, "Tleft", 0);
     payload->progress = deneb_print_progress_percent(payload->time_total,
                                                      payload->time_left);
-
-    copy_json_value(json, "file", payload->file, sizeof(payload->file));
-    copy_json_value(json, "name", name, sizeof(name));
     if ((!payload->file[0] || strcmp(payload->file, DENEB_PRINT_NONE_VALUE) == 0) &&
         name[0] && strcmp(name, DENEB_PRINT_NONE_VALUE) != 0) {
         snprintf(payload->file, sizeof(payload->file), "%s", name);
     }
     payload->has_file = payload->file[0] &&
         strcmp(payload->file, DENEB_PRINT_NONE_VALUE) != 0;
-
-    copy_json_value(json, "source", payload->source, sizeof(payload->source));
-    copy_json_value(json, "uuid", payload->uuid, sizeof(payload->uuid));
-    copy_json_value(json, "cloud_job_id", payload->cloud_job_id,
-                    sizeof(payload->cloud_job_id));
-    copy_json_value(json, "req", payload->req, sizeof(payload->req));
-    copy_json_value(json, "firmware", payload->firmware,
-                    sizeof(payload->firmware));
-    copy_json_value(json, "machineType", payload->machine_type,
-                    sizeof(payload->machine_type));
-    copy_json_value(json, "denebErrorKey", payload->error_key,
-                    sizeof(payload->error_key));
-    copy_json_value(json, "denebErrorCategory", payload->error_category,
-                    sizeof(payload->error_category));
-    copy_json_value(json, "denebErrorDetail", payload->error_detail,
-                    sizeof(payload->error_detail));
-    copy_json_value(json, "flowLastResponse", payload->flow_last_response,
-                    sizeof(payload->flow_last_response));
-    payload->pcb_id = deneb_json_get_int(json, "pcbId", 0);
-    (void)deneb_json_get_truthy_value(json, "pcbIdValid",
-                                      &payload->pcb_id_valid);
-    char manual_id[32];
-    copy_json_value(json, "manualId", manual_id, sizeof(manual_id));
-    payload->manual_id = deneb_manual_id_parse(manual_id);
-    payload->manual_state = deneb_json_get_int(json, "manualState", 0);
-    payload->flow_inflight = deneb_json_get_int(json, "flowInflight", 0);
-    payload->flow_sent = deneb_json_get_int(json, "flowSent", 0);
-    payload->flow_ack = deneb_json_get_int(json, "flowAck", 0);
-    payload->flow_resend = deneb_json_get_int(json, "flowResend", 0);
-    payload->flow_reject = deneb_json_get_int(json, "flowReject", 0);
-    payload->job_line_number = deneb_json_get_int(json, "jobLineNumber", 0);
 
     deneb_print_observation_init(&payload->observation, payload->req,
                                  payload->file, payload->time_total,
@@ -210,19 +297,14 @@ int deneb_status_payload_parse(const char *json,
     payload->is_paused = deneb_print_req_is_paused(payload->req);
     payload->is_printing = deneb_print_req_is_abort(payload->req) ?
         0 : deneb_print_observation_has_context(&payload->observation);
-    if (deneb_json_get_truthy_value(json, "denebActive",
-                                    &native_active) == 0) {
-        payload->has_native_active = 1;
-        payload->native_active = native_active;
-        payload->is_printing = native_active;
-    }
-    if (deneb_json_get_truthy_value(json, "denebStopAllowed",
-                                    &native_stop_allowed) == 0) {
-        payload->has_native_stop_allowed = 1;
-        payload->native_stop_allowed = native_stop_allowed;
-    }
-    payload->has_error = payload_has_native_error(json);
+    if (payload->has_native_active)
+        payload->is_printing = payload->native_active;
     return 0;
+}
+
+int deneb_status_payload_parse(const char *json, deneb_status_payload_t *payload)
+{
+    return json ? deneb_status_payload_parse_span(json, strlen(json), payload) : -1;
 }
 
 static int context_has_temp_targets(const deneb_status_filename_context_t *ctx)
