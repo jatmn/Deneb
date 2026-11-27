@@ -27,8 +27,12 @@
 #define DENEB_THUMB_RGB565_BYTES \
     (DENEB_THUMB_TARGET_SIZE * DENEB_THUMB_TARGET_SIZE * 2)
 #define DENEB_UFP_THUMB_MAX_CANDIDATES 16
+/* Bound optional preview discovery even when no entries qualify. */
+#define DENEB_UFP_THUMB_MAX_RECORDS 256
 #define DENEB_UFP_MEMBER_MAX 256
 #define DENEB_UFP_THUMB_MAX_BYTES (2U * 1024U * 1024U)
+/* Allow DEFLATE overhead for previews near the uncompressed size limit. */
+#define DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES (DENEB_UFP_THUMB_MAX_BYTES + 64U * 1024U)
 /*
  * Include one filter byte per row and admit 1024 x 1024 RGBA. The pinned
  * LodePNG can reserve for a final 65,535-byte stored block before checking
@@ -634,6 +638,16 @@ static int find_zip_central_directory(FILE *f, uint32_t *cd_offset)
     return found;
 }
 
+static bool ufp_thumbnail_sizes_valid(uint16_t method, uint32_t compressed_size,
+                                      uint32_t uncompressed_size)
+{
+    return compressed_size > 0 &&
+           compressed_size <= DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES &&
+           uncompressed_size > 0 &&
+           uncompressed_size <= DENEB_UFP_THUMB_MAX_BYTES &&
+           (method != 0 || compressed_size == uncompressed_size);
+}
+
 static size_t list_ufp_thumbnail_members(
     const char *ufp_path,
     deneb_ufp_thumb_candidate_t candidates[],
@@ -655,7 +669,9 @@ static size_t list_ufp_thumbnail_members(
         return 0;
     }
 
-    while (count < max_candidates) {
+    for (size_t scanned = 0;
+         scanned < DENEB_UFP_THUMB_MAX_RECORDS && count < max_candidates;
+         scanned++) {
         unsigned char hdr[46];
         uint16_t name_len;
         uint16_t extra_len;
@@ -686,9 +702,7 @@ static size_t list_ufp_thumbnail_members(
             name[name_len] = '\0';
 
             if ((method == 0 || method == 8) &&
-                compressed_size > 0 &&
-                uncompressed_size > 0 &&
-                uncompressed_size <= DENEB_UFP_THUMB_MAX_BYTES &&
+                ufp_thumbnail_sizes_valid(method, compressed_size, uncompressed_size) &&
                 deneb_print_job_file_has_extension(name, ".png") &&
                 contains_ci(name, "thumbnail")) {
                 snprintf(candidates[count].name,
@@ -743,6 +757,8 @@ static int extract_zip_candidate(const char *ufp_path,
     extra_len = read_le16(local + 28);
     data_offset = candidate->local_header_offset + 30U + name_len +
                   extra_len;
+    if (candidate->compressed_size > DENEB_UFP_THUMB_MAX_COMPRESSED_BYTES)
+        goto done;
     compressed = malloc(candidate->compressed_size);
     if (!compressed)
         goto done;

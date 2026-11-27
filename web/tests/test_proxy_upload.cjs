@@ -711,14 +711,14 @@ async function testThumbnailUploads() {
         fs.writeFileSync(path.join(root, '3D/model.gcode'), gcode);
         fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
 
-        function makeArchive(...images) {
+        function makeArchive(images, metadata = []) {
             const thumbnails = images.map((image, index) => {
                 const name = 'Metadata/thumbnail-' + index + '.png';
                 fs.writeFileSync(path.join(root, name), image);
                 return name;
             });
             execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip',
-                '3D/model.gcode', ...thumbnails], { cwd: root });
+                '3D/model.gcode', ...metadata, ...thumbnails], { cwd: root });
             return fs.readFileSync(path.join(root, 'job.ufp'));
         }
 
@@ -728,16 +728,23 @@ async function testThumbnailUploads() {
         await withinDeadline('deneb-api preview socket did not start', () => fs.existsSync(apiSocket));
 
         const overBudget = upFilteredRgbaPng(1024, 1025, [0xff000080]);
-        const skipped = await halfClosedUpload(apiSocket, makeArchive(overBudget), 'large-preview.ufp');
+        const skipped = await halfClosedUpload(apiSocket, makeArchive([overBudget]), 'large-preview.ufp');
         assert.match(skipped, /^HTTP\/1\.1 201 Created\r\n/);
         assert.equal(fs.existsSync(thumbnailPath), false);
         assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
         assert.equal(fs.readFileSync(path.join(root, 'spool/large-preview.gcode'), 'utf8'), gcode);
         fs.rmSync(pendingJob);
 
-        // The 2048 x 512 image ranks below the ineligible 1024 x 1025 image.
+        const metadata = Array.from({ length: 255 }, (_, index) => {
+            const name = 'Metadata/note-' + index + '.txt';
+            fs.writeFileSync(path.join(root, name), 'Fixture metadata\n');
+            return name;
+        });
+
+        // The eligible image occupies the last record within the lookup budget.
         const eligible = upFilteredRgbaPng(2048, 512, [0xff000080, 0x00ff0080, 0x0000ff80, 0xffff0080]);
-        const mixed = await halfClosedUpload(apiSocket, makeArchive(overBudget, eligible), 'mixed-preview.ufp');
+        const mixed = await halfClosedUpload(apiSocket,
+            makeArchive([overBudget, eligible], metadata.slice(0, -2)), 'mixed-preview.ufp');
         assert.match(mixed, /^HTTP\/1\.1 201 Created\r\n/);
         assert.equal(fs.readFileSync(path.join(root, 'spool/mixed-preview.gcode'), 'utf8'), gcode);
         const expectedPreview = Buffer.alloc(116 * 116 * 2);
@@ -750,6 +757,15 @@ async function testThumbnailUploads() {
             expectedPreview.writeUInt16LE(color, pixel * 2);
         }
         assert.deepEqual(fs.readFileSync(thumbnailPath), expectedPreview);
+        assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
+        fs.rmSync(pendingJob);
+        fs.rmSync(thumbnailPath);
+
+        const late = await halfClosedUpload(apiSocket,
+            makeArchive([eligible], metadata), 'late-preview.ufp');
+        assert.match(late, /^HTTP\/1\.1 201 Created\r\n/);
+        assert.equal(fs.existsSync(thumbnailPath), false);
+        assert.equal(fs.readFileSync(path.join(root, 'spool/late-preview.gcode'), 'utf8'), gcode);
         assert.deepEqual(fs.readdirSync(temp), ['deneb-cluster-print-job.json']);
     } catch (error) {
         if (api) process.stderr.write(api.log);
