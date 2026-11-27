@@ -113,16 +113,21 @@ int deneb_serial_read_line(deneb_serial_transport_t *transport,
     line[0] = '\0';
 
     for (;;) {
-        char ch;
-        ssize_t n = read(transport->fd, &ch, 1);
-        if (n == 0)
-            break;
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
+        if (transport->rx_pending_pos == transport->rx_pending_len) {
+            ssize_t n = read(transport->fd, transport->rx_pending,
+                             sizeof(transport->rx_pending));
+            if (n == 0)
                 break;
-            return -1;
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
+                return -1;
+            }
+            transport->rx_pending_pos = 0;
+            transport->rx_pending_len = (size_t)n;
         }
 
+        char ch = transport->rx_pending[transport->rx_pending_pos++];
         if (ch == '\r')
             continue;
         if (ch == '\n') {
