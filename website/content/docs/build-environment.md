@@ -30,7 +30,7 @@ Install Git, clone the repository, and initialize its pinned submodules:
 
 ```sh
 sudo apt-get update
-sudo apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils
+sudo apt-get install --no-install-recommends build-essential ca-certificates cmake curl file git make pkg-config python3 tar xz-utils zstd
 git clone --recurse-submodules https://github.com/jatmn/Deneb.git
 cd Deneb
 ```
@@ -41,6 +41,10 @@ Prepare the pinned cross-toolchain and mbedTLS dependency, then create and audit
 bash tools/setup-linux-build.sh "$PWD"
 bash tools/build-update-release.sh --rebuild-zmq --rebuild-lighttpd
 ```
+
+The setup uses separate OpenWrt dependency and component build directories.
+Rerun the setup and first-build commands when upgrading from the older
+musl.cc toolchain to build all inputs for the MT7688 soft-float ABI.
 
 Later experimental builds reuse those dependency trees:
 
@@ -104,7 +108,7 @@ and verifies archives before extracting them.
 
 | Input | Version | SHA-256 |
 | --- | --- | --- |
-| musl.cc MIPS little-endian cross-toolchain | pinned archive | `82626533bf7e677c225e7cbedf1d5b0d6bc60c3daaf28249e54f0eb805d89b13` |
+| OpenWrt ramips/mt76x8 cross-toolchain | 25.12.6 | `628559363d3e41da6cc298ed0a27b81fbc3843a2758228c7697861defd324da3` |
 | mbedTLS | 2.28.8 | `4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213` |
 | ZeroMQ | 4.3.5 | `6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43` |
 | lighttpd | 1.4.85 | `18de51b393bac4a6827879e1a7ff377c169e414bae92cd245091d80fc2601d13` |
@@ -164,10 +168,10 @@ and dynamic imports separately before removing retained files or constants.
 For native Debian/Linux:
 
 ```sh
-test -x build/deneb-cross/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc
-test -f build/deneb-cross/mbedtls-2.28.8-mipsel/lib/libmbedtls.a
-test -f build/deneb-cross/zeromq-4.3.5/build-musl/lib/libzmq.a
-test -x build/deneb-cross/lighttpd-1.4.85/build-musl-static/build/lighttpd
+test -x build/deneb-cross/openwrt-25.12.6/toolchain-mipsel_24kc_gcc-14.3.0_musl/bin/mipsel-openwrt-linux-musl-gcc
+test -f build/deneb-cross/openwrt-25.12.6/mbedtls-2.28.8-mipsel/lib/libmbedtls.a
+test -f build/deneb-cross/openwrt-25.12.6/zeromq-4.3.5/build-musl/lib/libzmq.a
+test -x build/deneb-cross/openwrt-25.12.6/lighttpd-1.4.85/build-musl-static/build/lighttpd
 git submodule status --recursive
 git status --short
 ```
@@ -175,10 +179,10 @@ git status --short
 For Windows/WSL:
 
 ```powershell
-wsl -d Debian -u root -- bash -lc '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version'
-wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/mbedtls-2.28.8-mipsel/lib/libmbedtls.a'
-wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/zeromq-4.3.5/build-musl/lib/libzmq.a'
-wsl -d Debian -u root -- bash -lc 'test -x /root/deneb-build/lighttpd-1.4.85/build-musl-static/build/lighttpd'
+wsl -d Debian -u root -- bash -lc '/root/deneb-build/openwrt-25.12.6/toolchain-mipsel_24kc_gcc-14.3.0_musl/bin/mipsel-openwrt-linux-musl-gcc --version'
+wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/openwrt-25.12.6/mbedtls-2.28.8-mipsel/lib/libmbedtls.a'
+wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/openwrt-25.12.6/zeromq-4.3.5/build-musl/lib/libzmq.a'
+wsl -d Debian -u root -- bash -lc 'test -x /root/deneb-build/openwrt-25.12.6/lighttpd-1.4.85/build-musl-static/build/lighttpd'
 git submodule status --recursive
 git status --short
 ```

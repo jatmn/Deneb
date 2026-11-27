@@ -11,7 +11,7 @@ trap 'rm -rf -- "$fixture"' EXIT
 repo="$fixture/repo"
 export DENEB_BUILD_ROOT="$fixture/deps"
 export DENEB_TOOLCHAIN_ROOT="$fixture/pinned compiler"
-toolchain="$DENEB_TOOLCHAIN_ROOT/bin/mipsel-linux-musl-gcc"
+toolchain="$DENEB_TOOLCHAIN_ROOT/bin/mipsel-openwrt-linux-musl-gcc"
 zmq_root="$DENEB_BUILD_ROOT/zeromq-4.3.5"
 mkdir -p "$repo/tools" "$DENEB_TOOLCHAIN_ROOT/bin" "$zmq_root/include" "$zmq_root/build-musl/lib"
 cp "$script_dir/build-update-release.sh" "$script_dir/native-dependency-pins.sh" "$repo/tools/"
@@ -49,7 +49,7 @@ make_project "$repo/ui" deneb-ui
 for component in web ui; do
     mkdir -p "$repo/$component/cmake"
     cat > "$repo/$component/cmake/mipsel-musl-toolchain.cmake" <<'EOF'
-set(CMAKE_C_COMPILER "$ENV{DENEB_TOOLCHAIN_ROOT}/bin/mipsel-linux-musl-gcc")
+set(CMAKE_C_COMPILER "$ENV{DENEB_TOOLCHAIN_ROOT}/bin/mipsel-openwrt-linux-musl-gcc")
 EOF
 done
 # Stop after the real configure/build paths. The release package is tested

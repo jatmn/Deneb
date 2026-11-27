@@ -3,8 +3,8 @@
 [CmdletBinding()]
 param(
     [string]$Distro = "Debian",
-    [string]$BuildDirectory = "build-musl",
-    [string]$WebBuildDirectory = "build-musl",
+    [string]$BuildDirectory = "build-musl-openwrt",
+    [string]$WebBuildDirectory = "build-musl-openwrt",
     [string]$ZmqRoot = "",
     [string]$LighttpdRoot = "",
     [ValidateSet("experimental", "nightly", "stable")]
@@ -74,26 +74,31 @@ if ($printsvcStockSummaryWsl) {
 if ($printsvcNativeSummaryWsl) {
     $buildPackageEnv += " DENEB_PRINTSVC_NATIVE_SUMMARY='$printsvcNativeSummaryWsl'"
 }
-$toolchainCheck = "/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc --version >/dev/null"
-& wsl -d $Distro -u root -- bash -lc $toolchainCheck
-if ($LASTEXITCODE -ne 0) {
-    throw "Missing musl cross-compiler. Follow ui/README.md production build prerequisites first."
-}
-
 $loadPins = ". '$($repoWsl.Replace("'", "'\''"))/tools/native-dependency-pins.sh'"
 # Keep the shell formatting in a script so Windows PowerShell can pass a plain path.
 $pins = @(& wsl -d $Distro -u root --exec sh "$repoWsl/tools/print-native-dependency-pins.sh")
-if ($LASTEXITCODE -ne 0 -or $pins.Count -ne 7) {
+if ($LASTEXITCODE -ne 0 -or $pins.Count -ne 10) {
     throw "Could not read the native dependency pins in WSL."
 }
-$zmqVersion, $zmqUrl, $zmqSha256, $lighttpdVersion, $lighttpdUrl, $lighttpdSha256, $mbedtlsVersion = $pins
+$zmqVersion, $zmqUrl, $zmqSha256, $lighttpdVersion, $lighttpdUrl, $lighttpdSha256, $mbedtlsVersion, $toolchainRelease, $toolchainMember, $toolchainTarget = $pins
+$buildRoot = "/root/deneb-build/openwrt-$toolchainRelease"
+$toolchainRoot = "$buildRoot/$toolchainMember"
+$toolchainCheck = "test -x '$toolchainRoot/bin/$toolchainTarget-gcc'"
+& wsl -d $Distro -u root -- bash -lc $toolchainCheck
+if ($LASTEXITCODE -ne 0) {
+    throw "Missing OpenWrt musl cross-compiler. Run tools/setup-wsl-build.sh first."
+}
+$buildStart = "set -euo pipefail; export STAGING_DIR='$toolchainRoot'; "
+$cmakeToolchainRoot = "-DMUSL_CROSS='$toolchainRoot'"
+$checkCachedToolchain = "grep -Fxq 'MUSL_CROSS:PATH=$toolchainRoot' CMakeCache.txt"
+$buildPackageEnv += " DENEB_PACKAGE_TOOLCHAIN_ROOT='$toolchainRoot' STRIP='$toolchainRoot/bin/$toolchainTarget-strip'"
 if (!$ZmqRoot) {
-    $ZmqRoot = "/root/deneb-build/zeromq-$zmqVersion"
+    $ZmqRoot = "$buildRoot/zeromq-$zmqVersion"
 }
 if (!$LighttpdRoot) {
-    $LighttpdRoot = "/root/deneb-build/lighttpd-$lighttpdVersion"
+    $LighttpdRoot = "$buildRoot/lighttpd-$lighttpdVersion"
 }
-$mbedtlsRoot = "/root/deneb-build/mbedtls-$mbedtlsVersion-mipsel"
+$mbedtlsRoot = "$buildRoot/mbedtls-$mbedtlsVersion-mipsel"
 $zmqLib = "$ZmqRoot/build-musl/lib/libzmq.a"
 $zmqInclude = "$ZmqRoot/include"
 $lighttpdBinary = "$LighttpdRoot/build-musl-static/build/lighttpd"
@@ -103,7 +108,7 @@ if ($RebuildZmq) {
         throw "Refusing to rebuild libzmq outside a zeromq-$zmqVersion leaf directory: $ZmqRoot"
     }
 
-    $buildZmq = "set -euo pipefail; " +
+    $buildZmq = $buildStart +
                 "mkdir -p '$ZmqRoot'; " +
                 "rm -rf '$ZmqRoot'/*; " +
                 "curl --fail --location -o '$ZmqRoot.tar.gz' '$zmqUrl'; " +
@@ -111,7 +116,7 @@ if ($RebuildZmq) {
                 "tar xzf '$ZmqRoot.tar.gz' -C '$ZmqRoot' --strip-components=1; " +
                 "rm -f '$ZmqRoot.tar.gz'; " +
                 "cd '$ZmqRoot'; mkdir build-musl; cd build-musl; " +
-                "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' " +
+                "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' $cmakeToolchainRoot " +
                 "-DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF " +
                 "-DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON; " +
                 "make -j`$(nproc); " +
@@ -146,16 +151,16 @@ if ($RebuildLighttpd) {
     }
 }
 
-$buildApi = "set -euo pipefail; " +
+$buildApi = $buildStart +
             "cd '$repoWsl/web'; " +
             "mkdir -p '$WebBuildDirectory'; " +
             "cd '$WebBuildDirectory'; " +
             "if [ -f CMakeCache.txt ]; then " +
-            "grep -q '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc' CMakeCache.txt || " +
+            "$checkCachedToolchain || " +
             "{ echo 'Existing web build directory is not configured for mipsel musl. Use a different -WebBuildDirectory.' >&2; exit 1; }; " +
             "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
             "else " +
-            "cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake " +
+            "cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake $cmakeToolchainRoot " +
             "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
             "fi; " +
             "make -j`$(nproc)"
@@ -165,16 +170,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "release API build failed with exit code $LASTEXITCODE"
 }
 
-$buildPrintsvc = "set -euo pipefail; " +
+$buildPrintsvc = $buildStart +
                  "cd '$repoWsl/printsvc'; " +
                  "mkdir -p '$BuildDirectory'; " +
                  "cd '$BuildDirectory'; " +
                  "if [ -f CMakeCache.txt ]; then " +
-                 "grep -q '/root/mipsel-linux-musl-cross/bin/mipsel-linux-musl-gcc' CMakeCache.txt || " +
+                 "$checkCachedToolchain || " +
                  "{ echo 'Existing printsvc build directory is not configured for mipsel musl. Use a different -BuildDirectory.' >&2; exit 1; }; " +
                  "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
                  "else " +
-                 "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' " +
+                 "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' $cmakeToolchainRoot " +
                  "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
                  "fi; " +
                  "make -j`$(nproc); " +
@@ -185,7 +190,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "release print service build failed with exit code $LASTEXITCODE"
 }
 
-$buildLighttpd = "set -euo pipefail; " +
+$buildLighttpd = $buildStart +
                  "test -d '$LighttpdRoot/src' || { echo 'Missing lighttpd source at $LighttpdRoot; re-run with -RebuildLighttpd.' >&2; exit 1; }; " +
                  "cd '$LighttpdRoot/src'; " +
                  "printf '%s\n' " +
@@ -198,8 +203,11 @@ $buildLighttpd = "set -euo pipefail; " +
                  "cd '$LighttpdRoot'; " +
                  "mkdir -p build-musl-static; " +
                  "cd build-musl-static; " +
-                 "if [ ! -f CMakeCache.txt ]; then " +
-                 "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' " +
+                 "if [ -f CMakeCache.txt ]; then " +
+                 "$checkCachedToolchain || " +
+                 "{ echo 'Existing lighttpd build directory is not configured for pinned mipsel musl. Rebuild with -RebuildLighttpd.' >&2; exit 1; }; " +
+                 "else " +
+                 "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' $cmakeToolchainRoot " +
                  "-DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_STATIC=ON -DWITH_PCRE=OFF -DWITH_PCRE2=OFF " +
                  "-DWITH_ZLIB=OFF -DWITH_BZIP=OFF -DWITH_BROTLI=OFF -DWITH_ZSTD=OFF " +
                  "-DWITH_OPENSSL=OFF -DWITH_MBEDTLS=OFF -DWITH_WOLFSSL=OFF -DWITH_GNUTLS=OFF; " +
@@ -215,16 +223,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "release lighttpd build failed with exit code $LASTEXITCODE"
 }
 
-$buildUi = "set -euo pipefail; " +
+$buildUi = $buildStart +
            "cd '$repoWsl/dfsvc'; " +
            "mkdir -p '$BuildDirectory'; " +
            "cd '$BuildDirectory'; " +
            "if [ -f CMakeCache.txt ]; then " +
-           "grep -q 'mipsel-linux-musl-gcc' CMakeCache.txt || " +
+           "$checkCachedToolchain || " +
            "{ echo 'Existing dfsvc build directory is not configured for mipsel musl. Use a different -BuildDirectory.' >&2; exit 1; }; " +
            "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT='$mbedtlsRoot'; " +
            "else " +
-           "cmake .. -DCMAKE_TOOLCHAIN_FILE=../../ui/cmake/mipsel-musl-toolchain.cmake " +
+           "cmake .. -DCMAKE_TOOLCHAIN_FILE=../../ui/cmake/mipsel-musl-toolchain.cmake $cmakeToolchainRoot " +
            "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT='$mbedtlsRoot'; " +
            "fi; " +
            "make -j`$(nproc); " +
@@ -232,11 +240,11 @@ $buildUi = "set -euo pipefail; " +
            "mkdir -p '$BuildDirectory'; " +
            "cd '$BuildDirectory'; " +
            "if [ -f CMakeCache.txt ]; then " +
-           "grep -q 'mipsel-linux-musl-gcc' CMakeCache.txt || " +
+           "$checkCachedToolchain || " +
            "{ echo 'Existing build directory is not configured for mipsel musl. Use a different -BuildDirectory.' >&2; exit 1; }; " +
            "cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_LIBRARY='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
            "else " +
-           "cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake " +
+           "cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake $cmakeToolchainRoot " +
            "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_LIBRARY='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
            "fi; " +
            "make -j`$(nproc); " +
@@ -333,7 +341,7 @@ if ($LASTEXITCODE -ne 0 -or $lvglRevision -cne $expectedLvgl) {
 }
 
 & wsl -d $Distro -u root --exec sh "$repoWsl/tools/write-native-sbom.sh" ($packagePaths[0]) `
-    $ZmqRoot $LighttpdRoot $mbedtlsRoot $revision $lvglRevision
+    $ZmqRoot $LighttpdRoot $mbedtlsRoot $toolchainRoot $revision $lvglRevision
 if ($LASTEXITCODE -ne 0) {
     throw "release package SBOM generation failed with exit code $LASTEXITCODE"
 }

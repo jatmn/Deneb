@@ -3,23 +3,24 @@
 # Write the firmware SBOM for the selected release inputs.
 
 set -eu
-if [ "$#" -ne 4 ] && [ "$#" -ne 6 ]; then
-    echo "usage: $0 PACKAGE ZMQ_ROOT LIGHTTPD_ROOT MBEDTLS_ROOT [DENEB_REV LVGL_REV]" >&2
+if [ "$#" -ne 5 ] && [ "$#" -ne 7 ]; then
+    echo "usage: $0 PACKAGE ZMQ_ROOT LIGHTTPD_ROOT MBEDTLS_ROOT TOOLCHAIN_ROOT [DENEB_REV LVGL_REV]" >&2
     exit 1
 fi
 package=$1
 zmq_root=$2
 lighttpd_root=$3
 mbedtls_root=$4
+toolchain_root=$5
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=tools/native-dependency-pins.sh
 # shellcheck disable=SC1091
 . "$repo_root/tools/native-dependency-pins.sh"
 
-if [ "$#" -eq 6 ]; then
+if [ "$#" -eq 7 ]; then
     # The Windows wrapper verifies these revisions with Git on the checkout host.
-    revision=$5
-    lvgl_revision=$6
+    revision=$6
+    lvgl_revision=$7
 else
     revision=$(git -C "$repo_root" rev-parse --verify HEAD)
     lvgl_path=ui/lib/lvgl
@@ -55,6 +56,35 @@ source_metadata() {
       }]
 EOF
 }
+
+toolchain_verified=false
+if native_dependency_verified mips-toolchain "$toolchain_root"; then
+    toolchain_verified=true
+fi
+
+runtime_metadata() {
+    if ! "$toolchain_verified"; then
+        printf '%s\n' '      "properties": [{"name": "deneb:source-provenance", "value": "unverified"}]'
+        return
+    fi
+    cat <<EOF
+      "version": "$1",
+      "purl": "$2",
+      "licenses": [$3],
+      "properties": [{"name": "deneb:openwrt-release", "value": "$MIPS_TOOLCHAIN_RELEASE"}],
+      "externalReferences": [{
+        "type": "distribution", "url": "$4",
+        "hashes": [{"alg": "SHA-256", "content": "$5"}]
+      }, {
+        "type": "distribution", "url": "$MIPS_TOOLCHAIN_URL",
+        "hashes": [{"alg": "SHA-256", "content": "$MIPS_TOOLCHAIN_SHA256"}]
+      }, {
+        "type": "vcs", "url": "https://github.com/openwrt/openwrt/tree/$MIPS_TOOLCHAIN_REVISION/toolchain"
+      }]
+EOF
+}
+
+gcc_runtime_license='{"expression": "GPL-3.0-or-later WITH GCC-exception-3.1"}'
 
 package_hash=$(sha256sum < "$package")
 package_hash=${package_hash%% *}
@@ -101,6 +131,28 @@ $(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tl
     },
     {
       "type": "library",
+      "bom-ref": "musl",
+      "name": "musl",
+$(runtime_metadata "$MIPS_TOOLCHAIN_MUSL_VERSION" "pkg:generic/musl@$MIPS_TOOLCHAIN_MUSL_VERSION" \
+    '{"license": {"id": "MIT"}}' "$MUSL_URL" "$MUSL_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "libstdc++",
+      "name": "libstdc++",
+$(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libstdc%2B%2B@$MIPS_TOOLCHAIN_GCC_VERSION" \
+    "$gcc_runtime_license" "$GCC_URL" "$GCC_SHA256")
+    },
+    {
+      "type": "library",
+      "bom-ref": "libgcc",
+      "name": "libgcc",
+      "description": "GCC support and exception unwinding runtime",
+$(runtime_metadata "$MIPS_TOOLCHAIN_GCC_VERSION" "pkg:generic/libgcc@$MIPS_TOOLCHAIN_GCC_VERSION" \
+    "$gcc_runtime_license" "$GCC_URL" "$GCC_SHA256")
+    },
+    {
+      "type": "library",
       "bom-ref": "lvgl",
       "name": "LVGL",
       "version": "$lvgl_revision",
@@ -112,7 +164,7 @@ $(source_metadata mbedtls "$mbedtls_root" "$MBEDTLS_VERSION" "pkg:github/mbed-tl
     }
   ],
   "dependencies": [
-    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "lvgl"]}
+    {"ref": "deneb", "dependsOn": ["libzmq", "lighttpd", "mbedtls", "musl", "libstdc++", "libgcc", "lvgl"]}
   ]
 }
 EOF

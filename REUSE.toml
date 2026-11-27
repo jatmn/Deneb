@@ -47,3 +47,15 @@ path = "notices/GLOBALS-17.12.0-LICENSE.txt"
 precedence = "override"
 SPDX-FileCopyrightText = "Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "notices/MUSL-1.2.5-COPYRIGHT.txt"
+precedence = "override"
+SPDX-FileCopyrightText = "2005-2020 Rich Felker and other musl contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "notices/GCC-14.3.0-COPYING*.txt"
+precedence = "override"
+SPDX-FileCopyrightText = "Free Software Foundation, Inc."
+SPDX-License-Identifier = "LicenseRef-FSF-Verbatim"

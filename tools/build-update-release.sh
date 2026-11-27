@@ -9,9 +9,9 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck disable=SC1091
 . "$repo_root/tools/native-dependency-pins.sh"
 
-build_root=${DENEB_BUILD_ROOT:-$repo_root/build/deneb-cross}
-build_directory="build-musl"
-web_build_directory="build-musl"
+build_root=${DENEB_BUILD_ROOT:-$repo_root/build/deneb-cross/openwrt-$MIPS_TOOLCHAIN_RELEASE}
+build_directory="build-musl-openwrt"
+web_build_directory="build-musl-openwrt"
 zmq_root="$build_root/zeromq-$ZMQ_VERSION"
 lighttpd_root="$build_root/lighttpd-$LIGHTTPD_VERSION"
 release_channel=experimental
@@ -28,8 +28,8 @@ usage: tools/build-update-release.sh [options]
 Build and audit a Deneb MIPS update package on Debian/Linux.
 
 Options:
-  --build-directory DIR              Component build directory (default: build-musl)
-  --web-build-directory DIR          Web build directory (default: build-musl)
+  --build-directory DIR              Component build directory (default: build-musl-openwrt)
+  --web-build-directory DIR          Web build directory (default: build-musl-openwrt)
   --zmq-root DIR                     ZeroMQ source/build directory
   --lighttpd-root DIR                lighttpd source/build directory
   --release-channel CHANNEL          experimental, nightly, or stable
@@ -67,8 +67,9 @@ if [ "$release_channel" != experimental ] && { [ -z "$printsvc_stock_summary" ] 
     die "Non-experimental release builds require --printsvc-stock-summary and --printsvc-native-summary."
 fi
 
-toolchain_root=${DENEB_TOOLCHAIN_ROOT:-$build_root/mipsel-linux-musl-cross}
-toolchain="$toolchain_root/bin/mipsel-linux-musl-gcc"
+toolchain_root=${DENEB_TOOLCHAIN_ROOT:-$build_root/$MIPS_TOOLCHAIN_MEMBER}
+toolchain="$toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-gcc"
+export STAGING_DIR="$toolchain_root"
 zmq_lib="$zmq_root/build-musl/lib/libzmq.a"
 zmq_include="$zmq_root/include"
 lighttpd_binary="$lighttpd_root/build-musl-static/build/lighttpd"
@@ -157,7 +158,8 @@ fi
 configure_component "$repo_root/dfsvc" "$repo_root/dfsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib" "-DMBEDTLS_ROOT=$mbedtls_root"
 configure_component "$repo_root/ui" "$repo_root/ui/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_LIBRARY=$zmq_lib"
 
-package_env=("DENEB_RELEASE_CHANNEL=$release_channel" "STRIP=$toolchain_root/bin/mipsel-linux-musl-strip")
+package_env=("DENEB_RELEASE_CHANNEL=$release_channel" "STRIP=$toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-strip"
+    "DENEB_PACKAGE_TOOLCHAIN_ROOT=$toolchain_root")
 [ -z "$printsvc_stock_summary" ] || package_env+=("DENEB_PRINTSVC_STOCK_SUMMARY=$printsvc_stock_summary")
 [ -z "$printsvc_native_summary" ] || package_env+=("DENEB_PRINTSVC_NATIVE_SUMMARY=$printsvc_native_summary")
 (cd "$repo_root" && env "${package_env[@]}" bash ui/build-package.sh \
@@ -190,6 +192,6 @@ sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-native-audit-selftest
 sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-integration-audit --archive "$package"
 sh "$repo_root/tools/deneb-printsvc-integration-audit-selftest.sh"
 DENEB_REPO_ROOT=/tmp/deneb-release-smoke-selftest DENEB_PRINTSVC_INIT=/tmp/deneb-release-smoke-selftest/deneb-printsvc.init DENEB_INSTALLER=/tmp/deneb-release-smoke-selftest/update.sh sh /tmp/deneb-release-smoke-selftest/deneb-printsvc-init-selftest
-sh "$repo_root/tools/write-native-sbom.sh" "$package" "$zmq_root" "$lighttpd_root" "$mbedtls_root"
+sh "$repo_root/tools/write-native-sbom.sh" "$package" "$zmq_root" "$lighttpd_root" "$mbedtls_root" "$toolchain_root"
 bash "$repo_root/tools/write-package-checksum.sh" "$package"
 printf 'Verified native-only print service package: %s\n' "$package"
