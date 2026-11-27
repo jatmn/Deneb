@@ -4638,6 +4638,28 @@ static void test_material_catalog_scan_boundaries(void)
     int fields_len = snprintf(fields, sizeof(fields), "<GUID>%s</GUID>"
                               "<version>8</version>", guid);
     assert(fields_len > 0 && (size_t)fields_len < sizeof(fields));
+
+    /* A pipe exposes how much input the parser consumes beyond the metadata. */
+    int material_pipe[2];
+    char material[4096];
+    char pipe_path[64];
+    const char suffix[] = "</description></material>";
+    int prefix_len = snprintf(material, sizeof(material),
+                              "<material>%s<description>", fields);
+    assert(prefix_len > 0 && (size_t)prefix_len < 512);
+    memset(material + prefix_len, 'x', sizeof(material) - (size_t)prefix_len);
+    memcpy(material + sizeof(material) - (sizeof(suffix) - 1),
+           suffix, sizeof(suffix) - 1);
+    assert(pipe(material_pipe) == 0);
+    assert(write(material_pipe[1], material, sizeof(material)) == (ssize_t)sizeof(material));
+    assert(close(material_pipe[1]) == 0);
+    snprintf(pipe_path, sizeof(pipe_path), "/proc/self/fd/%d", material_pipe[0]);
+    assert(deneb_material_catalog_parse_file(pipe_path, parsed_guid,
+                                            sizeof(parsed_guid), &version) == 0);
+    assert(strcmp(parsed_guid, guid) == 0 && version == 8);
+    assert(read(material_pipe[0], material, sizeof(material)) == (ssize_t)sizeof(material) - 512);
+    assert(close(material_pipe[0]) == 0);
+
     for (int past_limit = 0; past_limit <= 1; ++past_limit) {
         f = fopen(path, "wb");
         assert(f != NULL);

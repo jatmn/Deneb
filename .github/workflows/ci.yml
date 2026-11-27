@@ -253,7 +253,7 @@ jobs:
                 sh -n -- "$script"
               fi
             done
-          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
+          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-mbedtls.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
           sh tools/write-package-checksum-selftest.sh
           sh tools/ssh-bootstrap-patch-selftest.sh
           bash tools/select-ci-validation-selftest.sh
@@ -445,7 +445,7 @@ jobs:
 
       - name: Install native host libraries
         run: |
-          packages=(libmbedtls-dev libzmq3-dev lighttpd unzip)
+          packages=(bzip2 libzmq3-dev lighttpd openssl unzip)
           if ! command -v cmake >/dev/null; then
             packages+=(cmake)
           fi
@@ -457,6 +457,7 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install --no-install-recommends "${packages[@]}"
+          sh tools/setup-mbedtls.sh "$PWD/build/ci-mbedtls"
 
       - name: Run repository fixture and audit self-tests
         timeout-minutes: 10
@@ -496,6 +497,6 @@ jobs:
 
       - name: Build native Digital Factory service
         run: |
-          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug
+          cmake -S dfsvc -B build/ci-dfsvc -DCMAKE_BUILD_TYPE=Debug -DMBEDTLS_ROOT="$PWD/build/ci-mbedtls"
           cmake --build build/ci-dfsvc --parallel
           ctest --test-dir build/ci-dfsvc --output-on-failure
