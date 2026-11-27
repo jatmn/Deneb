@@ -80,7 +80,7 @@ try {
         "ui/lib/lvgl/LICENCE.txt",
         "ui/lib/lvgl/src/stdlib/builtin/LICENSE_SPRINTF.txt",
         "ui/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt",
-        "ui/lib/lvgl/src/libs/lodepng/lodepng.c"
+        "common/lodepng/lodepng.c"
     )) {
         $destination = Join-Path $fixtureRepo $entry
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null

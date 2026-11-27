@@ -164,10 +164,7 @@ function startUpload(port, body, filename, { chunked = false, declaredLength } =
     };
 }
 
-function startSocketUpload(apiSocket, archive, filename,
-    { pathname = UPLOAD_PATH, authorizations = [] } = {}) {
-    const payload = multipartPayload(archive, filename);
-    const split = Math.floor(payload.length / 2);
+function startSocketPost(apiSocket, pathname, contentType, firstBody, restBody, authorizations = []) {
     const socket = net.createConnection({ path: apiSocket, allowHalfOpen: true });
     trackSocket(socket);
     const result = new Promise((resolve, reject) => {
@@ -180,17 +177,29 @@ function startSocketUpload(apiSocket, archive, filename,
     const headers = 'POST ' + pathname + ' HTTP/1.1\r\n' +
         'Host: localhost\r\nConnection: close\r\n' +
         authorizations.map((value) => 'Authorization: ' + value + '\r\n').join('') +
-        'Content-Type: multipart/form-data; boundary=' + boundary + '\r\n' +
-        'Content-Length: ' + payload.length + '\r\n\r\n';
-    socket.write(Buffer.concat([Buffer.from(headers), payload.subarray(0, split)]));
+        'Content-Type: ' + contentType + '\r\n' +
+        'Content-Length: ' + (firstBody.length + restBody.length) + '\r\n\r\n';
+    socket.write(Buffer.concat([Buffer.from(headers), firstBody]));
     return {
         finish: () => {
             socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error('Half-closed upload reply timed out')));
-            socket.end(payload.subarray(split));
+            socket.end(restBody);
             return result;
         },
         cancel: () => socket.destroy()
     };
+}
+
+function startSocketUpload(apiSocket, archive, filename,
+    { pathname = UPLOAD_PATH, authorizations = [] } = {}) {
+    const payload = multipartPayload(archive, filename);
+    const split = Math.floor(payload.length / 2);
+    return startSocketPost(apiSocket, pathname, 'multipart/form-data; boundary=' + boundary,
+        payload.subarray(0, split), payload.subarray(split), authorizations);
+}
+
+function halfClosedUpload(apiSocket, archive, filename) {
+    return startSocketUpload(apiSocket, archive, filename).finish();
 }
 
 function enableAuth(port, password) {
@@ -281,13 +290,19 @@ async function main() {
             ''
         ].join('\n'), { mode: 0o700 });
         fs.mkdirSync(path.join(root, '3D'));
+        fs.mkdirSync(path.join(root, 'Metadata'));
         fs.writeFileSync(path.join(root, 'web-auth.conf'), 'setup_complete=1\nauth_disabled=1\n');
         // Keep the compressed upload larger than the API's receive chunk.
         const comments = Array.from({ length: 512 }, (_, index) =>
             ';' + createHash('sha256').update(String(index)).digest('hex') + '\n');
         const gcode = ';TIME:12\nG28\n' + comments.join('');
         fs.writeFileSync(path.join(root, '3D', 'model.gcode'), gcode);
-        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip', '3D/model.gcode'], { cwd: root });
+        // A 1×1 opaque red RGBA PNG. The accepted upload must publish a red preview.
+        fs.writeFileSync(path.join(root, 'Metadata', 'thumbnail.png'), Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+            'base64'));
+        execFileSync(cmake, ['-E', 'tar', 'cf', 'job.ufp', '--format=zip',
+            '3D/model.gcode', 'Metadata/thumbnail.png'], { cwd: root });
         const archive = fs.readFileSync(path.join(root, 'job.ufp'));
         const uploadedBodyExists = () => fs.readdirSync(temp).some((file) =>
             file.startsWith('deneb-upload-') && fs.statSync(path.join(temp, file), { throwIfNoEntry: false })?.size > 0);
@@ -372,6 +387,8 @@ async function main() {
         assert.equal(response.message, 'Print job accepted');
         assert.equal(response.name, 'completed.gcode');
         assert.equal(fs.readFileSync(path.join(spool, 'completed.gcode'), 'utf8'), gcode);
+        assert.deepEqual(fs.readFileSync(path.join(root, 'deneb-active-thumb.rgb565')),
+            Buffer.alloc(116 * 116 * 2, Buffer.from([0x00, 0xf8])));
         const pending = JSON.parse(fs.readFileSync(pendingJob, 'utf8'));
         assert.equal(pending.length, 1);
         assert.equal(pending[0].path, 'spool/completed.gcode');
@@ -400,7 +417,7 @@ async function main() {
         }
         assert.equal(fs.readFileSync(path.join(spool, 'completed.gcode'), 'utf8'), gcode);
 
-        const halfClosed = await startSocketUpload(apiSocket, archive, 'completed.ufp').finish();
+        const halfClosed = await halfClosedUpload(apiSocket, archive, 'completed.ufp');
         assert.match(halfClosed, /^HTTP\/1\.1 200 OK\r\n/);
         assert.match(halfClosed, /Print job already queued/);
 
@@ -409,7 +426,18 @@ async function main() {
         assert.equal(setup.code, 200, setup.data);
         const credentials = JSON.parse(setup.data);
         assert.equal(credentials.auth_enabled, true);
-        const bearer = 'Bearer ' + credentials.token;
+
+        // A boundary parameter selects spooling. Login still needs the JSON body prefix.
+        const login = startSocketPost(apiSocket, '/api/v1/deneb/auth',
+            'application/json; boundary=' + boundary,
+            Buffer.from(JSON.stringify({ password })), Buffer.from('\r\n'));
+        await withinDeadline('JSON login did not enter the spooled POST path', uploadedBodyExists);
+        await assertResponsive(port, clients, 'during the spooled JSON login');
+        const loginReply = await login.finish();
+        assert.match(loginReply, /^HTTP\/1\.1 200 OK\r\n/);
+        const { token } = JSON.parse(loginReply.slice(loginReply.indexOf('\r\n\r\n') + 4));
+        assert.ok(token);
+        const bearer = 'Bearer ' + token;
         const authorizedUpload = (authorizations) => startSocketUpload(
             apiSocket, archive, 'completed.ufp', { pathname: AUTH_UPLOAD_PATH, authorizations });
 

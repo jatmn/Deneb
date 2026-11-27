@@ -373,14 +373,16 @@ static int route_completed_upload(upload_t *upload, http_response_t *resp)
 {
     const upload_request_t *saved = upload->request;
     http_request_t req = { .method = "POST", .is_multipart = 1 };
-    strcpy(req.path, saved->path);
-    strcpy(req.upload_path, saved->upload_path);
-    strcpy(req.multipart_boundary, saved->multipart_boundary);
+    snprintf(req.path, sizeof(req.path), "%s", saved->path);
+    snprintf(req.upload_path, sizeof(req.upload_path), "%s", saved->upload_path);
+    snprintf(req.multipart_boundary, sizeof(req.multipart_boundary), "%s",
+             saved->multipart_boundary);
     req.content_length = saved->content_length;
     req.upload_size = saved->upload_size;
     if (saved->authorization[0]) {
-        strcpy(req.headers[0].name, "Authorization");
-        strcpy(req.headers[0].value, saved->authorization);
+        memcpy(req.headers[0].name, "Authorization", sizeof("Authorization"));
+        snprintf(req.headers[0].value, sizeof(req.headers[0].value), "%s",
+                 saved->authorization);
         req.header_count = 1;
     }
 
@@ -468,11 +470,13 @@ static int start_upload(int fd, const http_request_t *req, const char *data, siz
     upload_request_t *saved = malloc(sizeof(*saved));
     if (!saved)
         return -1;
-    strcpy(saved->path, req->path);
+    snprintf(saved->path, sizeof(saved->path), "%s", req->path);
     const char *authorization = api_http_authorization(req);
-    strcpy(saved->authorization, authorization ? authorization : "");
-    strcpy(saved->multipart_boundary, req->multipart_boundary);
-    strcpy(saved->upload_path, UPLOAD_FILE_TEMPLATE);
+    snprintf(saved->authorization, sizeof(saved->authorization), "%s",
+             authorization ? authorization : "");
+    snprintf(saved->multipart_boundary, sizeof(saved->multipart_boundary), "%s",
+             req->multipart_boundary);
+    memcpy(saved->upload_path, UPLOAD_FILE_TEMPLATE, sizeof(saved->upload_path));
     saved->content_length = req->content_length;
     saved->upload_size = 0;
     saved->body_prefix_len = req->body_len < req->content_length ?
