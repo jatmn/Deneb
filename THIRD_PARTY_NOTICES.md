@@ -61,6 +61,8 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
   - `ui/lib/lvgl/COPYRIGHTS.md`
 
 Deneb builds against the pinned LVGL submodule for the native touchscreen UI.
+The UI build applies [Deneb's LVGL patch](ui/patches/lvgl-v9.6-code-scanning.patch)
+to the pinned sources for buffer bounds, size arithmetic, and theme cleanup.
 The UI build omits a redundant assertion so the software renderer can skip a
 rounded border when its mask allocation fails.
 Release packages include LVGL's MIT license notice.
