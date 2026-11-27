@@ -748,17 +748,17 @@ async function testMultipartFileRange() {
         api = startService(apiBinary, [], root, process.env);
         await withinDeadline('deneb-api multipart socket did not start', () => fs.existsSync(apiSocket));
 
-        const field = (name, value) => '--' + boundary +
+        const field = (name, value, padding = '') => '--' + boundary + padding +
             '\r\nContent-Disposition: form-data; name="' + name + '"\r\n\r\n' + value + '\r\n';
-        const headers = Buffer.from(field('cloud_job_id', 'cloud-fixture') + '--' + boundary +
+        const headers = Buffer.from(field('cloud_job_id', 'cloud-fixture', ' \t') + '--' + boundary +
             '\r\nContent-Disposition: form-data; name="file"; filename="range.gcode"\r\n\r\n');
         const text = Buffer.from(';TIME:12\n; file bytes\0\r\n--' + boundary + '-text\r\n;');
         // The real delimiter starts at the end of the first parser buffer.
         const gcode = Buffer.concat([text, Buffer.alloc(8190 - headers.length - text.length, 0x61)]);
         const uuid = '12345678-1234-4567-89ab-1234567890ab';
-        const suffix = Buffer.from('\r\n' + field('job_instance_uuid', uuid) +
+        const suffix = Buffer.from('\r\n' + field('job_instance_uuid', uuid, '\t' + ' '.repeat(8192)) +
             field('job_instance_uuid', 'aaaaaaaa-bbbb-4ccc-adef-1234567890ab') + field('owner', 'Cura') +
-            '--' + boundary + '--\r\n');
+            '--' + boundary + '-- \t');
 
         const truncated = await startSocketPost(apiSocket, UPLOAD_PATH, contentType, headers, gcode).finish();
         assert.match(truncated, /^HTTP\/1\.1 400 Bad Request\r\n/);

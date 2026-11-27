@@ -350,7 +350,8 @@ int deneb_print_job_file_replace_extension(const char *name,
     return 0;
 }
 
-static int drain_ufp_model(int reader, int output, const atomic_bool *cancelled)
+static deneb_ufp_model_result_t drain_ufp_model(int reader, int output,
+                                               const atomic_bool *cancelled)
 {
     char buf[8192];
     struct pollfd ready = { .fd = reader, .events = POLLIN };
@@ -361,25 +362,25 @@ static int drain_ufp_model(int reader, int output, const atomic_bool *cancelled)
         if (rc == 0 || (rc < 0 && errno == EINTR))
             continue;
         if (rc < 0)
-            return -1;
+            return DENEB_UFP_MODEL_EXTRACT_FAILED;
         ssize_t n = read(reader, buf, sizeof(buf));
         if (n < 0 && errno == EINTR)
             continue;
         if (n <= 0)
-            return n == 0 && has_output ? 0 : -1;
+            return n == 0 && has_output ? DENEB_UFP_MODEL_OK : DENEB_UFP_MODEL_EXTRACT_FAILED;
 
         for (ssize_t done = 0; done < n;) {
             ssize_t written = write(output, buf + done, (size_t)(n - done));
             if (written < 0 && errno == EINTR)
                 continue;
             if (written <= 0)
-                return -1;
+                return DENEB_UFP_MODEL_STORAGE_FAILED;
             done += written;
         }
         has_output = true;
     }
     errno = ECANCELED;
-    return -1;
+    return DENEB_UFP_MODEL_EXTRACT_FAILED;
 }
 
 static int spawn_ufp_extractor(const char *ufp_path, const char *member, int writer,
@@ -406,18 +407,18 @@ static int spawn_ufp_extractor(const char *ufp_path, const char *member, int wri
     return rc;
 }
 
-static int extract_ufp_member(const char *ufp_path, const char *member,
-                              const char *gcode_path,
-                              const atomic_bool *cancelled)
+static deneb_ufp_model_result_t extract_ufp_member(const char *ufp_path, const char *member,
+                                                   const char *gcode_path,
+                                                   const atomic_bool *cancelled)
 {
     if (atomic_load(cancelled)) {
         errno = ECANCELED;
-        return -1;
+        return DENEB_UFP_MODEL_EXTRACT_FAILED;
     }
 
     int stream[2];
     if (pipe2(stream, O_CLOEXEC) < 0)
-        return -1;
+        return DENEB_UFP_MODEL_EXTRACT_FAILED;
     int output = open(gcode_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     pid_t pid;
     int rc = output < 0 ? errno : spawn_ufp_extractor(ufp_path, member, stream[1], &pid);
@@ -425,16 +426,19 @@ static int extract_ufp_member(const char *ufp_path, const char *member,
 
     /* Observe staging writes here. Some unzip versions exit successfully even
      * after writing only part of a member to redirected stdout. */
-    bool copied = rc == 0 && drain_ufp_model(stream[0], output, cancelled) == 0;
+    deneb_ufp_model_result_t result = DENEB_UFP_MODEL_STORAGE_FAILED;
+    if (output >= 0)
+        result = rc == 0 ? drain_ufp_model(stream[0], output, cancelled)
+                         : DENEB_UFP_MODEL_EXTRACT_FAILED;
     close(stream[0]);
     if (output >= 0 && close(output) < 0)
-        copied = false;
+        result = DENEB_UFP_MODEL_STORAGE_FAILED;
 
     /* The worker owns this process group until the child has been reaped. */
     if (rc == 0) {
         const struct timespec delay = { .tv_nsec = 20000000L };
         for (;;) {
-            if (!copied || atomic_load(cancelled)) {
+            if (result != DENEB_UFP_MODEL_OK || atomic_load(cancelled)) {
                 kill(-pid, SIGKILL);
                 while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
                 break;
@@ -443,7 +447,7 @@ static int extract_ufp_member(const char *ufp_path, const char *member,
             pid_t exited = waitpid(pid, &status, WNOHANG);
             if (exited == pid) {
                 if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-                    return 0;
+                    return DENEB_UFP_MODEL_OK;
                 break;
             }
             if (exited < 0 && errno != EINTR)
@@ -455,7 +459,7 @@ static int extract_ufp_member(const char *ufp_path, const char *member,
         unlink(gcode_path);
     if (atomic_load(cancelled))
         errno = ECANCELED;
-    return -1;
+    return result == DENEB_UFP_MODEL_OK ? DENEB_UFP_MODEL_EXTRACT_FAILED : result;
 }
 
 static int contains_ci(const char *haystack, const char *needle)
@@ -1042,19 +1046,17 @@ done:
     return rc;
 }
 
-int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
-                                                 const char *gcode_path,
-                                                 const atomic_bool *cancelled)
+deneb_ufp_model_result_t deneb_print_job_file_extract_ufp_model_gcode(
+    const char *ufp_path, const char *gcode_path, const atomic_bool *cancelled)
 {
-    int rc;
-
     if (!ufp_path || !*ufp_path || !gcode_path || !*gcode_path) {
         errno = EINVAL;
-        return -1;
+        return DENEB_UFP_MODEL_EXTRACT_FAILED;
     }
 
-    rc = extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path, cancelled);
-    if (rc == 0 || atomic_load(cancelled))
+    deneb_ufp_model_result_t rc =
+        extract_ufp_member(ufp_path, "3D/model.gcode", gcode_path, cancelled);
+    if (rc != DENEB_UFP_MODEL_EXTRACT_FAILED || atomic_load(cancelled))
         return rc;
     return extract_ufp_member(ufp_path, "/3D/model.gcode", gcode_path, cancelled);
 }
@@ -1168,6 +1170,11 @@ int deneb_print_job_file_spool_path(const char *name, char *out,
 
     if (deneb_print_job_file_sanitize_name(name, safe, sizeof(safe)) < 0)
         return -1;
+    if (strchr(safe, '/') || strchr(safe, '\\') ||
+        strcmp(safe, ".") == 0 || strcmp(safe, "..") == 0) {
+        errno = EINVAL;
+        return -1;
+    }
 
     if (snprintf(out, out_sz, "%s/%s", DENEB_PRINT_JOB_SPOOL_DIR,
                  safe) >= (int)out_sz) {

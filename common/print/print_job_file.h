@@ -50,6 +50,12 @@ typedef struct {
     char dest_path[256];
 } deneb_print_job_upload_storage_plan_t;
 
+typedef enum {
+    DENEB_UFP_MODEL_OK,
+    DENEB_UFP_MODEL_EXTRACT_FAILED,
+    DENEB_UFP_MODEL_STORAGE_FAILED,
+} deneb_ufp_model_result_t;
+
 void deneb_print_job_file_metadata_init(deneb_print_job_file_metadata_t *meta);
 void deneb_print_job_start_plan_init(deneb_print_job_start_plan_t *plan);
 void deneb_print_job_upload_storage_plan_init(
@@ -73,9 +79,8 @@ int deneb_print_job_file_replace_extension(const char *name,
                                            const char *extension,
                                            char *out,
                                            size_t out_sz);
-int deneb_print_job_file_extract_ufp_model_gcode(const char *ufp_path,
-                                                 const char *gcode_path,
-                                                 const atomic_bool *cancelled);
+deneb_ufp_model_result_t deneb_print_job_file_extract_ufp_model_gcode(
+    const char *ufp_path, const char *gcode_path, const atomic_bool *cancelled);
 int deneb_print_job_file_extract_ufp_thumbnail(const char *ufp_path,
                                                const char *out_path);
 void deneb_print_job_file_clear_active_thumbnail(void);

@@ -447,17 +447,23 @@ int api_print_job_prepare_upload(const char *boundary, const char *upload_path,
             set_message_response(resp, 500, "Failed to save file");
             goto done;
         }
-        int extracted = deneb_print_job_file_extract_ufp_model_gcode(
+        deneb_ufp_model_result_t extracted = deneb_print_job_file_extract_ufp_model_gcode(
             upload_path, upload->staged_gcode, cancelled);
-        if (extracted == 0 && !atomic_load(cancelled))
-            prepare_upload_thumbnail(upload_path, upload);
-        if (extracted != 0) {
+        if (extracted == DENEB_UFP_MODEL_STORAGE_FAILED) {
+            fprintf(stderr, "deneb-api: failed to stage extracted UFP for %s\n",
+                    upload->storage.dest_path);
+            set_message_response(resp, 500, "Failed to save file");
+            goto done;
+        }
+        if (extracted != DENEB_UFP_MODEL_OK) {
             if (!atomic_load(cancelled))
                 fprintf(stderr, "deneb-api: print upload rejected: failed to extract UFP model.gcode from %s\n",
                         filename);
             set_message_response(resp, 400, "Failed to extract UFP model.gcode");
             goto done;
         }
+        if (!atomic_load(cancelled))
+            prepare_upload_thumbnail(upload_path, upload);
         upload->ufp_normalized = 1;
         fprintf(stderr, "deneb-api: normalized UFP upload to extracted G-code %s\n", job_name);
     } else if (write_upload_range(input, &file, upload->staged_gcode, cancelled) < 0) {

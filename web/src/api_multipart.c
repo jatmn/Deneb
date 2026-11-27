@@ -88,7 +88,33 @@ static bool disposition_has_name(const char *disp, const char *name)
     return strcasestr(disp, quoted) || strcasestr(disp, bare);
 }
 
-/* The overlap keeps a possible delimiter, its suffix and its preceding CR. */
+/* Accept transport padding after either form of a delimiter (RFC 2046). */
+static int read_delimiter_end(multipart_reader_t *reader, int fd, bool final,
+                              const atomic_bool *cancelled)
+{
+    bool after_cr = false;
+    for (;;) {
+        if (reader->start == reader->end) {
+            if (reader->eof)
+                return final && !after_cr;
+            if (refill(reader, fd, cancelled) < 0)
+                return -1;
+            continue;
+        }
+
+        char c = reader->data[reader->start];
+        if (c == '\n') {
+            reader->start++;
+            return 1;
+        }
+        if (after_cr || (c != ' ' && c != '\t' && c != '\r'))
+            return 0;
+        after_cr = c == '\r';
+        reader->start++;
+    }
+}
+
+/* The overlap keeps a possible delimiter, its initial suffix and preceding CR. */
 static int read_part_end(multipart_reader_t *reader, int fd, const char *marker,
                          size_t marker_len, off_t part_start, off_t *part_end,
                          const atomic_bool *cancelled)
@@ -99,23 +125,19 @@ static int read_part_end(multipart_reader_t *reader, int fd, const char *marker,
         if (line) {
             char *suffix = line + marker_len;
             size_t suffix_len = reader->end - (size_t)(suffix - reader->data);
-            if (suffix_len >= 4 || reader->eof) {
-                size_t end_len = 0;
-                if (suffix_len >= 1 && suffix[0] == '\n')
-                    end_len = 1;
-                if (suffix_len >= 2 && memcmp(suffix, "\r\n", 2) == 0)
-                    end_len = 2;
-                bool final = suffix_len >= 2 && memcmp(suffix, "--", 2) == 0 &&
-                             (suffix_len == 2 || suffix[2] == '\n' ||
-                              (suffix_len >= 4 && memcmp(suffix + 2, "\r\n", 2) == 0));
-                if (end_len || final) {
-                    *part_end = reader->offset + (off_t)(line - reader->data);
-                    if (*part_end > part_start && line > reader->data && line[-1] == '\r')
-                        (*part_end)--;
-                    reader->start = (size_t)(suffix - reader->data) + end_len;
+            if (suffix_len >= 2 || reader->eof) {
+                bool final = suffix_len >= 2 && memcmp(suffix, "--", 2) == 0;
+                off_t end = reader->offset + (off_t)(line - reader->data);
+                if (end > part_start && line > reader->data && line[-1] == '\r')
+                    end--;
+                reader->start = (size_t)(suffix - reader->data) + (final ? 2 : 0);
+                int consumed = read_delimiter_end(reader, fd, final, cancelled);
+                if (consumed < 0)
+                    return -1;
+                if (consumed > 0) {
+                    *part_end = end;
                     return final ? 1 : 0;
                 }
-                reader->start = (size_t)(line - reader->data) + 1;
                 continue;
             }
         }
@@ -144,19 +166,19 @@ int parse_multipart_upload(int fd, const char *boundary,
                            multipart_field_t *fields, size_t field_count,
                            const atomic_bool *cancelled)
 {
-    multipart_reader_t reader = {0};
+    /* The leading newline allows the same scanner to match at file offset zero. */
+    multipart_reader_t reader = { .data = "\n", .end = 1, .offset = -1 };
     char marker[sizeof("\n--") + HTTP_MULTIPART_BOUNDARY_SIZE - 1];
     int marker_len = snprintf(marker, sizeof(marker), "\n--%s", boundary);
     if (marker_len <= 3 || (size_t)marker_len >= sizeof(marker))
         return -1;
 
     filename[0] = '\0';
+    off_t preamble_end;
+    if (read_part_end(&reader, fd, marker, (size_t)marker_len, 0, &preamble_end,
+                      cancelled) != 0)
+        return -1;
     char *line;
-    do {
-        line = read_line(&reader, fd, cancelled);
-        if (!line)
-            return -1;
-    } while (strcmp(line, marker + 1) != 0);
 
     bool found_file = false;
     size_t remaining_fields = field_count;
