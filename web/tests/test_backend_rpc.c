@@ -15,6 +15,34 @@ static const char *replies[] = {
     "{\"status\":\"ok\",\"operation\":\"18446744073709551615\"}"
 };
 #ifdef TEST_WEB_BACKEND
+static void test_status_continues_after_batch(void)
+{
+    const char *endpoint = "inproc://deneb-status-batch";
+    void *pub = zmq_socket(zmq_ctx, ZMQ_XPUB);
+    int timeout = 2000;
+    assert(pub && zmq_setsockopt(pub, ZMQ_RCVTIMEO, &timeout, sizeof(timeout)) == 0);
+    assert(zmq_bind(pub, endpoint) == 0);
+
+    status_sock = zmq_socket(zmq_ctx, ZMQ_SUB);
+    assert(status_sock);
+    assert(zmq_setsockopt(status_sock, ZMQ_SUBSCRIBE, STATUS_TOPIC, strlen(STATUS_TOPIC)) == 0);
+    assert(zmq_connect(status_sock, endpoint) == 0);
+    char frame[128];
+    assert(zmq_recv(pub, frame, sizeof(frame), 0) == (int)sizeof(STATUS_TOPIC));
+
+    for (int i = 1; i <= MAX_STATUS_MSGS + 1; i++) {
+        int n = snprintf(frame, sizeof(frame), "10001<{\"X\":%d}", i);
+        assert(n > 0 && (size_t)n < sizeof(frame) && zmq_send(pub, frame, (size_t)n, 0) == n);
+    }
+    assert(backend_zmq_poll());
+    assert(state.pos_x == MAX_STATUS_MSGS);
+    assert(!backend_zmq_poll());
+    assert(state.pos_x == MAX_STATUS_MSGS + 1);
+    zmq_close(status_sock);
+    status_sock = NULL;
+    zmq_close(pub);
+}
+
 static void publish_until(void *pub, const char *frame, deneb_manual_state_t manual_state)
 {
     int n = (int)strlen(frame);
@@ -171,6 +199,7 @@ int main(void)
     assert(pthread_join(thread, NULL) == 0);
 #ifdef TEST_WEB_BACKEND
     test_status_projects_manual_ownership();
+    test_status_continues_after_batch();
 #endif
 #ifndef TEST_WEB_BACKEND
     /* Use a bound, silent peer to exercise the real macro admission timeout. */

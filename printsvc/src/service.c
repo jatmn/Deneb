@@ -29,7 +29,8 @@ int deneb_print_service_stop_faulted_work(deneb_print_service_t *svc)
             }
         }
     }
-    deneb_gcode_stream_close(&svc->job_stream);
+    if (svc->job_stream.fd >= 0)
+        deneb_gcode_stream_close(&svc->job_stream);
     svc->job_active = 0;
     svc->job_prepare_stage = 0;
     svc->gcode_queue_active = 0;

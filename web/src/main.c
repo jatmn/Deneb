@@ -14,6 +14,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <errno.h>
@@ -38,7 +39,6 @@
 #define DENEB_API_SOCKET_PATH "/var/run/deneb-api.sock"
 #endif
 #define MAX_EVENTS      16
-#define EPOLL_TIMEOUT_MS 100
 #define MAX_SSE_CLIENTS 4
 #define SSE_PUSH_INTERVAL_MS 250
 /* After a client FIN, lighttpd may need another downstream write to
@@ -50,7 +50,9 @@
 
 /* The signal handler may run on the upload worker thread. */
 _Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "Signal flag must be lock-free");
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2, "Signal wake descriptor must be lock-free");
 static atomic_bool running = 1;
+static atomic_int wake_fd = -1;
 static int listen_fd = -1;
 static int epoll_fd = -1;
 static int owner_lock_fd = -1;
@@ -115,10 +117,22 @@ typedef struct pending_response {
 
 static pending_response_t *pending_responses;
 
+static void wake_event_loop(void)
+{
+    int fd = atomic_load(&wake_fd);
+    if (fd < 0)
+        return;
+    int saved_errno = errno;
+    uint64_t one = 1;
+    while (write(fd, &one, sizeof(one)) < 0 && errno == EINTR) {}
+    errno = saved_errno;
+}
+
 static void signal_handler(int sig)
 {
     (void)sig;
     running = 0;
+    wake_event_loop();
 }
 
 static int set_nonblocking(int fd)
@@ -160,6 +174,37 @@ static uint64_t monotonic_ms(void)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static int limit_wait(int wait, uint64_t elapsed, int interval)
+{
+    int remaining = elapsed >= (uint64_t)interval ? 0 : interval - (int)elapsed;
+    return wait < 0 || remaining < wait ? remaining : wait;
+}
+
+static int next_wait_ms(uint64_t now_ms, int zmq_fd)
+{
+    int wait = -1;
+    if (sse_client_count)
+        wait = limit_wait(wait, now_ms - sse_last_push_ms, SSE_PUSH_INTERVAL_MS);
+    if (zmq_fd >= 0) {
+        const printer_state_t *state = backend_zmq_get_state();
+        if (state->connected)
+            wait = limit_wait(wait, (uint32_t)now_ms - state->last_update_ms,
+                              DENEB_STATUS_STALE_MS);
+    }
+    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+        if (uploads[i].request && !uploads[i].preparation_order)
+            wait = limit_wait(wait, now_ms - uploads[i].last_progress_ms,
+                              UPLOAD_IDLE_TIMEOUT_MS);
+    }
+    return wait;
+}
+
+static int watch_fd(int fd)
+{
+    struct epoll_event ev = { .events = EPOLLIN, .data.fd = fd };
+    return epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev);
 }
 
 static int create_listen_socket_at(const char *path)
@@ -443,16 +488,17 @@ static void *prepare_print_upload(void *unused)
         request->multipart_boundary, request->upload_path,
         &preparation.files, &preparation.response,
         &preparation.cancelled) == 0;
+    wake_event_loop();
     return NULL;
 }
 
-static void collect_print_upload(void)
+static bool collect_print_upload(bool status_pending)
 {
     upload_t *upload = preparation.upload;
     int fd = upload->client_fd;
     int respond = running && fd >= 0 && !upload_peer_gone(fd);
     if (respond && preparation.prepared) {
-        backend_zmq_poll();
+        status_pending = backend_zmq_poll();
         api_print_job_commit_upload(&preparation.files, &preparation.response);
     }
     api_print_job_release_upload(&preparation.files);
@@ -465,39 +511,34 @@ static void collect_print_upload(void)
         if (fd >= 0)
             close_client(fd);
     }
+    return status_pending;
 }
 
-static void poll_print_uploads(void)
+static void start_print_preparation(void)
 {
-    if (preparation.upload) {
-        /* A successful join publishes the results and never waits for disk work. */
-        if (pthread_tryjoin_np(preparation.thread, NULL) != 0)
+    while (!preparation.upload && running) {
+        upload_t *next = NULL;
+        for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
+            upload_t *upload = &uploads[i];
+            if (upload->request && upload->preparation_order &&
+                (!next || upload->preparation_order < next->preparation_order))
+                next = upload;
+        }
+        if (!next)
             return;
-        collect_print_upload();
-    }
-
-    upload_t *next = NULL;
-    for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
-        upload_t *upload = &uploads[i];
-        if (upload->request && upload->preparation_order &&
-            (!next || upload->preparation_order < next->preparation_order))
-            next = upload;
-    }
-    if (!next || !running)
-        return;
-    if (upload_peer_gone(next->client_fd)) {
-        close_client(next->client_fd);
-        return;
-    }
-
-    preparation.upload = next;
-    memset(&preparation.files, 0, sizeof(preparation.files));
-    atomic_store(&preparation.cancelled, 0);
-    api_http_response_init(&preparation.response);
-    if (pthread_create(&preparation.thread, NULL, prepare_print_upload, NULL) != 0) {
+        if (upload_peer_gone(next->client_fd)) {
+            close_client(next->client_fd);
+            continue;
+        }
+        preparation.upload = next;
+        memset(&preparation.files, 0, sizeof(preparation.files));
+        atomic_store(&preparation.cancelled, 0);
+        api_http_response_init(&preparation.response);
+        if (pthread_create(&preparation.thread, NULL, prepare_print_upload, NULL) == 0)
+            return;
         set_upload_failed(&preparation.response);
         preparation.prepared = 0;
-        collect_print_upload();
+        (void)collect_print_upload(false);
     }
 }
 
@@ -733,34 +774,43 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    struct epoll_event ev;
-    ev.events = EPOLLIN;
-    ev.data.fd = listen_fd;
-    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_fd, &ev);
-
+    int result = 0;
+    int notify_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    atomic_store(&wake_fd, notify_fd);
     int zmq_fd = backend_zmq_get_fd();
-    if (zmq_fd >= 0) {
-        ev.events = EPOLLIN;
-        ev.data.fd = zmq_fd;
-        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, zmq_fd, &ev);
+    if (notify_fd < 0 || watch_fd(listen_fd) < 0 || watch_fd(notify_fd) < 0 ||
+        (zmq_fd >= 0 && watch_fd(zmq_fd) < 0)) {
+        perror("deneb-api: initialize epoll sources");
+        result = 1;
+        goto shutdown;
     }
 
     fprintf(stderr, "deneb-api: listening on %s\n", DENEB_API_SOCKET_PATH);
 
     struct epoll_event events[MAX_EVENTS];
+    bool status_pending = backend_zmq_poll();
     while (running) {
-        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, EPOLL_TIMEOUT_MS);
+        int wait = status_pending ? 0 : next_wait_ms(monotonic_ms(), zmq_fd);
+        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, wait);
         if (n < 0) {
             if (errno == EINTR) continue;
             perror("epoll_wait");
             break;
         }
+        bool preparation_finished = false;
         for (int i = 0; running && i < n; i++) {
             int fd = events[i].data.fd;
             if (fd == listen_fd) {
                 handle_accept();
             } else if (fd == zmq_fd) {
                 backend_zmq_poll();
+            } else if (fd == notify_fd) {
+                uint64_t notifications;
+                ssize_t size;
+                do {
+                    size = read(notify_fd, &notifications, sizeof(notifications));
+                } while (size < 0 && errno == EINTR);
+                preparation_finished = size == sizeof(notifications);
             } else {
                 uint32_t ready = events[i].events;
                 upload_t *upload = find_upload(fd);
@@ -778,7 +828,9 @@ int main(int argc, char *argv[])
             }
         }
 
-        backend_zmq_poll();
+        if (!running)
+            break;
+        status_pending = backend_zmq_poll();
 
         uint64_t now_ms = monotonic_ms();
         sse_push_status(now_ms);
@@ -787,16 +839,22 @@ int main(int argc, char *argv[])
                 now_ms - uploads[i].last_progress_ms >= UPLOAD_IDLE_TIMEOUT_MS)
                 finish_upload(&uploads[i], 0);
         }
-        poll_print_uploads();
+        /* Process peer disconnects before publishing a finished upload. */
+        if (preparation_finished && preparation.upload) {
+            pthread_join(preparation.thread, NULL);
+            status_pending = collect_print_upload(status_pending);
+        }
+        start_print_preparation();
     }
 
+shutdown:
     for (int i = 0; i < MAX_PENDING_UPLOADS; i++) {
         if (uploads[i].request && uploads[i].client_fd >= 0)
             close_client(uploads[i].client_fd);
     }
     if (preparation.upload) {
         pthread_join(preparation.thread, NULL);
-        collect_print_upload();
+        (void)collect_print_upload(false);
     }
 
     while (pending_responses)
@@ -813,5 +871,7 @@ int main(int argc, char *argv[])
     unlink(DENEB_API_SOCKET_PATH);
     backend_zmq_deinit();
     close(owner_lock_fd);
-    return 0;
+    if (notify_fd >= 0)
+        close(atomic_exchange(&wake_fd, -1));
+    return result;
 }

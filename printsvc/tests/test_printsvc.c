@@ -84,6 +84,15 @@
 static void write_build_volume_fixture(const char *path,
                                        const char *bounds_metadata);
 
+static unsigned int gcode_stream_close_calls;
+void __real_deneb_gcode_stream_close(deneb_gcode_stream_t *stream);
+
+void __wrap_deneb_gcode_stream_close(deneb_gcode_stream_t *stream)
+{
+    gcode_stream_close_calls++;
+    __real_deneb_gcode_stream_close(stream);
+}
+
 static int buffer_contains_bytes(const uint8_t *buf, size_t len,
                                  const char *needle)
 {
@@ -7336,11 +7345,21 @@ static void test_operation_observation(void)
 static void test_fault_never_replays_motion(void)
 {
     deneb_print_service_t svc;
+    deneb_command_t job = {0};
+    char reply[128];
+    char path[] = "/tmp/deneb-fault-stream-XXXXXX";
     int sockets[2];
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
     assert(fcntl(sockets[0], F_SETFL, O_NONBLOCK) == 0);
     assert(fcntl(sockets[1], F_SETFL, O_NONBLOCK) == 0);
     deneb_print_service_init(&svc);
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+    assert(close(fd) == 0);
+    assert(deneb_gcode_stream_open(&svc.job_stream, path) == 0);
+    int stream_fd = svc.job_stream.fd;
+    unsigned int before_fault = gcode_stream_close_calls;
+    svc.job_active = 1;
     svc.serial_ready = 1;
     svc.serial.fd = sockets[0];
     svc.status.head_t_set = 180;
@@ -7349,14 +7368,40 @@ static void test_fault_never_replays_motion(void)
     assert(write(sockets[1], input, strlen(input)) == (ssize_t)strlen(input));
     assert(deneb_print_service_poll_motion(&svc) < 0);
     assert(svc.status.fault && svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(!svc.job_active && svc.job_stream.fd == -1);
+    assert(fcntl(stream_fd, F_GETFD) == -1 && errno == EBADF);
+    assert(gcode_stream_close_calls == before_fault + 1);
+    snprintf(job.file, sizeof(job.file), "%s", path);
+    assert(deneb_job_control_accept(&svc, &job, reply, sizeof(reply)) < 0);
+    assert(strstr(reply, "controller recovery required"));
+    assert(svc.job_stream.fd == -1);
+    assert(unlink(path) == 0);
     assert(svc.status.head_t_set == 180); /* submission is not cooling evidence */
     assert(svc.flow.sent_count == 4 && svc.flow.next_sequence == 4);
     assert(deneb_flow_inflight(&svc.flow) == 3);
+    static const char *const shutdown[] = {"M401", "M104 S0", "M140 S0"};
     for (size_t i = 0; i < DENEB_FLOW_WINDOW; ++i) {
-        if (svc.flow.slots[i].occupied)
-            assert(svc.flow.slots[i].command[0] == 'M');
+        const deneb_flow_slot_t *slot = &svc.flow.slots[i];
+        if (slot->occupied) {
+            assert(slot->sequence >= 1 && slot->sequence <= 3);
+            assert(strcmp(slot->command, shutdown[slot->sequence - 1]) == 0);
+        }
     }
-    assert(deneb_print_service_poll_motion(&svc) < 0);
+    static const char temperatures[] = "T:175.0 /180.0 B:55.0 /60.0\n";
+    assert(write(sockets[1], temperatures, sizeof(temperatures) - 1) ==
+           (ssize_t)(sizeof(temperatures) - 1));
+    unsigned int after_fault = gcode_stream_close_calls;
+    for (int tick = 0; tick < 10; ++tick) {
+        assert(deneb_print_service_poll_motion(&svc) < 0);
+        assert(deneb_print_service_poll_job(&svc) < 0);
+    }
+    unsigned int repeated_closes = gcode_stream_close_calls - after_fault;
+    if (repeated_closes)
+        fprintf(stderr, "latched fault stream cleanup: %u calls, %zu bytes cleared\n",
+                repeated_closes, repeated_closes * sizeof(svc.job_stream));
+    assert(repeated_closes == 0);
+    assert(svc.status.fault && svc.status.state == DENEB_PRINT_STATE_ERROR);
+    assert(svc.status.head_t_cur == 175.0f && svc.status.head_t_set == 180.0f);
     assert(svc.flow.sent_count == 4);
     close(sockets[1]);
     deneb_print_service_close(&svc);

@@ -168,7 +168,10 @@ target_link_libraries(deneb-printsvc PRIVATE m pthread)
 add_executable(deneb-printsvc-tests
     tests/test_printsvc.c
 )
-target_link_libraries(deneb-printsvc-tests PRIVATE deneb-printsvc-core)
+target_link_libraries(deneb-printsvc-tests PRIVATE
+    deneb-printsvc-core
+    "-Wl,--wrap=deneb_gcode_stream_close"
+)
 
 enable_testing()
 add_test(NAME deneb-printsvc-tests COMMAND deneb-printsvc-tests)
