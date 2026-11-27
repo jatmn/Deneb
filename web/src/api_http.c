@@ -305,7 +305,7 @@ int api_http_serialize_headers(const http_response_t *resp, char *buf, size_t ca
     const char *challenge_end = resp->auth_challenge[0] ? "\r\n" : "";
 
     int n;
-    if (resp->is_sse) {
+    if (resp->sse_revision) {
         n = snprintf(buf, cap,
             "HTTP/1.1 %d %s\r\n"
             "Content-Type: %s\r\n"

@@ -1330,12 +1330,19 @@ static void test_gcode_stream_rewrite_policy(void)
     FILE *f = fopen(path, "wb");
 
     assert(f != NULL);
-    fputs("M117 printing\n", f);
+    fputs(";LAYER:0\n;TIME_ELAPSED:12.5\nM117 printing\nM190 S55\n", f);
     fputs("M109 S205\n", f);
     fputs("G280 S1\n", f);
     fclose(f);
 
     assert(deneb_gcode_stream_open(&stream, path) == 0);
+    assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
+    assert(strcmp(line, "M140 S55") == 0);
+    assert(deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
+                                        &target) == 1);
+    assert(wait_bed && !wait_nozzle && target == 55.0f);
+    assert(stream.last_layer_zero);
+    assert(stream.last_time_elapsed_valid && stream.last_time_elapsed == 12.5f);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
     assert(strcmp(line, "M104 S205") == 0);
     assert(deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
@@ -1343,6 +1350,7 @@ static void test_gcode_stream_rewrite_policy(void)
     assert(!wait_bed);
     assert(wait_nozzle);
     assert(target == 205.0f);
+    assert(!stream.last_layer_zero && !stream.last_time_elapsed_valid);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
     assert(strcmp(line, "G92 E-16.5") == 0);
     assert(deneb_gcode_stream_last_wait(&stream, &wait_bed, &wait_nozzle,
@@ -1354,19 +1362,40 @@ static void test_gcode_stream_rewrite_policy(void)
 
     f = fopen(path, "wb");
     assert(f != NULL);
-    fputs("G280\n", f);
+    fputs("G280\n \tG1 X2 ; comment\nG1 X", f);
+    for (size_t i = 0; i < DENEB_PRINTSVC_MAX_GCODE_LINE; i++)
+        fputc('2', f);
+    fputs("\nG280\n", f);
     fclose(f);
     assert(deneb_gcode_stream_open(&stream, path) == 0);
+    static const char *const prime[] = {
+        "G0 Z2 F9000", "G10 S-6.5 F1500", "G10 S0 F300", "G92 E0",
+        "G1 E7.65 F75", "G1 E8.5 Z6 F150", "G0 Z6.1 F1.2", "G92 E0",
+        "G1 E-6.5 F600", "G0 Z6.2 F2.4", "G91", "G0 Y10 F1.2e+03",
+        "G90", "G0 Z2 F1.2e+03", "G0 F9000"
+    };
+    for (size_t i = 0; i < sizeof(prime) / sizeof(prime[0]); i++) {
+        assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
+        assert(strcmp(line, prime[i]) == 0);
+        assert(stream.line_number == 1);
+    }
+    assert(stream.pending.count == 0);
+    assert(stream.pending_index == 0);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
-    assert(strcmp(line, "G0 Z2 F9000") == 0);
+    assert(strcmp(line, "G1 X2") == 0);
+    assert(stream.line_number == 2);
+    char long_line[DENEB_PRINTSVC_MAX_GCODE_LINE + 16];
+    assert(deneb_gcode_stream_next(&stream, long_line, sizeof(long_line)) == 1);
+    assert(strlen(long_line) == DENEB_PRINTSVC_MAX_GCODE_LINE - 1);
+    assert(strncmp(long_line, "G1 X", 4) == 0);
+    assert(stream.line_number == 3);
     assert(deneb_gcode_stream_next(&stream, line, sizeof(line)) == 1);
-    assert(strcmp(line, "G10 S-6.5 F1500") == 0);
-    assert(stream.line_number == 1);
+    assert(strcmp(line, prime[0]) == 0);
     deneb_gcode_stream_close(&stream);
     assert(stream.fd == -1);
     assert(stream.path[0] == '\0');
-    assert(stream.line_number == 1);
-    assert(stream.pending_count == 0);
+    assert(stream.line_number == 4);
+    assert(stream.pending.count == 0);
     assert(stream.pending_index == 0);
     assert(stream.read_len == 0);
     assert(stream.read_pos == 0);
@@ -3748,6 +3777,27 @@ static void test_status_payload_helpers(void)
     assert(payload.has_native_stop_allowed);
     assert(!payload.native_stop_allowed);
     assert(payload.is_printing);
+
+    /* A transport span need not be terminated. Later bytes are another frame. */
+    const char frames[] = "{\"unknown\":{},\"file\":\"none\",\"name\":\"cube\\\"one.gcode\","
+                          "\"X\":\"2.5\",\"X\":12,\"Ttot\":\"200\",\"Tleft\":bad}"
+                          "\"denebActive\":true";
+    size_t json_len = sizeof(frames) - sizeof("\"denebActive\":true");
+    assert(deneb_status_payload_parse_span(frames, json_len, &payload) == 0);
+    assert(strcmp(payload.file, "cube\"one.gcode") == 0);
+    assert(payload.pos_x == 2.5f);
+    assert(payload.time_total == 200 && payload.time_left == 0);
+    assert(!payload.has_native_active && !payload.has_error);
+
+    const char embedded_nul[] = "{\"X\":7}\0{\"denebActive\":true}";
+    assert(deneb_status_payload_parse_span(embedded_nul, sizeof(embedded_nul) - 1,
+                                           &payload) == 0);
+    assert(payload.pos_x == 7.0f && !payload.has_native_active);
+
+    const char truncated[] = {'"', 'X', '"', ':', '"', '7', '\\'};
+    assert(deneb_status_payload_parse_span(truncated, sizeof(truncated),
+                                           &payload) == 0);
+    assert(payload.pos_x == 0.0f);
 }
 
 static void test_status_state_helpers(void)
@@ -5468,7 +5518,7 @@ static void test_repeated_jobs_release_terminal_state(void)
         assert(svc.job_stream.path[0] == '\0');
         assert(svc.job_stream.read_len == 0);
         assert(svc.job_stream.read_pos == 0);
-        assert(svc.job_stream.pending_count == 0);
+        assert(svc.job_stream.pending.count == 0);
         assert(svc.job_stream.pending_index == 0);
         assert(svc.job_stream.line_number == 0);
         assert(!flow_has_retained_slot_text(&svc.flow));

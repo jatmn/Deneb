@@ -169,7 +169,8 @@ if(NODE_EXECUTABLE)
     if(BUILD_HOST_STUB)
         # Use the normal API code with an isolated, per-test working directory.
         add_executable(deneb-api-upload-fixture ${DENEB_API_SOURCES} tests/small_send_buffer.c)
-        target_link_options(deneb-api-upload-fixture PRIVATE -Wl,--wrap=accept4)
+        target_link_options(deneb-api-upload-fixture PRIVATE
+            -Wl,--wrap=accept4 -Wl,--wrap=backend_zmq_get_status_event)
         target_include_directories(deneb-api-upload-fixture PRIVATE ${DENEB_API_INCLUDE_DIRS})
         target_compile_definitions(deneb-api-upload-fixture PRIVATE
             BACKEND_ZMQ_STUB

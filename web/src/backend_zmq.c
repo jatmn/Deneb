@@ -49,7 +49,13 @@ int backend_zmq_init(void) { fprintf(stderr, "backend_zmq: stub mode\n"); state.
 int backend_zmq_get_fd(void) { return -1; }
 void backend_zmq_poll(void) {}
 const printer_state_t *backend_zmq_get_state(void) { return &state; }
-const char *backend_zmq_get_status_json(void) { return "{}"; }
+const char *backend_zmq_get_status_event(size_t *len, uint64_t *revision)
+{
+    static const char event[] = "data: {}\n\n";
+    *len = sizeof(event) - 1;
+    *revision = 1;
+    return event;
+}
 const char *backend_zmq_get_status_label(void)
 {
     return deneb_print_status_label_with_req(
@@ -156,8 +162,11 @@ void backend_zmq_deinit(void) {}
 
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 64
+#define MAX_STATUS_FRAME_SIZE 2048
 #define STOP_INFLIGHT_MS 3000
 #define STATUS_QUEUE_HWM 4
+/* Preserve the full JSON capacity when adding the SSE framing. */
+#define STATUS_EVENT_CAP (1536 + sizeof("data: \n\n") - 1)
 
 static deneb_print_backend_route_t backend_route;
 
@@ -165,7 +174,10 @@ static void *zmq_ctx = NULL;
 static void *status_sock = NULL;
 static void *rpc_sock = NULL;
 static printer_state_t state;
-static char *status_json_cache = NULL;  /* pre-serialized JSON of last status */
+static char *status_event;
+static size_t status_event_len;
+static uint64_t status_revision = 1;
+static uint64_t serialized_revision;
 static int had_previous_status = 0;
 static printer_state_t previous_state;
 static deneb_print_preheat_tracker_t preheat_tracker;
@@ -183,8 +195,10 @@ static void retain_backend_filename(const char *path)
 
     deneb_pending_job_file_display_value(path, retained_print_filename,
                                          sizeof(retained_print_filename));
-    deneb_pending_job_file_display_value(path, state.filename,
-                                         sizeof(state.filename));
+    if (strcmp(state.filename, retained_print_filename) != 0) {
+        snprintf(state.filename, sizeof(state.filename), "%s", retained_print_filename);
+        ++status_revision;
+    }
     fprintf(stderr, "backend_zmq: job command path retained as active filename=%s\n",
             state.filename[0] ? state.filename : "(none)");
 }
@@ -309,15 +323,43 @@ static void configure_status_socket(void *socket)
     zmq_setsockopt(socket, ZMQ_CONFLATE, &conflate, sizeof(conflate));
 }
 
-static void update_status_cache(void)
+/* The SSE number format distinguishes positive and negative zero. */
+static bool status_number_changed(float current, float previous)
 {
-    /* Pre-serialize the current state to JSON for fast serving */
-    if (!status_json_cache) status_json_cache = malloc(1536);
-    if (!status_json_cache) return;
+    return memcmp(&current, &previous, sizeof(current)) != 0;
+}
 
-    char *p = status_json_cache;
-    int rem = 1536;
-    int n;
+/* Compare the status fields sent to SSE clients, ignoring freshness timestamps
+ * and fields used only by other consumers. */
+static bool status_fields_changed(const printer_state_t *prev)
+{
+    return status_number_changed(state.nozzle_temp_cur, prev->nozzle_temp_cur) ||
+           status_number_changed(state.nozzle_temp_set, prev->nozzle_temp_set) ||
+           status_number_changed(state.bed_temp_cur, prev->bed_temp_cur) ||
+           status_number_changed(state.bed_temp_set, prev->bed_temp_set) ||
+           status_number_changed(state.topcap_temp_cur, prev->topcap_temp_cur) ||
+           state.topcap_present != prev->topcap_present ||
+           status_number_changed(state.pos_x, prev->pos_x) ||
+           status_number_changed(state.pos_y, prev->pos_y) ||
+           status_number_changed(state.pos_z, prev->pos_z) ||
+           status_number_changed(state.progress, prev->progress) ||
+           state.time_total != prev->time_total || state.time_left != prev->time_left ||
+           strcmp(state.filename, prev->filename) != 0 ||
+           strcmp(state.current_req, prev->current_req) != 0 ||
+           strcmp(state.firmware, prev->firmware) != 0 ||
+           strcmp(state.machine_type, prev->machine_type) != 0 ||
+           state.pcb_id != prev->pcb_id || state.pcb_id_valid != prev->pcb_id_valid ||
+           state.is_printing != prev->is_printing || state.is_paused != prev->is_paused ||
+           state.has_error != prev->has_error || state.connected != prev->connected ||
+           (state.has_native_active && state.native_active) !=
+               (prev->has_native_active && prev->native_active) ||
+           (state.has_native_stop_allowed && state.native_stop_allowed) !=
+               (prev->has_native_stop_allowed && prev->native_stop_allowed) ||
+           state.manual_state != prev->manual_state;
+}
+
+static size_t serialize_status_event(char *event)
+{
     char escaped_filename[sizeof(state.filename) * 2 + 1];
     char escaped_firmware[sizeof(state.firmware) * 2 + 1];
     char escaped_machine_type[sizeof(state.machine_type) * 2 + 1];
@@ -334,8 +376,8 @@ static void update_status_cache(void)
         snprintf(route_fields, sizeof(route_fields),
                  "\"print_backend\":\"unknown\"");
 
-    n = snprintf(p, rem,
-        "{\"nozzle_temp_cur\":%.1f,\"nozzle_temp_set\":%.1f,"
+    int n = snprintf(event, STATUS_EVENT_CAP,
+        "data: {\"nozzle_temp_cur\":%.1f,\"nozzle_temp_set\":%.1f,"
         "\"bed_temp_cur\":%.1f,\"bed_temp_set\":%.1f,"
         "\"topcap_temp_cur\":%.1f,\"topcap_present\":%s,"
         "\"pos_x\":%.1f,\"pos_y\":%.1f,\"pos_z\":%.1f,"
@@ -345,7 +387,7 @@ static void update_status_cache(void)
         "\"pcb_id\":%d,\"pcb_id_valid\":%s,"
         "\"is_printing\":%s,\"is_paused\":%s,\"has_error\":%s,"
         "\"connected\":%s,\"native_active\":%s,"
-        "\"native_stop_allowed\":%s,\"manual_action_allowed\":%s,%s}",
+        "\"native_stop_allowed\":%s,\"manual_action_allowed\":%s,%s}\n\n",
         state.nozzle_temp_cur, state.nozzle_temp_set,
         state.bed_temp_cur, state.bed_temp_set,
         state.topcap_temp_cur, state.topcap_present ? "true" : "false",
@@ -367,9 +409,7 @@ static void update_status_cache(void)
         backend_zmq_manual_action_allowed() ? "true" : "false",
         route_fields);
 
-    p += n; rem -= n;
-
-    (void)rem;
+    return n > 0 && (size_t)n < STATUS_EVENT_CAP ? (size_t)n : 0;
 }
 
 int backend_zmq_init(void)
@@ -396,7 +436,7 @@ int backend_zmq_init(void)
             deneb_print_backend_name(backend_route.backend),
             backend_route.status_url, backend_route.command_url);
     state.connected = true;
-    update_status_cache();
+    ++status_revision;
     return 0;
 
 fail:
@@ -418,7 +458,7 @@ void backend_zmq_poll(void)
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     if (deneb_status_state_expire(&state, (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000)))
-        update_status_cache();
+        ++status_revision;
     if (!status_sock) return;
 
     for (int i = 0; i < MAX_STATUS_MSGS; i++) {
@@ -434,32 +474,29 @@ void backend_zmq_poll(void)
         size_t len = zmq_msg_size(&msg);
 
         /* Skip topic prefix "10001<" */
-        char frame[2048];
-        if (len >= sizeof(frame) || len <= 6 || memcmp(data, "10001<", 6) != 0) {
+        if (len >= MAX_STATUS_FRAME_SIZE || len <= 6 ||
+            memcmp(data, "10001<", 6) != 0) {
             zmq_msg_close(&msg);
             continue;
         }
-        memcpy(frame, data, len);
-        frame[len] = '\0';
-        const char *json = frame + 5;
         {
             printer_state_t prev = state;
             struct timespec ts;
             uint32_t now_ms;
 
-            json++; /* skip the '<' */
             clock_gettime(CLOCK_MONOTONIC, &ts);
             now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-            if (deneb_status_state_apply_json(&state, &prev, json,
-                                              retained_print_filename,
-                                              sizeof(retained_print_filename),
-                                              &stop_guard, now_ms) != 0) {
+            if (deneb_status_state_apply_json_span(&state, &prev, data + 6, len - 6,
+                                                   retained_print_filename,
+                                                   sizeof(retained_print_filename),
+                                                   &stop_guard, now_ms) != 0) {
                 zmq_msg_close(&msg);
                 continue;
             }
 
+            if (status_fields_changed(&prev))
+                ++status_revision;
             log_status_transition(&state);
-            update_status_cache();
         }
 
         zmq_msg_close(&msg);
@@ -471,10 +508,22 @@ const printer_state_t *backend_zmq_get_state(void)
     return &state;
 }
 
-const char *backend_zmq_get_status_json(void)
+const char *backend_zmq_get_status_event(size_t *len, uint64_t *revision)
 {
-    if (status_json_cache) return status_json_cache;
-    return "{}";
+    if (serialized_revision != status_revision) {
+        if (!status_event)
+            status_event = malloc(STATUS_EVENT_CAP);
+        if (!status_event)
+            return NULL;
+        status_event_len = serialize_status_event(status_event);
+        serialized_revision = status_revision;
+    }
+    if (!status_event_len)
+        return NULL;
+
+    *len = status_event_len;
+    *revision = serialized_revision;
+    return status_event;
 }
 
 const char *backend_zmq_get_status_label(void)
@@ -773,7 +822,9 @@ void backend_zmq_deinit(void)
     if (status_sock) { zmq_close(status_sock); status_sock = NULL; }
     if (rpc_sock) { zmq_close(rpc_sock); rpc_sock = NULL; }
     if (zmq_ctx) { zmq_ctx_term(zmq_ctx); zmq_ctx = NULL; }
-    if (status_json_cache) { free(status_json_cache); status_json_cache = NULL; }
+    free(status_event);
+    status_event = NULL;
+    serialized_revision = 0;
 }
 
 #endif /* BACKEND_ZMQ_STUB */

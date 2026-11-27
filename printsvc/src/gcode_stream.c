@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "config.h"
-#include "gcode_rewrite.h"
 #include "gcode_stream.h"
 
 #include <ctype.h>
@@ -116,11 +115,19 @@ int deneb_gcode_stream_has_file_prime_command(const char *path)
     return 0;
 }
 
+static void stream_take_pending(deneb_gcode_stream_t *stream, char *line, size_t line_sz)
+{
+    snprintf(line, line_sz, "%s", stream->pending.commands[stream->pending_index++]);
+    if (stream->pending_index == stream->pending.count) {
+        stream->pending.count = 0;
+        stream->pending_index = 0;
+    }
+}
+
 int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t line_sz)
 {
     char *p;
     size_t len;
-    deneb_gcode_rewrite_t rewrite;
 
     if (!stream || stream->fd < 0 || !line || line_sz == 0)
         return -1;
@@ -132,12 +139,8 @@ int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t lin
     stream->last_time_elapsed_valid = 0;
     stream->last_time_elapsed = 0.0f;
 
-    if (stream->pending_index < stream->pending_count) {
-        snprintf(line, line_sz, "%s", stream->pending[stream->pending_index++]);
-        if (stream->pending_index >= stream->pending_count) {
-            stream->pending_count = 0;
-            stream->pending_index = 0;
-        }
+    if (stream->pending_index < stream->pending.count) {
+        stream_take_pending(stream, line, line_sz);
         return 1;
     }
 
@@ -175,22 +178,20 @@ int deneb_gcode_stream_next(deneb_gcode_stream_t *stream, char *line, size_t lin
 
         if (p != line)
             memmove(line, p, len + 1);
-        if (deneb_gcode_rewrite_line(line, &rewrite) < 0)
+        int rc = deneb_gcode_rewrite_special(line, &stream->pending);
+        if (rc < 0)
             return -1;
-        if (rewrite.count == 0)
-            continue;
-        stream->last_wait_for_bed = rewrite.wait_for_bed;
-        stream->last_wait_for_nozzle = rewrite.wait_for_nozzle;
-        stream->last_wait_target = rewrite.wait_target;
-        snprintf(line, line_sz, "%s", rewrite.commands[0]);
-        if (rewrite.count > 1) {
-            stream->pending_count = rewrite.count - 1;
-            stream->pending_index = 0;
-            for (size_t i = 1; i < rewrite.count; i++) {
-                snprintf(stream->pending[i - 1], sizeof(stream->pending[i - 1]),
-                         "%s", rewrite.commands[i]);
-            }
+        if (rc == 0) {
+            if (len >= DENEB_PRINTSVC_MAX_GCODE_LINE)
+                line[DENEB_PRINTSVC_MAX_GCODE_LINE - 1] = '\0';
+            return 1;
         }
+        if (stream->pending.count == 0)
+            continue;
+        stream->last_wait_for_bed = stream->pending.wait_for_bed;
+        stream->last_wait_for_nozzle = stream->pending.wait_for_nozzle;
+        stream->last_wait_target = stream->pending.wait_target;
+        stream_take_pending(stream, line, line_sz);
         return 1;
     }
 
