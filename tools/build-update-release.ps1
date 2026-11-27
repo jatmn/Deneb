@@ -88,7 +88,8 @@ $toolchainCheck = "test -x '$toolchainRoot/bin/$toolchainTarget-gcc'"
 if ($LASTEXITCODE -ne 0) {
     throw "Missing OpenWrt musl cross-compiler. Run tools/setup-wsl-build.sh first."
 }
-$buildStart = "set -euo pipefail; export STAGING_DIR='$toolchainRoot'; "
+$buildStart = "set -euo pipefail; export STAGING_DIR='$toolchainRoot'; $loadPins; "
+$buildMips = "mips_release_build '$toolchainRoot' ."
 $cmakeToolchainRoot = "-DMUSL_CROSS='$toolchainRoot'"
 $checkCachedToolchain = "grep -Fxq 'MUSL_CROSS:PATH=$toolchainRoot' CMakeCache.txt"
 $buildPackageEnv += " DENEB_PACKAGE_TOOLCHAIN_ROOT='$toolchainRoot' STRIP='$toolchainRoot/bin/$toolchainTarget-strip'"
@@ -120,7 +121,7 @@ if ($RebuildZmq) {
                 "-DCMAKE_BUILD_TYPE=MinSizeRel -DWITH_LIBSODIUM=OFF -DZMQ_BUILD_TESTS=OFF " +
                 "-DWITH_DOCS=OFF -DBUILD_SHARED=OFF -DBUILD_STATIC=ON; " +
                 "make -j`$(nproc); " +
-                "$loadPins; record_native_dependency libzmq '$ZmqRoot'"
+                "record_native_dependency libzmq '$ZmqRoot'"
     & wsl -d $Distro -u root --exec bash -lc $buildZmq
     if ($LASTEXITCODE -ne 0) {
         throw "libzmq musl build failed with exit code $LASTEXITCODE"
@@ -163,7 +164,7 @@ $buildApi = $buildStart +
             "cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake $cmakeToolchainRoot " +
             "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
             "fi; " +
-            "make -j`$(nproc)"
+            "$buildMips '' deneb-api deneb-mdns"
 
 & wsl -d $Distro -u root -- bash -lc $buildApi
 if ($LASTEXITCODE -ne 0) {
@@ -182,7 +183,7 @@ $buildPrintsvc = $buildStart +
                  "cmake .. -DCMAKE_TOOLCHAIN_FILE='$repoWsl/ui/cmake/mipsel-musl-toolchain.cmake' $cmakeToolchainRoot " +
                  "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
                  "fi; " +
-                 "make -j`$(nproc); " +
+                 "$buildMips '' deneb-printsvc; " +
                  "test -x deneb-printsvc"
 
 & wsl -d $Distro -u root -- bash -lc $buildPrintsvc
@@ -212,11 +213,11 @@ $buildLighttpd = $buildStart +
                  "-DWITH_ZLIB=OFF -DWITH_BZIP=OFF -DWITH_BROTLI=OFF -DWITH_ZSTD=OFF " +
                  "-DWITH_OPENSSL=OFF -DWITH_MBEDTLS=OFF -DWITH_WOLFSSL=OFF -DWITH_GNUTLS=OFF; " +
                  "fi; " +
-                 "make -j`$(nproc) lighttpd; " +
+                 "$buildMips lighttpd build/lighttpd; " +
                  "test -x '$lighttpdBinary'"
 
 if ($RebuildLighttpd) {
-    $buildLighttpd += "; $loadPins; record_native_dependency lighttpd '$LighttpdRoot'"
+    $buildLighttpd += "; record_native_dependency lighttpd '$LighttpdRoot'"
 }
 & wsl -d $Distro -u root --exec bash -lc $buildLighttpd
 if ($LASTEXITCODE -ne 0) {
@@ -235,7 +236,7 @@ $buildUi = $buildStart +
            "cmake .. -DCMAKE_TOOLCHAIN_FILE=../../ui/cmake/mipsel-musl-toolchain.cmake $cmakeToolchainRoot " +
            "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_STATIC_PATH='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude' -DMBEDTLS_ROOT='$mbedtlsRoot'; " +
            "fi; " +
-           "make -j`$(nproc); " +
+           "$buildMips '' deneb-dfsvc; " +
            "cd '$repoWsl/ui'; " +
            "mkdir -p '$BuildDirectory'; " +
            "cd '$BuildDirectory'; " +
@@ -247,7 +248,7 @@ $buildUi = $buildStart +
            "cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mipsel-musl-toolchain.cmake $cmakeToolchainRoot " +
            "-DCMAKE_BUILD_TYPE=MinSizeRel -DZMQ_LIBRARY='$zmqLib' -DZMQ_INCLUDE_DIR='$zmqInclude'; " +
            "fi; " +
-           "make -j`$(nproc); " +
+           "$buildMips '' deneb-ui; " +
            "cd '$repoWsl'; " +
            "$buildPackageEnv bash ui/build-package.sh ui/$BuildDirectory/deneb-ui web/$WebBuildDirectory/deneb-api '$lighttpdBinary' web/$WebBuildDirectory/deneb-mdns printsvc/$BuildDirectory/deneb-printsvc dfsvc/$BuildDirectory/deneb-dfsvc${buildPackageEvidenceArgs}"
 

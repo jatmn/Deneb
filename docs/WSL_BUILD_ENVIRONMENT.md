@@ -169,8 +169,12 @@ statically linked musl, libstdc++, and libgcc runtimes. The build records
 receipts after verifying the source and toolchain archives.
 The SBOM includes a version and source hash only when the receipt matches the
 current pin and the dependency's build outputs. Older caches and custom builds
-without matching receipts are marked unverified. Rebuild ZeroMQ and lighttpd with
-the release wrapper's rebuild flags. To generate a receipt for a previously
+without matching receipts are marked unverified. Static runtime provenance also
+requires receipts that match the packaged link outputs. For a verified
+toolchain, a missing or stale link receipt triggers a relink of the affected
+binary while keeping compiled objects available for reuse. Both release
+wrappers enforce the MT7688 executable ABI even when provenance is unverified.
+Rebuild ZeroMQ and lighttpd with the release wrapper's rebuild flags. To generate a receipt for a previously
 cached Mbed TLS build, run the setup script with a fresh dependency build tree.
 
 The repeat-package test uses identical prebuilt binaries. End-to-end

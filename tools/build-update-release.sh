@@ -135,11 +135,12 @@ configure_component() {
     else
         cmake -S "$source" -B "$build" -DCMAKE_TOOLCHAIN_FILE="$toolchain_file" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel "$@" -DZMQ_INCLUDE_DIR="$zmq_include"
     fi
-    cmake --build "$build" --parallel
 }
 
 configure_component "$repo_root/web" "$repo_root/web/$web_build_directory" "$repo_root/web/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib"
+mips_release_build "$toolchain_root" "$repo_root/web/$web_build_directory" "" deneb-api deneb-mdns
 configure_component "$repo_root/printsvc" "$repo_root/printsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib"
+mips_release_build "$toolchain_root" "$repo_root/printsvc/$build_directory" "" deneb-printsvc
 test -x "$repo_root/printsvc/$build_directory/deneb-printsvc"
 
 [ -d "$lighttpd_root/src" ] || die "Missing lighttpd source at $lighttpd_root; re-run with --rebuild-lighttpd."
@@ -149,14 +150,16 @@ if [ -f "$lighttpd_root/build-musl-static/CMakeCache.txt" ]; then
 else
     cmake -S "$lighttpd_root" -B "$lighttpd_root/build-musl-static" -DCMAKE_TOOLCHAIN_FILE="$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" -DMUSL_CROSS="$toolchain_root" -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_STATIC=ON -DWITH_PCRE=OFF -DWITH_PCRE2=OFF -DWITH_ZLIB=OFF -DWITH_BZIP=OFF -DWITH_BROTLI=OFF -DWITH_ZSTD=OFF -DWITH_OPENSSL=OFF -DWITH_MBEDTLS=OFF -DWITH_WOLFSSL=OFF -DWITH_GNUTLS=OFF
 fi
-cmake --build "$lighttpd_root/build-musl-static" --target lighttpd --parallel
+mips_release_build "$toolchain_root" "$lighttpd_root/build-musl-static" lighttpd build/lighttpd
 test -x "$lighttpd_binary"
 if "$rebuild_lighttpd"; then
     record_native_dependency lighttpd "$lighttpd_root"
 fi
 
 configure_component "$repo_root/dfsvc" "$repo_root/dfsvc/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_STATIC_PATH=$zmq_lib" "-DMBEDTLS_ROOT=$mbedtls_root"
+mips_release_build "$toolchain_root" "$repo_root/dfsvc/$build_directory" "" deneb-dfsvc
 configure_component "$repo_root/ui" "$repo_root/ui/$build_directory" "$repo_root/ui/cmake/mipsel-musl-toolchain.cmake" "-DZMQ_LIBRARY=$zmq_lib"
+mips_release_build "$toolchain_root" "$repo_root/ui/$build_directory" "" deneb-ui
 
 package_env=("DENEB_RELEASE_CHANNEL=$release_channel" "STRIP=$toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-strip"
     "DENEB_PACKAGE_TOOLCHAIN_ROOT=$toolchain_root")

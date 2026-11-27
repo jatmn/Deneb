@@ -65,25 +65,12 @@ if [ ! -f "$DFSVC_BINARY" ]; then
     exit 1
 fi
 
-# The receipt applies to these inputs only. Package fixtures launch this stage
-# with their own binaries and provenance.
+# Nested packaging fixtures have their own inputs and provenance.
 package_toolchain_root=${DENEB_PACKAGE_TOOLCHAIN_ROOT:-}
 unset DENEB_PACKAGE_TOOLCHAIN_ROOT
-runtime_notices=false
-if [ -n "$package_toolchain_root" ] &&
-    native_dependency_verified mips-toolchain "$package_toolchain_root"; then
-    for executable in "$BINARY" "$WEB_API_BINARY" "$LIGHTTPD_BINARY" "$MDNS_BINARY" "$PRINTSVC_BINARY" "$DFSVC_BINARY"; do
-        headers=$(LC_ALL=C "$package_toolchain_root/bin/$MIPS_TOOLCHAIN_TARGET-readelf" -WhlAd "$executable")
-        if ! printf '%s\n' "$headers" | grep -Eq 'Class:[[:space:]]+ELF32' ||
-            ! printf '%s\n' "$headers" | grep -Eq 'Data:.*little endian' ||
-            ! printf '%s\n' "$headers" | grep -Eq 'Flags:.*o32.*mips32r2' ||
-            ! printf '%s\n' "$headers" | grep -Fxq 'FP ABI: Soft float' ||
-            printf '%s\n' "$headers" | grep -Eq '\(NEEDED\)|^[[:space:]]*INTERP[[:space:]]'; then
-            echo "ERROR: $executable is not a static MT7688 soft-float executable" >&2
-            exit 1
-        fi
-    done
-    runtime_notices=true
+package_runtime_key=
+if [ -n "$package_toolchain_root" ]; then
+    package_runtime_key=$(mips_toolchain_key "$package_toolchain_root") || package_runtime_key=
 fi
 
 # Get version from git, unless a selftest supplies an isolated package name.
@@ -122,8 +109,6 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 OUTPUT_UMASK=$(umask)
 umask 022
 
-# Copy binary
-cp "$BINARY" "${STAGING_DIR}/deneb-ui"
 STRIP_TOOL="${STRIP:-}"
 if [ -z "$STRIP_TOOL" ]; then
     toolchain_suffix="openwrt-$MIPS_TOOLCHAIN_RELEASE/$MIPS_TOOLCHAIN_MEMBER/bin/$MIPS_TOOLCHAIN_TARGET-strip"
@@ -136,41 +121,39 @@ if [ -z "$STRIP_TOOL" ]; then
         fi
     done
 fi
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-ui" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-ui"
+stage_executable() {
+    input=$1
+    staged="$STAGING_DIR/$2"
+    cp "$input" "$staged"
+    if [ -n "$package_toolchain_root" ]; then
+        if ! headers=$(LC_ALL=C readelf -WhlAd "$staged") ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Class:[[:space:]]+ELF32' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Data:.*little endian' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Type:[[:space:]]+EXEC[[:space:]]' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Machine:[[:space:]]+MIPS' ||
+            ! printf '%s\n' "$headers" | grep -Eq 'Flags:.*o32.*mips32r2' ||
+            ! printf '%s\n' "$headers" | grep -Fxq 'FP ABI: Soft float' ||
+            printf '%s\n' "$headers" | grep -Eq '\(NEEDED\)|^[[:space:]]*INTERP[[:space:]]'; then
+            echo "ERROR: $input is not a static MT7688 soft-float executable" >&2
+            exit 1
+        fi
+        if [ -n "$package_runtime_key" ] &&
+            ! mips_runtime_output_verified "$package_runtime_key" "$input" "$staged"; then
+            package_runtime_key=
+        fi
+    fi
+    if [ -n "$STRIP_TOOL" ]; then
+        "$STRIP_TOOL" "$staged" 2>/dev/null || true
+    fi
+    chmod 0755 "$staged"
+}
 
-# Copy web/API runtime into the same Deneb update package.
-cp "$WEB_API_BINARY" "${STAGING_DIR}/deneb-api"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-api" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-api"
-
-cp "$LIGHTTPD_BINARY" "${STAGING_DIR}/lighttpd"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/lighttpd" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/lighttpd"
-
-cp "$MDNS_BINARY" "${STAGING_DIR}/deneb-mdns"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-mdns" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-mdns"
-
-cp "$PRINTSVC_BINARY" "${STAGING_DIR}/deneb-printsvc"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-printsvc" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-printsvc"
-
-cp "$DFSVC_BINARY" "${STAGING_DIR}/deneb-dfsvc"
-if [ -n "$STRIP_TOOL" ]; then
-    "$STRIP_TOOL" "${STAGING_DIR}/deneb-dfsvc" 2>/dev/null || true
-fi
-chmod 0755 "${STAGING_DIR}/deneb-dfsvc"
+stage_executable "$BINARY" deneb-ui
+stage_executable "$WEB_API_BINARY" deneb-api
+stage_executable "$LIGHTTPD_BINARY" lighttpd
+stage_executable "$MDNS_BINARY" deneb-mdns
+stage_executable "$PRINTSVC_BINARY" deneb-printsvc
+stage_executable "$DFSVC_BINARY" deneb-dfsvc
 
 tr -d '\r' < "${REPO_ROOT}/web/lighttpd.conf" > "${STAGING_DIR}/lighttpd.conf"
 tr -d '\r' < "${REPO_ROOT}/web/init/deneb-api.init" > "${STAGING_DIR}/deneb-api.init"
@@ -263,7 +246,7 @@ cp "${REPO_ROOT}/notices/libzmq-4.3.5-NOTICE.txt" "${STAGING_DIR}/LIBZMQ_NOTICE.
 cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
 cp "${REPO_ROOT}/notices/MBEDTLS-2.28.8-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
 cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.85-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
-if "$runtime_notices"; then
+if [ -n "$package_runtime_key" ]; then
     cp "${REPO_ROOT}/notices/MUSL-1.2.5-COPYRIGHT.txt" "${STAGING_DIR}/MUSL_COPYRIGHT.txt"
     cp "${REPO_ROOT}/notices/GCC-14.3.0-COPYING3.txt" "${STAGING_DIR}/GCC_COPYING3.txt"
     cp "${REPO_ROOT}/notices/GCC-14.3.0-COPYING.RUNTIME.txt" "${STAGING_DIR}/GCC_COPYING.RUNTIME.txt"
@@ -324,6 +307,9 @@ contents:
   no Python driver files are packaged; native deneb-printsvc owns marlindriver
   manifest.txt      - This file
 EOF
+if [ -n "$package_runtime_key" ]; then
+    printf 'mips_runtime_receipt: %s\n' "$package_runtime_key" >> "${STAGING_DIR}/manifest.txt"
+fi
 
 if find "$STAGING_DIR" \( -name '*.py' -o -name '*python*' -o -name 'print_service.py' -o -name 'deneb-df-bridge.py' \) \
     -print | grep . >/dev/null 2>&1; then
@@ -359,7 +345,7 @@ cd "$STAGING_DIR"
 umask "$OUTPUT_UMASK"
 export LC_ALL=C
 set --
-if "$runtime_notices"; then
+if [ -n "$package_runtime_key" ]; then
     set -- MUSL_COPYRIGHT.txt GCC_COPYING3.txt GCC_COPYING.RUNTIME.txt
 fi
 TAR_OPTIONS= tar --format=gnu --sort=name --mtime="@$PACKAGE_EPOCH" --owner=0 --group=0 --numeric-owner -cf "$OUTPUT_IMG" \

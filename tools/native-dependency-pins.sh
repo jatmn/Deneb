@@ -66,9 +66,69 @@ record_native_dependency() (
         mv -fT -- "$receipt" "$2/deneb-source.receipt"
 )
 
-native_dependency_verified() (
+verified_native_dependency_receipt() (
     [ -f "$2/deneb-source.receipt" ] || exit 1
     expected=$(native_dependency_fingerprint "$1" "$2" 2>/dev/null) || exit 1
     recorded=$(cat "$2/deneb-source.receipt") || exit 1
+    [ "$expected" = "$recorded" ] || exit 1
+    printf '%s\n' "$recorded"
+)
+
+native_dependency_verified() {
+    verified_native_dependency_receipt "$@" >/dev/null
+}
+
+mips_toolchain_key() (
+    receipt=$(verified_native_dependency_receipt mips-toolchain "$1") || exit 1
+    checksum=$(printf '%s\n' "$receipt" | sha256sum) || exit 1
+    printf '%s\n' "${checksum%% *}"
+)
+
+mips_runtime_fingerprint() (
+    checksum=$(sha256sum < "$2") || exit 1
+    printf '%s\n%s\n' "$1" "${checksum%% *}"
+)
+
+mips_runtime_output_verified() (
+    [ -f "$2.deneb-runtime.receipt" ] && [ -f "$3" ] || exit 1
+    expected=$(mips_runtime_fingerprint "$1" "$3") || exit 1
+    recorded=$(cat "$2.deneb-runtime.receipt") || exit 1
     [ "$expected" = "$recorded" ]
+)
+
+mips_release_build() (
+    mips_toolchain_root=$1
+    mips_build_dir=$2
+    mips_target=$3
+    shift 3
+
+    # CMake need not track archives that the compiler links implicitly.
+    # Discard only the final link outputs when their proof is missing or stale.
+    mips_key=$(mips_toolchain_key "$mips_toolchain_root") || mips_key=
+    if [ -n "$mips_key" ]; then
+        for binary do
+            mips_output="$mips_build_dir/$binary"
+            if ! mips_runtime_output_verified "$mips_key" "$mips_output" "$mips_output"; then
+                rm -f -- "$mips_output" "$mips_output.deneb-runtime.receipt" || exit 1
+            fi
+        done
+    fi
+
+    if [ -n "$mips_target" ]; then
+        cmake --build "$mips_build_dir" --target "$mips_target" --parallel "$(nproc)" || exit "$?"
+    else
+        cmake --build "$mips_build_dir" --parallel "$(nproc)" || exit "$?"
+    fi
+
+    [ -n "$mips_key" ] && [ "$(mips_toolchain_key "$mips_toolchain_root")" = "$mips_key" ] || exit 0
+    for binary do
+        mips_output="$mips_build_dir/$binary"
+        (
+            output_receipt=$(mktemp "$mips_output.deneb-runtime.XXXXXX") || exit 1
+            trap 'rm -f -- "$output_receipt"' EXIT
+            trap 'exit 1' HUP INT TERM
+            mips_runtime_fingerprint "$mips_key" "$mips_output" > "$output_receipt" &&
+                mv -fT -- "$output_receipt" "$mips_output.deneb-runtime.receipt"
+        ) || exit 1
+    done
 )

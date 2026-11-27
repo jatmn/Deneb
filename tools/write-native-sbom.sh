@@ -58,7 +58,9 @@ EOF
 }
 
 toolchain_verified=false
-if native_dependency_verified mips-toolchain "$toolchain_root"; then
+if runtime_key=$(mips_toolchain_key "$toolchain_root") &&
+    manifest=$(tar -xOf "$package" manifest.txt 2>/dev/null) &&
+    printf '%s\n' "$manifest" | grep -Fxq "mips_runtime_receipt: $runtime_key"; then
     toolchain_verified=true
 fi
 

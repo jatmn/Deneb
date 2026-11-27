@@ -43,6 +43,7 @@ EOF
 }
 
 make_project "$repo/web" deneb-api
+printf '%s\n' 'add_executable(deneb-mdns main.c)' >> "$repo/web/CMakeLists.txt"
 make_project "$repo/printsvc" deneb-printsvc
 make_project "$repo/dfsvc" deneb-dfsvc
 make_project "$repo/ui" deneb-ui
@@ -123,3 +124,64 @@ sed -i 's/^\(CMAKE_CACHE_\(MAJOR\|MINOR\|PATCH\)_VERSION:INTERNAL=\).*/\10/' "$m
 release --build-directory make --web-build-directory make --lighttpd-root "$fixture/lighttpd-make"
 expect_result 1 'CMake version mismatch'
 printf '%s\n' 'Compiler reuse rejected conflicting records from different CMake versions.'
+
+# A runtime archive in the compiler's standard library search is implicit to
+# CMake. Replacing its bytes at the same path must relink cached applications.
+# shellcheck source=tools/native-dependency-pins.sh
+# shellcheck disable=SC1091
+. "$script_dir/native-dependency-pins.sh"
+gcc_lib="$DENEB_TOOLCHAIN_ROOT/lib/gcc/$MIPS_TOOLCHAIN_TARGET/$MIPS_TOOLCHAIN_GCC_VERSION"
+mkdir -p "$gcc_lib"
+touch "$DENEB_TOOLCHAIN_ROOT/info.mk" \
+    "$toolchain.bin" "$DENEB_TOOLCHAIN_ROOT/bin/$MIPS_TOOLCHAIN_TARGET-g++.bin" \
+    "$DENEB_TOOLCHAIN_ROOT/bin/$MIPS_TOOLCHAIN_TARGET-wrapper.sh" \
+    "$DENEB_TOOLCHAIN_ROOT/lib/libstdc++.a" "$DENEB_TOOLCHAIN_ROOT/lib/libssp_nonshared.a" \
+    "$gcc_lib/libgcc.a" "$gcc_lib/libgcc_eh.a"
+export FIXTURE_RUNTIME_DIR="$fixture/runtime libs"
+mkdir -p "$FIXTURE_RUNTIME_DIR"
+# Use the fingerprinted libc.a path for the fixture runtime, with a neutral
+# linker name so the host compiler can still use its own libc.
+ln -s "$DENEB_TOOLCHAIN_ROOT/lib/libc.a" "$FIXTURE_RUNTIME_DIR/libfixture.a"
+make_runtime() {
+    printf 'int runtime_value(void) { return %s; }\n' "$1" > "$fixture/runtime.c"
+    cc -c "$fixture/runtime.c" -o "$fixture/runtime.o"
+    ar rcs "$DENEB_TOOLCHAIN_ROOT/lib/libc.a" "$fixture/runtime.o"
+    touch -t 200001010000 "$DENEB_TOOLCHAIN_ROOT/lib/libc.a"
+}
+
+lighttpd_proof="$fixture/lighttpd-proof"
+make_lighttpd "$lighttpd_proof"
+cat >> "$lighttpd_proof/CMakeLists.txt" <<'EOF'
+set(CMAKE_C_STANDARD_LIBRARIES "-L\"$ENV{FIXTURE_RUNTIME_DIR}\" -lfixture")
+EOF
+cat > "$lighttpd_proof/main.c" <<'EOF'
+#include <stdio.h>
+int runtime_value(void);
+int main(void) { printf("%d\n", runtime_value()); }
+EOF
+runtime_executable="$lighttpd_proof/build-musl-static/build/lighttpd"
+
+# The old runtime has no receipt. The existing release path permits the build.
+make_runtime 11
+release --build-directory proof --web-build-directory proof --lighttpd-root "$lighttpd_proof"
+expect_result 47 'Reached fixture packager'
+test "$("$runtime_executable")" = 11
+test ! -e "$runtime_executable.deneb-runtime.receipt"
+
+# A freshly verified runtime replaces the old archive without updating its mtime.
+make_runtime 22
+record_native_dependency mips-toolchain "$DENEB_TOOLCHAIN_ROOT"
+release --build-directory proof --web-build-directory proof --lighttpd-root "$lighttpd_proof"
+expect_result 47 'Reached fixture packager'
+test "$("$runtime_executable")" = 22
+runtime_key=$(mips_toolchain_key "$DENEB_TOOLCHAIN_ROOT")
+mips_runtime_output_verified "$runtime_key" "$runtime_executable" "$runtime_executable"
+
+# The compiler can refresh lighttpd for its generated config independently.
+# An unchanged verified application need not relink.
+api_executable="$repo/web/proof/deneb-api"
+runtime_inode=$(stat -c %i "$api_executable")
+release --build-directory proof --web-build-directory proof --lighttpd-root "$lighttpd_proof"
+expect_result 47 'Reached fixture packager'
+test "$runtime_inode" = "$(stat -c %i "$api_executable")"
+printf '%s\n' 'Backdated runtime replacement relinks warm lighttpd and unchanged verified links are reused.'

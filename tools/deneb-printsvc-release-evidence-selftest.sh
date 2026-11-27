@@ -78,7 +78,23 @@ printf 'compare:%s\n' "$@" >> "$EVIDENCE_CALLS"
 echo 'Stopped at fixture comparator' >&2
 exit 23
 EOF
-chmod +x "$scratch/bin/wsl"
+FIXTURE_HOST_READELF=$(command -v readelf)
+export FIXTURE_HOST_READELF
+cat > "$scratch/bin/readelf" <<'EOF'
+#!/bin/sh
+if [ "${FIXTURE_REAL_READELF:-0}" = 1 ]; then
+    exec "$FIXTURE_HOST_READELF" "$@"
+fi
+cat <<'HEADERS'
+Class: ELF32
+Data: 2's complement, little endian
+Type: EXEC (Executable file)
+Machine: MIPS R3000
+Flags: 0x70001005, noreorder, cpic, o32, mips32r2
+FP ABI: Soft float
+HEADERS
+EOF
+chmod +x "$scratch/bin/wsl" "$scratch/bin/readelf"
 export PATH="$scratch/bin:$PATH"
 unset DENEB_PRINTSVC_NATIVE_EVIDENCE_SUMMARIES
 export DENEB_BUILD_ROOT="$build"
@@ -142,6 +158,16 @@ check_failure 'Stopped at fixture comparator' run_linux "$FIRST_EVIDENCE" "$SECO
 echo 'PASS: Linux wrapper preserves supplemental verifier and comparator arguments'
 check_failure 'Stopped at fixture comparator' run_powershell
 echo 'PASS: PowerShell wrapper preserves supplemental verifier and comparator arguments'
+
+# Both release wrappers still enforce ABI when no toolchain receipt exists.
+ui_binary="$fixture/ui/build-musl-openwrt/deneb-ui"
+cp "$ui_binary" "$scratch/valid-ui"
+cp /bin/true "$ui_binary"
+: > "$scratch/expected"
+FIXTURE_REAL_READELF=1 check_failure 'is not a static MT7688 soft-float executable' run_linux
+FIXTURE_REAL_READELF=1 check_failure 'is not a static MT7688 soft-float executable' run_powershell
+mv "$scratch/valid-ui" "$ui_binary"
+echo 'PASS: both release wrappers reject incompatible ELF input without a runtime receipt'
 
 with_evidence > "$scratch/expected"
 INVALID_EVIDENCE=$SECOND_EVIDENCE check_failure "Rejected invalid fixture evidence: $SECOND_EVIDENCE" \
@@ -243,6 +269,13 @@ write_fixture_sbom() {
         "$build/mbedtls-$MBEDTLS_VERSION-mipsel" "$toolchain_root" "$revision" "$lvgl_revision"
 }
 write_fixture_sbom
+if grep -Fq "$MIPS_TOOLCHAIN_URL" "$package.sbom.cdx.json"; then
+    echo 'A toolchain receipt without a matching package receipt was accepted' >&2
+    exit 1
+fi
+printf 'mips_runtime_receipt: %s\n' "$(mips_toolchain_key "$toolchain_root")" > "$scratch/manifest.txt"
+tar cf "$package" -C "$scratch" manifest.txt
+write_fixture_sbom
 grep -Fq "$MIPS_TOOLCHAIN_URL" "$package.sbom.cdx.json"
 grep -Fq "pkg:generic/musl@$MIPS_TOOLCHAIN_MUSL_VERSION" "$package.sbom.cdx.json"
 grep -Fq "pkg:generic/libstdc%2B%2B@$MIPS_TOOLCHAIN_GCC_VERSION" "$package.sbom.cdx.json"
@@ -253,4 +286,4 @@ if grep -Fq "$MIPS_TOOLCHAIN_URL" "$package.sbom.cdx.json"; then
     echo 'A modified static runtime retained pinned provenance in the SBOM' >&2
     exit 1
 fi
-echo 'PASS: runtime SBOM provenance requires the matching toolchain receipt and libraries'
+echo 'PASS: runtime SBOM provenance requires matching package and toolchain receipts'
