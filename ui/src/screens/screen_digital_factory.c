@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -29,7 +30,9 @@ static bool binding_known;
 static bool cloud_bound;
 static uint32_t binding_checked_at;
 
+#ifndef DF_LOCK_DIR
 #define DF_LOCK_DIR "/tmp/deneb-df-lock"
+#endif
 #ifndef DF_STATUS_FILE
 #define DF_STATUS_FILE "/tmp/deneb-df-status"
 #endif
@@ -51,9 +54,10 @@ static void read_status(char *dst, size_t dst_size)
         dst[--len] = '\0';
 }
 
-static int bridge_is_busy(void)
+static bool bridge_is_busy(void)
 {
-    return system("[ -d " DF_LOCK_DIR " ]") == 0;
+    struct stat lock;
+    return stat(DF_LOCK_DIR, &lock) == 0 && S_ISDIR(lock.st_mode);
 }
 
 static bool query_cloud_binding(void)
@@ -106,10 +110,11 @@ static void update_button_states(const char *status)
     bool active = connected || strcmp(state, "reconnecting") == 0 ||
                   strcmp(state, "connecting") == 0 || strcmp(state, "enter_pin") == 0;
 
-    /* Recheck immediately if a pairing or disconnect phase ends. */
-    if (active || disconnecting)
+    /* The bridge can truncate the status before it updates the binding. */
+    bool busy = disconnecting || bridge_is_busy();
+    if (active || busy)
         binding_known = false;
-    bool can_disconnect = !disconnecting && (active || has_cloud_binding());
+    bool can_disconnect = !busy && (active || has_cloud_binding());
 
     if (!connect_button)
         goto disconnect;

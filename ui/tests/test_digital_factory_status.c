@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #undef NDEBUG
+#define DF_LOCK_DIR "lock"
 #define DF_STATUS_FILE "status"
 #include "../src/screens/screen_digital_factory.c"
 
@@ -17,8 +18,6 @@ static uint32_t read_tick(void)
 
 int __wrap_system(const char *command)
 {
-    if (strcmp(command, "[ -d " DF_LOCK_DIR " ]") == 0)
-        return 1;
     assert(strstr(command, "/usr/bin/deneb-api digital-factory"));
     manual_commands++;
     return 0;
@@ -106,9 +105,16 @@ int main(int argc, char **argv)
     assert(lv_obj_has_state(disconnect_button, LV_STATE_DISABLED));
     write_file(DF_STATUS_FILE, "state=disconnecting\n");
     expect_status(21000, true, false, locale_get("digital_factory.status_reconnecting"), 4);
+
+    /* Redirecting the command output clears the marker before UCI is updated. */
+    assert(mkdir(DF_LOCK_DIR, 0700) == 0);
+    write_file(DF_STATUS_FILE, "");
+    expect_status(22000, true, false, locale_get("digital_factory.status_reconnecting"), 4);
+
     assert(unlink("binding") == 0);
     write_file(DF_STATUS_FILE, "state=disconnected\n");
-    expect_status(22000, true, false, offline, 5);
+    assert(rmdir(DF_LOCK_DIR) == 0);
+    expect_status(23000, true, false, offline, 5);
 
     df_destroy();
     lv_display_delete(display);
