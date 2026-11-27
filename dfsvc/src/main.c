@@ -618,7 +618,8 @@ static pid_t start_job_writer(int fd)
 
 static int download_file_with_wget(const char *url, int fd, off_t prefix_size)
 {
-    if (g_stop)
+    /* The URL is an operand. An option can write diagnostics into the model. */
+    if (g_stop || !url[0] || url[0] == '-')
         return -1;
     pid_t pid = start_job_writer(fd);
     if (pid == 0) {
