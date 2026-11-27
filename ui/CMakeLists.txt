@@ -254,6 +254,14 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_link_options(deneb-touchscreen-motion-tests PRIVATE -Wl,--gc-sections)
     target_link_libraries(deneb-touchscreen-motion-tests PRIVATE m)
     add_test(NAME deneb-touchscreen-motion-tests COMMAND deneb-touchscreen-motion-tests)
+
+    add_executable(deneb-ui-loop-tests tests/test_main_loop.c)
+    target_include_directories(deneb-ui-loop-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-ui,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(deneb-ui-loop-tests PRIVATE LV_DISABLE_API_MAPPING)
+    target_compile_options(deneb-ui-loop-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-ui-loop-tests PRIVATE -Wl,--gc-sections)
+    add_test(NAME deneb-ui-loop-tests COMMAND deneb-ui-loop-tests)
 endif()
 
 # Link ZMQ when not using stub
