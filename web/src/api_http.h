@@ -11,8 +11,10 @@
 
 #define HTTP_MAX_PATH    256
 #define HTTP_MAX_HEADERS 16
+#define HTTP_HEADER_VALUE_SIZE 256
 #define HTTP_MAX_BODY    4096
 #define HTTP_MAX_CONTENT_LENGTH (50 * 1024 * 1024)
+#define HTTP_MULTIPART_BOUNDARY_SIZE 128
 
 /* Parsed HTTP request */
 typedef struct {
@@ -21,18 +23,17 @@ typedef struct {
     char query[HTTP_MAX_PATH];         /* query string after ? */
     struct {
         char name[64];
-        char value[256];
+        char value[HTTP_HEADER_VALUE_SIZE];
     } headers[HTTP_MAX_HEADERS];
     int header_count;
     char body[HTTP_MAX_BODY];
     int body_len;
-    char auth_digest[512];             /* Authorization header value */
     char content_type[64];
     int content_length;
     /* For multipart file uploads */
     char upload_path[128];             /* temp file path if body was streamed */
     int upload_size;                   /* bytes written to upload_path */
-    char multipart_boundary[128];      /* parsed from Content-Type */
+    char multipart_boundary[HTTP_MULTIPART_BOUNDARY_SIZE]; /* parsed from Content-Type */
     int is_multipart;                  /* 1 if Content-Type is multipart/form-data */
 } http_request_t;
 
@@ -85,5 +86,8 @@ void api_http_set_body_str(http_response_t *resp, const char *str);
 
 /* Check if request requires auth and validate it. Returns 1 if authorized. */
 int api_http_check_auth(const http_request_t *req);
+
+/* Borrow the first Authorization header with a supported scheme, if any. */
+const char *api_http_authorization(const http_request_t *req);
 
 #endif /* API_HTTP_H */

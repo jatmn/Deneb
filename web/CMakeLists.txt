@@ -190,10 +190,13 @@ if(NODE_EXECUTABLE)
             DENEB_PENDING_JOB_PATH="tmp/deneb-cluster-print-job.json"
             DENEB_ACTIVE_THUMB_PATH="tmp/deneb-active-thumb.rgb565")
         target_link_libraries(deneb-api-upload-fixture PRIVATE m pthread crypt)
+        add_executable(deneb-upload-digest-fixture tests/upload_digest_fixture.c src/md5.c)
+        target_include_directories(deneb-upload-digest-fixture PRIVATE src)
         add_test(NAME deneb-proxy-upload-tests COMMAND "${NODE_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tests/test_proxy_upload.cjs"
             "$<TARGET_FILE:deneb-api-upload-fixture>" "${LIGHTTPD_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}")
+            "${CMAKE_SOURCE_DIR}/lighttpd.conf" "${CMAKE_COMMAND}" "${UNZIP_EXECUTABLE}"
+            "$<TARGET_FILE:deneb-upload-digest-fixture>")
         set_tests_properties(deneb-proxy-upload-tests PROPERTIES TIMEOUT 20)
     endif()
 endif()

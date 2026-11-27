@@ -355,7 +355,7 @@ void api_print_job_post(const http_request_t *req, http_response_t *resp)
     resp->prepare_print_upload = 1;
 }
 
-int api_print_job_prepare_upload(const http_request_t *req,
+int api_print_job_prepare_upload(const char *boundary, const char *upload_path,
                                  api_print_upload_t *upload,
                                  http_response_t *resp,
                                  const atomic_bool *cancelled)
@@ -364,20 +364,20 @@ int api_print_job_prepare_upload(const http_request_t *req,
     char filename[128] = "upload.gcode";
     char validation_message[256];
 
-    if (extract_multipart_file(req->multipart_boundary, req->upload_path,
+    if (extract_multipart_file(boundary, upload_path,
                                gcode_path, sizeof(gcode_path),
                                filename, sizeof(filename)) < 0) {
         fprintf(stderr, "deneb-api: print upload rejected: failed to extract multipart file\n");
         set_message_response(resp, 400, "Failed to extract file from upload");
         return -1;
     }
-    (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+    (void)extract_multipart_field(boundary, upload_path,
                                   "job_instance_uuid", upload->job_instance_uuid,
                                   sizeof(upload->job_instance_uuid));
-    (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+    (void)extract_multipart_field(boundary, upload_path,
                                   "cloud_job_id", upload->cloud_job_id,
                                   sizeof(upload->cloud_job_id));
-    (void)extract_multipart_field(req->multipart_boundary, req->upload_path,
+    (void)extract_multipart_field(boundary, upload_path,
                                   "owner", upload->owner, sizeof(upload->owner));
 
     if (deneb_print_job_file_has_extension(filename, ".ufp")) {

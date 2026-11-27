@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
-const { createHash } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -9,11 +9,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 
-const [apiBinary, lighttpd, packagedConfig, cmake, unzip] = process.argv.slice(2);
+const [apiBinary, lighttpd, packagedConfig, cmake, unzip, digestFixture] = process.argv.slice(2);
 const DEADLINE_MS = 2000;
 const SSE_CLIENTS = 4;
 const STATUS_PATH = '/api/v1/printer/status';
 const UPLOAD_PATH = '/cluster-api/v1/print_jobs';
+const AUTH_UPLOAD_PATH = '/api/v1/print_job';
 const boundary = 'deneb-host-upload';
 const sockets = new Set();
 const children = [];
@@ -163,24 +164,62 @@ function startUpload(port, body, filename, { chunked = false, declaredLength } =
     };
 }
 
-function halfClosedUpload(apiSocket, archive, filename) {
-    return new Promise((resolve, reject) => {
-        const payload = multipartPayload(archive, filename);
-        const socket = net.createConnection({ path: apiSocket, allowHalfOpen: true });
-        trackSocket(socket);
-        socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error('Half-closed upload reply timed out')));
+function startSocketUpload(apiSocket, archive, filename,
+    { pathname = UPLOAD_PATH, authorizations = [] } = {}) {
+    const payload = multipartPayload(archive, filename);
+    const split = Math.floor(payload.length / 2);
+    const socket = net.createConnection({ path: apiSocket, allowHalfOpen: true });
+    trackSocket(socket);
+    const result = new Promise((resolve, reject) => {
         socket.on('error', reject);
         let response = '';
         socket.setEncoding('utf8').on('data', (chunk) => { response += chunk; });
         socket.once('end', () => resolve(response));
-        socket.once('connect', () => {
-            const headers = 'POST ' + UPLOAD_PATH + ' HTTP/1.1\r\n' +
-                'Host: localhost\r\nConnection: close\r\n' +
-                'Content-Type: multipart/form-data; boundary=' + boundary + '\r\n' +
-                'Content-Length: ' + payload.length + '\r\n\r\n';
-            socket.end(Buffer.concat([Buffer.from(headers), payload]));
-        });
     });
+    result.catch(() => {});
+    const headers = 'POST ' + pathname + ' HTTP/1.1\r\n' +
+        'Host: localhost\r\nConnection: close\r\n' +
+        authorizations.map((value) => 'Authorization: ' + value + '\r\n').join('') +
+        'Content-Type: multipart/form-data; boundary=' + boundary + '\r\n' +
+        'Content-Length: ' + payload.length + '\r\n\r\n';
+    socket.write(Buffer.concat([Buffer.from(headers), payload.subarray(0, split)]));
+    return {
+        finish: () => {
+            socket.setTimeout(DEADLINE_MS, () => socket.destroy(new Error('Half-closed upload reply timed out')));
+            socket.end(payload.subarray(split));
+            return result;
+        },
+        cancel: () => socket.destroy()
+    };
+}
+
+function enableAuth(port, password) {
+    return new Promise((resolve, reject) => {
+        const body = JSON.stringify({ password, auth_required: true });
+        const req = request(port, '/api/v1/deneb/setup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': body.length }
+        }, (response) => collect(response, resolve, reject));
+        req.once('error', reject);
+        req.setTimeout(DEADLINE_MS, () => req.destroy(new Error('Auth setup timed out')));
+        req.end(body);
+    });
+}
+
+function digestAuthorization(challenge, password) {
+    const match = /WWW-Authenticate: Digest realm="([^"]+)", nonce="([^"]+)"/i.exec(challenge);
+    assert.ok(match, 'Digest challenge is present');
+    const [, realm, nonce] = match;
+    const nc = '00000001';
+    const cnonce = 'upload-fixture';
+    // Match the running Deneb server's existing Digest hash implementation.
+    const md5 = (value) => execFileSync(digestFixture, { input: value, encoding: 'utf8' });
+    const ha1 = md5('operator:' + realm + ':' + password);
+    const ha2 = md5('POST:' + AUTH_UPLOAD_PATH);
+    const response = md5([ha1, nonce, nc, cnonce, 'auth', ha2].join(':'));
+    return 'Digest username="operator", realm="' + realm + '", nonce="' + nonce +
+        '", uri="' + AUTH_UPLOAD_PATH + '", response="' + response +
+        '", qop=auth, nc=' + nc + ', cnonce="' + cnonce + '"';
 }
 
 function countDescriptors(pid) {
@@ -361,9 +400,48 @@ async function main() {
         }
         assert.equal(fs.readFileSync(path.join(spool, 'completed.gcode'), 'utf8'), gcode);
 
-        const halfClosed = await halfClosedUpload(apiSocket, archive, 'completed.ufp');
+        const halfClosed = await startSocketUpload(apiSocket, archive, 'completed.ufp').finish();
         assert.match(halfClosed, /^HTTP\/1\.1 200 OK\r\n/);
         assert.match(halfClosed, /Print job already queued/);
+
+        const password = randomBytes(16).toString('hex');
+        const setup = await enableAuth(port, password);
+        assert.equal(setup.code, 200, setup.data);
+        const credentials = JSON.parse(setup.data);
+        assert.equal(credentials.auth_enabled, true);
+        const bearer = 'Bearer ' + credentials.token;
+        const authorizedUpload = (authorizations) => startSocketUpload(
+            apiSocket, archive, 'completed.ufp', { pathname: AUTH_UPLOAD_PATH, authorizations });
+
+        // Keep all eight API slots occupied while REST and SSE use the proxy.
+        const uploads = [
+            authorizedUpload(['Basic unused', bearer]),
+            authorizedUpload(['Bearer invalid', bearer]),
+            ...Array.from({ length: 6 }, () => authorizedUpload([bearer]))
+        ];
+        await withinDeadline('Eight partial uploads did not reach the API', () =>
+            fs.readdirSync(temp).filter((name) => name.startsWith('deneb-upload-')).length === 8);
+        await assertResponsive(port, clients, 'with eight pending multipart uploads');
+        const accepted = await uploads[0].finish();
+        assert.match(accepted, /^HTTP\/1\.1 200 OK\r\n/);
+        assert.match(accepted, /Print job already queued/);
+        const rejected = await uploads[1].finish();
+        assert.match(rejected, /^HTTP\/1\.1 401 Unauthorized\r\n/);
+        for (const upload of uploads.slice(2)) upload.cancel();
+        await withinDeadline('Eight-slot test retained upload files or descriptors', () =>
+            countDescriptors(api.pid) === active[0] &&
+            fs.readdirSync(temp).join() === 'deneb-cluster-print-job.json');
+
+        const digest = digestAuthorization(rejected, password);
+        const digestAccepted = await authorizedUpload([digest]).finish();
+        assert.match(digestAccepted, /^HTTP\/1\.1 200 OK\r\n/);
+        assert.match(digestAccepted, /Print job already queued/);
+        const challenge = await authorizedUpload([]).finish();
+        assert.match(challenge, /^HTTP\/1\.1 401 Unauthorized\r\n/);
+        const badDigest = digestAuthorization(challenge, randomBytes(16).toString('hex'));
+        const digestRejected = await authorizedUpload([badDigest]).finish();
+        assert.match(digestRejected, /^HTTP\/1\.1 401 Unauthorized\r\n/);
+        assert.deepEqual(JSON.parse(fs.readFileSync(pendingJob, 'utf8')), pending);
 
         for (const client of clients) client.close();
         await withinDeadline('Client, API, or lighttpd descriptors did not return to idle', () =>
