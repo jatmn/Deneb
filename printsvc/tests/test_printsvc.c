@@ -3073,7 +3073,9 @@ static void test_status_payload_pending_file_opens(void)
 
     int monitor = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
     assert(monitor >= 0);
-    assert(inotify_add_watch(monitor, DENEB_PENDING_JOB_PATH, IN_OPEN) >= 0);
+    /* The close separates successive opens so inotify cannot coalesce them. */
+    assert(inotify_add_watch(monitor, DENEB_PENDING_JOB_PATH,
+                             IN_OPEN | IN_CLOSE_NOWRITE) >= 0);
 
     deneb_status_payload_resolve_filename_value(
         "/home/3D/printing.gcode", 1, &curr, &prev,
@@ -3097,6 +3099,9 @@ static void test_status_payload_pending_file_opens(void)
     assert(strcmp(retained, "retained.gcode") == 0);
     assert(read(monitor, &event, sizeof(event)) == (ssize_t)sizeof(event));
     assert(event.mask == IN_OPEN);
+    assert(read(monitor, &event, sizeof(event)) == (ssize_t)sizeof(event));
+    assert(event.mask == IN_CLOSE_NOWRITE);
+    assert(read(monitor, &event, sizeof(event)) == -1 && errno == EAGAIN);
     assert(close(monitor) == 0);
 
     deneb_pending_job_init(&pending, "/home/3D/replacement.gcode");
