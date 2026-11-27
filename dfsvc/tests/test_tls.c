@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <sys/wait.h>
 #include <mbedtls/pk.h>
+#include <mbedtls/ssl_ticket.h>
 #include <psa/crypto_extra.h>
 
 typedef struct {
@@ -23,11 +24,13 @@ static void serve_websocket(test_tls_server_t *server)
     mbedtls_ssl_config conf;
     mbedtls_x509_crt cert;
     mbedtls_pk_context key;
+    mbedtls_ssl_ticket_context tickets;
     mbedtls_net_init(&peer);
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_x509_crt_init(&cert);
     mbedtls_pk_init(&key);
+    mbedtls_ssl_ticket_init(&tickets);
 
     assert(mbedtls_x509_crt_parse_file(&cert, server->cert_file) == 0);
     assert(mbedtls_pk_parse_keyfile(&key, server->key_file, NULL) == 0);
@@ -36,6 +39,11 @@ static void serve_websocket(test_tls_server_t *server)
                                        MBEDTLS_SSL_PRESET_DEFAULT) == 0);
     mbedtls_ssl_conf_min_tls_version(&conf, server->version);
     mbedtls_ssl_conf_max_tls_version(&conf, server->version);
+    if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
+        assert(mbedtls_ssl_ticket_setup(&tickets, PSA_ALG_GCM, PSA_KEY_TYPE_AES, 128, 60) == 0);
+        mbedtls_ssl_conf_session_tickets_cb(&conf, mbedtls_ssl_ticket_write,
+                                            mbedtls_ssl_ticket_parse, &tickets);
+    }
     assert(mbedtls_ssl_conf_own_cert(&conf, &cert, &key) == 0);
     assert(mbedtls_ssl_setup(&ssl, &conf) == 0);
     assert(mbedtls_net_accept(&server->listener, &peer, NULL, 0, NULL) == 0);
@@ -67,6 +75,8 @@ static void serve_websocket(test_tls_server_t *server)
                            "Sec-WebSocket-Accept: %s\r\n\r\n", accept);
         assert(len > 0 && (size_t)len < sizeof(response));
         assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len) == len);
+        const uint8_t frame[] = {0x81, 2, 'o', 'k'};
+        assert(mbedtls_ssl_write(&ssl, frame, sizeof(frame)) == (int)sizeof(frame));
     } else {
         assert(rc != 0);
     }
@@ -75,6 +85,7 @@ static void serve_websocket(test_tls_server_t *server)
     mbedtls_net_free(&peer);
     mbedtls_pk_free(&key);
     mbedtls_x509_crt_free(&cert);
+    mbedtls_ssl_ticket_free(&tickets);
 }
 
 static void assert_connection(test_tls_server_t *server, const char *host,
@@ -104,6 +115,11 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     ws_client_t client;
     int rc = ws_connect(&client, &url, ca_directory);
     bool connected = client.connected;
+    if (connected) {
+        char message[16];
+        assert(ws_read_text(&client, message, sizeof(message)) == 0);
+        assert(strcmp(message, "ok") == 0);
+    }
     ws_free(&client);
     int status;
     assert(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);

@@ -1135,13 +1135,18 @@ static int ws_write_all(ws_client_t *ws, const uint8_t *buf, size_t len)
 static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
 {
     size_t used = 0;
-    while (used < len) {
+    int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
+    while (used < len && !g_stop && monotonic_ms() < deadline) {
         int n = mbedtls_ssl_read(&ws->ssl, buf + used, len - used);
+        // Mbed TLS can yield while parsing a ticket, then report its receipt.
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
+            n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
+            continue;
         if (n <= 0)
             return -1;
         used += (size_t)n;
     }
-    return 0;
+    return used == len ? 0 : -1;
 }
 
 static int base64_encode(const uint8_t *input, size_t input_len,
@@ -1258,11 +1263,13 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
         return -1;
     mbedtls_ssl_conf_authmode(&ws->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_ca_chain(&ws->conf, &ws->ca, NULL);
+    mbedtls_ssl_conf_read_timeout(&ws->conf, DF_WS_PING_TIMEOUT_MS);
     if (mbedtls_ssl_setup(&ws->ssl, &ws->conf) != 0)
         return -1;
     if (mbedtls_ssl_set_hostname(&ws->ssl, url->host) != 0)
         return -1;
-    mbedtls_ssl_set_bio(&ws->ssl, &ws->net, mbedtls_net_send, mbedtls_net_recv, NULL);
+    mbedtls_ssl_set_bio(&ws->ssl, &ws->net, mbedtls_net_send, mbedtls_net_recv,
+                        mbedtls_net_recv_timeout);
     int rc;
     while ((rc = mbedtls_ssl_handshake(&ws->ssl)) != 0) {
         if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE)
@@ -1292,11 +1299,9 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
     char resp[1024];
     size_t used = 0;
     while (used + 1 < sizeof(resp)) {
-        int r = mbedtls_ssl_read(&ws->ssl, (unsigned char *)resp + used, 1);
-        if (r <= 0)
+        if (ws_read_exact(ws, (unsigned char *)resp + used, 1) < 0)
             return -1;
-        used += (size_t)r;
-        resp[used] = '\0';
+        resp[++used] = '\0';
         if (strstr(resp, "\r\n\r\n"))
             break;
     }
