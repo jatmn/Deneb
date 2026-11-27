@@ -4,6 +4,7 @@
  * Locale/i18n system for Deneb UI.
  * Loads JSON locale files at runtime. Falls back to English for missing keys.
  * Designed for minimal memory: loads one locale at a time, keys are interned.
+ * Call the locale API from the UI thread.
  */
 
 #ifndef LOCALE_H

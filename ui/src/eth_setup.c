@@ -214,66 +214,34 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
 /* Full import flow                                                    */
 /* ------------------------------------------------------------------ */
 
-eth_result_t eth_setup_import(char *status_msg, int msg_size)
+const char *eth_setup_import(char *argument, size_t argument_size)
 {
     char path[160];
     eth_config_t cfg;
-    eth_result_t res;
+    argument[0] = '\0';
 
-    if (status_msg && msg_size > 0)
-        status_msg[0] = '\0';
+    eth_result_t res = eth_setup_find_config(path, sizeof(path));
+    if (res != ETH_OK)
+        return res == ETH_ERR_NO_USB ? "network.no_usb" : "network.no_eth_txt";
 
-    res = eth_setup_find_config(path, sizeof(path));
-    if (res != ETH_OK) {
-        if (status_msg) {
-            if (res == ETH_ERR_NO_USB)
-                snprintf(status_msg, msg_size, "%s",
-                         locale_get("network.no_usb"));
-            else
-                snprintf(status_msg, msg_size,
-                         "%s", locale_get("network.no_eth_txt"));
-        }
-        return res;
+    if (eth_setup_parse(path, &cfg) != ETH_OK)
+        return "network.eth_parse_error";
+
+    switch (eth_setup_apply(&cfg)) {
+    case ETH_OK:
+        if (cfg.ip_address[0] == '\0')
+            return "network.eth_dhcp_set";
+        snprintf(argument, argument_size, "%s", cfg.ip_address);
+        return "network.eth_static_fmt";
+    case ETH_ERR_UCI_FAIL:
+        return "network.eth_save_failed";
+    case ETH_ERR_NET_FAIL:
+        return "network.eth_restarting";
+    case ETH_ERR_NTP_FAIL:
+        return "network.eth_ntp_restart_failed";
+    default:
+        return "network.eth_setup_failed";
     }
-
-    res = eth_setup_parse(path, &cfg);
-    if (res != ETH_OK) {
-        if (status_msg)
-            snprintf(status_msg, msg_size, "%s",
-                     locale_get("network.eth_parse_error"));
-        return res;
-    }
-
-    res = eth_setup_apply(&cfg);
-    if (status_msg) {
-        switch (res) {
-        case ETH_OK:
-            if (cfg.ip_address[0] != '\0')
-                locale_format_s(status_msg, msg_size,
-                                "network.eth_static_fmt", cfg.ip_address);
-            else
-                snprintf(status_msg, msg_size,
-                         "%s", locale_get("network.eth_dhcp_set"));
-            break;
-        case ETH_ERR_UCI_FAIL:
-            snprintf(status_msg, msg_size,
-                     "%s", locale_get("network.eth_save_failed"));
-            break;
-        case ETH_ERR_NET_FAIL:
-            snprintf(status_msg, msg_size,
-                     "%s", locale_get("network.eth_restarting"));
-            break;
-        case ETH_ERR_NTP_FAIL:
-            snprintf(status_msg, msg_size,
-                     "%s", locale_get("network.eth_ntp_restart_failed"));
-            break;
-        default:
-            snprintf(status_msg, msg_size, "%s",
-                     locale_get("network.eth_setup_failed"));
-            break;
-        }
-    }
-    return res;
 }
 
 /* ------------------------------------------------------------------ */

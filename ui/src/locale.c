@@ -8,10 +8,12 @@
 
 #include "locale.h"
 
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifndef LOCALE_DIR
 #define LOCALE_DIR      "/etc/deneb/locales"
@@ -483,11 +485,20 @@ static size_t parse_locale_json(locale_catalog_t *loaded)
     return packed - loaded->strings;
 }
 
-static locale_catalog_t *load_catalog(const char *path)
+static locale_catalog_t *load_catalog(const char *filename)
 {
-    FILE *f = fopen(path, "r");
+    int dir = open(LOCALE_DIR, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    int fd = -1;
+    if (dir >= 0) {
+        fd = openat(dir, filename, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        close(dir);
+    }
+    FILE *f = fd >= 0 ? fdopen(fd, "r") : NULL;
     if (!f) {
-        fprintf(stderr, "locale: %s not found, using English defaults\n", path);
+        if (fd >= 0)
+            close(fd);
+        fprintf(stderr, "locale: %s/%s not found, using English defaults\n",
+                LOCALE_DIR, filename);
         return NULL;
     }
 
@@ -520,16 +531,20 @@ static locale_catalog_t *load_catalog(const char *path)
 
 int locale_init(const char *lang)
 {
-    char path[128];
-    bool translated = lang && strcmp(lang, "en") != 0;
-    if (translated)
-        snprintf(path, sizeof(path), "%s/%s.json", LOCALE_DIR, lang);
+    /* Keep the full path limit, including the directory and separator. */
+    char filename[128 - sizeof(LOCALE_DIR)] = "";
+    if (lang && *lang && strcmp(lang, "en") != 0 &&
+        !strstr(lang, "..") && !strchr(lang, '/') && !strchr(lang, '\\')) {
+        int length = snprintf(filename, sizeof(filename), "%s.json", lang);
+        if (length < 0 || (size_t)length >= sizeof(filename))
+            filename[0] = '\0';
+    }
 
     if (lang != current_lang)
         snprintf(current_lang, sizeof(current_lang), "%s", lang ? lang : "en");
 
     free(catalog);
-    catalog = translated ? load_catalog(path) : NULL;
+    catalog = filename[0] ? load_catalog(filename) : NULL;
     initialized = true;
     fprintf(stderr, "locale: loaded %d entries for '%s'\n",
             EN_DEFAULT_COUNT + (catalog ? catalog->extra_count : 0), current_lang);

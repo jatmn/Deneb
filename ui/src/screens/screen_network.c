@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <unistd.h>
 
 static lv_obj_t *network_screen = NULL;
@@ -28,16 +29,15 @@ static lv_obj_t *import_wifi_btn = NULL;
 static lv_obj_t *import_eth_btn = NULL;
 static lv_obj_t *reset_eth_btn = NULL;
 
-/* Background import state — one at a time, either wifi or eth */
-static volatile int import_running = 0;
-static volatile int import_cancelled = 0;
-static char import_result_msg[128] = {0};
-static volatile int import_done = 0;
-static volatile int import_is_eth = 0;  /* 0=wifi, 1=eth */
-static volatile int wifi_toggle_running = 0;
-static volatile int wifi_toggle_done = 0;
-static volatile int wifi_toggle_enable = 0;
-static char wifi_toggle_result_msg[128] = {0};
+/* A UI timer owns the job slot until it consumes the published result. */
+static atomic_bool job_running;
+static lv_timer_t *import_timer;
+static lv_timer_t *wifi_toggle_timer;
+static bool import_is_eth;
+static const char *import_result_key;
+static char import_result_argument[WIFI_SETUP_MAX_SSID];
+static bool wifi_toggle_enable;
+static wifi_result_t wifi_toggle_result;
 #ifdef BACKEND_COMM_STUB
 static int catalog_placeholder_mode = 0;
 
@@ -65,36 +65,24 @@ static void set_status_text(const char *text)
 static void *import_thread(void *arg)
 {
     (void)arg;
-    if (import_is_eth)
-        eth_setup_import(import_result_msg, sizeof(import_result_msg));
-    else
-        wifi_setup_import(import_result_msg, sizeof(import_result_msg));
-    import_done = 1;
-    import_running = 0;
+    import_result_key = import_is_eth ?
+        eth_setup_import(import_result_argument, sizeof(import_result_argument)) :
+        wifi_setup_import(import_result_argument, sizeof(import_result_argument));
+    atomic_store_explicit(&job_running, false, memory_order_release);
     return NULL;
 }
 
 static void *wifi_toggle_thread(void *arg)
 {
     (void)arg;
-    wifi_result_t res = wifi_setup_set_enabled(wifi_toggle_enable != 0);
-
-    if (res == WIFI_OK) {
-        snprintf(wifi_toggle_result_msg, sizeof(wifi_toggle_result_msg),
-                 "%s", wifi_toggle_enable ?
-                 locale_get("network.wifi_enabled") :
-                 locale_get("network.wifi_disabled"));
-    } else if (res == WIFI_ERR_NO_SSID) {
-        snprintf(wifi_toggle_result_msg, sizeof(wifi_toggle_result_msg),
-                 "%s", locale_get("network.wifi_no_config"));
-    } else {
-        snprintf(wifi_toggle_result_msg, sizeof(wifi_toggle_result_msg),
-                 "%s", locale_get("network.wifi_toggle_failed"));
-    }
-
-    wifi_toggle_done = 1;
-    wifi_toggle_running = 0;
+    wifi_toggle_result = wifi_setup_set_enabled(wifi_toggle_enable);
+    atomic_store_explicit(&job_running, false, memory_order_release);
     return NULL;
+}
+
+static bool network_busy(void)
+{
+    return import_timer || wifi_toggle_timer;
 }
 
 /* ------------------------------------------------------------------ */
@@ -149,7 +137,7 @@ static void refresh_wifi_switch(void)
     else
         lv_obj_remove_state(wifi_switch, LV_STATE_CHECKED);
 
-    if (wifi_toggle_running || import_running || !wifi_setup_is_configured())
+    if (network_busy() || !wifi_setup_is_configured())
         lv_obj_add_state(wifi_switch, LV_STATE_DISABLED);
     else
         lv_obj_remove_state(wifi_switch, LV_STATE_DISABLED);
@@ -167,7 +155,7 @@ static void refresh_buttons(void)
 #endif
     int wifi_cfg = wifi_setup_is_configured();
     int eth_static = eth_setup_is_static();
-    int busy = import_running || wifi_toggle_running;
+    bool busy = network_busy();
 
     if (reset_eth_btn) {
         if (eth_static)
@@ -191,36 +179,74 @@ static void refresh_buttons(void)
     refresh_wifi_switch();
 }
 
+static bool start_job(lv_timer_t **timer, lv_timer_cb_t poll, void *(*work)(void *),
+                      bool refresh_controls)
+{
+    *timer = lv_timer_create(poll, 200, NULL);
+    if (!*timer)
+        return false;
+
+    if (refresh_controls)
+        refresh_buttons();
+
+    atomic_store_explicit(&job_running, true, memory_order_relaxed);
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, work, NULL) != 0) {
+        atomic_store_explicit(&job_running, false, memory_order_relaxed);
+        lv_timer_delete(*timer);
+        *timer = NULL;
+        return false;
+    }
+    pthread_detach(tid);
+    return true;
+}
+
 /* ------------------------------------------------------------------ */
 /* Timer callback for polling import result                            */
 /* ------------------------------------------------------------------ */
 
 static void import_poll_timer_cb(lv_timer_t *timer)
 {
-    if (import_cancelled) {
-        lv_timer_delete(timer);
+    if (atomic_load_explicit(&job_running, memory_order_acquire))
         return;
+
+    if (import_result_argument[0]) {
+        char message[128];
+        locale_format_s(message, sizeof(message), import_result_key, import_result_argument);
+        set_status_text(message);
+    } else {
+        set_status_text(locale_get(import_result_key));
     }
-    if (import_done) {
-        import_done = 0;
-        set_status_text(import_result_msg);
-        refresh_wifi_status();
-        refresh_eth_status();
-        refresh_buttons();
-        lv_timer_delete(timer);
-    }
+    lv_timer_delete(timer);
+    import_timer = NULL;
+    refresh_wifi_status();
+    refresh_eth_status();
+    refresh_buttons();
 }
 
 static void wifi_toggle_poll_timer_cb(lv_timer_t *timer)
 {
-    if (wifi_toggle_done) {
-        wifi_toggle_done = 0;
-        set_status_text(wifi_toggle_result_msg);
-        refresh_wifi_status();
-        refresh_eth_status();
-        refresh_buttons();
-        lv_timer_delete(timer);
+    if (atomic_load_explicit(&job_running, memory_order_acquire))
+        return;
+
+    const char *key;
+    switch (wifi_toggle_result) {
+    case WIFI_OK:
+        key = wifi_toggle_enable ? "network.wifi_enabled" : "network.wifi_disabled";
+        break;
+    case WIFI_ERR_NO_SSID:
+        key = "network.wifi_no_config";
+        break;
+    default:
+        key = "network.wifi_toggle_failed";
+        break;
     }
+    set_status_text(locale_get(key));
+    lv_timer_delete(timer);
+    wifi_toggle_timer = NULL;
+    refresh_wifi_status();
+    refresh_eth_status();
+    refresh_buttons();
 }
 
 /* ------------------------------------------------------------------ */
@@ -230,7 +256,7 @@ static void wifi_toggle_poll_timer_cb(lv_timer_t *timer)
 static void import_wifi_cb(lv_event_t *e)
 {
     (void)e;
-    if (import_running || wifi_toggle_running) {
+    if (network_busy()) {
         set_status_text(locale_get("network.import_running"));
         return;
     }
@@ -245,19 +271,9 @@ static void import_wifi_cb(lv_event_t *e)
         return;
     }
     set_status_text(locale_get("network.importing"));
-    import_running = 1;
-    import_done = 0;
-    import_cancelled = 0;
-    import_is_eth = 0;
-    import_result_msg[0] = '\0';
-    pthread_t tid;
-    if (pthread_create(&tid, NULL, import_thread, NULL) != 0) {
-        import_running = 0;
+    import_is_eth = false;
+    if (!start_job(&import_timer, import_poll_timer_cb, import_thread, false))
         set_status_text(locale_get("network.import_start_failed"));
-        return;
-    }
-    pthread_detach(tid);
-    lv_timer_create(import_poll_timer_cb, 200, NULL);
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,7 +283,7 @@ static void import_wifi_cb(lv_event_t *e)
 static void import_eth_cb(lv_event_t *e)
 {
     (void)e;
-    if (import_running || wifi_toggle_running) {
+    if (network_busy()) {
         set_status_text(locale_get("network.import_running"));
         return;
     }
@@ -282,19 +298,9 @@ static void import_eth_cb(lv_event_t *e)
         return;
     }
     set_status_text(locale_get("network.importing_eth"));
-    import_running = 1;
-    import_done = 0;
-    import_cancelled = 0;
-    import_is_eth = 1;
-    import_result_msg[0] = '\0';
-    pthread_t tid;
-    if (pthread_create(&tid, NULL, import_thread, NULL) != 0) {
-        import_running = 0;
+    import_is_eth = true;
+    if (!start_job(&import_timer, import_poll_timer_cb, import_thread, false))
         set_status_text(locale_get("network.import_start_failed"));
-        return;
-    }
-    pthread_detach(tid);
-    lv_timer_create(import_poll_timer_cb, 200, NULL);
 }
 
 static void reset_eth_cb(lv_event_t *e)
@@ -312,7 +318,7 @@ static void wifi_switch_cb(lv_event_t *e)
     if (!wifi_switch)
         return;
 
-    if (import_running || wifi_toggle_running) {
+    if (network_busy()) {
         set_status_text(locale_get("network.import_running"));
         refresh_wifi_switch();
         return;
@@ -328,20 +334,10 @@ static void wifi_switch_cb(lv_event_t *e)
     set_status_text(locale_get(enable ? "network.wifi_turning_on" :
                                         "network.wifi_turning_off"));
     wifi_toggle_enable = enable;
-    wifi_toggle_running = 1;
-    wifi_toggle_done = 0;
-    wifi_toggle_result_msg[0] = '\0';
-    refresh_buttons();
-
-    pthread_t tid;
-    if (pthread_create(&tid, NULL, wifi_toggle_thread, NULL) != 0) {
-        wifi_toggle_running = 0;
+    if (!start_job(&wifi_toggle_timer, wifi_toggle_poll_timer_cb, wifi_toggle_thread, true)) {
         set_status_text(locale_get("network.wifi_toggle_failed"));
         refresh_buttons();
-        return;
     }
-    pthread_detach(tid);
-    lv_timer_create(wifi_toggle_poll_timer_cb, 200, NULL);
 }
 
 /* ------------------------------------------------------------------ */
@@ -482,12 +478,11 @@ static lv_obj_t *network_create(void)
 
 static void network_destroy(void)
 {
-    if (import_running) {
-        import_cancelled = 1;
-        for (int i = 0; i < 30 && import_running; i++)
+    if (import_timer) {
+        for (int i = 0; i < 30 &&
+             atomic_load_explicit(&job_running, memory_order_acquire); i++)
             usleep(100000);
     }
-    import_cancelled = 0;
     network_screen = NULL;
     status_label = NULL;
     hostname_label = NULL;

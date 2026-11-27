@@ -7,7 +7,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
+
+static void check_rejected_locale_path(const char *lang, const char *filename)
+{
+    FILE *file = fopen(filename, "w");
+    assert(file != NULL);
+    assert(fputs("{\"menu.status\":\"Unexpected locale\"}", file) >= 0);
+    assert(fclose(file) == 0);
+    assert(locale_set(lang) == 0);
+    assert(strcmp(locale_current(), lang) == 0);
+    assert(strcmp(locale_get("menu.status"), "Home") == 0);
+    assert(unlink(filename) == 0);
+}
 
 static void test_overlay(void)
 {
@@ -17,7 +30,7 @@ static void test_overlay(void)
     assert(mkdtemp(directory) != NULL);
     assert(chdir(directory) == 0);
 
-    FILE *file = fopen("fixture.json", "w");
+    FILE *file = fopen("fixture.custom.json", "w");
     assert(file != NULL);
     assert(fputs("{\"menu.status\": \"Old value\",\n"
                  "\"menu.status\": \"Home\",\n"
@@ -27,7 +40,8 @@ static void test_overlay(void)
                  "}", file) >= 0);
     assert(fclose(file) == 0);
 
-    assert(locale_init("fixture") == 0);
+    assert(locale_init("fixture.custom") == 0);
+    assert(strcmp(locale_current(), "fixture.custom") == 0);
     assert(strcmp(locale_get("menu.status"), "Home") == 0);
     const char *settings = locale_get("menu.settings");
     char formatted[64];
@@ -36,11 +50,22 @@ static void test_overlay(void)
     assert(strcmp(settings, "Escaped \"quote\" É") == 0);
     assert(strcmp(locale_get("menu.print"), "Print from USB") == 0);
 
+    assert(symlink("fixture.custom.json", "linked.json") == 0);
+    assert(locale_set("linked") == 0);
+    assert(strcmp(locale_get("menu.settings"), "Settings") == 0);
+    assert(unlink("linked.json") == 0);
+
     assert(locale_set("en") == 0);
     assert(strcmp(locale_get("menu.settings"), "Settings") == 0);
     const char extra[] = "extra.title";
     assert(locale_get(extra) == extra);
-    assert(unlink("fixture.json") == 0);
+    assert(unlink("fixture.custom.json") == 0);
+
+    assert(mkdir("nested", 0700) == 0);
+    check_rejected_locale_path("nested/custom", "nested/custom.json");
+    check_rejected_locale_path("nested\\custom", "nested\\custom.json");
+    check_rejected_locale_path("nested..custom", "nested..custom.json");
+    assert(rmdir("nested") == 0);
     assert(fchdir(cwd) == 0);
     assert(close(cwd) == 0);
     assert(rmdir(directory) == 0);

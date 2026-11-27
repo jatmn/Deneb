@@ -282,6 +282,19 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME deneb-locale-tests
         COMMAND deneb-locale-tests "${CMAKE_CURRENT_SOURCE_DIR}/locales")
 
+    add_executable(deneb-network-locale-tests
+        tests/test_network_locale.c src/locale.c src/wifi_setup.c src/eth_setup.c
+        src/net_utils.c ../common/print/print_string.c)
+    target_include_directories(deneb-network-locale-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_compile_definitions(deneb-network-locale-tests PRIVATE LV_DISABLE_API_MAPPING LOCALE_DIR=".")
+    target_compile_options(deneb-network-locale-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-network-locale-tests PRIVATE -Wl,--gc-sections
+        -Wl,--wrap=system -Wl,--wrap=net_find_usb_config -Wl,--wrap=net_read_command
+        -Wl,--wrap=locale_get -Wl,--wrap=locale_format_s -Wl,--wrap=locale_format_ss)
+    target_link_libraries(deneb-network-locale-tests PRIVATE pthread)
+    add_test(NAME deneb-network-locale-tests COMMAND deneb-network-locale-tests)
+    set_tests_properties(deneb-network-locale-tests PROPERTIES TIMEOUT 10)
+
     add_executable(deneb-lvgl-png-tests tests/test_lodepng.c)
     target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
     target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
