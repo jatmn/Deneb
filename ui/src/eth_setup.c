@@ -15,7 +15,6 @@
 #include <string.h>
 
 /* Use shared helpers from net_utils. */
-#define uci_escape        net_uci_escape
 #define parse_config_line net_parse_key_value_line
 
 /* ------------------------------------------------------------------ */
@@ -100,7 +99,6 @@ eth_result_t eth_setup_parse(const char *path, eth_config_t *cfg)
 
 eth_result_t eth_setup_apply(const eth_config_t *cfg)
 {
-    char cmd[512];
     int rc;
 
     if (!cfg || !cfg->valid)
@@ -108,33 +106,20 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
 
     if (cfg->ip_address[0] != '\0') {
         /* Static IP configuration */
-        char escaped_ip[ETH_SETUP_MAX_IP * 4 + 4];
-        char escaped_netmask[ETH_SETUP_MAX_IP * 4 + 4];
-        char escaped_gateway[ETH_SETUP_MAX_IP * 4 + 4];
-        uci_escape(escaped_ip, sizeof(escaped_ip), cfg->ip_address);
-        uci_escape(escaped_netmask, sizeof(escaped_netmask), cfg->netmask);
-        uci_escape(escaped_gateway, sizeof(escaped_gateway), cfg->gateway);
-
         system("uci set network.wan.proto='static'");
         system("uci delete network.wan.gateway 2>/dev/null");
         system("uci delete network.wan.dns 2>/dev/null");
 
-        snprintf(cmd, sizeof(cmd),
-                 "uci set network.wan.ipaddr=%s", escaped_ip);
-        system(cmd);
+        net_uci_option("set", "network.wan.ipaddr", cfg->ip_address);
 
         if (cfg->netmask[0] != '\0') {
-            snprintf(cmd, sizeof(cmd),
-                     "uci set network.wan.netmask=%s", escaped_netmask);
-            system(cmd);
+            net_uci_option("set", "network.wan.netmask", cfg->netmask);
         } else {
             system("uci set network.wan.netmask='255.255.255.0'");
         }
 
         if (cfg->gateway[0] != '\0') {
-            snprintf(cmd, sizeof(cmd),
-                     "uci set network.wan.gateway=%s", escaped_gateway);
-            system(cmd);
+            net_uci_option("set", "network.wan.gateway", cfg->gateway);
         }
 
         if (cfg->dns[0] != '\0') {
@@ -144,11 +129,7 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
             dns_copy[sizeof(dns_copy) - 1] = '\0';
             char *tok = strtok(dns_copy, " ,;");
             while (tok) {
-                char escaped_dns[ETH_SETUP_MAX_DNS * 4 + 4];
-                uci_escape(escaped_dns, sizeof(escaped_dns), tok);
-                snprintf(cmd, sizeof(cmd),
-                         "uci add_list network.wan.dns=%s", escaped_dns);
-                system(cmd);
+                net_uci_option("add_list", "network.wan.dns", tok);
                 tok = strtok(NULL, " ,;");
             }
         }
@@ -163,14 +144,8 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
 
     /* Set hostname */
     if (cfg->hostname[0] != '\0') {
-        char escaped_host[ETH_SETUP_MAX_HOST * 4 + 4];
-        uci_escape(escaped_host, sizeof(escaped_host), cfg->hostname);
-        snprintf(cmd, sizeof(cmd),
-                 "uci set network.wan.hostname=%s", escaped_host);
-        system(cmd);
-        snprintf(cmd, sizeof(cmd),
-                 "uci set system.@system[0].hostname=%s", escaped_host);
-        system(cmd);
+        net_uci_option("set", "network.wan.hostname", cfg->hostname);
+        net_uci_option("set", "system.@system[0].hostname", cfg->hostname);
     }
 
     /* Configure NTP server if specified */
@@ -181,11 +156,7 @@ eth_result_t eth_setup_apply(const eth_config_t *cfg)
         ntp_copy[sizeof(ntp_copy) - 1] = '\0';
         char *tok = strtok(ntp_copy, " ,;");
         while (tok) {
-            char escaped_ntp[ETH_SETUP_MAX_NTP * 4 + 4];
-            uci_escape(escaped_ntp, sizeof(escaped_ntp), tok);
-            snprintf(cmd, sizeof(cmd),
-                     "uci add_list system.ntp.server=%s", escaped_ntp);
-            system(cmd);
+            net_uci_option("add_list", "system.ntp.server", tok);
             tok = strtok(NULL, " ,;");
         }
     }

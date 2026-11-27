@@ -18,7 +18,6 @@
 
 /* Use shared helpers from net_utils. */
 #define trim             net_trim
-#define uci_escape       net_uci_escape
 #define parse_config_line net_parse_key_value_line
 
 /* ------------------------------------------------------------------ */
@@ -181,16 +180,10 @@ wifi_result_t wifi_setup_parse(const char *path, wifi_config_t *cfg)
 
 wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
 {
-    char escaped_ssid[WIFI_SETUP_MAX_SSID * 4 + 4];
-    char escaped_pass[WIFI_SETUP_MAX_PASS * 4 + 4];
-    char cmd[512];
     int rc;
 
     if (!cfg || !cfg->valid || cfg->ssid[0] == '\0')
         return WIFI_ERR_NO_SSID;
-
-    uci_escape(escaped_ssid, sizeof(escaped_ssid), cfg->ssid);
-    uci_escape(escaped_pass, sizeof(escaped_pass), cfg->password);
 
     /* Enable the radio */
     rc = system("uci set wireless.radio0.disabled='0'");
@@ -198,22 +191,16 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
         return WIFI_ERR_UCI_FAIL;
 
     /* Set country code */
-    snprintf(cmd, sizeof(cmd),
-             "uci set wireless.radio0.country='%s'", cfg->country);
-    rc = system(cmd);
+    rc = net_uci_option("set", "wireless.radio0.country", cfg->country);
     if (rc != 0)
         return WIFI_ERR_UCI_FAIL;
 
     /* Configure STA interface */
-    snprintf(cmd, sizeof(cmd),
-             "uci set wireless.sta.ssid=%s", escaped_ssid);
-    rc = system(cmd);
+    rc = net_uci_option("set", "wireless.sta.ssid", cfg->ssid);
     if (rc != 0)
         return WIFI_ERR_UCI_FAIL;
 
-    snprintf(cmd, sizeof(cmd),
-             "uci set wireless.sta.encryption='%s'", cfg->encryption);
-    rc = system(cmd);
+    rc = net_uci_option("set", "wireless.sta.encryption", cfg->encryption);
     if (rc != 0)
         return WIFI_ERR_UCI_FAIL;
 
@@ -221,9 +208,7 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
 
     /* Set password (skip for open networks) */
     if (strcmp(cfg->encryption, "none") != 0 && cfg->password[0] != '\0') {
-        snprintf(cmd, sizeof(cmd),
-                 "uci set wireless.sta.key=%s", escaped_pass);
-        rc = system(cmd);
+        rc = net_uci_option("set", "wireless.sta.key", cfg->password);
         if (rc != 0)
             return WIFI_ERR_UCI_FAIL;
     }
@@ -236,34 +221,21 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
     /* Configure network interface (static or dhcp) */
     if (cfg->ip_address[0] != '\0') {
         /* Static IP configuration */
-        char escaped_ip[WIFI_SETUP_MAX_IP * 4 + 4];
-        char escaped_netmask[WIFI_SETUP_MAX_IP * 4 + 4];
-        char escaped_gateway[WIFI_SETUP_MAX_IP * 4 + 4];
-        uci_escape(escaped_ip, sizeof(escaped_ip), cfg->ip_address);
-        uci_escape(escaped_netmask, sizeof(escaped_netmask), cfg->netmask);
-        uci_escape(escaped_gateway, sizeof(escaped_gateway), cfg->gateway);
-
         system("uci set network.wwan.proto='static'");
         system("uci delete network.wwan.gateway 2>/dev/null");
         system("uci delete network.wwan.dns 2>/dev/null");
 
-        snprintf(cmd, sizeof(cmd),
-                 "uci set network.wwan.ipaddr=%s", escaped_ip);
-        system(cmd);
+        net_uci_option("set", "network.wwan.ipaddr", cfg->ip_address);
 
         if (cfg->netmask[0] != '\0') {
-            snprintf(cmd, sizeof(cmd),
-                     "uci set network.wwan.netmask=%s", escaped_netmask);
-            system(cmd);
+            net_uci_option("set", "network.wwan.netmask", cfg->netmask);
         } else {
             /* Default netmask for static IP */
             system("uci set network.wwan.netmask='255.255.255.0'");
         }
 
         if (cfg->gateway[0] != '\0') {
-            snprintf(cmd, sizeof(cmd),
-                     "uci set network.wwan.gateway=%s", escaped_gateway);
-            system(cmd);
+            net_uci_option("set", "network.wwan.gateway", cfg->gateway);
         }
 
         if (cfg->dns[0] != '\0') {
@@ -275,11 +247,7 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
             dns_copy[sizeof(dns_copy) - 1] = '\0';
             char *tok = strtok(dns_copy, " ,;");
             while (tok) {
-                char escaped_dns[WIFI_SETUP_MAX_DNS * 4 + 4];
-                uci_escape(escaped_dns, sizeof(escaped_dns), tok);
-                snprintf(cmd, sizeof(cmd),
-                         "uci add_list network.wwan.dns=%s", escaped_dns);
-                system(cmd);
+                net_uci_option("add_list", "network.wwan.dns", tok);
                 tok = strtok(NULL, " ,;");
             }
         }
@@ -295,15 +263,9 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
 
     /* Set hostname */
     if (cfg->hostname[0] != '\0') {
-        char escaped_host[WIFI_SETUP_MAX_HOST * 4 + 4];
-        uci_escape(escaped_host, sizeof(escaped_host), cfg->hostname);
-        snprintf(cmd, sizeof(cmd),
-                 "uci set network.wwan.hostname=%s", escaped_host);
-        system(cmd);
+        net_uci_option("set", "network.wwan.hostname", cfg->hostname);
         /* Also set system hostname */
-        snprintf(cmd, sizeof(cmd),
-                 "uci set system.@system[0].hostname=%s", escaped_host);
-        system(cmd);
+        net_uci_option("set", "system.@system[0].hostname", cfg->hostname);
     } else {
         system("uci set network.wwan.hostname='Ultimaker-2C'");
     }
@@ -317,11 +279,7 @@ wifi_result_t wifi_setup_apply(const wifi_config_t *cfg)
         ntp_copy[sizeof(ntp_copy) - 1] = '\0';
         char *tok = strtok(ntp_copy, " ,;");
         while (tok) {
-            char escaped_ntp[WIFI_SETUP_MAX_NTP * 4 + 4];
-            uci_escape(escaped_ntp, sizeof(escaped_ntp), tok);
-            snprintf(cmd, sizeof(cmd),
-                     "uci add_list system.ntp.server=%s", escaped_ntp);
-            system(cmd);
+            net_uci_option("add_list", "system.ntp.server", tok);
             tok = strtok(NULL, " ,;");
         }
     }

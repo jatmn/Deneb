@@ -27,12 +27,8 @@ void net_chomp(char *s);
  */
 void net_trim(char *s);
 
-/**
- * Escape a string for safe use in a UCI set command via system().
- * Wraps in single quotes, escaping embedded single quotes.
- * dst must be at least (strlen(src) * 4 + 3) bytes.
- */
-void net_uci_escape(char *dst, size_t dst_size, const char *src);
+/** Apply one UCI option using a literal key=value argument. */
+int net_uci_option(char *operation, const char *key, const char *value);
 
 /**
  * Lowercase a string in-place.
