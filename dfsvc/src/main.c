@@ -58,6 +58,7 @@
 #define DF_INSTR_UPDATE_FIRMWARE 4
 #define DF_WS_PING_INTERVAL_MS 10000
 #define DF_WS_PING_TIMEOUT_MS 30000
+#define DF_WS_UPGRADE_CHUNK 256
 #define DF_STATUS_REQUEST_STALE_MS 120000
 #define DF_PAIR_REQUEST_TTL_SECONDS 120
 
@@ -89,6 +90,10 @@ typedef struct {
     mbedtls_x509_crt ca;
     bool connected;
     bool immediate_read;
+    int64_t read_deadline_ms;
+    uint8_t upgrade_tail[DF_WS_UPGRADE_CHUNK];
+    size_t upgrade_tail_pos;
+    size_t upgrade_tail_len;
 } ws_client_t;
 
 static void on_signal(int sig)
@@ -1150,8 +1155,16 @@ static int ws_tls_send(void *context, const unsigned char *buf, size_t len)
 static int ws_tls_receive(void *context, unsigned char *buf, size_t len, uint32_t timeout)
 {
     ws_client_t *ws = context;
-    if (!ws->immediate_read)
+    if (!ws->immediate_read) {
+        if (ws->read_deadline_ms) {
+            int64_t remaining = ws->read_deadline_ms - monotonic_ms();
+            if (remaining <= 0)
+                return MBEDTLS_ERR_SSL_TIMEOUT;
+            if (!timeout || remaining < timeout)
+                timeout = (uint32_t)remaining;
+        }
         return mbedtls_net_recv_timeout(&ws->net, buf, len, timeout);
+    }
 
     ssize_t n = recv(ws->net.fd, buf, len, MSG_DONTWAIT);
     if (n >= 0)
@@ -1161,28 +1174,55 @@ static int ws_tls_receive(void *context, unsigned char *buf, size_t len, uint32_
     return MBEDTLS_ERR_NET_RECV_FAILED;
 }
 
+/* Positive: application bytes, zero: idle, negative: closed or failed. */
+static int ws_read_some(ws_client_t *ws, uint8_t *buf, size_t len,
+                        bool allow_idle, int64_t deadline)
+{
+    while (!g_stop && monotonic_ms() < deadline) {
+        // TLS may process a control record and call the transport again.
+        ws->immediate_read = allow_idle;
+        ws->read_deadline_ms = deadline;
+        int n = mbedtls_ssl_read(&ws->ssl, buf, len);
+        ws->immediate_read = false;
+        ws->read_deadline_ms = 0;
+        if (n > 0)
+            return n;
+        if (n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            int64_t remaining = deadline - monotonic_ms();
+            if (remaining <= 0 ||
+                mbedtls_net_poll(&ws->net, MBEDTLS_NET_POLL_WRITE,
+                                 (uint32_t)remaining) != MBEDTLS_NET_POLL_WRITE)
+                return -1;
+        } else if (n == MBEDTLS_ERR_SSL_WANT_READ ||
+                   n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
+            if (allow_idle && !mbedtls_ssl_check_pending(&ws->ssl))
+                return 0;
+        } else {
+            return -1;
+        }
+    }
+    return -1;
+}
+
 static int ws_read_bytes(ws_client_t *ws, uint8_t *buf, size_t len, bool allow_idle)
 {
-    size_t used = 0;
+    size_t used = ws->upgrade_tail_len - ws->upgrade_tail_pos;
+    if (used > len)
+        used = len;
+    if (used) {
+        memcpy(buf, ws->upgrade_tail + ws->upgrade_tail_pos, used);
+        ws->upgrade_tail_pos += used;
+    }
+
     int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
-    while (used < len && !g_stop && monotonic_ms() < deadline) {
-        // TLS may consume a control record and fetch again in the same read.
-        ws->immediate_read = allow_idle && used == 0;
-        int n = mbedtls_ssl_read(&ws->ssl, buf + used, len - used);
-        ws->immediate_read = false;
-        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
-            n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
-            // Finish any held TLS message before yielding an idle WebSocket.
-            if (allow_idle && used == 0 && n != MBEDTLS_ERR_SSL_WANT_WRITE &&
-                !mbedtls_ssl_check_pending(&ws->ssl))
-                return WS_READ_IDLE;
-            continue;
-        }
+    while (used < len) {
+        int n = ws_read_some(ws, buf + used, len - used,
+                             allow_idle && used == 0, deadline);
         if (n <= 0)
-            return -1;
+            return n == 0 ? WS_READ_IDLE : -1;
         used += (size_t)n;
     }
-    return used == len ? 0 : -1;
+    return 0;
 }
 
 static int ws_read_exact(ws_client_t *ws, uint8_t *buf, size_t len)
@@ -1338,13 +1378,28 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
 
     char resp[1024];
     size_t used = 0;
+    char *end = NULL;
+    int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
     while (used + 1 < sizeof(resp)) {
-        if (ws_read_exact(ws, (unsigned char *)resp + used, 1) < 0)
+        size_t available = sizeof(resp) - used - 1;
+        size_t chunk = available < DF_WS_UPGRADE_CHUNK ? available : DF_WS_UPGRADE_CHUNK;
+        n = ws_read_some(ws, (uint8_t *)resp + used, chunk, false, deadline);
+        if (n < 0)
             return -1;
-        resp[++used] = '\0';
-        if (strstr(resp, "\r\n\r\n"))
+        size_t scan_start = used > 3 ? used - 3 : 0;
+        used += (size_t)n;
+        resp[used] = '\0';
+        end = strstr(resp + scan_start, "\r\n\r\n");
+        if (end)
             break;
     }
+    if (!end)
+        return -1;
+
+    end += 4;
+    ws->upgrade_tail_len = used - (size_t)(end - resp);
+    memcpy(ws->upgrade_tail, end, ws->upgrade_tail_len);
+    *end = '\0';
     if (!strstr(resp, " 101 ") ||
         !header_value_matches(resp, "Sec-WebSocket-Accept", expected_accept))
         return -1;
@@ -1354,6 +1409,10 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
 
 static int ws_wait_readable(ws_client_t *ws, uint32_t timeout_ms)
 {
+    if (ws->upgrade_tail_pos < ws->upgrade_tail_len ||
+        mbedtls_ssl_check_pending(&ws->ssl))
+        return 1;
+
     int rc = mbedtls_net_poll(&ws->net, MBEDTLS_NET_POLL_READ, timeout_ms);
     if (rc < 0)
         return -1;
