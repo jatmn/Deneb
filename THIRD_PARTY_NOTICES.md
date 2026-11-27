@@ -53,6 +53,7 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 - Component: LVGL runtime subset
 - Location: `ui/lib/lvgl`
 - Upstream: https://github.com/lvgl/lvgl
+- Revision: `cd75ce0c46657d4668889048cd43f16ff6e6121c` (v9.6 maintenance)
 - License: MIT
 - Repository form: pinned git submodule
 - Notice files kept in the LVGL submodule:
@@ -60,6 +61,8 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
   - `ui/lib/lvgl/COPYRIGHTS.md`
 
 Deneb builds against the pinned LVGL submodule for the native touchscreen UI.
+The UI build omits a redundant assertion so the software renderer can skip a
+rounded border when its mask allocation fails.
 Release packages include LVGL's MIT license notice.
 
 ### ZeroMQ / libzmq
