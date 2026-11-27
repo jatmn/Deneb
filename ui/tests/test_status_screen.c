@@ -139,6 +139,17 @@ int main(void)
     assert(lv_bar_get_value(progress_bar) == 43);
     assert_label(time_left_label, "Left 1:01:05");
 
+    observed.connected = false;
+    tick(display);
+    assert_label(file_label, "status.no_file");
+    assert_label(progress_label, "0%");
+    assert(lv_bar_get_value(progress_bar) == 0);
+    observed.connected = true;
+    tick(display);
+    assert_label(file_label, "calibration.ufp");
+    assert_label(progress_label, "43%");
+    assert(lv_bar_get_value(progress_bar) == 43);
+
     lv_obj_set_height(file_label, 14);
     memset(observed.filename, 'W', sizeof(observed.filename) - 1);
     tick(display);
