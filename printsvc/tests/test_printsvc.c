@@ -3455,6 +3455,8 @@ static void test_diagnostics_export_helpers(void)
     assert(strstr(command, "logread.txt") != NULL);
     assert(strstr(command, "digitalfactory_service_status.txt") != NULL);
     assert(strstr(command, "cp /tmp/deneb*.log") != NULL);
+    assert(strstr(command, "cp /tmp/deneb-printsvc.log.deneb-previous \"$TMP/\"") != NULL);
+    assert(strstr(command, ".deneb-trim") == NULL);
     assert(strstr(command, "grep -v ssid") != NULL);
     assert(strstr(command, "grep -v key") != NULL);
     assert(strstr(command, "grep -v encryption") != NULL);

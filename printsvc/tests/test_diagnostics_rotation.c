@@ -143,6 +143,33 @@ static void test_legacy_and_external_rotation(void)
     remove_log(PRIMARY ".external");
 }
 
+static void test_oversize_in_place(void)
+{
+    char line[1000];
+    memset(line, 'x', sizeof(line));
+    line[sizeof(line) - 1] = '\n';
+    FILE *legacy = fopen(PRIMARY, "w");
+    assert(legacy);
+    for (unsigned int i = 0; i < 1200; i++)
+        assert(fwrite(line, 1, sizeof(line), legacy) == sizeof(line));
+    memcpy(line, "most recent complete fault", sizeof("most recent complete fault") - 1);
+    assert(fwrite(line, 1, sizeof(line), legacy) == sizeof(line));
+    assert(fputs("interrupted legacy record", legacy) >= 0);
+    assert(fclose(legacy) == 0);
+    struct stat before = log_stat(PRIMARY);
+    assert(before.st_size > LIMIT);
+    /* An existing writable file can be compacted without a directory entry. */
+    assert(chmod("primary", 0500) == 0);
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    assert(log_stat(PRIMARY).st_ino == before.st_ino);
+    assert(log_stat(PRIMARY).st_size <= LIMIT / 2);
+    assert(log_contains(PRIMARY, "most recent complete fault"));
+    assert(!log_contains(PRIMARY, "interrupted legacy record"));
+    deneb_diagnostics_log_close();
+    assert(chmod("primary", 0700) == 0);
+    remove_log(PRIMARY);
+}
+
 static void test_write_failure(void)
 {
     struct rlimit saved;
@@ -167,7 +194,8 @@ static void test_write_failure(void)
     assert(setrlimit(RLIMIT_FSIZE, &saved) == 0);
     fixture_seconds += 61;
     emit_fault(11, "fault after storage recovers");
-    assert(log_contains(FALLBACK, "fault after storage recovers"));
+    assert(log_contains(PRIMARY, "fault after storage recovers"));
+    assert(!log_contains(FALLBACK, "fault after storage recovers"));
     assert(!log_contains(FALLBACK, "fault while fallback cannot write"));
     deneb_diagnostics_log_close();
 
@@ -177,6 +205,62 @@ static void test_write_failure(void)
     deneb_diagnostics_log_close();
     remove_log(PRIMARY);
     remove_log(FALLBACK);
+}
+
+static void test_copytruncate_and_short_write(void)
+{
+    struct rlimit saved;
+    assert(getrlimit(RLIMIT_FSIZE, &saved) == 0);
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    for (unsigned int i = 1; i <= 4; i++)
+        emit_fault(i, "fault before external truncation");
+
+    FILE *replaced = fopen(PRIMARY, "w");
+    assert(replaced);
+    assert(fputs("last complete line after truncation\n", replaced) >= 0);
+    assert(fclose(replaced) == 0);
+    off_t boundary = log_stat(PRIMARY).st_size;
+    struct rlimit limit = { .rlim_cur = (rlim_t)boundary + 8,
+                            .rlim_max = saved.rlim_max };
+    assert(setrlimit(RLIMIT_FSIZE, &limit) == 0);
+    /* Leave the monotonic clock unchanged so the byte counter is stale. */
+    emit_fault(5, "fault during short write");
+    assert(setrlimit(RLIMIT_FSIZE, &saved) == 0);
+    assert(log_stat(PRIMARY).st_size == boundary);
+    assert(log_contains(PRIMARY, "last complete line after truncation"));
+
+    /* A stopped process may have left part of an event on an earlier run. */
+    FILE *incomplete = fopen(PRIMARY, "a");
+    assert(incomplete);
+    assert(fputs("interrupted diagnostic", incomplete) >= 0);
+    assert(fclose(incomplete) == 0);
+    assert(deneb_diagnostics_log_open(NULL) == 0);
+    emit_fault(6, "fault after short write and reopen");
+    assert(log_contains(PRIMARY, "last complete line after truncation"));
+    assert(log_contains(PRIMARY, "fault after short write and reopen"));
+    assert(!log_contains(PRIMARY, "interrupted diagnostic"));
+    deneb_diagnostics_log_close();
+    remove_log(PRIMARY);
+    remove_log(FALLBACK);
+}
+
+static void test_custom_write_failure(void)
+{
+    const char *path = "primary/custom.log";
+    struct rlimit saved;
+    assert(getrlimit(RLIMIT_FSIZE, &saved) == 0);
+    assert(deneb_diagnostics_log_open(path) == 0);
+    struct rlimit limit = { .rlim_cur = 0, .rlim_max = saved.rlim_max };
+    assert(setrlimit(RLIMIT_FSIZE, &limit) == 0);
+    emit_fault(1, "failed custom fault");
+    assert(setrlimit(RLIMIT_FSIZE, &saved) == 0);
+    fixture_seconds += 61;
+    emit_fault(2, "custom fault after recovery");
+    assert(log_contains(path, "custom fault after recovery"));
+    assert(!log_stat(PRIMARY).st_ino);
+    assert(!log_stat(FALLBACK).st_ino);
+    deneb_diagnostics_log_close();
+    remove_log(path);
 }
 
 int main(void)
@@ -192,7 +276,10 @@ int main(void)
     assert(mkdir("primary", 0700) == 0);
     test_continuous_rotation(PRIMARY, PRIMARY PREVIOUS);
     test_legacy_and_external_rotation();
+    test_oversize_in_place();
     test_write_failure();
+    test_copytruncate_and_short_write();
+    test_custom_write_failure();
     assert(rmdir("primary") == 0);
     assert(rmdir("fallback") == 0);
     assert(chdir("/") == 0);

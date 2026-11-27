@@ -44,6 +44,7 @@ int deneb_diagnostics_export_format_command(char *out, size_t out_sz)
         "uci -q show ultimaker | grep digitalfactory "
         "> \"$TMP/digitalfactory_uci.txt\" 2>/dev/null || true; "
         "cp /tmp/deneb*.log \"$TMP/\" 2>/dev/null || true; "
+        "cp /tmp/deneb-printsvc.log.deneb-previous \"$TMP/\" 2>/dev/null || true; "
         "cp /tmp/deneb-df-status \"$TMP/\" 2>/dev/null || true; "
         "uci show | grep -v ssid | grep -v key | grep -v encryption "
         "> \"$TMP/uci_dump\" 2>/dev/null || true; "

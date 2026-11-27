@@ -22,7 +22,6 @@
 #define DENEB_DIAG_GENERATION_BYTES (DENEB_DIAG_MAX_LOG_BYTES / 2)
 #define DENEB_DIAG_RECHECK_MS 60000LL
 #define DENEB_DIAG_PREVIOUS_SUFFIX ".deneb-previous"
-#define DENEB_DIAG_TRIM_SUFFIX ".deneb-trim"
 
 typedef struct {
     char text[2048];
@@ -139,8 +138,7 @@ static int append_bytes(int fd, const char *data, size_t length, size_t *written
             continue;
         if (n <= 0)
             return -1;
-        if (written)
-            *written += (size_t)n;
+        *written += (size_t)n;
         data += n;
         length -= (size_t)n;
     }
@@ -153,73 +151,124 @@ static int log_name(char *out, size_t capacity, const char *path, const char *su
     return n >= 0 && (size_t)n < capacity ? 0 : -1;
 }
 
-/* Shrink existing oversized files without overwriting unread diagnostic bytes. */
-static int trim_log(const char *path, int fd, const struct stat *st)
+static int read_log(int fd, char *buf, size_t count, off_t offset)
 {
-    char tmp[PATH_MAX];
-    if (log_name(tmp, sizeof(tmp), path, DENEB_DIAG_TRIM_SUFFIX) != 0 ||
-        (unlink(tmp) != 0 && errno != ENOENT))
-        return -1;
-    int out = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-    if (out < 0)
-        return -1;
+    ssize_t n;
+    do {
+        n = pread(fd, buf, count, offset);
+    } while (n < 0 && errno == EINTR);
+    return n == (ssize_t)count ? 0 : -1;
+}
 
+static int find_log_end(int fd, off_t start, off_t *end)
+{
     char buf[2048];
-    off_t offset = st->st_size - DENEB_DIAG_GENERATION_BYTES;
-    int line_start = 0;
-    int ok = fchmod(out, st->st_mode & 0777) == 0;
-    while (ok && offset < st->st_size) {
-        size_t count = st->st_size - offset < (off_t)sizeof(buf) ?
-            (size_t)(st->st_size - offset) : sizeof(buf);
-        ssize_t n = pread(fd, buf, count, offset);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0) {
-            ok = 0;
-            break;
+    off_t offset = *end;
+    while (offset > start) {
+        size_t count = offset - start < (off_t)sizeof(buf) ?
+            (size_t)(offset - start) : sizeof(buf);
+        offset -= (off_t)count;
+        if (read_log(fd, buf, count, offset) != 0)
+            return -1;
+        for (size_t i = count; i > 0; i--) {
+            if (buf[i - 1] == '\n') {
+                *end = offset + (off_t)i;
+                return 0;
+            }
         }
-        const char *start = buf;
-        if (!line_start) {
-            const char *newline = memchr(buf, '\n', (size_t)n);
-            start = newline ? newline + 1 : buf + n;
-            line_start = newline != NULL;
-        }
-        ok = append_bytes(out, start, (size_t)(buf + n - start), NULL) == 0;
-        offset += n;
     }
-    struct stat named;
-    if (close(out) == 0 && ok && lstat(path, &named) == 0 &&
-        named.st_dev == st->st_dev && named.st_ino == st->st_ino &&
-        named.st_size == st->st_size && rename(tmp, path) == 0)
+    *end = start;
+    return 0;
+}
+
+static int find_log_start(int fd, off_t *start, off_t end)
+{
+    char buf[2048];
+    /* Include the preceding byte in case the limit lands on a line boundary. */
+    off_t offset = *start - 1;
+    while (offset < end) {
+        size_t count = end - offset < (off_t)sizeof(buf) ?
+            (size_t)(end - offset) : sizeof(buf);
+        if (read_log(fd, buf, count, offset) != 0)
+            return -1;
+        const char *newline = memchr(buf, '\n', count);
+        if (newline) {
+            *start = offset + (newline - buf) + 1;
+            return 0;
+        }
+        offset += (off_t)count;
+    }
+    *start = end;
+    return 0;
+}
+
+/* Copy forward so each destination chunk ends before the next source chunk. */
+static int move_log_tail(int fd, off_t start, off_t end)
+{
+    char buf[2048];
+    off_t target = 0;
+    while (start < end) {
+        size_t count = end - start < (off_t)sizeof(buf) ?
+            (size_t)(end - start) : sizeof(buf);
+        if (read_log(fd, buf, count, start) != 0)
+            return -1;
+        size_t copied = 0;
+        while (copied < count) {
+            ssize_t n = pwrite(fd, buf + copied, count - copied,
+                               target + (off_t)copied);
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n <= 0)
+                return -1;
+            copied += (size_t)n;
+        }
+        start += (off_t)count;
+        target += (off_t)count;
+    }
+    return 0;
+}
+
+static int truncate_log(int fd, off_t original, off_t length)
+{
+    struct stat current;
+    if (fstat(fd, &current) != 0 || current.st_size != original)
+        return -1;
+    return ftruncate(fd, length);
+}
+
+/* Recover only complete lines, using the open inode and no second file. */
+static int normalize_log(int fd, off_t *size)
+{
+    off_t start = *size > DENEB_DIAG_GENERATION_BYTES ?
+        *size - DENEB_DIAG_GENERATION_BYTES : 0;
+    off_t end = *size;
+    if (find_log_end(fd, start, &end) != 0 ||
+        (start > 0 && find_log_start(fd, &start, end) != 0))
+        return -1;
+    off_t length = end - start;
+    if (length == *size)
         return 0;
-    unlink(tmp);
-    return -1;
+    if ((start > 0 && move_log_tail(fd, start, end) != 0) ||
+        truncate_log(fd, *size, length) != 0)
+        return -1;
+    *size = length;
+    return 0;
 }
 
 static int open_log_file(const char *path, int create, off_t *size)
 {
-    int flags = O_RDWR | O_APPEND | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC;
+    int flags = O_RDWR | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC;
     int fd = open(path, flags | (create ? O_CREAT : 0), 0664);
     if (fd < 0)
         return -1;
 
     struct stat st;
-    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+    /* Linux pwrite appends despite its offset when O_APPEND is set. */
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        normalize_log(fd, &st.st_size) != 0 ||
+        (create && fcntl(fd, F_SETFL, O_APPEND | O_NONBLOCK) != 0)) {
         close(fd);
         return -1;
-    }
-    if (st.st_size > DENEB_DIAG_GENERATION_BYTES) {
-        int trimmed = trim_log(path, fd, &st);
-        close(fd);
-        if (trimmed != 0)
-            return -1;
-        fd = open(path, flags);
-        if (fd < 0)
-            return -1;
-        if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
-            close(fd);
-            return -1;
-        }
     }
     *size = st.st_size;
     return fd;
@@ -294,10 +343,12 @@ static int write_event(const deneb_diag_event_t *event, long long now)
     size_t written = 0;
     if (append_bytes(diag_fd, event->text, event->length, &written) != 0) {
         struct stat st;
-        /* Remove a partial line only if its original boundary still agrees. */
         if (written && fstat(diag_fd, &st) == 0 &&
-            st.st_size == diag_bytes + (off_t)written)
-            (void)ftruncate(diag_fd, diag_bytes);
+            st.st_size <= DENEB_DIAG_GENERATION_BYTES) {
+            off_t end = st.st_size;
+            if (find_log_end(diag_fd, 0, &end) == 0 && end < st.st_size)
+                (void)truncate_log(diag_fd, st.st_size, end);
+        }
         return -1;
     }
     diag_bytes += (off_t)event->length;
@@ -317,7 +368,7 @@ static int log_ready(long long now)
         return 1;
     if (!diag_path || now < next_check_ms)
         return 0;
-    if (open_selected_log(diag_path, now) == 0)
+    if (open_selected_log(custom_path ? custom_path : primary_path, now) == 0)
         return 1;
     next_check_ms = now + DENEB_DIAG_RECHECK_MS;
     return 0;
@@ -357,8 +408,11 @@ int deneb_diagnostics_log_open(const char *path)
         return -1;
 
     long long now = monotonic_ms();
-    if (open_selected_log(is_default ? primary_path : custom_path, now) != 0)
+    diag_path = is_default ? primary_path : custom_path;
+    if (open_selected_log(diag_path, now) != 0) {
+        next_check_ms = now + DENEB_DIAG_RECHECK_MS;
         return -1;
+    }
 
     lifecycle_event("log_open", now);
     return diag_fd >= 0 ? 0 : -1;
