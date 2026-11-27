@@ -8,6 +8,7 @@
  */
 
 #include "fb_driver.h"
+#include "fb_draw_buffer.h"
 
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -19,12 +20,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "lvgl.h"
-
 #define FB_DEVICE   "/dev/fb0"
-#define FB_WIDTH    320
-#define FB_HEIGHT   240
-#define FB_BPP      16
+#define FB_BPP      LV_COLOR_FORMAT_GET_BPP(FB_COLOR_FORMAT)
 
 static int fb_fd = -1;
 static uint8_t *fb_mem = NULL;
@@ -32,8 +29,7 @@ static size_t fb_size = 0;
 static uint32_t fb_stride = FB_WIDTH * (FB_BPP / 8);
 static bool fb_bgr565 = false;
 
-/* Partial render buffer: 80 lines = 51.2KB, reducing flush chunks per frame. */
-static lv_color_t buf1[FB_WIDTH * 80];
+_Alignas(LV_DRAW_BUF_ALIGN) static uint8_t buf1[FB_DRAW_BYTES];
 
 static lv_display_t *disp = NULL;
 
@@ -85,10 +81,9 @@ static void fb_flush_cb(lv_display_t *disp, const lv_area_t *area,
         uint16_t *fb_ptr = (uint16_t *)(fb_mem + y * fb_stride +
                                         area->x1 * px_size);
         if (fb_bgr565) {
-            const lv_color_t *color_p = (const lv_color_t *)src_row;
             for (int32_t x = 0; x < row_width; x++) {
                 uint16_t c;
-                memcpy(&c, &color_p[x], sizeof(c));
+                memcpy(&c, src_row + (size_t)x * px_size, sizeof(c));
                 fb_ptr[x] = rgb565_to_bgr565(c);
             }
         } else {
@@ -160,7 +155,7 @@ int fb_driver_init(void)
         return -1;
     }
 
-    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_color_format(disp, FB_COLOR_FORMAT);
     lv_display_set_flush_cb(disp, fb_flush_cb);
     lv_display_set_buffers(disp, buf1, NULL, sizeof(buf1),
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -200,7 +195,7 @@ int fb_driver_save_ppm(const char *path)
     FILE *f = fopen(path, "wb");
     if (!f) return -1;
 
-    fprintf(f, "P6\n320 240\n255\n");
+    fprintf(f, "P6\n%d %d\n255\n", FB_WIDTH, FB_HEIGHT);
     for (uint32_t y = 0; y < FB_HEIGHT; y++) {
         const uint16_t *row = (const uint16_t *)(fb_mem + y * fb_stride);
         for (uint32_t x = 0; x < FB_WIDTH; x++) {
