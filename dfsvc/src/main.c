@@ -1397,7 +1397,10 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
         return -1;
 
     end += 4;
-    ws->upgrade_tail_len = used - (size_t)(end - resp);
+    size_t header_len = (size_t)(end - resp);
+    if (memchr(resp, '\0', header_len))
+        return -1;
+    ws->upgrade_tail_len = used - header_len;
     memcpy(ws->upgrade_tail, end, ws->upgrade_tail_len);
     *end = '\0';
     if (!strstr(resp, " 101 ") ||

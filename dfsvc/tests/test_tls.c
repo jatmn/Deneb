@@ -129,9 +129,9 @@ static void serve_websocket(test_tls_server_t *server)
             const uint8_t frame[] = {0x81, 2, 'o', 'k'};
             assert(mbedtls_ssl_write(&ssl, frame, sizeof(frame)) == (int)sizeof(frame));
         } else {
-            /* Split the last CRLF across records and append the first frame. */
+            /* Split the final CRLF and append a pong and a text frame. */
             assert(mbedtls_ssl_write(&ssl, (const uint8_t *)response, (size_t)len - 1) == len - 1);
-            const uint8_t end_and_frame[] = {'\n', 0x81, 2, 'o', 'k'};
+            const uint8_t end_and_frame[] = {'\n', 0x8a, 0, 0x81, 2, 'o', 'k'};
             assert(mbedtls_ssl_write(&ssl, end_and_frame, sizeof(end_and_frame)) ==
                    (int)sizeof(end_and_frame));
             expect_client_ping(&ssl);
@@ -169,10 +169,13 @@ static void expect_buffered_frame(ws_client_t *client, const char *expected)
 static void assert_buffered_frames(ws_client_t *client)
 {
     assert(upgrade_reads <= 4);
+    char message[16];
+    assert(mbedtls_net_poll(&client->net, MBEDTLS_NET_POLL_READ, 0) == 0);
+    assert(ws_wait_readable(client, 250) == 1);
+    assert(ws_read_text(client, message, sizeof(message)) == 1);
     expect_buffered_frame(client, "ok");
     assert(ws_send_control(client, 0x9, NULL, 0) == 0);
     assert(ws_wait_readable(client, 1000) == 1);
-    char message[16];
     assert(ws_read_text(client, message, sizeof(message)) == 1);
     expect_buffered_frame(client, "one");
     expect_buffered_frame(client, "two");
