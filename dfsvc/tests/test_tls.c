@@ -28,6 +28,7 @@ typedef struct {
 
 static bool ticket_only_read;
 static unsigned ticket_reads;
+static ws_client_t *ticket_client;
 
 static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t len)
 {
@@ -36,8 +37,12 @@ static int fixture_ssl_read(mbedtls_ssl_context *ssl, unsigned char *buf, size_t
     switch (++ticket_reads) {
     case 1:
         return MBEDTLS_ERR_SSL_WANT_READ;
-    case 2:
-        return MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
+    case 2: {
+        // A discarded ticket can lead directly to a transport read.
+        int rc = ws_tls_receive(ticket_client, buf, len, 100);
+        assert(rc == MBEDTLS_ERR_SSL_WANT_READ);
+        return rc;
+    }
     default:
         return MBEDTLS_ERR_SSL_TIMEOUT;
     }
@@ -156,7 +161,8 @@ static void assert_connection(test_tls_server_t *server, const char *host,
     if (connected) {
         char message[16];
         if (server->version == MBEDTLS_SSL_VERSION_TLS1_3) {
-            // Simulate a completed ticket read before any WebSocket frame bytes arrive.
+            // Script ticket processing while the authenticated peer waits for our ping.
+            ticket_client = &client;
             ticket_reads = 0;
             ticket_only_read = true;
             assert(ws_read_text(&client, message, sizeof(message)) == WS_READ_IDLE);
@@ -164,7 +170,13 @@ static void assert_connection(test_tls_server_t *server, const char *host,
             ticket_only_read = false;
             assert(ws_send_control(&client, 0x9, NULL, 0) == 0);
         }
-        assert(ws_read_text(&client, message, sizeof(message)) == 0);
+        int received = ws_read_text(&client, message, sizeof(message));
+        int64_t deadline = monotonic_ms() + 1000;
+        while (received == WS_READ_IDLE) {
+            assert(monotonic_ms() < deadline && ws_wait_readable(&client, 1000) == 1);
+            received = ws_read_text(&client, message, sizeof(message));
+        }
+        assert(received == 0);
         assert(strcmp(message, "ok") == 0);
     }
     ws_free(&client);

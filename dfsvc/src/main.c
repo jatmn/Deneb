@@ -86,6 +86,7 @@ typedef struct {
     mbedtls_ssl_config conf;
     mbedtls_x509_crt ca;
     bool connected;
+    bool immediate_read;
 } ws_client_t;
 
 static void on_signal(int sig)
@@ -1134,12 +1135,35 @@ static int ws_write_all(ws_client_t *ws, const uint8_t *buf, size_t len)
 
 enum { WS_READ_IDLE = 2 };
 
+static int ws_tls_send(void *context, const unsigned char *buf, size_t len)
+{
+    ws_client_t *ws = context;
+    return mbedtls_net_send(&ws->net, buf, len);
+}
+
+static int ws_tls_receive(void *context, unsigned char *buf, size_t len, uint32_t timeout)
+{
+    ws_client_t *ws = context;
+    if (!ws->immediate_read)
+        return mbedtls_net_recv_timeout(&ws->net, buf, len, timeout);
+
+    ssize_t n = recv(ws->net.fd, buf, len, MSG_DONTWAIT);
+    if (n >= 0)
+        return (int)n;
+    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+
 static int ws_read_bytes(ws_client_t *ws, uint8_t *buf, size_t len, bool allow_idle)
 {
     size_t used = 0;
     int64_t deadline = monotonic_ms() + DF_WS_PING_TIMEOUT_MS;
     while (used < len && !g_stop && monotonic_ms() < deadline) {
+        // TLS may consume a control record and fetch again in the same read.
+        ws->immediate_read = allow_idle && used == 0;
         int n = mbedtls_ssl_read(&ws->ssl, buf + used, len - used);
+        ws->immediate_read = false;
         if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE ||
             n == MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET) {
             // Finish any held TLS message before yielding an idle WebSocket.
@@ -1279,8 +1303,7 @@ static int ws_connect(ws_client_t *ws, const df_url_t *url, const char *ca_direc
         return -1;
     if (mbedtls_ssl_set_hostname(&ws->ssl, url->host) != 0)
         return -1;
-    mbedtls_ssl_set_bio(&ws->ssl, &ws->net, mbedtls_net_send, mbedtls_net_recv,
-                        mbedtls_net_recv_timeout);
+    mbedtls_ssl_set_bio(&ws->ssl, ws, ws_tls_send, NULL, ws_tls_receive);
     int rc;
     while ((rc = mbedtls_ssl_handshake(&ws->ssl)) != 0) {
         if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE)

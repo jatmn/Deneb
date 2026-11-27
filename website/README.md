@@ -7,8 +7,8 @@ This tree is not a printer runtime.
 
 ## Build
 
-Requires Hugo extended 0.166.0 (see `vendor-pins/hugo.version`), Go for Hugo
-modules, and Node.js 22 with npm to stage FlexSearch.
+Requires Hugo 0.170.1 (see `vendor-pins/hugo.version`), Go for the
+Hextra v0.13.0 module, and Node.js 22 with npm to stage FlexSearch.
 
 Run from this directory (`website/`):
 
