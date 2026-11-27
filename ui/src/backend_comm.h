@@ -50,13 +50,12 @@ const char *backend_get_print_backend_command_url(void);
 int backend_is_ready(void);
 int backend_print_start_allowed(void);
 int backend_manual_action_allowed(void);
-int backend_get_print_display_name(char *out, size_t out_sz);
-int backend_has_print_name(const char *display_name);
+/* Resolve the filename and its display flags together for one screen refresh. */
+deneb_print_context_flags_t backend_get_print_display_context(
+    char *display_name, size_t display_name_sz);
 int backend_has_active_print_context(void);
-int backend_has_preparing_print_context(void);
 int backend_has_stoppable_print_context(void);
 int backend_has_abort_print_context(void);
-void backend_clear_print_display_context_if_idle(void);
 
 /**
  * Send a G-code command to the printer.
