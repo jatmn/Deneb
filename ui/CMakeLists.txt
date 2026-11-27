@@ -325,6 +325,29 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
         DENEB_ACTIVE_THUMB_PATH="${CMAKE_CURRENT_BINARY_DIR}/status-test-thumbnail.rgb565")
     target_link_libraries(deneb-status-screen-tests PRIVATE deneb-lvgl m pthread)
     add_test(NAME deneb-status-screen-tests COMMAND deneb-status-screen-tests)
+
+    add_executable(deneb-screen-presentation-tests
+        tests/test_screen_presentation.c
+        src/locale.c
+        src/screen_mgr.c
+        src/screens/screen_language.c
+        src/screens/screen_material.c
+        src/screens/screen_print.c
+        ../common/print/gcode_command.c
+        ../common/print/material_workflow.c
+        ../common/print/print_job_file.c
+        ../common/print/print_state_rules.c
+        ../common/print/print_string.c
+        ../common/print/status_state.c
+        ../common/print/system_language.c)
+    target_include_directories(deneb-screen-presentation-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_compile_definitions(deneb-screen-presentation-tests PRIVATE LOCALE_DIR=".")
+    target_compile_options(deneb-screen-presentation-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-screen-presentation-tests PRIVATE -Wl,--gc-sections -Wl,--wrap=system)
+    target_link_libraries(deneb-screen-presentation-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-screen-presentation-tests
+        COMMAND deneb-screen-presentation-tests "${CMAKE_CURRENT_SOURCE_DIR}/locales")
+    set_tests_properties(deneb-screen-presentation-tests PROPERTIES TIMEOUT 10)
 endif()
 
 # Link ZMQ when not using stub

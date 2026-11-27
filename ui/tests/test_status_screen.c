@@ -92,7 +92,7 @@ int main(void)
     lv_display_set_flush_cb(display, flush_frame);
     screen_mgr_init();
     screen_mgr_push(&screen_status);
-    assert_label(state_label, "status.idle");
+    assert_label(state_label, "status.preparing");
     assert_label(file_label, "status.no_file");
     assert_label(progress_label, "0%");
     assert(lv_obj_has_state(pause_resume_btn, LV_STATE_DISABLED));
@@ -183,7 +183,7 @@ int main(void)
     stops = 0;
     translated = true;
     screen_mgr_rebuild_stack();
-    assert_label(state_label, "Gereed");
+    assert_label(state_label, "Verbinden");
     assert_label(file_label, "Geen bestand");
     tick(display);
     assert_label(state_label, "Verbinden");
