@@ -7,9 +7,14 @@
 #include "net_utils.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+
+extern char **environ;
 
 void net_chomp(char *s)
 {
@@ -34,30 +39,24 @@ void net_trim(char *s)
         s[--len] = '\0';
 }
 
-void net_uci_escape(char *dst, size_t dst_size, const char *src)
+int net_uci_option(char *operation, const char *key, const char *value)
 {
-    size_t out = 0;
-    if (!dst || dst_size == 0)
-        return;
-    dst[0] = '\0';
-    if (!src || dst_size < 3)
-        return;
-    dst[out++] = '\'';
-    for (const char *p = src; *p && out + 5 < dst_size; p++) {
-        if (*p == '\'') {
-            if (out + 4 >= dst_size)
-                break;
-            dst[out++] = '\'';
-            dst[out++] = '\\';
-            dst[out++] = '\'';
-            dst[out++] = '\'';
-        } else {
-            dst[out++] = *p;
-        }
-    }
-    if (out + 1 < dst_size)
-        dst[out++] = '\'';
-    dst[out] = '\0';
+    char option[256];
+    int length = snprintf(option, sizeof(option), "%s=%s", key, value);
+    if (length < 0 || (size_t)length >= sizeof(option))
+        return -1;
+
+    char *argv[] = {"uci", operation, option, NULL};
+    pid_t pid;
+    if (posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ) != 0)
+        return -1;
+
+    int status;
+    pid_t result;
+    do {
+        result = waitpid(pid, &status, 0);
+    } while (result < 0 && errno == EINTR);
+    return result == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
 }
 
 void net_str_lower(char *s)

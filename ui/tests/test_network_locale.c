@@ -3,6 +3,7 @@
 #include "../src/screens/screen_network.c"
 #include <assert.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 static pthread_t ui_thread;
 static pthread_mutex_t worker_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -109,6 +110,19 @@ static void write_file(const char *path, const char *text)
     assert(file && fputs(text, file) >= 0 && fclose(file) == 0);
 }
 
+static void expect_uci_call(const char *call)
+{
+    FILE *file = fopen("uci-calls", "r");
+    assert(file);
+    char line[256];
+    bool found = false;
+    while (fgets(line, sizeof(line), file)) {
+        if (strcmp(line, call) == 0)
+            found = true;
+    }
+    assert(fclose(file) == 0 && found);
+}
+
 static void start(void (*event)(lv_event_t *))
 {
     pthread_mutex_lock(&worker_lock);
@@ -147,8 +161,10 @@ int main(void)
     char directory[] = "./deneb-network-locale-XXXXXX";
     int original_directory = open(".", O_RDONLY);
     assert(original_directory >= 0 && mkdtemp(directory) && chdir(directory) == 0);
-    write_file("wifi.txt", "ssid=Fixture Network\n");
-    write_file("eth.txt", "ip=192.0.2.80\n");
+    write_file("uci", "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$#\" \"$1\" \"$2\" >> uci-calls\n");
+    assert(chmod("uci", 0700) == 0 && setenv("PATH", ".", 1) == 0);
+    write_file("wifi.txt", "ssid=Fixture Network\npassword=Bob's $guest key\ncountry=ca\n");
+    write_file("eth.txt", "ip=192.0.2.80\ndns=192.0.2.53, 192.0.2.54\n");
     write_file("fixture.json",
         "{\"network.wifi_configured_fmt\":\"New Wi-Fi %s\","
         "\"network.eth_static_fmt\":\"New Ethernet %s\","
@@ -163,6 +179,12 @@ int main(void)
 
     start(import_eth_cb);
     finish("New Ethernet 192.0.2.80");
+    expect_uci_call("2|set|wireless.radio0.country=CA\n");
+    expect_uci_call("2|set|wireless.sta.ssid=Fixture Network\n");
+    expect_uci_call("2|set|wireless.sta.key=Bob's $guest key\n");
+    expect_uci_call("2|set|network.wan.ipaddr=192.0.2.80\n");
+    expect_uci_call("2|add_list|network.wan.dns=192.0.2.53\n");
+    expect_uci_call("2|add_list|network.wan.dns=192.0.2.54\n");
 
     worker_usb_result = NET_USB_CONFIG_NO_FILE;
     start(import_wifi_cb);
@@ -179,6 +201,7 @@ int main(void)
     locale_deinit();
 
     assert(unlink("fixture.json") == 0 && unlink("eth.txt") == 0 && unlink("wifi.txt") == 0);
+    assert(unlink("uci") == 0 && unlink("uci-calls") == 0);
     assert(fchdir(original_directory) == 0 && close(original_directory) == 0);
     assert(rmdir(directory) == 0);
     return 0;
