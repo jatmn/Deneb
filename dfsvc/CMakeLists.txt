@@ -88,7 +88,7 @@ install(TARGETS deneb-dfsvc DESTINATION /usr/bin)
 
 if(NOT CMAKE_CROSSCOMPILING)
     enable_testing()
-    foreach(test IN ITEMS reconnect tls)
+    foreach(test IN ITEMS reconnect tls ingestion)
         set(test_target deneb-df-${test}-tests)
         add_executable(${test_target} tests/test_${test}.c)
         target_include_directories(${test_target} PRIVATE
@@ -105,4 +105,6 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_test(NAME deneb-df-tls-tests COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tls.sh"
         $<TARGET_FILE:deneb-df-tls-tests>)
     set_tests_properties(deneb-df-tls-tests PROPERTIES TIMEOUT 15)
+    add_test(NAME deneb-df-ingestion-tests COMMAND deneb-df-ingestion-tests)
+    set_tests_properties(deneb-df-ingestion-tests PROPERTIES TIMEOUT 10)
 endif()
