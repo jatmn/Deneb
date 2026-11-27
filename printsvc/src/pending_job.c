@@ -262,10 +262,10 @@ int deneb_pending_job_write_file(const deneb_pending_job_t *job,
         return -1;
     }
 
-    /* Keep replacement data private until it has the live file's mode. */
+    /* Keep replacement data private while writing and exclude other-write. */
     int written = fwrite(json, 1, (size_t)len, f) == (size_t)len &&
                   (!preserve_mode ||
-                   (fflush(f) == 0 && fchmod(fd, previous.st_mode & 0777) == 0));
+                   (fflush(f) == 0 && fchmod(fd, previous.st_mode & 0775) == 0));
     if (fclose(f) == 0 && written && rename(tmp_path, path) == 0)
         return 0;
     unlink(tmp_path);

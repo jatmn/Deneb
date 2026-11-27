@@ -4154,6 +4154,11 @@ static void test_pending_job_metadata_write_file(void)
 
     assert(chmod(path, 0664) == 0);
     assert(deneb_pending_job_write_file(&job, path) == 0);
+    assert(stat(path, &pending_file) == 0);
+    assert((pending_file.st_mode & 0777) == 0664);
+
+    assert(chmod(path, 0666) == 0);
+    assert(deneb_pending_job_write_file(&job, path) == 0);
     umask(previous_mask);
     assert(stat(path, &pending_file) == 0);
     assert((pending_file.st_mode & 0777) == 0664);
