@@ -232,11 +232,7 @@ set(DENEB_SOURCES
     ${DRIVER_SOURCES}
 )
 
-add_executable(deneb-ui ${DENEB_SOURCES} ${LVGL_SOURCES} "${LODEPNG_DIR}/lodepng.c")
-
-target_compile_definitions(deneb-ui PRIVATE LV_DISABLE_API_MAPPING LODEPNG_NO_COMPILE_ENCODER)
-
-target_include_directories(deneb-ui PRIVATE
+set(DENEB_UI_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/config       # lv_conf.h
     ${CMAKE_SOURCE_DIR}/src          # project headers
     ${CMAKE_SOURCE_DIR}/../common/print
@@ -246,7 +242,13 @@ target_include_directories(deneb-ui PRIVATE
     ${LVGL_DIR}                      # lvgl.h
 )
 
-target_link_libraries(deneb-ui PRIVATE m pthread)
+add_library(deneb-lvgl OBJECT ${LVGL_SOURCES} "${LODEPNG_DIR}/lodepng.c")
+target_compile_definitions(deneb-lvgl PUBLIC LV_DISABLE_API_MAPPING LODEPNG_NO_COMPILE_ENCODER)
+target_include_directories(deneb-lvgl PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+
+add_executable(deneb-ui ${DENEB_SOURCES})
+target_include_directories(deneb-ui PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+target_link_libraries(deneb-ui PRIVATE deneb-lvgl m pthread)
 
 if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     enable_testing()
@@ -265,6 +267,19 @@ if(BACKEND_COMM_STUB AND NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     target_link_options(deneb-touchscreen-motion-tests PRIVATE -Wl,--gc-sections)
     target_link_libraries(deneb-touchscreen-motion-tests PRIVATE m)
     add_test(NAME deneb-touchscreen-motion-tests COMMAND deneb-touchscreen-motion-tests)
+
+    add_executable(deneb-ui-loop-tests tests/test_main_loop.c)
+    target_include_directories(deneb-ui-loop-tests PRIVATE
+        $<TARGET_PROPERTY:deneb-ui,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(deneb-ui-loop-tests PRIVATE LV_DISABLE_API_MAPPING)
+    target_compile_options(deneb-ui-loop-tests PRIVATE -ffunction-sections -fdata-sections)
+    target_link_options(deneb-ui-loop-tests PRIVATE -Wl,--gc-sections)
+    add_test(NAME deneb-ui-loop-tests COMMAND deneb-ui-loop-tests)
+
+    add_executable(deneb-lvgl-png-tests tests/test_lodepng.c)
+    target_include_directories(deneb-lvgl-png-tests PRIVATE ${DENEB_UI_INCLUDE_DIRS})
+    target_link_libraries(deneb-lvgl-png-tests PRIVATE deneb-lvgl m pthread)
+    add_test(NAME deneb-lvgl-png-tests COMMAND deneb-lvgl-png-tests)
 endif()
 
 # Link ZMQ when not using stub
