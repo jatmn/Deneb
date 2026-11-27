@@ -6,6 +6,9 @@
 
 int deneb_json_get_value(const char *json, const char *key,
                          char *out, size_t out_sz);
+/* Copy a value after its closing key quote, with the usual field decoding. */
+int deneb_json_copy_value_span(const char *value, size_t len,
+                               char *out, size_t out_sz);
 int deneb_json_field_present(const char *json, const char *key);
 int deneb_json_get_float_value(const char *json, const char *key, float *out);
 int deneb_json_get_int_value(const char *json, const char *key, int *out);

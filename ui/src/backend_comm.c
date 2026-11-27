@@ -260,7 +260,7 @@ static void log_status_transition(const printer_state_t *curr)
 /**
  * Parse a status JSON payload and update the cached state.
  */
-static void parse_status(const char *json)
+static void parse_status(const char *json, size_t json_len)
 {
     printer_state_t prev = state;
     struct timespec ts;
@@ -268,10 +268,10 @@ static void parse_status(const char *json)
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
     now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-    if (deneb_status_state_apply_json(&state, &prev, json,
-                                      retained_print_filename,
-                                      sizeof(retained_print_filename),
-                                      &stop_guard, now_ms) != 0)
+    if (deneb_status_state_apply_json_span(&state, &prev, json, json_len,
+                                           retained_print_filename,
+                                           sizeof(retained_print_filename),
+                                           &stop_guard, now_ms) != 0)
         return;
 
     log_status_transition(&state);
@@ -343,17 +343,8 @@ void backend_poll(void)
         const char *data = (const char *)zmq_msg_data(&msg);
         size_t len = zmq_msg_size(&msg);
 
-        if (len > 6 && memcmp(data, "10001<", 6) == 0) {
-            /* Extract JSON (skip "10001<" prefix, strip trailing "}" if needed) */
-            size_t json_len = len - 6;
-            char *json_buf = malloc(json_len + 1);
-            if (json_buf) {
-                memcpy(json_buf, data + 6, json_len);
-                json_buf[json_len] = '\0';
-                parse_status(json_buf);
-                free(json_buf);
-            }
-        }
+        if (len > 6 && memcmp(data, "10001<", 6) == 0)
+            parse_status(data + 6, len - 6);
 
         zmq_msg_close(&msg);
     }

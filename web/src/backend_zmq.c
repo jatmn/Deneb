@@ -156,6 +156,7 @@ void backend_zmq_deinit(void) {}
 
 #define STATUS_TOPIC "10001"
 #define MAX_STATUS_MSGS 64
+#define MAX_STATUS_FRAME_SIZE 2048
 #define STOP_INFLIGHT_MS 3000
 #define STATUS_QUEUE_HWM 4
 
@@ -434,26 +435,22 @@ void backend_zmq_poll(void)
         size_t len = zmq_msg_size(&msg);
 
         /* Skip topic prefix "10001<" */
-        char frame[2048];
-        if (len >= sizeof(frame) || len <= 6 || memcmp(data, "10001<", 6) != 0) {
+        if (len >= MAX_STATUS_FRAME_SIZE || len <= 6 ||
+            memcmp(data, "10001<", 6) != 0) {
             zmq_msg_close(&msg);
             continue;
         }
-        memcpy(frame, data, len);
-        frame[len] = '\0';
-        const char *json = frame + 5;
         {
             printer_state_t prev = state;
             struct timespec ts;
             uint32_t now_ms;
 
-            json++; /* skip the '<' */
             clock_gettime(CLOCK_MONOTONIC, &ts);
             now_ms = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-            if (deneb_status_state_apply_json(&state, &prev, json,
-                                              retained_print_filename,
-                                              sizeof(retained_print_filename),
-                                              &stop_guard, now_ms) != 0) {
+            if (deneb_status_state_apply_json_span(&state, &prev, data + 6, len - 6,
+                                                   retained_print_filename,
+                                                   sizeof(retained_print_filename),
+                                                   &stop_guard, now_ms) != 0) {
                 zmq_msg_close(&msg);
                 continue;
             }

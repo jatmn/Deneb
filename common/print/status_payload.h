@@ -68,6 +68,8 @@ typedef struct {
 void deneb_status_payload_init(deneb_status_payload_t *payload);
 int deneb_status_payload_parse(const char *json,
                                deneb_status_payload_t *payload);
+int deneb_status_payload_parse_span(const char *json, size_t size,
+                                    deneb_status_payload_t *payload);
 void deneb_status_filename_context_init(
     deneb_status_filename_context_t *ctx,
     const char *req,
