@@ -195,7 +195,7 @@ static void retain_backend_filename(const char *path)
     deneb_pending_job_file_display_value(path, retained_print_filename,
                                          sizeof(retained_print_filename));
     if (strcmp(state.filename, retained_print_filename) != 0) {
-        strcpy(state.filename, retained_print_filename);
+        snprintf(state.filename, sizeof(state.filename), "%s", retained_print_filename);
         ++status_revision;
     }
     fprintf(stderr, "backend_zmq: job command path retained as active filename=%s\n",
