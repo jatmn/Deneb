@@ -465,7 +465,8 @@ async function main() {
             countDescriptors(api.pid) === active[0] && countDescriptors(proxy.pid) === active[1] &&
             sockets.size === SSE_CLIENTS);
         assert.equal(fs.existsSync(pendingJob), false);
-        assert.equal(fs.existsSync(spool), false, 'An interrupted upload reached print storage');
+        assert.ok(!fs.readdirSync(root).includes(path.basename(spool)),
+            'An interrupted upload reached print storage');
 
         armExtraction();
         const cancelled = startUpload(port, archive, 'cancelled-finalization.ufp');
