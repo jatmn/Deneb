@@ -47,15 +47,39 @@ ubuntu_uri() {
 
 # Succeed when sources file $1 names at least one URI and every URI is an
 # Ubuntu archive URI. Rather than parse each APT field spelling, collect every
-# URI-shaped string (scheme followed by ":/") on every line except deb822
-# comments, which start with "#" in column 0. A URI anywhere else, in any
-# field or format, can only make the file be skipped.
+# URI-shaped string (scheme followed by ":/") outside comments. A URI anywhere
+# else, in any field, can only make the file be skipped. Comments follow APT:
+# a deb822 .sources file has only whole-line comments, "#" in column 0, while
+# a one-line file ends each line at the first "#" outside [options].
 ubuntu_only_source() {
     [ -f "$1" ] || return 1
-    uris=$(awk '
-        /^#/ { next }
+    case "$1" in
+        *.sources) deb822=1 ;;
+        *) deb822=0 ;;
+    esac
+    uris=$(awk -v deb822="$deb822" '
+        # Drop a one-line comment the way APT does: skip each [...] whole, and
+        # keep the line unchanged when a "[" is never closed.
+        function strip_comment(s,   out, c, end) {
+            out = ""
+            while (s != "") {
+                c = substr(s, 1, 1)
+                if (c == "#") return out
+                if (c == "[") {
+                    end = index(substr(s, 2), "]")
+                    if (end == 0) return out s
+                    out = out substr(s, 1, end + 1)
+                    s = substr(s, end + 2)
+                    continue
+                }
+                out = out c
+                s = substr(s, 2)
+            }
+            return out
+        }
+        deb822 && /^#/ { next }
         {
-            line = $0
+            line = deb822 ? $0 : strip_comment($0)
             while (match(line, /[A-Za-z][A-Za-z0-9+.-]*:\/[^] \t]*/)) {
                 print substr(line, RSTART, RLENGTH)
                 line = substr(line, RSTART + RLENGTH)
@@ -104,7 +128,9 @@ install_packages() {
         echo "::error::No Ubuntu-only apt sources found under $apt_root"
         exit 1
     fi
-    apt_ubuntu update
+    # Without --error-on=any, apt-get update can warn about an index it failed
+    # to download and still exit 0.
+    apt_ubuntu update --error-on=any
     apt_ubuntu install --no-install-recommends "$@"
 }
 
@@ -156,12 +182,13 @@ STUB
 
     run env sh "$0" lighttpd unzip || fail "a clean update and install failed"
     opts="-o Acquire::Retries=3 -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts="
-    grep -q "^${opts}[^ ]* update\$" "$APT_LOG" || fail "update did not use retries and the Ubuntu sources"
+    grep -q "^${opts}[^ ]* update --error-on=any\$" "$APT_LOG" ||
+        fail "update did not use retries, strict errors, and the Ubuntu sources"
     grep -q "^${opts}[^ ]* install --no-install-recommends lighttpd unzip\$" "$APT_LOG" ||
         fail "install did not use retries, the Ubuntu sources, and the packages"
     [ "$(grep -cx 'ubuntu.sources' "$APT_LOG")" = 2 ] || fail "ubuntu.sources was not used for both calls"
     ! grep -q 'microsoft' "$APT_LOG" || fail "a third-party source reached apt"
-    echo "PASS: update and install use only Ubuntu sources, with retries"
+    echo "PASS: update and install use only Ubuntu sources, with retries and a strict update"
 
     if run env FAIL_UPDATE=1 sh "$0" lighttpd; then
         fail "a failed Ubuntu update was accepted"
@@ -202,6 +229,24 @@ STUB
     ! grep -qx 'nospace.sources' "$APT_LOG" || fail "an unspaced third-party URIs field reached apt"
     rm -f "$root/sources.list.d/nospace.sources"
     echo "PASS: any URI in the file must be Ubuntu, however the field is written"
+
+    # A one-line source ends at "#", except inside [options]. In deb822 only a
+    # column-0 "#" starts a comment.
+    printf '%s\n' '# https://packages.microsoft.com/ubuntu/24.04/prod' \
+        'deb http://archive.ubuntu.com/ubuntu noble main # See https://launchpad.net/ubuntu' \
+        > "$root/sources.list.d/commented.list"
+    printf '%s\n' 'deb http://archive.ubuntu.com/ubuntu noble main' \
+        'deb [signed-by=/k#x.gpg] https://packages.microsoft.com/ubuntu/24.04/prod noble main' \
+        > "$root/sources.list.d/bracket.list"
+    printf '%s\n' 'Types: deb' 'URIs: http://archive.ubuntu.com/ubuntu # https://packages.microsoft.com/ubuntu/24.04/prod' \
+        'Suites: noble' 'Components: main' > "$root/sources.list.d/hash.sources"
+    run env sh "$0" lighttpd || fail "the comment cases failed"
+    grep -qx 'commented.list' "$APT_LOG" || fail "a one-line source with a commented-out URI was skipped"
+    ! grep -qx 'bracket.list' "$APT_LOG" || fail "a third-party URI after a \"#\" in [options] reached apt"
+    ! grep -qx 'hash.sources' "$APT_LOG" || fail "a third-party URI after a \"#\" in a deb822 field reached apt"
+    rm -f "$root/sources.list.d/commented.list" "$root/sources.list.d/bracket.list" \
+        "$root/sources.list.d/hash.sources"
+    echo "PASS: comments are skipped the way APT reads each format"
 
     rm -f "$root/sources.list.d/ubuntu.sources"
     if run env sh "$0" lighttpd; then
