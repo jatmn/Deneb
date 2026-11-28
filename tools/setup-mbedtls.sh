@@ -66,16 +66,21 @@ if stale_mbedtls_install; then
             exit 1
         fi
     done
-    # Rename $1 to $2 only if $2 does not exist when the rename runs. -n makes
-    # GNU mv refuse an occupied destination atomically (RENAME_NOREPLACE), and
-    # -T keeps a directory there from receiving $1 as a subdirectory, and
-    # --no-copy leaves $1 in place when the rename itself fails. Some
-    # coreutils releases exit 0 when -n skips, so success means $2 is now the
-    # very file $1 was.
+    # Rename directory $1 to $2 only if nothing else holds $2. mkdir claims $2
+    # atomically on any filesystem, and a rename may then replace only that
+    # empty directory: anything put inside it makes the rename fail. -T keeps
+    # $1 from landing inside $2, and --no-copy leaves $1 in place when the
+    # rename itself fails. Success means $2 is now the very directory $1 was;
+    # otherwise the claim is released if still empty.
     move_noreplace() {
         identity=$(stat -c '%d:%i' -- "$1") || return 1
-        mv -nT --no-copy -- "$1" "$2" || :
-        [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]
+        mkdir -- "$2" || return 1
+        if mv -T --no-copy -- "$1" "$2" &&
+            [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]; then
+            return 0
+        fi
+        rmdir -- "$2" 2>/dev/null || :
+        return 1
     }
     # Move each path aside; if one fails, put back the ones already moved so
     # the earlier install stays whole. Flags keep paths with spaces intact.
