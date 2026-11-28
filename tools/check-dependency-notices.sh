@@ -172,11 +172,12 @@ check_tree() {
 
     # Hextra (website/go.mod, confirmed by website/go.sum). A replace
     # directive would make the build use a source the provenance row does not
-    # describe, so fail closed on any. The left side of each replace, in a
-    # single-line directive or a replace ( ... ) block, must be a plain module
-    # path, optionally in one pair of double quotes, optionally followed by a
-    # version. Quoted escapes such as \x78 are not decoded: a backslash, any
-    # other quoting, or a line that does not parse is an error.
+    # describe, so fail on any replace of Hextra. The left side of each
+    # replace, in a single-line directive or a replace ( ... ) block, is a
+    # module path and an optional version, each optionally in one pair of
+    # double quotes. Quoted escapes such as \x78 are not decoded, so a
+    # backslash in the path, or a left side that does not parse, is an error
+    # because the module cannot be identified. Other modules may be replaced.
     replace_report=$(awk -v target=github.com/imfing/hextra '
         function check(spec,   arrow, n, fields, module) {
             sub(/\/\/.*/, "", spec)
@@ -186,9 +187,8 @@ check_tree() {
             n = split(substr(spec, 1, arrow - 1), fields, " ")
             if (n < 1 || n > 2) { print "bad\t" $0; return }
             module = fields[1]
-            if (module ~ /^".*"$/) module = substr(module, 2, length(module) - 2)
+            if (module ~ /^".+"$/) module = substr(module, 2, length(module) - 2)
             if (module !~ /^[A-Za-z0-9._~\/-]+$/) { print "bad\t" $0; return }
-            if (n == 2 && fields[2] !~ /^v[0-9A-Za-z.+-]+$/) { print "bad\t" $0; return }
             if (module == target) print "hextra\t" $0
         }
         block && /^[ \t]*\)[ \t]*(\/\/.*)?$/ { block = 0; next }
@@ -371,6 +371,11 @@ selftest() {
     printf '\nreplace "github.com/imfing/hextra" v0.13.0 => example.com/hextra-fork v0.13.1\n' >> "$fixture/website/go.mod"
     expect_failure "versioned Hextra replace" "website/go.mod replaces github.com/imfing/hextra"
 
+    # A quoted version on the Hextra side of a replace.
+    seed hextra-replace-quoted-version
+    printf '\nreplace github.com/imfing/hextra "v0.13.0" => ../hextra-fork\n' >> "$fixture/website/go.mod"
+    expect_failure "Hextra replace with a quoted version" "website/go.mod replaces github.com/imfing/hextra"
+
     # Go decodes escapes in a quoted path; this check fails closed instead.
     seed hextra-replace-escape
     printf '\nreplace "github.com/imfing/he\\x78tra" => ../hextra-fork\n' >> "$fixture/website/go.mod"
@@ -381,15 +386,16 @@ selftest() {
     printf '\nreplace github.com/imfing/hextra\n' >> "$fixture/website/go.mod"
     expect_failure "unparseable replace" "cannot verify as a plain module path"
 
-    # A replace of another module is allowed.
+    # Replaces of another module are allowed, including a quoted version.
     seed other-replace
     printf '\nreplace example.com/other => ../other\n' >> "$fixture/website/go.mod"
+    printf '\nreplace example.com/quoted "v1.2.3" => ../quoted\n' >> "$fixture/website/go.mod"
     if ! "$SCRIPT_DIR/check-dependency-notices.sh" --root "$fixture" > "$scratch/other-replace.log" 2>&1; then
         cat "$scratch/other-replace.log" >&2
         printf '%s\n' "FAIL: selftest: a replace of another module was rejected" >&2
         exit 1
     fi
-    printf '%s\n' "PASS: selftest accepts a replace of another module"
+    printf '%s\n' "PASS: selftest accepts replaces of other modules, including a quoted version"
 
     # The registry archive in the notice URL changed type but kept the version.
     seed eslint-archive
@@ -413,7 +419,10 @@ selftest() {
     sed -i -e "s#ESLint $old,#ESLint 10.16.0-rc.1,#" -e "s#eslint-$old\\.tgz#eslint-10.16.0-rc.1.tgz#" \
         -e "s#notices/ESLINT-$old-#notices/ESLINT-10.16.0-rc.1-#" "$fixture/THIRD_PARTY_NOTICES.md"
     sed -i "s#notices/ESLINT-$old-#notices/ESLINT-10.16.0-rc.1-#" "$fixture/REUSE.toml"
-    mv "$fixture/notices/ESLINT-$version-LICENSE.txt" "$fixture/notices/ESLINT-10.16.0-rc.1-LICENSE.txt"
+    # Skip the rename when ESLint is already pinned at the prerelease.
+    if [ "$version" != 10.16.0-rc.1 ]; then
+        mv "$fixture/notices/ESLINT-$version-LICENSE.txt" "$fixture/notices/ESLINT-10.16.0-rc.1-LICENSE.txt"
+    fi
     if ! "$SCRIPT_DIR/check-dependency-notices.sh" --root "$fixture" > "$scratch/prerelease.log" 2>&1; then
         cat "$scratch/prerelease.log" >&2
         printf '%s\n' "FAIL: selftest: a synchronized prerelease ESLint pin was rejected" >&2
