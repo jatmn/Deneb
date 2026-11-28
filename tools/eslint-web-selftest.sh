@@ -119,8 +119,11 @@ expect_rule no-undef scripts/eslint-selftest-probe.mjs \
     'var broken = notDeclared;' 'console.log(broken);'
 echo "PASS: ESLint rejects an undefined name in host Node.js scripts"
 
-expect_rule no-undef scripts/eslint-selftest-commonjs.mjs \
-    'const fs = require("node:fs");' 'console.log(fs, __dirname);'
+# Probe each CommonJS wrapper name alone so one cannot mask the other.
+expect_rule no-undef scripts/eslint-selftest-require.mjs \
+    'const fs = require("node:fs");' 'console.log(fs);'
+expect_rule no-undef scripts/eslint-selftest-dirname.mjs \
+    'console.log(__dirname);'
 echo "PASS: ESLint rejects CommonJS-only names in host ES modules"
 
 if ! printf '%s\n' 'var Deneb = Deneb || {};' 'Deneb.ready = true;' \
