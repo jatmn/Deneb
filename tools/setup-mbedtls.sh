@@ -57,14 +57,21 @@ if stale_mbedtls_install; then
             exit 1
         fi
     done
+    # Rename $1 to $2 only if $2 does not exist when the rename runs. -n makes
+    # GNU mv refuse an occupied destination atomically (RENAME_NOREPLACE), and
+    # -T keeps a directory there from receiving $1 as a subdirectory. Some
+    # coreutils releases exit 0 when -n skips, so success means $2 is now the
+    # very file $1 was.
+    move_noreplace() {
+        identity=$(stat -c '%d:%i' -- "$1") || return 1
+        mv -nT -- "$1" "$2" || :
+        [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]
+    }
     # Move each path aside; if one fails, put back the ones already moved so
     # the earlier install stays whole. Flags keep paths with spaces intact.
     # Print each path that could not be put back, and fail if there was one.
     restore_one() {
-        # -T and the existence check keep a recreated path from swallowing
-        # the backup as a subdirectory.
-        if [ "$1" = 1 ] && { [ -e "$2" ] || [ -L "$2" ] ||
-            ! mv -T -- "$2.replaced-$previous" "$2"; }; then
+        if [ "$1" = 1 ] && ! move_noreplace "$2.replaced-$previous" "$2"; then
             printf 'Could not restore %s; it is still at %s.replaced-%s\n' "$2" "$2" "$previous" >&2
             return 1
         fi
@@ -78,7 +85,7 @@ if stale_mbedtls_install; then
     }
     move_aside() {
         if [ -e "$1" ] || [ -L "$1" ]; then
-            if ! mv -T -- "$1" "$1.replaced-$previous"; then
+            if ! move_noreplace "$1" "$1.replaced-$previous"; then
                 if restore_moved; then
                     printf 'Could not move %s aside; left the earlier install in place\n' "$1" >&2
                 else
