@@ -41,60 +41,87 @@ fi
 # ESLint lints a .js, .mjs, or .cjs file with an empty rule set when no
 # config block matches it, so a passing run alone does not prove coverage.
 js_files=$(mktemp)
-trap 'rm -f "$js_files"' EXIT
+lint_files=$(mktemp)
+probe_log=$(mktemp)
+trap 'rm -f "$js_files" "$lint_files" "$probe_log"' EXIT
 git ls-files -z -- '*.js' '*.mjs' '*.cjs' > "$js_files"
 if [ ! -s "$js_files" ]; then
     echo "FAIL: git ls-files found no tracked JavaScript files" >&2
     exit 1
 fi
-if ! node --input-type=module - "$CONFIG" "$js_files" <<'JS_COVERAGE'
-import { readFileSync } from "node:fs";
+if ! node --input-type=module - "$CONFIG" "$js_files" "$lint_files" <<'JS_COVERAGE'
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-const [config, list] = process.argv.slice(2);
+const [config, list, output] = process.argv.slice(2);
 const require = createRequire(pathToFileURL(config));
 const { ESLint } = await import(pathToFileURL(require.resolve("eslint")));
 const eslint = new ESLint({ overrideConfigFile: config });
+const linted = [];
 let uncovered = 0;
 for (const file of readFileSync(list, "utf8").split("\0").filter(Boolean)) {
     if (await eslint.isPathIgnored(file)) {
         continue;
     }
+    // The resolved config keeps disabled rules, normalized to severity 0.
     const rules = (await eslint.calculateConfigForFile(file))?.rules ?? {};
-    if (Object.keys(rules).length === 0) {
-        console.error(`FAIL: no ESLint rules apply to ${file}`);
+    const enabled = Object.values(rules).filter((entry) => {
+        const severity = Array.isArray(entry) ? entry[0] : entry;
+        return severity !== 0 && severity !== "off";
+    });
+    if (enabled.length === 0) {
+        console.error(`FAIL: no enabled ESLint rules apply to ${file}`);
         uncovered += 1;
     }
+    linted.push(file);
 }
-process.exit(uncovered === 0 ? 0 : 1);
+writeFileSync(output, linted.map((file) => `${file}\0`).join(""));
+process.exit(uncovered === 0 && linted.length > 0 ? 0 : 1);
 JS_COVERAGE
 then
     echo "FAIL: add an ESLint config block for every tracked JavaScript file" >&2
     exit 1
 fi
-echo "PASS: every tracked JavaScript file has ESLint rules"
+echo "PASS: every tracked JavaScript file has enabled ESLint rules"
 
-xargs -0 "$ESLINT" -c "$CONFIG" --max-warnings 0 -- < "$js_files"
+# Pass only files ESLint does not ignore; an ignored path is a warning.
+xargs -0 "$ESLINT" -c "$CONFIG" --max-warnings 0 -- < "$lint_files"
 echo "PASS: tracked JavaScript matches the ESLint rules"
 
-if printf '%s\n' 'var broken = notDeclared;' \
-    | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename web/www/js/eslint-selftest-probe.js
-then
-    echo "FAIL: ESLint accepted an undefined name" >&2
-    exit 1
-fi
-echo "PASS: ESLint rejects an undefined name"
-
-for probe in web/tests/eslint-selftest-probe.cjs scripts/eslint-selftest-probe.mjs; do
-    if printf '%s\n' 'var broken = notDeclared;' 'console.log(broken);' \
-        | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename "$probe"
+# Require the named rule, not any error, so a probe cannot pass on another
+# rule's diagnostic.
+expect_rule() {
+    rule=$1
+    filename=$2
+    shift 2
+    if printf '%s\n' "$@" \
+        | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename "$filename" > "$probe_log" 2>&1
     then
-        echo "FAIL: ESLint accepted an undefined name in $probe" >&2
+        cat "$probe_log" >&2
+        echo "FAIL: ESLint accepted $filename without $rule" >&2
         exit 1
     fi
-done
+    if ! grep -Fq " $rule" "$probe_log"; then
+        cat "$probe_log" >&2
+        echo "FAIL: ESLint did not report $rule for $filename" >&2
+        exit 1
+    fi
+}
+
+expect_rule no-undef web/www/js/eslint-selftest-probe.js \
+    'var broken = notDeclared;' 'broken();'
+echo "PASS: ESLint rejects an undefined name"
+
+expect_rule no-undef web/tests/eslint-selftest-probe.cjs \
+    'var broken = notDeclared;' 'console.log(broken);'
+expect_rule no-undef scripts/eslint-selftest-probe.mjs \
+    'var broken = notDeclared;' 'console.log(broken);'
 echo "PASS: ESLint rejects an undefined name in host Node.js scripts"
+
+expect_rule no-undef scripts/eslint-selftest-commonjs.mjs \
+    'const fs = require("node:fs");' 'console.log(fs, __dirname);'
+echo "PASS: ESLint rejects CommonJS-only names in host ES modules"
 
 if ! printf '%s\n' 'var Deneb = Deneb || {};' 'Deneb.ready = true;' \
     | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename web/www/js/eslint-selftest-ok.js

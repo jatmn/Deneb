@@ -39,8 +39,10 @@ export default defineConfig([
         extends: [js.configs.recommended],
         languageOptions: {
             sourceType: "module",
+            // nodeBuiltin omits CommonJS-only names such as require and
+            // __dirname, which throw at runtime in an ES module.
             globals: {
-                ...globals.node,
+                ...globals.nodeBuiltin,
             },
         },
     },
