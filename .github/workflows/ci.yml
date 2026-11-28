@@ -457,26 +457,63 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install --no-install-recommends "${packages[@]}"
-          sh tools/setup-mbedtls.sh "$PWD/build/ci-mbedtls"
+
+      # Only the installed prefix is cached. setup-mbedtls.sh still checks its
+      # source receipt and rebuilds from the pinned archive when it is absent.
+      - name: Restore pinned Mbed TLS build
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v6.1.0
+        with:
+          path: build/ci-mbedtls
+          key: ci-mbedtls-${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-${{ hashFiles('tools/native-dependency-pins.sh', 'tools/setup-mbedtls.sh') }}
+
+      - name: Build pinned Mbed TLS
+        run: sh tools/setup-mbedtls.sh "$PWD/build/ci-mbedtls"
 
       - name: Run repository fixture and audit self-tests
         timeout-minutes: 10
         run: |
-          sh tools/setup-lvgl-selftest.sh
-          bash tools/build-update-release-selftest.sh
-          sh tools/deneb-package-reproducibility-selftest.sh
-          bash tools/deneb-compile-all-selftest.sh
-          bash tools/deneb-stock-menu-prune-selftest.sh
-          bash tools/deneb-stock-menu-import-check-selftest.sh
-          bash tools/deneb-printsvc-smoke-selftest.sh
-          bash tools/deneb-printsvc-stability.sh --selftest
-          bash tools/deneb-printsvc-init-selftest.sh
-          bash tools/deneb-printsvc-release-gate-selftest.sh
-          bash tools/deneb-printsvc-release-evidence-selftest.sh
-          bash tools/deneb-printsvc-native-audit-selftest.sh
-          bash tools/deneb-printsvc-integration-audit-selftest.sh
-          bash tools/deneb-web-ui-xss-selftest.sh
-          sh tools/deneb-state-transitions-selftest.sh
+          # These self-tests use private temporary directories and unique
+          # package names, so they run concurrently. Each log is printed in
+          # list order after all of them finish.
+          selftests=(
+            "sh tools/setup-lvgl-selftest.sh"
+            "bash tools/build-update-release-selftest.sh"
+            "sh tools/deneb-package-reproducibility-selftest.sh"
+            "bash tools/deneb-compile-all-selftest.sh"
+            "bash tools/deneb-stock-menu-prune-selftest.sh"
+            "bash tools/deneb-stock-menu-import-check-selftest.sh"
+            "bash tools/deneb-printsvc-smoke-selftest.sh"
+            "bash tools/deneb-printsvc-stability.sh --selftest"
+            "bash tools/deneb-printsvc-init-selftest.sh"
+            "bash tools/deneb-printsvc-release-gate-selftest.sh"
+            "bash tools/deneb-printsvc-release-evidence-selftest.sh"
+            "bash tools/deneb-printsvc-native-audit-selftest.sh"
+            "bash tools/deneb-printsvc-integration-audit-selftest.sh"
+            "bash tools/deneb-web-ui-xss-selftest.sh"
+            "sh tools/deneb-state-transitions-selftest.sh"
+          )
+          logs=$(mktemp -d)
+          trap 'rm -rf "$logs"' EXIT
+          pids=()
+          for i in "${!selftests[@]}"; do
+            # Word splitting is intended: each entry is a fixed command line.
+            # shellcheck disable=SC2086
+            ${selftests[$i]} > "$logs/$i.log" 2>&1 < /dev/null &
+            pids[i]=$!
+          done
+          failed=0
+          for i in "${!selftests[@]}"; do
+            status=0
+            wait "${pids[$i]}" || status=$?
+            echo "::group::${selftests[$i]} (exit $status)"
+            cat "$logs/$i.log"
+            echo "::endgroup::"
+            if [ "$status" -ne 0 ]; then
+              echo "::error::${selftests[$i]} failed with exit status $status"
+              failed=1
+            fi
+          done
+          exit "$failed"
 
       - name: Build and test native print service
         run: |
@@ -490,7 +527,8 @@ jobs:
           cmake -S web -B build/ci-web -DBUILD_HOST_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-web --parallel
           ctest --test-dir build/ci-web -N -R '^deneb-proxy-upload-tests$' | grep -F deneb-proxy-upload-tests
-          ctest --test-dir build/ci-web --output-on-failure
+          ctest --test-dir build/ci-web --output-on-failure --no-tests=error \
+            --parallel "$(nproc)" --schedule-random
           cmake -S ui -B build/ci-ui -DBACKEND_COMM_STUB=ON -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/ci-ui --parallel
           ctest --test-dir build/ci-ui --output-on-failure
