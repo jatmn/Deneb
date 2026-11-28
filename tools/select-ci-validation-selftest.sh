@@ -230,6 +230,12 @@ git -C "$repo" add .
 git -C "$repo" commit -qm extensionless-env-escape
 assert_lanes false true false "$(run_selector pull_request)"
 
+# An escape in a non-shell interpreter's own arguments is not shell.
+printf '%s\n' "#!/usr/bin/env -S awk -v 'FS=\\t' -f" > "$repo/scripts/awk-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-awk
+assert_lanes false false false "$(run_selector pull_request)"
+
 printf 'not a script\n' > "$repo/scripts/notes"
 git -C "$repo" add .
 git -C "$repo" commit -qm extensionless-text

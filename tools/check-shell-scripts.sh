@@ -19,14 +19,20 @@ set -euo pipefail
 FIXTURE_PREFIX=tools/fixtures/
 
 # Split $1 into SHEBANG_WORDS with GNU env -S quoting: single and double
-# quotes group words, and # at a word start ends the line. Backslash escapes
-# are not interpreted; shebang_interpreter rejects them after env.
+# quotes group words, and # at a word start ends the line. GNU env -S
+# escapes such as \_ and \c change word boundaries, so splitting stops at the
+# first word with a backslash and sets SHEBANG_ESCAPED=1 instead of
+# emulating them.
 split_shebang() {
     local text=$1 word='' quote='' have=0 c i
     SHEBANG_WORDS=()
+    SHEBANG_ESCAPED=0
     for ((i = 0; i < ${#text}; i++)); do
         c=${text:i:1}
-        if [[ $quote == "'" ]]; then
+        if [[ $c == "\\" ]]; then
+            SHEBANG_ESCAPED=1
+            return 0
+        elif [[ $quote == "'" ]]; then
             if [[ $c == "'" ]]; then quote=''; else word+=$c; fi
         elif [[ $quote == '"' ]]; then
             if [[ $c == '"' ]]; then quote=''; else word+=$c; fi
@@ -48,8 +54,9 @@ split_shebang() {
 
 # Print the interpreter's basename from the shebang in $1, followed by its
 # applet for BusyBox. Print nothing when there is no shebang, unknown when no
-# interpreter remains, and env-escape for an env line with a backslash.
-# env options follow GNU env.
+# interpreter remains, and env-escape when a backslash comes before or inside
+# the env interpreter word. Escapes in later words are the interpreter's own
+# arguments and do not matter. env options follow GNU env.
 shebang_interpreter() {
     local first
     first=$(head -c 256 -- "$1" | head -n 1 | tr -d '\000\r')
@@ -62,12 +69,6 @@ shebang_interpreter() {
         return 0
     fi
     if [[ "${words[0]##*/}" == env ]]; then
-        # GNU env -S escapes such as \_ and \c change word boundaries. No
-        # tracked script needs them, so fail closed instead of emulating them.
-        if [[ "$first" == *"\\"* ]]; then
-            echo env-escape
-            return 0
-        fi
         # Linux passes the rest of the line as one argument; the split above
         # already applied -S quoting to it.
         while [[ $i -lt ${#words[@]} ]]; do
@@ -114,7 +115,12 @@ shebang_interpreter() {
         i=0
     fi
     if [[ $i -ge ${#words[@]} ]]; then
-        echo unknown
+        # No tracked script needs escapes, so fail closed rather than guess.
+        if [[ $SHEBANG_ESCAPED == 1 && "${words[0]##*/}" == env ]]; then
+            echo env-escape
+        else
+            echo unknown
+        fi
         return 0
     fi
     # A quoted 'bash -e' stays one word; classify by its first field so an
@@ -240,8 +246,10 @@ run_selftest() (
     printf '%s\n' 'PIN=1' 'export PIN' > "$repo/tools/sourced.sh"
     printf '%s\n' '#!/bin/sh /etc/rc.common' 'start_service() {' '    echo start' '}' \
         > "$repo/web/init/clean.init"
-    # Not shell, so not counted.
+    # Not shell, so not counted, even with an escape in the interpreter's
+    # own arguments.
     printf '%s\n' '#!/usr/bin/env python3' 'print(1)' > "$repo/tools/python-tool"
+    printf '%s\n' "#!/usr/bin/env -S awk -v 'FS=\\t' -f" '{ print $1 }' > "$repo/tools/awk-tool"
     # Excluded fixture with a warning: an unused variable.
     printf '%s\n' '#!/bin/sh' 'unused=1' > "$repo/tools/fixtures/legacy"
     git -C "$repo" add -A
@@ -318,10 +326,11 @@ run_selftest() (
     # env -S escapes fail closed instead of being emulated.
     add_script tools/escape-tool '#!/usr/bin/env -S\_bash -e' 'echo escape'
     expect_failure 'an env -S \_ escape' tools/escape-tool 'backslash escape in an env shebang'
-    add_script tools/escape-tool "#!/usr/bin/env -S 'bash' \\c junk" 'echo escape'
-    expect_failure 'an env -S \c escape' tools/escape-tool 'backslash escape in an env shebang'
     add_script tools/escape.sh '#!/usr/bin/env -S bash\_-e' 'echo escape'
-    expect_failure 'an env -S escape in a .sh file' tools/escape.sh 'backslash escape in an env shebang'
+    expect_failure 'an escape inside the env interpreter word' tools/escape.sh 'backslash escape in an env shebang'
+    # Escapes after the interpreter word are its own arguments.
+    add_script tools/escape-tool "#!/usr/bin/env -S 'bash' \\c junk" 'unused=1'
+    expect_failure 'a warning in a bash script with a later \c escape' tools/escape-tool 'SC2034'
     add_script tools/ksh-tool '#!/bin/ksh' 'echo ksh'
     expect_failure 'an unsupported shell' tools/ksh-tool 'does not support'
     # dash -n accepts [[ as a command name; shellcheck must reject it.
