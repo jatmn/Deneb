@@ -30,7 +30,18 @@ stale_mbedtls_install() (
     [ "$url" = "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$recorded/mbedtls-$recorded.tar.bz2" ] || exit 1
     hashes=$(sed -n '5,$p' "$receipt")
     [ -n "$hashes" ] || exit 1
-    cd -- "$prefix" && printf '%s\n' "$hashes" | sha256sum -c --quiet --strict - >/dev/null 2>&1
+    cd -- "$prefix" || exit 1
+    # The receipt must list exactly the files every Mbed TLS receipt covers, so
+    # a truncated receipt cannot vouch for a partial install.
+    for library in lib/libmbedtls.a lib/libmbedx509.a lib/libtfpsacrypto.a; do
+        [ -f "$library" ] || exit 1
+    done
+    # An unmatched glob stays literal and so never matches the listed names.
+    covered=$(printf '%s\n' lib/libmbedtls.a lib/libmbedx509.a lib/libtfpsacrypto.a \
+        include/mbedtls/*.h include/psa/*.h include/tf-psa-crypto/*.h | LC_ALL=C sort)
+    listed=$(printf '%s\n' "$hashes" | sed 's/^[0-9a-f]\{64\}  //' | LC_ALL=C sort)
+    [ "$covered" = "$listed" ] || exit 1
+    printf '%s\n' "$hashes" | sha256sum -c --quiet --strict - >/dev/null 2>&1
 )
 if stale_mbedtls_install; then
     printf 'Replacing Mbed TLS %s at %s with pinned %s\n' \
