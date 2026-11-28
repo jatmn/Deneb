@@ -1,7 +1,10 @@
 /**
  * SPDX-License-Identifier: MPL-2.0
- * Host-only ESLint config for Deneb's existing browser scripts.
+ * Host-only ESLint config for Deneb's existing browser scripts and the
+ * host-side Node.js scripts and tests that check them.
  * Paths are relative to the repository root, which is the lint working directory.
+ * ESLint applies its default file patterns with no rules to any .js, .mjs, or
+ * .cjs file outside these blocks, so every tracked script needs a block here.
  */
 import js from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
@@ -28,6 +31,30 @@ export default defineConfig([
             "no-unused-vars": ["error", {
                 caughtErrors: "none",
             }],
+        },
+    },
+    {
+        // Host-only Node.js ES modules: CI helpers and this config.
+        files: ["scripts/**/*.mjs", "tools/eslint/eslint.config.js"],
+        extends: [js.configs.recommended],
+        languageOptions: {
+            sourceType: "module",
+            // nodeBuiltin omits CommonJS-only names such as require and
+            // __dirname, which throw at runtime in an ES module.
+            globals: {
+                ...globals.nodeBuiltin,
+            },
+        },
+    },
+    {
+        // Host-only Node.js CommonJS tests run by the web CMake test suite.
+        files: ["web/tests/**/*.cjs"],
+        extends: [js.configs.recommended],
+        languageOptions: {
+            sourceType: "commonjs",
+            globals: {
+                ...globals.node,
+            },
         },
     },
 ]);
