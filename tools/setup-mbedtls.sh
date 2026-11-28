@@ -15,11 +15,11 @@ build_dir="$prefix-build"
 if native_dependency_verified mbedtls "$prefix"; then
     exit 0
 fi
-# Replace this script's own earlier install after a pin change, but only with
-# positive proof: the receipt names the official Mbed TLS archive for its own
-# recorded version, and every file hash it lists still matches. Any other
-# unverified path, such as another dependency's prefix or a damaged install,
-# stays a hard stop.
+# Move this script's own earlier install aside after a pin change, but only
+# with positive proof: the receipt names the official Mbed TLS archive for its
+# own recorded version, and every file hash it lists still matches. Nothing is
+# deleted, so a misidentified path is never lost. Any other unverified path,
+# such as another dependency's prefix or a damaged install, stays a hard stop.
 stale_mbedtls_install() (
     receipt="$prefix/deneb-source.receipt"
     [ -f "$receipt" ] || exit 1
@@ -44,9 +44,20 @@ stale_mbedtls_install() (
     printf '%s\n' "$hashes" | sha256sum -c --quiet --strict - >/dev/null 2>&1
 )
 if stale_mbedtls_install; then
-    printf 'Replacing Mbed TLS %s at %s with pinned %s\n' \
-        "$(sed -n 1p "$prefix/deneb-source.receipt")" "$prefix" "$MBEDTLS_VERSION" >&2
-    rm -rf -- "$prefix" "$source_dir" "$build_dir"
+    previous=$(sed -n 1p "$prefix/deneb-source.receipt")
+    for path in "$prefix" "$source_dir" "$build_dir"; do
+        if [ -e "$path" ] && [ -e "$path.replaced-$previous" ]; then
+            printf 'Cannot move %s aside: %s already exists\n' "$path" "$path.replaced-$previous" >&2
+            exit 1
+        fi
+    done
+    for path in "$prefix" "$source_dir" "$build_dir"; do
+        if [ -e "$path" ]; then
+            mv -- "$path" "$path.replaced-$previous"
+        fi
+    done
+    printf 'Moved Mbed TLS %s aside to %s.replaced-%s; building pinned %s. Delete the old copy when no longer needed.\n' \
+        "$previous" "$prefix" "$previous" "$MBEDTLS_VERSION" >&2
 fi
 for path in "$source_dir" "$build_dir" "$prefix"; do
     if [ -e "$path" ]; then
