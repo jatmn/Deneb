@@ -38,13 +38,13 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 
 ### ESLint host checker
 
-- ESLint 10.15.0, with `@eslint/js` 10.0.1 and `globals` 17.12.0, checks the
+- ESLint 10.15.0, with `@eslint/js` 10.0.1 and `globals` 17.14.0, checks the
   existing browser JavaScript during CI. Versions are locked in
   `tools/eslint/package-lock.json`.
 - Upstream registry: https://registry.npmjs.org/eslint/-/eslint-10.15.0.tgz
 - License: MIT. The ESLint and `@eslint/js` notice is
   `notices/ESLINT-10.15.0-LICENSE.txt`. The `globals` notice is
-  `notices/GLOBALS-17.12.0-LICENSE.txt`.
+  `notices/GLOBALS-17.14.0-LICENSE.txt`.
 - This checker runs on the build host only. It is not part of a `.deneb`
   package, the get-started image, or the printer about/legal screen.
 
