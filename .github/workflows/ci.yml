@@ -258,7 +258,7 @@ jobs:
                 sh -n -- "$script"
               fi
             done
-          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-mbedtls.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
+          shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-mbedtls.sh tools/setup-mbedtls-selftest.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
           sh tools/write-package-checksum-selftest.sh
           sh tools/ssh-bootstrap-patch-selftest.sh
           bash tools/select-ci-validation-selftest.sh
@@ -483,6 +483,7 @@ jobs:
           # below the step timeout, so a hang still prints every log.
           selftests=(
             "sh tools/setup-lvgl-selftest.sh"
+            "sh tools/setup-mbedtls-selftest.sh"
             "bash tools/build-update-release-selftest.sh"
             "sh tools/deneb-package-reproducibility-selftest.sh"
             "bash tools/deneb-compile-all-selftest.sh"
