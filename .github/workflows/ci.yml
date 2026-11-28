@@ -474,7 +474,8 @@ jobs:
         run: |
           # These self-tests use private temporary directories and unique
           # package names, so they run concurrently. Each log is printed in
-          # list order after all of them finish.
+          # list order after all of them finish. Each command gets a deadline
+          # below the step timeout, so a hang still prints every log.
           selftests=(
             "sh tools/setup-lvgl-selftest.sh"
             "bash tools/build-update-release-selftest.sh"
@@ -498,7 +499,7 @@ jobs:
           for i in "${!selftests[@]}"; do
             # Word splitting is intended: each entry is a fixed command line.
             # shellcheck disable=SC2086
-            ${selftests[$i]} > "$logs/$i.log" 2>&1 < /dev/null &
+            timeout --kill-after=10s 8m ${selftests[$i]} > "$logs/$i.log" 2>&1 < /dev/null &
             pids[i]=$!
           done
           failed=0
@@ -508,7 +509,10 @@ jobs:
             echo "::group::${selftests[$i]} (exit $status)"
             cat "$logs/$i.log"
             echo "::endgroup::"
-            if [ "$status" -ne 0 ]; then
+            if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+              echo "::error::${selftests[$i]} timed out after 8 minutes"
+              failed=1
+            elif [ "$status" -ne 0 ]; then
               echo "::error::${selftests[$i]} failed with exit status $status"
               failed=1
             fi
