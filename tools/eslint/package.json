@@ -2,7 +2,7 @@
   "name": "deneb-eslint-host",
   "private": true,
   "type": "module",
-  "description": "Host-only ESLint pin for Deneb browser JavaScript. Not installed on the printer.",
+  "description": "Host-only ESLint pin for Deneb browser JavaScript and host Node.js scripts. Not installed on the printer.",
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.15.0",

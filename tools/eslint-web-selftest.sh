@@ -1,8 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: MPL-2.0
 #
-# Prove host ESLint accepts the existing browser scripts and rejects an
-# undefined name. Install first:
+# Prove host ESLint applies rules to every tracked JavaScript file, accepts
+# the existing browser and host scripts, and rejects an undefined name in
+# each file type. Install first:
 #   npm ci --ignore-scripts --prefix tools/eslint
 
 set -eu
@@ -37,8 +38,45 @@ then
     exit 1
 fi
 
-"$ESLINT" -c "$CONFIG" web/www/js website/assets/js
-echo "PASS: browser JavaScript matches the ESLint rules"
+# ESLint lints a .js, .mjs, or .cjs file with an empty rule set when no
+# config block matches it, so a passing run alone does not prove coverage.
+js_files=$(mktemp)
+trap 'rm -f "$js_files"' EXIT
+git ls-files -z -- '*.js' '*.mjs' '*.cjs' > "$js_files"
+if [ ! -s "$js_files" ]; then
+    echo "FAIL: git ls-files found no tracked JavaScript files" >&2
+    exit 1
+fi
+if ! node --input-type=module - "$CONFIG" "$js_files" <<'JS_COVERAGE'
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+
+const [config, list] = process.argv.slice(2);
+const require = createRequire(pathToFileURL(config));
+const { ESLint } = await import(pathToFileURL(require.resolve("eslint")));
+const eslint = new ESLint({ overrideConfigFile: config });
+let uncovered = 0;
+for (const file of readFileSync(list, "utf8").split("\0").filter(Boolean)) {
+    if (await eslint.isPathIgnored(file)) {
+        continue;
+    }
+    const rules = (await eslint.calculateConfigForFile(file))?.rules ?? {};
+    if (Object.keys(rules).length === 0) {
+        console.error(`FAIL: no ESLint rules apply to ${file}`);
+        uncovered += 1;
+    }
+}
+process.exit(uncovered === 0 ? 0 : 1);
+JS_COVERAGE
+then
+    echo "FAIL: add an ESLint config block for every tracked JavaScript file" >&2
+    exit 1
+fi
+echo "PASS: every tracked JavaScript file has ESLint rules"
+
+xargs -0 "$ESLINT" -c "$CONFIG" --max-warnings 0 -- < "$js_files"
+echo "PASS: tracked JavaScript matches the ESLint rules"
 
 if printf '%s\n' 'var broken = notDeclared;' \
     | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename web/www/js/eslint-selftest-probe.js
@@ -47,6 +85,16 @@ then
     exit 1
 fi
 echo "PASS: ESLint rejects an undefined name"
+
+for probe in web/tests/eslint-selftest-probe.cjs scripts/eslint-selftest-probe.mjs; do
+    if printf '%s\n' 'var broken = notDeclared;' 'console.log(broken);' \
+        | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename "$probe"
+    then
+        echo "FAIL: ESLint accepted an undefined name in $probe" >&2
+        exit 1
+    fi
+done
+echo "PASS: ESLint rejects an undefined name in host Node.js scripts"
 
 if ! printf '%s\n' 'var Deneb = Deneb || {};' 'Deneb.ready = true;' \
     | "$ESLINT" -c "$CONFIG" --stdin --stdin-filename web/www/js/eslint-selftest-ok.js

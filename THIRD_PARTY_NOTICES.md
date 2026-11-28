@@ -39,8 +39,8 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 ### ESLint host checker
 
 - ESLint 10.15.0, with `@eslint/js` 10.0.1 and `globals` 17.12.0, checks the
-  existing browser JavaScript during CI. Versions are locked in
-  `tools/eslint/package-lock.json`.
+  existing browser JavaScript and host-side Node.js scripts and tests during
+  CI. Versions are locked in `tools/eslint/package-lock.json`.
 - Upstream registry: https://registry.npmjs.org/eslint/-/eslint-10.15.0.tgz
 - License: MIT. The ESLint and `@eslint/js` notice is
   `notices/ESLINT-10.15.0-LICENSE.txt`. The `globals` notice is
