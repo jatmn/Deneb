@@ -244,7 +244,7 @@ cp "${SCRIPT_DIR}/lib/lvgl/src/stdlib/builtin/LICENSE_TLSF.txt" "${STAGING_DIR}/
 sed -n '1,/^\*\/$/p' "${SCRIPT_DIR}/../common/lodepng/lodepng.c" > "${STAGING_DIR}/LODEPNG_LICENSE.txt"
 cp "${REPO_ROOT}/notices/libzmq-4.3.5-NOTICE.txt" "${STAGING_DIR}/LIBZMQ_NOTICE.txt"
 cp "${REPO_ROOT}/notices/MPL-2.0.txt" "${STAGING_DIR}/MPL-2.0.txt"
-cp "${REPO_ROOT}/notices/MBEDTLS-4.1.2-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
+cp "${REPO_ROOT}/notices/MBEDTLS-4.3.0-LICENSE.txt" "${STAGING_DIR}/MBEDTLS_LICENSE.txt"
 cp "${REPO_ROOT}/notices/LIGHTTPD-1.4.85-LICENSE.txt" "${STAGING_DIR}/LIGHTTPD_LICENSE.txt"
 if [ -n "$package_runtime_key" ]; then
     cp "${REPO_ROOT}/notices/MUSL-1.2.5-COPYRIGHT.txt" "${STAGING_DIR}/MUSL_COPYRIGHT.txt"
@@ -300,7 +300,7 @@ contents:
   LODEPNG_LICENSE.txt - LodePNG zlib-style license notice
   LIBZMQ_NOTICE.txt - libzmq MPL-2.0 notice and source location
   MPL-2.0.txt       - Mozilla Public License 2.0 text for libzmq
-  MBEDTLS_LICENSE.txt - Mbed TLS 4.1.2 and bundled TF-PSA-Crypto 1.1.2 dual-license texts
+  MBEDTLS_LICENSE.txt - Mbed TLS 4.3.0 and bundled TF-PSA-Crypto 1.3.0 dual-license texts
   LIGHTTPD_LICENSE.txt - lighttpd 1.4.85 BSD license notice
   Verified OpenWrt toolchain builds also include MUSL_COPYRIGHT.txt,
   GCC_COPYING3.txt, and GCC_COPYING.RUNTIME.txt.

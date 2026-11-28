@@ -113,7 +113,7 @@ and verifies archives before extracting them.
 | Input | Version | SHA-256 |
 | --- | --- | --- |
 | OpenWrt ramips/mt76x8 cross-toolchain | 25.12.6 | `628559363d3e41da6cc298ed0a27b81fbc3843a2758228c7697861defd324da3` |
-| Mbed TLS (includes TF-PSA-Crypto 1.1.2) | 4.1.2 | `392215e5e4846df04e2f4c4516079303bd73edde837d8f3e68fb4d4d7ddf0126` |
+| Mbed TLS (includes TF-PSA-Crypto 1.3.0) | 4.3.0 | `1c87cba094cb40f097ebe0eba440a74939b71dab4e1d0d566bc90749ff381d18` |
 | ZeroMQ | 4.3.5 | `6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43` |
 | lighttpd | 1.4.85 | `18de51b393bac4a6827879e1a7ff377c169e414bae92cd245091d80fc2601d13` |
 
@@ -206,7 +206,7 @@ For native Debian/Linux:
 
 ```sh
 test -x build/deneb-cross/openwrt-25.12.6/toolchain-mipsel_24kc_gcc-14.3.0_musl/bin/mipsel-openwrt-linux-musl-gcc
-test -f build/deneb-cross/openwrt-25.12.6/mbedtls-4.1.2-mipsel/lib/libmbedtls.a
+test -f build/deneb-cross/openwrt-25.12.6/mbedtls-4.3.0-mipsel/lib/libmbedtls.a
 test -f build/deneb-cross/openwrt-25.12.6/zeromq-4.3.5/build-musl/lib/libzmq.a
 test -x build/deneb-cross/openwrt-25.12.6/lighttpd-1.4.85/build-musl-static/build/lighttpd
 git submodule status --recursive
@@ -217,7 +217,7 @@ For Windows/WSL:
 
 ```powershell
 wsl -d Debian -u root -- bash -lc '/root/deneb-build/openwrt-25.12.6/toolchain-mipsel_24kc_gcc-14.3.0_musl/bin/mipsel-openwrt-linux-musl-gcc --version'
-wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/openwrt-25.12.6/mbedtls-4.1.2-mipsel/lib/libmbedtls.a'
+wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/openwrt-25.12.6/mbedtls-4.3.0-mipsel/lib/libmbedtls.a'
 wsl -d Debian -u root -- bash -lc 'test -f /root/deneb-build/openwrt-25.12.6/zeromq-4.3.5/build-musl/lib/libzmq.a'
 wsl -d Debian -u root -- bash -lc 'test -x /root/deneb-build/openwrt-25.12.6/lighttpd-1.4.85/build-musl-static/build/lighttpd'
 git submodule status --recursive

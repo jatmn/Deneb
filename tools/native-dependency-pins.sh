@@ -20,10 +20,10 @@ ZMQ_VERSION=4.3.5
 ZMQ_URL="https://github.com/zeromq/libzmq/releases/download/v$ZMQ_VERSION/zeromq-$ZMQ_VERSION.tar.gz"
 ZMQ_SHA256=6653ef5910f17954861fe72332e68b03ca6e4d9c7160eb3a8de5a5a913bfab43
 
-MBEDTLS_VERSION=4.1.2
+MBEDTLS_VERSION=4.3.0
 MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$MBEDTLS_VERSION/mbedtls-$MBEDTLS_VERSION.tar.bz2"
-MBEDTLS_SHA256=392215e5e4846df04e2f4c4516079303bd73edde837d8f3e68fb4d4d7ddf0126
-TF_PSA_CRYPTO_VERSION=1.1.2
+MBEDTLS_SHA256=1c87cba094cb40f097ebe0eba440a74939b71dab4e1d0d566bc90749ff381d18
+TF_PSA_CRYPTO_VERSION=1.3.0
 
 LIGHTTPD_VERSION=1.4.85
 LIGHTTPD_URL="https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-$LIGHTTPD_VERSION.tar.xz"

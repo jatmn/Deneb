@@ -25,7 +25,7 @@ SPDX-FileCopyrightText = "2005-2026 Lode Vandevenne"
 SPDX-License-Identifier = "Zlib"
 
 [[annotations]]
-path = "notices/MBEDTLS-4.1.2-LICENSE.txt"
+path = "notices/MBEDTLS-4.3.0-LICENSE.txt"
 precedence = "override"
 SPDX-FileCopyrightText = ["Mbed TLS contributors", "TF-PSA-Crypto contributors"]
 SPDX-License-Identifier = "Apache-2.0"
