@@ -93,12 +93,13 @@ version_status() {
 }
 
 # Every reuse requirement in FILE, one per line (may be empty). A requirement
-# runs to the next whitespace, quote, or backtick. Exactly reuse==X.Y.Z or
+# runs to the next whitespace, quote, backtick, or shell command separator
+# (; & | )). Exactly reuse==X.Y.Z or
 # reuse[extras]==X.Y.Z yields X.Y.Z; anything else (6.2.0x, >=6.2.0,
 # 6.2.0,==6.3.0) is kept as text and later reported as invalid. A missing
 # file yields nothing.
 reuse_pins_in() {
-    { grep -ohE "reuse(\[[^]]*\])?[=<>!~][^[:space:]\"'\`]*" -- "$1" 2>/dev/null || true; } |
+    { grep -ohE "reuse(\[[^]]*\])?[=<>!~][^[:space:]\"'\`;&|)]*" -- "$1" 2>/dev/null || true; } |
         sed -E 's/^reuse(\[[^]]*\])?==//' | sort -u
 }
 
@@ -513,6 +514,12 @@ run_selftest() {
         toolchain_rows_with_openwrt_down
 
     # A reuse requirement that is not exactly ==X.Y.Z is invalid, not truncated.
+    # The literal $REUSE_SPEC is fixture text, not an expansion.
+    # shellcheck disable=SC2016
+    printf 'run: REUSE_SPEC=reuse==6.2.0; pipx run --spec "$REUSE_SPEC" reuse lint\n' > "$dir/separator.yml"
+    printf 'run: (pipx run --spec reuse==6.2.0 reuse lint)&& true\n' > "$dir/subshell.yml"
+    expect "a bare pin ends at a shell command separator" "ok 6.2.0" "" \
+        resolve_reuse_pin "$dir/separator.yml" "$dir/subshell.yml" "$dir/agents.md"
     printf "run: pipx run --spec 'reuse==6.2.0,==6.3.0' reuse lint\n" > "$dir/comma.yml"
     expect "a compound reuse requirement is invalid" "invalid 6.2.0,==6.3.0" "" \
         resolve_reuse_pin "$dir/comma.yml" "$dir/agents.md"
