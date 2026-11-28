@@ -15,6 +15,16 @@ build_dir="$prefix-build"
 if native_dependency_verified mbedtls "$prefix"; then
     exit 0
 fi
+# A receipt that names a different pinned version is this script's own earlier
+# install from before a pin change, so replace it. Anything else unverified,
+# including a receipt for the current version that no longer matches, stays a
+# hard stop.
+receipt="$prefix/deneb-source.receipt"
+if [ -f "$receipt" ] && recorded=$(head -n 1 -- "$receipt") &&
+    [ -n "$recorded" ] && [ "$recorded" != "$MBEDTLS_VERSION" ]; then
+    printf 'Replacing Mbed TLS %s at %s with pinned %s\n' "$recorded" "$prefix" "$MBEDTLS_VERSION" >&2
+    rm -rf -- "$prefix" "$source_dir" "$build_dir"
+fi
 for path in "$source_dir" "$build_dir" "$prefix"; do
     if [ -e "$path" ]; then
         printf 'Refusing to overwrite incomplete or unverified Mbed TLS path: %s\n' "$path" >&2

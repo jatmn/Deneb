@@ -109,9 +109,11 @@ same source with only the inflate/zlib decoder enabled.
 
 ## Package Inventory Reconciliation
 
-Audited 2026-07-22. Current `.deneb` packages redistribute Deneb's MPL-2.0
+`.deneb` packages built from this source tree redistribute Deneb's MPL-2.0
 components, LVGL and its selected bundled helpers, LodePNG 20261102, libzmq
-4.3.5, Mbed TLS 4.3.0 with TF-PSA-Crypto 1.3.0, and lighttpd 1.4.85. The Cura
+4.3.5, Mbed TLS 4.3.0 with TF-PSA-Crypto 1.3.0, and lighttpd 1.4.85. That list
+follows the current source pins. The last package payload audit, on 2026-07-22,
+predates the current Mbed TLS pin. The Cura
 plugin is distributed separately under LGPL-3.0-or-later; the material identifier dataset is retained
 in source form under CC0-1.0. The stock legal screen was used only as a
 comparison point: this notice inventory is derived from the actual Deneb
