@@ -140,6 +140,8 @@ native_proc_stats() {
             ;;
     esac
 
+    # Split the statm fields into positional parameters.
+    # shellcheck disable=SC2046
     set -- $(cat "/proc/$pid/statm" 2>/dev/null || echo "0 0 0 0 0 0 0")
     statm_size="${1:-0}"
     statm_resident="${2:-0}"

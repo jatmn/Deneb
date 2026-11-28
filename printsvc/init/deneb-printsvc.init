@@ -4,6 +4,8 @@
 # Native print service. Deneb owns the print backend and stops the stock
 # printserver before starting.
 
+# /etc/rc.common reads START, STOP, and USE_PROCD after sourcing this file.
+# shellcheck disable=SC2034
 START=94
 STOP=16
 USE_PROCD=1

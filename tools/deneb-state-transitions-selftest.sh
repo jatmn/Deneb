@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # Exercise installer failure/success control flow with every device action mocked.
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 TASK_TMP=$(mktemp -d "${TMPDIR:-/tmp}/deneb-transitions.XXXXXX")
 trap 'rm -rf "$TASK_TMP"' EXIT HUP INT TERM
 for result in 0 1; do

@@ -348,7 +348,7 @@ set --
 if [ -n "$package_runtime_key" ]; then
     set -- MUSL_COPYRIGHT.txt GCC_COPYING3.txt GCC_COPYING.RUNTIME.txt
 fi
-TAR_OPTIONS= tar --format=gnu --sort=name --mtime="@$PACKAGE_EPOCH" --owner=0 --group=0 --numeric-owner -cf "$OUTPUT_IMG" \
+TAR_OPTIONS='' tar --format=gnu --sort=name --mtime="@$PACKAGE_EPOCH" --owner=0 --group=0 --numeric-owner -cf "$OUTPUT_IMG" \
     deneb-ui deneb-ui.init update.sh ./*.json LICENSE THIRD_PARTY_NOTICES.md LVGL_LICENCE.txt LVGL_LICENSE_SPRINTF.txt LVGL_LICENSE_TLSF.txt LODEPNG_LICENSE.txt LIBZMQ_NOTICE.txt MPL-2.0.txt MBEDTLS_LICENSE.txt LIGHTTPD_LICENSE.txt "$@" manifest.txt \
     deneb-api deneb-dfsvc deneb-mdns deneb-printsvc deneb-printsvc-smoke deneb-printsvc-smoke-verify deneb-printsvc-smoke-compare deneb-printsvc-smoke-selftest deneb-printsvc-stability deneb-active-physical-soak-runner deneb-printsvc-stock-baseline deneb-printsvc-cli-selftest deneb-printsvc-init-selftest deneb-printsvc-native-audit deneb-printsvc-native-audit-selftest deneb-printsvc-integration-audit \
     deneb-runtime-inventory \

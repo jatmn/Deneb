@@ -3,6 +3,8 @@
 #
 # Native Deneb Digital Factory connector.
 
+# /etc/rc.common reads START, STOP, and USE_PROCD after sourcing this file.
+# shellcheck disable=SC2034
 START=96
 STOP=14
 USE_PROCD=1

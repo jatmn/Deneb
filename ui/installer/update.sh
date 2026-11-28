@@ -100,6 +100,9 @@ backup_stock() {
     fi
 
     if [ -x /etc/init.d/menu ] && /etc/init.d/menu enabled >/dev/null 2>&1; then
+        # Recorded but not read: rollback_to_stock_menu re-enables the menu
+        # unconditionally.
+        # shellcheck disable=SC2034
         STOCK_MENU_WAS_ENABLED=1
     fi
 }
@@ -397,7 +400,6 @@ install_motion_firmware_verify_cache() {
     local stock_prog="${programmer_dir}/prog.sh.stock"
     local hex="${programmer_dir}/cygnus-marlin.hex"
     local cache_dir="/etc/deneb"
-    local cache_file="${cache_dir}/motion-controller-firmware.sha256"
 
     if [ ! -f "${prog}" ] || [ ! -f "${hex}" ]; then
         log "motion firmware programmer not found; skipping verify cache"

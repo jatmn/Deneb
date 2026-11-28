@@ -55,6 +55,8 @@ else
             # Bootstrap host-package contract (in-repo + public getting-started).
             docs/GETTING_STARTED.md|README.md) shell=true ;;
             website/content/docs/getting-started.md) shell=true ;;
+            # Site scripts are shellchecked by tools/check-shell-scripts.sh.
+            website/*.sh) shell=true ;;
             website/*)
                 ;;
             *.sh) shell=true ;;
@@ -63,6 +65,11 @@ else
                 shell=true
                 ;;
         esac
+        # Extensionless scripts such as init files are shell when their shebang is.
+        if [[ "$shell" != true && -f "$path" ]] &&
+           [[ -n "$(sh "$script_dir/check-shell-scripts.sh" --classify "$path")" ]]; then
+            shell=true
+        fi
         if is_get_started_source "$path"; then
             bootstrap=true
         fi
@@ -78,7 +85,7 @@ else
             ui/*)
                 native=true
                 ;;
-            tools/eslint/*|tools/eslint-web-selftest.sh|tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/bootstrap-requirements.txt|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/ssh-bootstrap-patch-selftest.sh|tools/build-cura-plugin.ps1|tools/inspect-cura-plugin-package.sh|tools/inspect-cura-plugin-package-selftest.ps1|tools/get-started-source-changed.sh|tools/get-started-source-paths.txt)
+            tools/eslint/*|tools/eslint-web-selftest.sh|tools/check-shell-scripts.sh|tools/select-ci-validation.sh|tools/select-ci-validation-selftest.sh|tools/check-publication-boundary.ps1|tools/check-markdown-links.ps1|tools/bootstrap-requirements.txt|tools/build-get-started.sh|tools/build-get-started.ps1|tools/build-ssh-bootstrap.ps1|tools/ssh-bootstrap-patch-selftest.sh|tools/build-cura-plugin.ps1|tools/inspect-cura-plugin-package.sh|tools/inspect-cura-plugin-package-selftest.ps1|tools/get-started-source-changed.sh|tools/get-started-source-paths.txt)
                 ;;
             tools/*)
                 native=true

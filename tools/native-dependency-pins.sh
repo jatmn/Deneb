@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # Pinned source archives and receipts for the release builds.
+# Scripts that source this file read these pins.
+# shellcheck shell=sh disable=SC2034
 
 MIPS_TOOLCHAIN_RELEASE=25.12.6
 MIPS_TOOLCHAIN_REVISION=981c978eff636fc7d81f0ed17b00e2a6317c949a
