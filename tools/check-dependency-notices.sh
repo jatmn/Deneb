@@ -7,9 +7,10 @@
 # touches only the lockfile fails here.
 #
 # Each record is checked by a fixed context such as "`globals` ". Every
-# occurrence of that context followed by a version must name the locked
-# version exactly, so 10.0.10 does not satisfy 10.0.1 and a stale second
-# reference fails.
+# occurrence of that context followed by a version is read as the whole field,
+# up to whitespace or Markdown/TOML punctuation, and must equal the expected
+# field exactly. So 10.0.10 does not satisfy 10.0.1, eslint-1.0.0.zip does not
+# satisfy eslint-1.0.0.tgz, and a stale second reference fails.
 #
 # Not checked here, and still reviewed by hand: archive SHA-256 values in
 # docs/SOURCE_PROVENANCE.md, wheel hashes, source revisions, license text
@@ -23,13 +24,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# A dotted numeric version with an optional prerelease or build suffix. It
-# stops before a dot that is not followed by a digit, as in eslint-1.0.0.tgz.
-VERSION_RE='[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?'
 SHA256_RE='[0-9a-f]{64}'
-NOTICE_RE='[0-9A-Za-z.+-]*-LICENSE\.txt'
 # Markdown code-span delimiter, kept in a variable so contexts can be quoted.
 BT='`'
+# The rest of a field: everything up to whitespace or a Markdown/TOML
+# delimiter. A version or digest field ends where this stops.
+FIELD_RE="[^][:space:]${BT}'\"|,;()<>]*"
+# First character of a field that records a version or digest.
+DIGIT='[0-9]'
+VDIGIT='v[0-9]'
+HEX='[0-9A-Fa-f]'
 
 usage() {
     printf '%s\n' "usage: $0 [--root DIR] | --selftest" >&2
@@ -64,28 +68,30 @@ provenance_rows() {
     ' "$root/docs/SOURCE_PROVENANCE.md"
 }
 
-# require_values DEPENDENCY WHERE TEXT CONTEXT VALUE_RE EXPECTED
-# TEXT must contain CONTEXT followed by a value at least once, and every such
-# value must equal EXPECTED exactly.
+# require_values DEPENDENCY WHERE TEXT CONTEXT START EXPECTED
+# TEXT must contain CONTEXT followed by a field that begins with START at least
+# once. Each such field, read to its end, must equal EXPECTED exactly. One
+# trailing period is treated as sentence punctuation.
 require_values() {
-    local dependency=$1 where=$2 text=$3 context=$4 value_re=$5 expected=$6
+    local dependency=$1 where=$2 text=$3 context=$4 start=$5 expected=$6
     local found=0 match value
     while IFS= read -r match; do
         [ -n "$match" ] || continue
         found=1
         value=${match#"$context"}
+        value=${value%.}
         if [ "$value" != "$expected" ]; then
-            fail "$dependency: $where has '$context$value'; the lock or pin is '$expected'"
+            fail "$dependency: $where has '$context$value'; expected '$context$expected' from the lock or pin"
         fi
     done <<EOF
-$(printf '%s\n' "$text" | grep -oE -- "$(ere_escape "$context")$value_re" || true)
+$(printf '%s\n' "$text" | grep -oE -- "$(ere_escape "$context")$start$FIELD_RE" || true)
 EOF
     if [ "$found" -eq 0 ]; then
         fail "$dependency: $where does not mention '$context$expected'; update it with the lock or pin"
     fi
 }
 
-# require_row DEPENDENCY LABEL CONTEXT VALUE_RE EXPECTED
+# require_row DEPENDENCY LABEL CONTEXT START EXPECTED
 # Exactly one provenance row carries LABEL, and it records EXPECTED.
 require_row() {
     local rows count
@@ -98,7 +104,7 @@ require_row() {
     require_values "$1" "docs/SOURCE_PROVENANCE.md '$2' row" "$rows" "$3" "$4" "$5"
 }
 
-# require_file DEPENDENCY PATH CONTEXT VALUE_RE EXPECTED
+# require_file DEPENDENCY PATH CONTEXT START EXPECTED
 require_file() {
     require_values "$1" "$2" "$(cat "$root/$2")" "$3" "$4" "$5"
 }
@@ -116,9 +122,9 @@ require_notice() {
             fail "$1: stale notice ${other#"$root/"}; rename it to $notice"
         fi
     done
-    # Match the whole file name so a prerelease suffix cannot blur the version.
-    require_file "$1" THIRD_PARTY_NOTICES.md "notices/$2-" "$NOTICE_RE" "$3-LICENSE.txt"
-    require_file "$1" REUSE.toml "path = \"notices/$2-" "$NOTICE_RE" "$3-LICENSE.txt"
+    # The whole path must match, so .txt.bak or a prerelease cannot slip by.
+    require_file "$1" THIRD_PARTY_NOTICES.md "notices/$2-" "$DIGIT" "$3-LICENSE.txt"
+    require_file "$1" REUSE.toml "path = \"notices/$2-" "$DIGIT" "$3-LICENSE.txt"
 }
 
 check_tree() {
@@ -127,23 +133,23 @@ check_tree() {
     # ESLint host checker (tools/eslint/package-lock.json).
     lock="$root/tools/eslint/package-lock.json"
     if version=$(npm_locked "$lock" eslint); then
-        require_row eslint "ESLint host checker" "${BT}eslint${BT} " "$VERSION_RE" "$version"
-        require_row eslint "ESLint host checker" 'eslint-' "$VERSION_RE" "$version"
-        require_file eslint THIRD_PARTY_NOTICES.md 'ESLint ' "$VERSION_RE" "$version"
-        require_file eslint THIRD_PARTY_NOTICES.md 'eslint/-/eslint-' "$VERSION_RE" "$version"
+        require_row eslint "ESLint host checker" "${BT}eslint${BT} " "$DIGIT" "$version"
+        require_row eslint "ESLint host checker" 'eslint-' "$DIGIT" "$version.tgz"
+        require_file eslint THIRD_PARTY_NOTICES.md 'ESLint ' "$DIGIT" "$version"
+        require_file eslint THIRD_PARTY_NOTICES.md 'eslint/-/eslint-' "$DIGIT" "$version.tgz"
         require_notice eslint ESLINT "$version"
     else
         fail "eslint: not locked in tools/eslint/package-lock.json"
     fi
     if version=$(npm_locked "$lock" @eslint/js); then
-        require_row @eslint/js "ESLint host checker" "${BT}@eslint/js${BT} " "$VERSION_RE" "$version"
-        require_file @eslint/js THIRD_PARTY_NOTICES.md "${BT}@eslint/js${BT} " "$VERSION_RE" "$version"
+        require_row @eslint/js "ESLint host checker" "${BT}@eslint/js${BT} " "$DIGIT" "$version"
+        require_file @eslint/js THIRD_PARTY_NOTICES.md "${BT}@eslint/js${BT} " "$DIGIT" "$version"
     else
         fail "@eslint/js: not locked in tools/eslint/package-lock.json"
     fi
     if version=$(npm_locked "$lock" globals); then
-        require_row globals "ESLint host checker" "${BT}globals${BT} " "$VERSION_RE" "$version"
-        require_file globals THIRD_PARTY_NOTICES.md "${BT}globals${BT} " "$VERSION_RE" "$version"
+        require_row globals "ESLint host checker" "${BT}globals${BT} " "$DIGIT" "$version"
+        require_file globals THIRD_PARTY_NOTICES.md "${BT}globals${BT} " "$DIGIT" "$version"
         require_notice globals GLOBALS "$version"
     else
         fail "globals: not locked in tools/eslint/package-lock.json"
@@ -151,8 +157,8 @@ check_tree() {
 
     # FlexSearch (website/package-lock.json and the bundle checksum pin).
     if version=$(npm_locked "$root/website/package-lock.json" flexsearch); then
-        require_row flexsearch FlexSearch '| ' "$VERSION_RE" "$version"
-        require_file flexsearch THIRD_PARTY_NOTICES.md 'FlexSearch ' "$VERSION_RE" "$version"
+        require_row flexsearch FlexSearch '| ' "$DIGIT" "$version"
+        require_file flexsearch THIRD_PARTY_NOTICES.md 'FlexSearch ' "$DIGIT" "$version"
     else
         fail "flexsearch: not locked in website/package-lock.json"
     fi
@@ -161,17 +167,42 @@ check_tree() {
     if ! printf '%s\n' "$bundle_sha" | grep -Eqx "$SHA256_RE"; then
         fail "flexsearch: website/vendor-pins/flexsearch.bundle.min.js.sha256 has no SHA-256"
     else
-        require_row flexsearch FlexSearch "bundle SHA-256 ${BT}" "$SHA256_RE" "$bundle_sha"
+        require_row flexsearch FlexSearch "bundle SHA-256 ${BT}" "$HEX" "$bundle_sha"
     fi
 
     # Hextra (website/go.mod, confirmed by website/go.sum). A replace
     # directive would make the build use a source the provenance row does not
-    # describe, so fail closed on any.
-    if awk '
-        /^[[:space:]]*replace[[:space:]]*\(/ { block = 1; next }
-        block && /^[[:space:]]*\)/ { block = 0; next }
-        block && $1 == "github.com/imfing/hextra" { found = 1 }
-        $1 == "replace" && $2 == "github.com/imfing/hextra" { found = 1 }
+    # describe, so fail closed on any. The left side of a replace is a module
+    # path, optionally quoted and optionally followed by a version, in a
+    # single-line directive or a replace ( ... ) block.
+    if awk -v target=github.com/imfing/hextra '
+        function lhs_module(spec,   arrow, n, fields) {
+            sub(/\/\/.*/, "", spec)
+            arrow = index(spec, "=>")
+            if (arrow == 0) return ""
+            n = split(substr(spec, 1, arrow - 1), fields, /[ \t]+/)
+            for (i = 1; i <= n; i++) {
+                if (fields[i] == "") continue
+                if (fields[i] ~ /^".*"$/ || fields[i] ~ /^`.*`$/)
+                    return substr(fields[i], 2, length(fields[i]) - 2)
+                return fields[i]
+            }
+            return ""
+        }
+        block && /^[ \t]*\)/ { block = 0; next }
+        block { if (lhs_module($0) == target) found = 1; next }
+        /^[ \t]*replace[ \t]*\(/ {
+            rest = $0
+            sub(/^[ \t]*replace[ \t]*\(/, "", rest)
+            block = 1
+            if (lhs_module(rest) == target) found = 1
+            next
+        }
+        /^[ \t]*replace[ \t]/ {
+            rest = $0
+            sub(/^[ \t]*replace[ \t]+/, "", rest)
+            if (lhs_module(rest) == target) found = 1
+        }
         END { exit !found }
     ' "$root/website/go.mod"; then
         fail "hextra: website/go.mod replaces github.com/imfing/hextra; record the replacement source in docs/SOURCE_PROVENANCE.md and this check first"
@@ -186,8 +217,8 @@ check_tree() {
         if ! grep -Fq "github.com/imfing/hextra $version h1:" "$root/website/go.sum"; then
             fail "hextra: website/go.sum has no hash for $version"
         fi
-        require_row hextra Hextra '| ' "v$VERSION_RE" "$version"
-        require_file hextra THIRD_PARTY_NOTICES.md 'Hextra ' "v$VERSION_RE" "$version"
+        require_row hextra Hextra '| ' "$VDIGIT" "$version"
+        require_file hextra THIRD_PARTY_NOTICES.md 'Hextra ' "$VDIGIT" "$version"
     fi
 
     # Pillow (tools/bootstrap-requirements.txt).
@@ -195,9 +226,9 @@ check_tree() {
     if [ -z "$version" ]; then
         fail "Pillow: no Pillow== pin in tools/bootstrap-requirements.txt"
     else
-        require_row Pillow "Pillow bootstrap host tool" '| ' "$VERSION_RE" "$version"
-        require_row Pillow "Pillow bootstrap host tool" 'pillow-' "$VERSION_RE" "$version"
-        require_file Pillow THIRD_PARTY_NOTICES.md 'Pillow ' "$VERSION_RE" "$version"
+        require_row Pillow "Pillow bootstrap host tool" '| ' "$DIGIT" "$version"
+        require_row Pillow "Pillow bootstrap host tool" 'pillow-' "$DIGIT" "$version.tar.gz"
+        require_file Pillow THIRD_PARTY_NOTICES.md 'Pillow ' "$DIGIT" "$version"
         require_notice Pillow PILLOW "$version"
     fi
 }
@@ -265,7 +296,7 @@ selftest() {
     seed prefix
     set_npm_lock "$fixture/tools/eslint/package-lock.json" @eslint/js 7.0.1
     sed -i "s#${BT}@eslint/js${BT} [0-9.]*#${BT}@eslint/js${BT} 7.0.10#" "$fixture/docs/SOURCE_PROVENANCE.md" "$fixture/THIRD_PARTY_NOTICES.md"
-    expect_failure "record version that extends the locked version" "has '${BT}@eslint/js${BT} 7.0.10'; the lock or pin is '7.0.1'"
+    expect_failure "record version that extends the locked version" "has '${BT}@eslint/js${BT} 7.0.10'; expected '${BT}@eslint/js${BT} 7.0.1'"
 
     # A record that ends with the locked version (110.0.1 vs 10.0.1).
     seed suffix
@@ -287,7 +318,7 @@ selftest() {
     # A pip pin bump without provenance or notice updates.
     seed pillow
     sed -i 's/^Pillow==[^ ]*/Pillow==99.0.0/' "$fixture/tools/bootstrap-requirements.txt"
-    expect_failure "requirements-only Pillow bump" "the lock or pin is '99.0.0'"
+    expect_failure "requirements-only Pillow bump" "99.0.0' from the lock or pin"
 
     # A go.mod-only Hextra bump: go.sum still has only the old hash.
     seed hextra
@@ -298,6 +329,46 @@ selftest() {
     seed hextra-replace
     printf '\nreplace github.com/imfing/hextra => ../hextra-fork\n' >> "$fixture/website/go.mod"
     expect_failure "Hextra replace directive" "website/go.mod replaces github.com/imfing/hextra"
+
+    # A quoted module path on the left side of a single-line replace.
+    seed hextra-replace-quoted
+    printf '\nreplace "github.com/imfing/hextra" => ../hextra-fork\n' >> "$fixture/website/go.mod"
+    expect_failure "quoted Hextra replace" "website/go.mod replaces github.com/imfing/hextra"
+
+    # A replace block with a versioned left side.
+    seed hextra-replace-block
+    printf '\nreplace (\n\texample.com/other v1.0.0 => ../other\n\tgithub.com/imfing/hextra v0.13.0 => ../hextra-fork\n)\n' >> "$fixture/website/go.mod"
+    expect_failure "Hextra replace block with a version" "website/go.mod replaces github.com/imfing/hextra"
+
+    # A single-line replace with a versioned, raw-quoted left side.
+    seed hextra-replace-versioned
+    printf '\nreplace %sgithub.com/imfing/hextra%s v0.13.0 => example.com/hextra-fork v0.13.1\n' "$BT" "$BT" >> "$fixture/website/go.mod"
+    expect_failure "versioned Hextra replace" "website/go.mod replaces github.com/imfing/hextra"
+
+    # A replace of another module is allowed.
+    seed other-replace
+    printf '\nreplace example.com/other => ../other\n' >> "$fixture/website/go.mod"
+    if ! "$SCRIPT_DIR/check-dependency-notices.sh" --root "$fixture" > "$scratch/other-replace.log" 2>&1; then
+        cat "$scratch/other-replace.log" >&2
+        printf '%s\n' "FAIL: selftest: a replace of another module was rejected" >&2
+        exit 1
+    fi
+    printf '%s\n' "PASS: selftest accepts a replace of another module"
+
+    # The registry archive in the notice URL changed type but kept the version.
+    seed eslint-archive
+    sed -i 's#eslint/-/eslint-\([0-9.]*\)\.tgz#eslint/-/eslint-\1.zip#' "$fixture/THIRD_PARTY_NOTICES.md"
+    expect_failure "non-tgz ESLint archive in the notice URL" ".zip'; expected 'eslint/-/eslint-"
+
+    # A REUSE.toml license path with an extra extension.
+    seed reuse-extension
+    sed -i 's#\(path = "notices/GLOBALS-[0-9.]*-LICENSE\.txt\)"#\1.bak"#' "$fixture/REUSE.toml"
+    expect_failure "REUSE.toml license path with an extra extension" "-LICENSE.txt.bak'; expected 'path = \"notices/GLOBALS-"
+
+    # A provenance checksum that starts with the pinned digest but is longer.
+    seed flexsearch-long-sha
+    sed -i "s/\(bundle SHA-256 ${BT}[0-9a-f]*\)${BT}/\10${BT}/" "$fixture/docs/SOURCE_PROVENANCE.md"
+    expect_failure "65-character FlexSearch checksum" "0'; expected 'bundle SHA-256 ${BT}"
 
     # A FlexSearch bundle pin change without the provenance checksum.
     seed flexsearch
