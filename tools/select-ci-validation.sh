@@ -67,7 +67,7 @@ else
         esac
         # Extensionless scripts such as init files are shell when their shebang is.
         if [[ "$shell" != true && -f "$path" ]] &&
-           [[ -n "$(sh "$script_dir/check-shell-scripts.sh" --classify "$path")" ]]; then
+           [[ -n "$(bash "$script_dir/check-shell-scripts.sh" --classify "$path")" ]]; then
             shell=true
         fi
         if is_get_started_source "$path"; then

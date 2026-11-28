@@ -198,7 +198,7 @@ git -C "$repo" add .
 git -C "$repo" commit -qm eslint-web-selftest
 assert_lanes false true false "$(run_selector pull_request)"
 
-printf '#!/bin/sh\n' > "$repo/tools/check-shell-scripts.sh"
+printf '#!/usr/bin/env bash\n' > "$repo/tools/check-shell-scripts.sh"
 git -C "$repo" add .
 git -C "$repo" commit -qm shell-script-check
 assert_lanes false true false "$(run_selector pull_request)"
@@ -213,6 +213,11 @@ mkdir -p "$repo/scripts"
 printf '#!/usr/bin/env bash\n' > "$repo/scripts/helper"
 git -C "$repo" add .
 git -C "$repo" commit -qm extensionless-bash
+assert_lanes false true false "$(run_selector pull_request)"
+
+printf '#!/usr/bin/env -S bash -e\n' > "$repo/scripts/split-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-env-split
 assert_lanes false true false "$(run_selector pull_request)"
 
 printf 'not a script\n' > "$repo/scripts/notes"
