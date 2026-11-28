@@ -9,6 +9,10 @@ set -eu
 
 prefix=${1:?usage: $0 INSTALL_PREFIX [CMAKE_OPTIONS ...]}
 shift
+# Drop trailing slashes so build/ci-mbedtls/ names the same paths and siblings.
+while [ "$prefix" != / ] && [ "${prefix%/}" != "$prefix" ]; do
+    prefix=${prefix%/}
+done
 source_dir="$prefix-source"
 build_dir="$prefix-build"
 
@@ -46,16 +50,33 @@ stale_mbedtls_install() (
 if stale_mbedtls_install; then
     previous=$(sed -n 1p "$prefix/deneb-source.receipt")
     for path in "$prefix" "$source_dir" "$build_dir"; do
-        if [ -e "$path" ] && [ -e "$path.replaced-$previous" ]; then
+        # -L also catches a dangling symlink, which -e reports as absent.
+        if { [ -e "$path" ] || [ -L "$path" ]; } &&
+            { [ -e "$path.replaced-$previous" ] || [ -L "$path.replaced-$previous" ]; }; then
             printf 'Cannot move %s aside: %s already exists\n' "$path" "$path.replaced-$previous" >&2
             exit 1
         fi
     done
-    for path in "$prefix" "$source_dir" "$build_dir"; do
-        if [ -e "$path" ]; then
-            mv -- "$path" "$path.replaced-$previous"
+    # Move each path aside; if one fails, put back the ones already moved so
+    # the earlier install stays whole. Flags keep paths with spaces intact.
+    restore_moved() {
+        [ "${moved_build:-}" != 1 ] || mv -- "$build_dir.replaced-$previous" "$build_dir" || true
+        [ "${moved_source:-}" != 1 ] || mv -- "$source_dir.replaced-$previous" "$source_dir" || true
+        [ "${moved_prefix:-}" != 1 ] || mv -- "$prefix.replaced-$previous" "$prefix" || true
+    }
+    move_aside() {
+        if [ -e "$1" ] || [ -L "$1" ]; then
+            if ! mv -- "$1" "$1.replaced-$previous"; then
+                restore_moved
+                printf 'Could not move %s aside; left the earlier install in place\n' "$1" >&2
+                exit 1
+            fi
+            eval "moved_$2=1"
         fi
-    done
+    }
+    move_aside "$prefix" prefix
+    move_aside "$source_dir" source
+    move_aside "$build_dir" build
     printf 'Moved Mbed TLS %s aside to %s.replaced-%s; building pinned %s. Delete the old copy when no longer needed.\n' \
         "$previous" "$prefix" "$previous" "$MBEDTLS_VERSION" >&2
 fi
