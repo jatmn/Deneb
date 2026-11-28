@@ -18,9 +18,9 @@ set -euo pipefail
 # Exact bytes of earlier releases that installer tests match; never edited.
 FIXTURE_PREFIX=tools/fixtures/
 
-# Split $1 into SHEBANG_WORDS with GNU env -S quoting: single quotes are
-# literal, double quotes and backslashes escape, \_ is a space, and # at a
-# word start ends the line.
+# Split $1 into SHEBANG_WORDS with GNU env -S quoting: single and double
+# quotes group words, and # at a word start ends the line. Backslash escapes
+# are not interpreted; shebang_interpreter rejects them after env.
 split_shebang() {
     local text=$1 word='' quote='' have=0 c i
     SHEBANG_WORDS=()
@@ -28,12 +28,6 @@ split_shebang() {
         c=${text:i:1}
         if [[ $quote == "'" ]]; then
             if [[ $c == "'" ]]; then quote=''; else word+=$c; fi
-        elif [[ $c == "\\" ]]; then
-            i=$((i + 1))
-            c=${text:i:1}
-            if [[ $c == _ ]]; then c=' '; fi
-            word+=$c
-            have=1
         elif [[ $quote == '"' ]]; then
             if [[ $c == '"' ]]; then quote=''; else word+=$c; fi
         elif [[ $c == "'" || $c == '"' ]]; then
@@ -53,8 +47,9 @@ split_shebang() {
 }
 
 # Print the interpreter's basename from the shebang in $1, followed by its
-# applet for BusyBox. Print nothing when there is no shebang and unknown when
-# no interpreter remains. env options follow GNU env.
+# applet for BusyBox. Print nothing when there is no shebang, unknown when no
+# interpreter remains, and env-escape for an env line with a backslash.
+# env options follow GNU env.
 shebang_interpreter() {
     local first
     first=$(head -c 256 -- "$1" | head -n 1 | tr -d '\000\r')
@@ -67,12 +62,25 @@ shebang_interpreter() {
         return 0
     fi
     if [[ "${words[0]##*/}" == env ]]; then
+        # GNU env -S escapes such as \_ and \c change word boundaries. No
+        # tracked script needs them, so fail closed instead of emulating them.
+        if [[ "$first" == *"\\"* ]]; then
+            echo env-escape
+            return 0
+        fi
         # Linux passes the rest of the line as one argument; the split above
         # already applied -S quoting to it.
         while [[ $i -lt ${#words[@]} ]]; do
             word=${words[$i]}
             case "$word" in
-                --) i=$((i + 1)); break ;;
+                --)
+                    # env still reads NAME=value operands after --.
+                    i=$((i + 1))
+                    while [[ $i -lt ${#words[@]} && "${words[$i]}" == *=* ]]; do
+                        i=$((i + 1))
+                    done
+                    break
+                    ;;
                 --split-string=*) words[i]=${word#--split-string=}; continue ;;
                 --unset|--chdir) i=$((i + 2)); continue ;;
                 --*|-|*=*) i=$((i + 1)); continue ;;
@@ -127,7 +135,7 @@ script_shell() {
     case "$interpreter" in
         bash) echo bash ;;
         sh|dash|ash|'busybox sh'|'busybox ash') echo sh ;;
-        ksh|mksh|pdksh|zsh|yash|posh|csh|tcsh|fish|unknown)
+        ksh|mksh|pdksh|zsh|yash|posh|csh|tcsh|fish|unknown|env-escape)
             echo unsupported
             ;;
         '')
@@ -171,7 +179,11 @@ check_tree() (
             bash) printf '%s\0' "$path" >> "$bash_list" ;;
             sh) printf '%s\0' "$path" >> "$sh_list" ;;
             unsupported)
-                echo "FAIL: $path has a shebang this check does not support: $(shebang_interpreter "$path")" >&2
+                if [[ "$(shebang_interpreter "$path")" == env-escape ]]; then
+                    echo "FAIL: $path uses a backslash escape in an env shebang; use a plain form such as #!/usr/bin/env -S bash -e" >&2
+                else
+                    echo "FAIL: $path has a shebang this check does not support: $(shebang_interpreter "$path")" >&2
+                fi
                 failed=1
                 continue
                 ;;
@@ -295,13 +307,21 @@ run_selftest() (
         "#!/usr/bin/env --split-string='bash -e'" \
         '#!/usr/bin/env -u FOO bash' \
         '#!/usr/bin/env --unset=FOO sh' \
-        '#!/usr/bin/env -i bash'
+        '#!/usr/bin/env -i bash' \
+        '#!/usr/bin/env -S -- DENEB_MODE=1 bash -e'
     do
         add_script tools/env-tool "$shebang" 'unused=1'
         expect_failure "a warning in an extensionless $shebang script" tools/env-tool 'SC2034'
     done
     add_script tools/dash-tool '#!/bin/dash' 'unused=1'
     expect_failure 'a warning in an extensionless dash script' tools/dash-tool 'SC2034'
+    # env -S escapes fail closed instead of being emulated.
+    add_script tools/escape-tool '#!/usr/bin/env -S\_bash -e' 'echo escape'
+    expect_failure 'an env -S \_ escape' tools/escape-tool 'backslash escape in an env shebang'
+    add_script tools/escape-tool "#!/usr/bin/env -S 'bash' \\c junk" 'echo escape'
+    expect_failure 'an env -S \c escape' tools/escape-tool 'backslash escape in an env shebang'
+    add_script tools/escape.sh '#!/usr/bin/env -S bash\_-e' 'echo escape'
+    expect_failure 'an env -S escape in a .sh file' tools/escape.sh 'backslash escape in an env shebang'
     add_script tools/ksh-tool '#!/bin/ksh' 'echo ksh'
     expect_failure 'an unsupported shell' tools/ksh-tool 'does not support'
     # dash -n accepts [[ as a command name; shellcheck must reject it.
