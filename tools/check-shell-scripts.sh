@@ -18,40 +18,105 @@ set -euo pipefail
 # Exact bytes of earlier releases that installer tests match; never edited.
 FIXTURE_PREFIX=tools/fixtures/
 
+# Split $1 into SHEBANG_WORDS with GNU env -S quoting: single quotes are
+# literal, double quotes and backslashes escape, \_ is a space, and # at a
+# word start ends the line.
+split_shebang() {
+    local text=$1 word='' quote='' have=0 c i
+    SHEBANG_WORDS=()
+    for ((i = 0; i < ${#text}; i++)); do
+        c=${text:i:1}
+        if [[ $quote == "'" ]]; then
+            if [[ $c == "'" ]]; then quote=''; else word+=$c; fi
+        elif [[ $c == "\\" ]]; then
+            i=$((i + 1))
+            c=${text:i:1}
+            if [[ $c == _ ]]; then c=' '; fi
+            word+=$c
+            have=1
+        elif [[ $quote == '"' ]]; then
+            if [[ $c == '"' ]]; then quote=''; else word+=$c; fi
+        elif [[ $c == "'" || $c == '"' ]]; then
+            quote=$c
+            have=1
+        elif [[ $c == [[:space:]] ]]; then
+            if [[ $have == 1 ]]; then SHEBANG_WORDS+=("$word"); fi
+            word='' have=0
+        elif [[ $c == '#' && $have == 0 ]]; then
+            break
+        else
+            word+=$c
+            have=1
+        fi
+    done
+    if [[ $have == 1 ]]; then SHEBANG_WORDS+=("$word"); fi
+}
+
 # Print the interpreter's basename from the shebang in $1, followed by its
-# first argument for BusyBox. Print nothing when there is no shebang.
+# applet for BusyBox. Print nothing when there is no shebang and unknown when
+# no interpreter remains. env options follow GNU env.
 shebang_interpreter() {
     local first
     first=$(head -c 256 -- "$1" | head -n 1 | tr -d '\000\r')
     [[ "$first" == '#!'* ]] || return 0
-    local -a words
-    read -r -a words <<< "${first#\#!}"
-    [[ ${#words[@]} -gt 0 ]] || { echo unknown; return 0; }
-    local i=0 interpreter=${words[0]##*/}
-    if [[ "$interpreter" == env ]]; then
-        # Skip env options and NAME=value assignments; -S splits the rest.
-        i=1
+    split_shebang "${first#\#!}"
+    local -a words=("${SHEBANG_WORDS[@]}")
+    local i=1 word flag rest
+    if [[ ${#words[@]} -eq 0 ]]; then
+        echo unknown
+        return 0
+    fi
+    if [[ "${words[0]##*/}" == env ]]; then
+        # Linux passes the rest of the line as one argument; the split above
+        # already applied -S quoting to it.
         while [[ $i -lt ${#words[@]} ]]; do
-            case "${words[$i]}" in
-                -u|--unset|-C|--chdir) i=$((i + 2)) ;;
-                -S*)
-                    if [[ "${words[$i]}" != -S ]]; then
-                        words[i]=${words[$i]#-S}
-                        break
-                    fi
-                    i=$((i + 1))
-                    ;;
-                -*|*=*) i=$((i + 1)) ;;
+            word=${words[$i]}
+            case "$word" in
+                --) i=$((i + 1)); break ;;
+                --split-string=*) words[i]=${word#--split-string=}; continue ;;
+                --unset|--chdir) i=$((i + 2)); continue ;;
+                --*|-|*=*) i=$((i + 1)); continue ;;
+                -?*) ;;
                 *) break ;;
             esac
+            # Short options, possibly combined, as getopt reads them.
+            rest=${word#-}
+            i=$((i + 1))
+            while [[ -n $rest ]]; do
+                flag=${rest:0:1}
+                rest=${rest:1}
+                case "$flag" in
+                    S)
+                        if [[ -n $rest ]]; then
+                            i=$((i - 1))
+                            words[i]=$rest
+                        fi
+                        rest=''
+                        ;;
+                    u|C)
+                        if [[ -z $rest ]]; then
+                            i=$((i + 1))
+                        fi
+                        rest=''
+                        ;;
+                esac
+            done
         done
-        [[ $i -lt ${#words[@]} ]] || { echo unknown; return 0; }
-        interpreter=${words[$i]##*/}
+    else
+        i=0
     fi
-    if [[ "$interpreter" == busybox ]]; then
+    if [[ $i -ge ${#words[@]} ]]; then
+        echo unknown
+        return 0
+    fi
+    # A quoted 'bash -e' stays one word; classify by its first field so an
+    # ambiguous script is checked rather than skipped.
+    word=${words[$i]%%[[:space:]]*}
+    word=${word##*/}
+    if [[ "$word" == busybox ]]; then
         printf 'busybox %s\n' "${words[$((i + 1))]:-}"
     else
-        printf '%s\n' "$interpreter"
+        printf '%s\n' "$word"
     fi
 }
 
@@ -155,6 +220,10 @@ run_selftest() (
     # The previous CI regex accepted env -S bash, so this must stay checked.
     printf '%s\n' '#!/usr/bin/env -S bash -e' 'values=(a b)' 'echo "${values[@]}"' \
         > "$repo/tools/env-split.sh"
+    # GNU env long split-string and a quoted -S word, both runnable Bash.
+    printf '%s\n' '#!/usr/bin/env --split-string=/bin/bash -e' 'echo long' \
+        > "$repo/tools/split-long.sh"
+    printf '%s\n' '#!/usr/bin/env -S "bash" -e' 'echo quoted' > "$repo/tools/split-quoted"
     printf '%s\n' '#!/bin/busybox sh' 'echo busybox' > "$repo/tools/busybox-tool"
     printf '%s\n' 'PIN=1' 'export PIN' > "$repo/tools/sourced.sh"
     printf '%s\n' '#!/bin/sh /etc/rc.common' 'start_service() {' '    echo start' '}' \
@@ -169,9 +238,9 @@ run_selftest() (
         echo "FAIL: selftest rejected clean scripts" >&2
         exit 1
     fi
-    grep -Fq 'PASS: 6 tracked shell scripts' "$fixture/out" || {
+    grep -Fq 'PASS: 8 tracked shell scripts' "$fixture/out" || {
         cat "$fixture/out" >&2
-        echo "FAIL: selftest did not check exactly the 6 non-fixture shell scripts" >&2
+        echo "FAIL: selftest did not check exactly the 8 non-fixture shell scripts" >&2
         exit 1
     }
 
@@ -180,7 +249,7 @@ run_selftest() (
     cp -- "$self" "$repo/tools/check-shell-scripts.sh"
     git -C "$repo" add -A
     if ! (cd "$repo" && CDPATH=. bash tools/check-shell-scripts.sh) > "$fixture/out" 2>&1 ||
-        ! grep -Fq 'PASS: 7 tracked shell scripts' "$fixture/out"; then
+        ! grep -Fq 'PASS: 9 tracked shell scripts' "$fixture/out"; then
         cat "$fixture/out" >&2
         echo "FAIL: selftest failed with CDPATH=." >&2
         exit 1
@@ -217,8 +286,20 @@ run_selftest() (
     expect_failure 'a warning in an extensionless init script' web/init/new.init 'SC2034'
     add_script tools/new-tool '#!/bin/sh' 'if true; then'
     expect_failure 'a syntax error in an extensionless script' tools/new-tool 'sh -n rejected'
-    add_script tools/env-tool '#!/usr/bin/env -S bash -e' 'unused=1'
-    expect_failure 'a warning in an extensionless env -S script' tools/env-tool 'SC2034'
+    # Each GNU env form must reach the shell so the warning is reported.
+    for shebang in \
+        '#!/usr/bin/env -S bash -e' \
+        '#!/usr/bin/env -S "bash" -e' \
+        '#!/usr/bin/env -Sbash' \
+        '#!/usr/bin/env --split-string=/bin/bash -e' \
+        "#!/usr/bin/env --split-string='bash -e'" \
+        '#!/usr/bin/env -u FOO bash' \
+        '#!/usr/bin/env --unset=FOO sh' \
+        '#!/usr/bin/env -i bash'
+    do
+        add_script tools/env-tool "$shebang" 'unused=1'
+        expect_failure "a warning in an extensionless $shebang script" tools/env-tool 'SC2034'
+    done
     add_script tools/dash-tool '#!/bin/dash' 'unused=1'
     expect_failure 'a warning in an extensionless dash script' tools/dash-tool 'SC2034'
     add_script tools/ksh-tool '#!/bin/ksh' 'echo ksh'

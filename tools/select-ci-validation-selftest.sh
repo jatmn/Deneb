@@ -215,9 +215,14 @@ git -C "$repo" add .
 git -C "$repo" commit -qm extensionless-bash
 assert_lanes false true false "$(run_selector pull_request)"
 
-printf '#!/usr/bin/env -S bash -e\n' > "$repo/scripts/split-helper"
+printf '#!/usr/bin/env -S "bash" -e\n' > "$repo/scripts/split-helper"
 git -C "$repo" add .
 git -C "$repo" commit -qm extensionless-env-split
+assert_lanes false true false "$(run_selector pull_request)"
+
+printf '#!/usr/bin/env --split-string=/bin/bash -e\n' > "$repo/scripts/long-split-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-env-long-split
 assert_lanes false true false "$(run_selector pull_request)"
 
 printf 'not a script\n' > "$repo/scripts/notes"
