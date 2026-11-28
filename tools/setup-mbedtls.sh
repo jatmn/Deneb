@@ -59,13 +59,21 @@ if stale_mbedtls_install; then
     done
     # Rename $1 to $2 only if $2 does not exist when the rename runs. -n makes
     # GNU mv refuse an occupied destination atomically (RENAME_NOREPLACE), and
-    # -T keeps a directory there from receiving $1 as a subdirectory. Some
-    # coreutils releases exit 0 when -n skips, so success means $2 is now the
-    # very file $1 was.
+    # -T keeps a directory there from receiving $1 as a subdirectory. Where a
+    # rename fails with EXDEV, as on OverlayFS, mv would copy and then delete;
+    # --no-copy (coreutils 9.1 and later) leaves $1 in place instead.
+    no_copy=
+    if mv --help 2>/dev/null | grep -q -e '--no-copy'; then
+        no_copy=--no-copy
+    fi
+    # Some coreutils releases exit 0 when -n skips, so judge the result from
+    # the paths: $2 is now the very file $1 was, or, after an older mv copied
+    # and deleted, $1 is gone and $2 holds the copy.
     move_noreplace() {
         identity=$(stat -c '%d:%i' -- "$1") || return 1
-        mv -nT -- "$1" "$2" || :
-        [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]
+        mv -nT $no_copy -- "$1" "$2" || :
+        [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ] ||
+            { ! [ -e "$1" ] && ! [ -L "$1" ] && { [ -e "$2" ] || [ -L "$2" ]; }; }
     }
     # Move each path aside; if one fails, put back the ones already moved so
     # the earlier install stays whole. Flags keep paths with spaces intact.
