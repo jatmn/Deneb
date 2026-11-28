@@ -136,13 +136,20 @@ ROWS=()
 behind=0
 failed=0
 
+# Escape one Markdown table cell: a literal | would start a new column, and a
+# newline would end the row.
+md_cell() {
+    local value=${1//$'\n'/ }
+    printf '%s' "${value//|/\\|}"
+}
+
 add_row() {
     local name=$1 current=$2 latest=$3 source=$4 status=$5
     case "$status" in
         behind|disagree|invalid|missing) behind=1 ;;
         "lookup failed") failed=1 ;;
     esac
-    ROWS+=("| $name | $current | $latest | $source | $status |")
+    ROWS+=("| $(md_cell "$name") | $(md_cell "$current") | $(md_cell "$latest") | $(md_cell "$source") | $status |")
 }
 
 # --- Live lookups ---
@@ -490,6 +497,12 @@ run_selftest() {
     check_version Gitleaks "8.30.1x" "pin: ci.yml" false
     expect "a malformed local pin is invalid" "| Gitleaks | 8.30.1x | - | pin: ci.yml | invalid | 1 0" "" \
         echo "${ROWS[0]} $behind $failed"
+
+    ROWS=() behind=0 failed=0
+    add_row reuse '6.2.0; sys_platform in "win32|darwin"' - "pin: ci.yml" invalid
+    expect "a pipe in a cell is escaped" \
+        '| reuse | 6.2.0; sys_platform in "win32\|darwin" | - | pin: ci.yml | invalid |' "" \
+        echo "${ROWS[0]}"
 
     # A malformed upstream value is a failed lookup, never a local pin problem.
     expect_failure "PKG_VERSION:=1..2 fails the musl parser" $'PKG_VERSION:=1..2\n' makefile_pkg_version
