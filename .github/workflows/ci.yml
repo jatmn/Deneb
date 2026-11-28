@@ -509,8 +509,11 @@ jobs:
             echo "::group::${selftests[$i]} (exit $status)"
             cat "$logs/$i.log"
             echo "::endgroup::"
-            if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            if [ "$status" -eq 124 ]; then
               echo "::error::${selftests[$i]} timed out after 8 minutes"
+              failed=1
+            elif [ "$status" -eq 137 ]; then
+              echo "::error::${selftests[$i]} was killed (SIGKILL): ignored the timeout's TERM, or was force-killed, e.g. out of memory"
               failed=1
             elif [ "$status" -ne 0 ]; then
               echo "::error::${selftests[$i]} failed with exit status $status"
