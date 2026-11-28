@@ -49,6 +49,15 @@ stale_mbedtls_install() (
 )
 if stale_mbedtls_install; then
     previous=$(sed -n 1p "$prefix/deneb-source.receipt")
+    # Where a rename fails with EXDEV, as on OverlayFS, mv copies and then
+    # deletes, and a failed delete can leave the original partly removed.
+    # Without --no-copy to forbid that, leave the earlier install untouched.
+    if ! mv --help 2>/dev/null | grep -q -e '--no-copy'; then
+        printf 'Cannot safely move Mbed TLS %s aside: this mv has no --no-copy option.\n' "$previous" >&2
+        printf 'Move %s and any %s and %s aside or delete them, then run setup again.\n' \
+            "$prefix" "$source_dir" "$build_dir" >&2
+        exit 1
+    fi
     for path in "$prefix" "$source_dir" "$build_dir"; do
         # -L also catches a dangling symlink, which -e reports as absent.
         if { [ -e "$path" ] || [ -L "$path" ]; } &&
@@ -59,21 +68,14 @@ if stale_mbedtls_install; then
     done
     # Rename $1 to $2 only if $2 does not exist when the rename runs. -n makes
     # GNU mv refuse an occupied destination atomically (RENAME_NOREPLACE), and
-    # -T keeps a directory there from receiving $1 as a subdirectory. Where a
-    # rename fails with EXDEV, as on OverlayFS, mv would copy and then delete;
-    # --no-copy (coreutils 9.1 and later) leaves $1 in place instead.
-    no_copy=
-    if mv --help 2>/dev/null | grep -q -e '--no-copy'; then
-        no_copy=--no-copy
-    fi
-    # Some coreutils releases exit 0 when -n skips, so judge the result from
-    # the paths: $2 is now the very file $1 was, or, after an older mv copied
-    # and deleted, $1 is gone and $2 holds the copy.
+    # -T keeps a directory there from receiving $1 as a subdirectory, and
+    # --no-copy leaves $1 in place when the rename itself fails. Some
+    # coreutils releases exit 0 when -n skips, so success means $2 is now the
+    # very file $1 was.
     move_noreplace() {
         identity=$(stat -c '%d:%i' -- "$1") || return 1
-        mv -nT $no_copy -- "$1" "$2" || :
-        [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ] ||
-            { ! [ -e "$1" ] && ! [ -L "$1" ] && { [ -e "$2" ] || [ -L "$2" ]; }; }
+        mv -nT --no-copy -- "$1" "$2" || :
+        [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]
     }
     # Move each path aside; if one fails, put back the ones already moved so
     # the earlier install stays whole. Flags keep paths with spaces intact.
