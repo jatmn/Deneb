@@ -170,7 +170,7 @@ find_stock_connector_pids() {
     for pd in /proc/[0-9]*/cmdline; do
         cmdline="$(tr '\0' ' ' < "$pd" 2>/dev/null || true)"
         case "$cmdline" in
-            *python*connector.py*|*python*connector.py[[:space:]]*)
+            *python*connector.py*)
                 pid="${pd#/proc/}"
                 pid="${pid%/cmdline}"
                 pids="$pids $pid"

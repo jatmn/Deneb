@@ -164,9 +164,9 @@ git diff --check
 Shell and fixture checks run in the documented Debian/Linux environment:
 
 ```sh
-find . -path ./.git -prune -o -path ./ui/lib/lvgl -prune -o \
-  -type f -name '*.sh' -print0 | xargs -0 -r sh -n
-shellcheck tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
+bash tools/check-shell-scripts.sh --selftest
+bash tools/check-shell-scripts.sh
+shellcheck tools/check-shell-scripts.sh tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/build-get-started.sh tools/build-update-release.sh \
   tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh \
   tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh \
   tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh

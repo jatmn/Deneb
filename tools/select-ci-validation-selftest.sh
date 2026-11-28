@@ -164,7 +164,7 @@ mkdir -p "$repo/website/scripts"
 printf '#!/bin/sh\necho site\n' > "$repo/website/scripts/prepare-assets.sh"
 git -C "$repo" add .
 git -C "$repo" commit -qm website
-assert_lanes false false false "$(run_selector pull_request)"
+assert_lanes false true false "$(run_selector pull_request)"
 
 mkdir -p "$repo/website/content/docs"
 printf '# Getting started\n' > "$repo/website/content/docs/getting-started.md"
@@ -197,5 +197,48 @@ printf '#!/bin/sh\n' > "$repo/tools/eslint-web-selftest.sh"
 git -C "$repo" add .
 git -C "$repo" commit -qm eslint-web-selftest
 assert_lanes false true false "$(run_selector pull_request)"
+
+printf '#!/usr/bin/env bash\n' > "$repo/tools/check-shell-scripts.sh"
+git -C "$repo" add .
+git -C "$repo" commit -qm shell-script-check
+assert_lanes false true false "$(run_selector pull_request)"
+
+mkdir -p "$repo/web/init"
+printf '#!/bin/sh /etc/rc.common\n' > "$repo/web/init/deneb-api.init"
+git -C "$repo" add .
+git -C "$repo" commit -qm init-script
+assert_lanes true true false "$(run_selector pull_request)"
+
+mkdir -p "$repo/scripts"
+printf '#!/usr/bin/env bash\n' > "$repo/scripts/helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-bash
+assert_lanes false true false "$(run_selector pull_request)"
+
+printf '#!/usr/bin/env -S "bash" -e\n' > "$repo/scripts/split-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-env-split
+assert_lanes false true false "$(run_selector pull_request)"
+
+printf '#!/usr/bin/env --split-string=/bin/bash -e\n' > "$repo/scripts/long-split-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-env-long-split
+assert_lanes false true false "$(run_selector pull_request)"
+
+printf '#!/usr/bin/env -S\\_bash -e\n' > "$repo/scripts/escape-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-env-escape
+assert_lanes false true false "$(run_selector pull_request)"
+
+# An escape in a non-shell interpreter's own arguments is not shell.
+printf '%s\n' "#!/usr/bin/env -S awk -v 'FS=\\t' -f" > "$repo/scripts/awk-helper"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-awk
+assert_lanes false false false "$(run_selector pull_request)"
+
+printf 'not a script\n' > "$repo/scripts/notes"
+git -C "$repo" add .
+git -C "$repo" commit -qm extensionless-text
+assert_lanes false false false "$(run_selector pull_request)"
 
 printf 'CI validation selector self-test: PASS\n'

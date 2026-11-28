@@ -2,6 +2,8 @@
 # Deneb API Server - procd init script
 # Implements UltiMaker REST API v1 over Unix domain socket
 
+# /etc/rc.common reads START, STOP, and USE_PROCD after sourcing this file.
+# shellcheck disable=SC2034
 START=97
 STOP=9
 USE_PROCD=1

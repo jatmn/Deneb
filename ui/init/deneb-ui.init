@@ -13,13 +13,14 @@
 #   /etc/init.d/menu disable
 #   /etc/init.d/menu stop
 
+# /etc/rc.common reads START, STOP, and USE_PROCD after sourcing this file.
+# shellcheck disable=SC2034
 START=96
 STOP=10
 
 USE_PROCD=1
 
 PROG=/usr/bin/deneb-ui
-LOGFILE=/var/log/deneb-ui.log
 
 fallback_to_stock_menu() {
     echo "deneb-ui: falling back to stock menu"

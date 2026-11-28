@@ -12,7 +12,6 @@
 
 set -eu
 
-SCRIPT_NAME=$(basename "$0")
 TMP_DIR="${TMPDIR:-/tmp}/deneb-stock-menu-prune-selftest.$$"
 FIXTURE_MENU="${TMP_DIR}/home/cygnus/menu"
 

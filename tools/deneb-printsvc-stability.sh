@@ -7,7 +7,7 @@
 
 set -u
 
-SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd "$(dirname "$0")" && pwd)"
 SMOKE="${DENEB_PRINTSVC_SMOKE:-${SCRIPT_DIR}/deneb-printsvc-smoke.sh}"
 VERIFY="${DENEB_PRINTSVC_SMOKE_VERIFY:-${SCRIPT_DIR}/deneb-printsvc-smoke-verify.sh}"
 if [ ! -f "$SMOKE" ] && [ -x /usr/bin/deneb-printsvc-smoke ]; then
