@@ -93,14 +93,16 @@ version_status() {
 }
 
 # Every reuse requirement in FILE, one per line (may be empty). A requirement
-# runs to the next whitespace, quote, backtick, or shell command separator
-# (; & | )). Exactly reuse==X.Y.Z or
-# reuse[extras]==X.Y.Z yields X.Y.Z; anything else (6.2.0x, >=6.2.0,
-# 6.2.0,==6.3.0) is kept as text and later reported as invalid. A missing
-# file yields nothing.
+# quoted on its own ('reuse==...' or "reuse==...") runs to its closing quote,
+# so a ; inside it (an environment marker) stays part of the requirement. An
+# unquoted requirement runs to the next whitespace, quote, backtick, or shell
+# command separator (; & | )). Exactly reuse==X.Y.Z or reuse[extras]==X.Y.Z
+# yields X.Y.Z; anything else (6.2.0x, >=6.2.0, 6.2.0,==6.3.0,
+# 6.2.0;sys_platform=="win32") is kept as text and later reported as invalid.
+# A missing file yields nothing.
 reuse_pins_in() {
-    { grep -ohE "reuse(\[[^]]*\])?[=<>!~][^[:space:]\"'\`;&|)]*" -- "$1" 2>/dev/null || true; } |
-        sed -E 's/^reuse(\[[^]]*\])?==//' | sort -u
+    { grep -ohE "'reuse(\[[^]]*\])?[=<>!~][^']*'|\"reuse(\[[^]]*\])?[=<>!~][^\"]*\"|reuse(\[[^]]*\])?[=<>!~][^[:space:]\"'\`;&|)]*" -- "$1" 2>/dev/null || true; } |
+        sed -E "s/^[\"']//; s/[\"']\$//; s/^reuse(\[[^]]*\])?==//" | sort -u
 }
 
 # Resolve the reuse pin across files: "ok VERSION", "missing FILE",
@@ -520,6 +522,12 @@ run_selftest() {
     printf 'run: (pipx run --spec reuse==6.2.0 reuse lint)&& true\n' > "$dir/subshell.yml"
     expect "a bare pin ends at a shell command separator" "ok 6.2.0" "" \
         resolve_reuse_pin "$dir/separator.yml" "$dir/subshell.yml" "$dir/agents.md"
+    printf '%s\n' "run: pipx run --spec 'reuse==6.2.0;sys_platform==\"win32\"' reuse lint" > "$dir/marker-single.yml"
+    printf '%s\n' 'run: pipx run --spec "reuse==6.2.0; python_version<\x273.9\x27" reuse lint' > "$dir/marker-double.yml"
+    expect "a quoted environment marker is invalid" 'invalid 6.2.0;sys_platform=="win32"' "" \
+        resolve_reuse_pin "$dir/marker-single.yml" "$dir/agents.md"
+    expect "a double-quoted marker is invalid" "invalid 6.2.0; python_version<\\x273.9\\x27" "" \
+        resolve_reuse_pin "$dir/marker-double.yml" "$dir/agents.md"
     printf "run: pipx run --spec 'reuse==6.2.0,==6.3.0' reuse lint\n" > "$dir/comma.yml"
     expect "a compound reuse requirement is invalid" "invalid 6.2.0,==6.3.0" "" \
         resolve_reuse_pin "$dir/comma.yml" "$dir/agents.md"
