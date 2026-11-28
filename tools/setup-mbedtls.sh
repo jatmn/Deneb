@@ -61,7 +61,10 @@ if stale_mbedtls_install; then
     # the earlier install stays whole. Flags keep paths with spaces intact.
     # Print each path that could not be put back, and fail if there was one.
     restore_one() {
-        if [ "$1" = 1 ] && ! mv -- "$2.replaced-$previous" "$2"; then
+        # -T and the existence check keep a recreated path from swallowing
+        # the backup as a subdirectory.
+        if [ "$1" = 1 ] && { [ -e "$2" ] || [ -L "$2" ] ||
+            ! mv -T -- "$2.replaced-$previous" "$2"; }; then
             printf 'Could not restore %s; it is still at %s.replaced-%s\n' "$2" "$2" "$previous" >&2
             return 1
         fi
@@ -75,7 +78,7 @@ if stale_mbedtls_install; then
     }
     move_aside() {
         if [ -e "$1" ] || [ -L "$1" ]; then
-            if ! mv -- "$1" "$1.replaced-$previous"; then
+            if ! mv -T -- "$1" "$1.replaced-$previous"; then
                 if restore_moved; then
                     printf 'Could not move %s aside; left the earlier install in place\n' "$1" >&2
                 else
