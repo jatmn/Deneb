@@ -42,8 +42,7 @@ jobs:
       - name: Prepare native build dependencies
         if: matrix.language == 'c-cpp'
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends bzip2 libzmq3-dev
+          sh tools/ci-apt-install.sh bzip2 libzmq3-dev
           sh tools/setup-lvgl.sh
           sh tools/setup-mbedtls.sh "$PWD/build/codeql/mbedtls"
 

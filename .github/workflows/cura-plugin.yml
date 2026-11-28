@@ -54,8 +54,7 @@ jobs:
         run: |
           command -v pwsh
           if ! command -v unzip >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends unzip
+            sh tools/ci-apt-install.sh unzip
           fi
 
       - name: Build Cura plugin package
