@@ -172,41 +172,48 @@ check_tree() {
 
     # Hextra (website/go.mod, confirmed by website/go.sum). A replace
     # directive would make the build use a source the provenance row does not
-    # describe, so fail closed on any. The left side of a replace is a module
-    # path, optionally quoted and optionally followed by a version, in a
-    # single-line directive or a replace ( ... ) block.
-    if awk -v target=github.com/imfing/hextra '
-        function lhs_module(spec,   arrow, n, fields) {
+    # describe, so fail closed on any. The left side of each replace, in a
+    # single-line directive or a replace ( ... ) block, must be a plain module
+    # path, optionally in one pair of double quotes, optionally followed by a
+    # version. Quoted escapes such as \x78 are not decoded: a backslash, any
+    # other quoting, or a line that does not parse is an error.
+    replace_report=$(awk -v target=github.com/imfing/hextra '
+        function check(spec,   arrow, n, fields, module) {
             sub(/\/\/.*/, "", spec)
+            if (spec ~ /^[ \t]*$/) return
             arrow = index(spec, "=>")
-            if (arrow == 0) return ""
-            n = split(substr(spec, 1, arrow - 1), fields, /[ \t]+/)
-            for (i = 1; i <= n; i++) {
-                if (fields[i] == "") continue
-                if (fields[i] ~ /^".*"$/ || fields[i] ~ /^`.*`$/)
-                    return substr(fields[i], 2, length(fields[i]) - 2)
-                return fields[i]
-            }
-            return ""
+            if (arrow == 0) { print "bad\t" $0; return }
+            n = split(substr(spec, 1, arrow - 1), fields, " ")
+            if (n < 1 || n > 2) { print "bad\t" $0; return }
+            module = fields[1]
+            if (module ~ /^".*"$/) module = substr(module, 2, length(module) - 2)
+            if (module !~ /^[A-Za-z0-9._~\/-]+$/) { print "bad\t" $0; return }
+            if (n == 2 && fields[2] !~ /^v[0-9A-Za-z.+-]+$/) { print "bad\t" $0; return }
+            if (module == target) print "hextra\t" $0
         }
-        block && /^[ \t]*\)/ { block = 0; next }
-        block { if (lhs_module($0) == target) found = 1; next }
+        block && /^[ \t]*\)[ \t]*(\/\/.*)?$/ { block = 0; next }
+        block { check($0); next }
         /^[ \t]*replace[ \t]*\(/ {
             rest = $0
             sub(/^[ \t]*replace[ \t]*\(/, "", rest)
             block = 1
-            if (lhs_module(rest) == target) found = 1
+            check(rest)
             next
         }
-        /^[ \t]*replace[ \t]/ {
+        /^[ \t]*replace([^A-Za-z0-9_]|$)/ {
             rest = $0
-            sub(/^[ \t]*replace[ \t]+/, "", rest)
-            if (lhs_module(rest) == target) found = 1
+            sub(/^[ \t]*replace/, "", rest)
+            check(rest)
         }
-        END { exit !found }
-    ' "$root/website/go.mod"; then
-        fail "hextra: website/go.mod replaces github.com/imfing/hextra; record the replacement source in docs/SOURCE_PROVENANCE.md and this check first"
-    fi
+    ' "$root/website/go.mod")
+    while IFS=$'\t' read -r kind line; do
+        case "$kind" in
+            hextra) fail "hextra: website/go.mod replaces github.com/imfing/hextra; record the replacement source in docs/SOURCE_PROVENANCE.md and this check first" ;;
+            bad) fail "hextra: website/go.mod has a replace this check cannot verify as a plain module path: $line" ;;
+        esac
+    done <<EOF
+$replace_report
+EOF
     version=$(awk '
         $1 == "require" && $2 == "github.com/imfing/hextra" { print $3; exit }
         $1 == "github.com/imfing/hextra" { print $2; exit }
@@ -234,7 +241,7 @@ check_tree() {
 }
 
 selftest() {
-    local fixture status version
+    local fixture status version old
     # Global so the EXIT trap can still see it after this function returns.
     scratch=$(mktemp -d)
     trap 'rm -rf "$scratch"' EXIT
@@ -260,6 +267,25 @@ selftest() {
             lock.packages["node_modules/" + name].version = version;
             fs.writeFileSync(path, JSON.stringify(lock, null, 2) + "\n");
         ' "$@"
+    }
+
+    # locked_version FILE PACKAGE: the version locked in the fixture.
+    locked_version() {
+        node -p 'require(process.argv[1]).packages["node_modules/" + process.argv[2]].version' \
+            "$fixture/$1" "$2"
+    }
+
+    # sed_escape TEXT: TEXT as a literal in a sed pattern delimited by #.
+    sed_escape() {
+        printf '%s' "$1" | sed 's/[][\.*^$/#]/\\&/g'
+    }
+
+    # mutate_eslint_archive: change the notice URL archive from .tgz to .zip,
+    # using the locked version so prerelease versions match too.
+    mutate_eslint_archive() {
+        local locked
+        locked=$(sed_escape "$(locked_version tools/eslint/package-lock.json eslint)")
+        sed -i "s#eslint/-/eslint-$locked\\.tgz#eslint/-/eslint-$locked.zip#" "$fixture/THIRD_PARTY_NOTICES.md"
     }
 
     # expect_failure CASE PATTERN: the check must fail and name the drift.
@@ -340,10 +366,20 @@ selftest() {
     printf '\nreplace (\n\texample.com/other v1.0.0 => ../other\n\tgithub.com/imfing/hextra v0.13.0 => ../hextra-fork\n)\n' >> "$fixture/website/go.mod"
     expect_failure "Hextra replace block with a version" "website/go.mod replaces github.com/imfing/hextra"
 
-    # A single-line replace with a versioned, raw-quoted left side.
+    # A single-line replace with a quoted, versioned left side.
     seed hextra-replace-versioned
-    printf '\nreplace %sgithub.com/imfing/hextra%s v0.13.0 => example.com/hextra-fork v0.13.1\n' "$BT" "$BT" >> "$fixture/website/go.mod"
+    printf '\nreplace "github.com/imfing/hextra" v0.13.0 => example.com/hextra-fork v0.13.1\n' >> "$fixture/website/go.mod"
     expect_failure "versioned Hextra replace" "website/go.mod replaces github.com/imfing/hextra"
+
+    # Go decodes escapes in a quoted path; this check fails closed instead.
+    seed hextra-replace-escape
+    printf '\nreplace "github.com/imfing/he\\x78tra" => ../hextra-fork\n' >> "$fixture/website/go.mod"
+    expect_failure "escaped module path in a replace" "cannot verify as a plain module path"
+
+    # A replace line that does not parse.
+    seed replace-unparsed
+    printf '\nreplace github.com/imfing/hextra\n' >> "$fixture/website/go.mod"
+    expect_failure "unparseable replace" "cannot verify as a plain module path"
 
     # A replace of another module is allowed.
     seed other-replace
@@ -357,13 +393,37 @@ selftest() {
 
     # The registry archive in the notice URL changed type but kept the version.
     seed eslint-archive
-    sed -i 's#eslint/-/eslint-\([0-9.]*\)\.tgz#eslint/-/eslint-\1.zip#' "$fixture/THIRD_PARTY_NOTICES.md"
+    mutate_eslint_archive
     expect_failure "non-tgz ESLint archive in the notice URL" ".zip'; expected 'eslint/-/eslint-"
 
     # A REUSE.toml license path with an extra extension.
     seed reuse-extension
-    sed -i 's#\(path = "notices/GLOBALS-[0-9.]*-LICENSE\.txt\)"#\1.bak"#' "$fixture/REUSE.toml"
+    version=$(locked_version tools/eslint/package-lock.json globals)
+    sed -i "s#\\(path = \"notices/GLOBALS-$(sed_escape "$version")-LICENSE\\.txt\\)\"#\\1.bak\"#" "$fixture/REUSE.toml"
     expect_failure "REUSE.toml license path with an extra extension" "-LICENSE.txt.bak'; expected 'path = \"notices/GLOBALS-"
+
+    # A synchronized prerelease ESLint pin passes, and the archive mutation
+    # still applies to it.
+    seed prerelease
+    version=$(locked_version tools/eslint/package-lock.json eslint)
+    set_npm_lock "$fixture/tools/eslint/package-lock.json" eslint 10.16.0-rc.1
+    old=$(sed_escape "$version")
+    sed -i -e "s#${BT}eslint${BT} $old#${BT}eslint${BT} 10.16.0-rc.1#" -e "s#eslint-$old\\.tgz#eslint-10.16.0-rc.1.tgz#" \
+        "$fixture/docs/SOURCE_PROVENANCE.md"
+    sed -i -e "s#ESLint $old,#ESLint 10.16.0-rc.1,#" -e "s#eslint-$old\\.tgz#eslint-10.16.0-rc.1.tgz#" \
+        -e "s#notices/ESLINT-$old-#notices/ESLINT-10.16.0-rc.1-#" "$fixture/THIRD_PARTY_NOTICES.md"
+    sed -i "s#notices/ESLINT-$old-#notices/ESLINT-10.16.0-rc.1-#" "$fixture/REUSE.toml"
+    mv "$fixture/notices/ESLINT-$version-LICENSE.txt" "$fixture/notices/ESLINT-10.16.0-rc.1-LICENSE.txt"
+    if ! "$SCRIPT_DIR/check-dependency-notices.sh" --root "$fixture" > "$scratch/prerelease.log" 2>&1; then
+        cat "$scratch/prerelease.log" >&2
+        printf '%s\n' "FAIL: selftest: a synchronized prerelease ESLint pin was rejected" >&2
+        exit 1
+    fi
+    printf '%s\n' "PASS: selftest accepts a synchronized prerelease ESLint pin"
+    cp -R "$fixture" "$scratch/prerelease-archive"
+    fixture="$scratch/prerelease-archive"
+    mutate_eslint_archive
+    expect_failure "non-tgz prerelease ESLint archive" "eslint-10.16.0-rc.1.zip'; expected 'eslint/-/eslint-10.16.0-rc.1.tgz'"
 
     # A provenance checksum that starts with the pinned digest but is longer.
     seed flexsearch-long-sha
