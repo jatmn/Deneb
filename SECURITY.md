@@ -53,8 +53,13 @@ issue titled "Upstream pin review" when any of them is behind:
 - Hugo from `website/vendor-pins/hugo.version`, Gitleaks in `ci.yml`, and the
   `reuse` linter version in `ci.yml` and `AGENTS.md`.
 
-The report never changes a pin, and a failed upstream lookup fails the run
-instead of reporting the pin as current.
+Only Mbed TLS and LVGL are compared within their documented major lines;
+every other pin is compared with the newest stable release of any version.
+A malformed, missing, or disagreeing pin also needs review. The report always
+reads the default branch, and a later clean run rewrites the open issue to say
+nothing needs review instead of closing it. The report never changes a pin,
+and a failed upstream lookup for a tracked pin fails the run instead of
+reporting the pin as current.
 
 - [ZeroMQ security advisories](https://github.com/zeromq/libzmq/security/advisories)
 - [Mbed TLS security advisories](https://mbed-tls.readthedocs.io/en/latest/security-advisories/)

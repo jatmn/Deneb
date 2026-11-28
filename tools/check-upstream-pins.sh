@@ -8,66 +8,131 @@
 #   bash tools/check-upstream-pins.sh             # live lookups
 #   bash tools/check-upstream-pins.sh --selftest  # offline parser checks
 #
-# Exit status: 0 when every pin is current, 3 when any pin is behind or two
-# pins disagree, and 1 when an upstream lookup fails. A failed lookup is
-# never reported as current. GitHub lookups use `gh api` (set GH_TOKEN in CI).
+# Exit status: 0 when every pin is current, 3 when any pin is behind, is
+# malformed, or disagrees with another copy, and 1 when an upstream lookup
+# for a tracked pin fails. A failed lookup is never reported as current.
+# GitHub lookups use `gh api` (set GH_TOKEN in CI).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION_RE='^[0-9]+(\.[0-9]+)*$'
 
-# --- Parsers: each reads an upstream response on stdin. ---
+# --- Parsers: each reads an upstream response on stdin and fails when it
+# finds no usable version. ---
 
 # Highest non-draft, non-prerelease GitHub release whose tag is
-# PREFIX<version> and whose version matches LINE (an ERE).
+# PREFIX<version> and whose version matches LINE (an ERE). Accepts the
+# concatenated pages that `gh api --paginate` prints.
 latest_github_release() {
     local prefix=$1 line=$2
     jq -r --arg prefix "$prefix" '
         .[] | select(.draft == false and .prerelease == false) | .tag_name
         | select(startswith($prefix)) | ltrimstr($prefix)' |
-        grep -E "^[0-9]+(\.[0-9]+)*$" | grep -E "$line" | sort -V | tail -n 1
+        grep -E "$VERSION_RE" | grep -E "$line" | sort -V | tail -n 1 | grep .
 }
 
 # Highest stable version in an HTML index for links named NAME-<version>SUFFIX.
 latest_index_version() {
     local name=$1 suffix=$2
     grep -oE "${name}-[0-9]+(\.[0-9]+)+${suffix//./\\.}" |
-        sed -E "s/^${name}-//; s/${suffix//./\\.}\$//" | sort -uV | tail -n 1
+        sed -E "s/^${name}-//; s/${suffix//./\\.}\$//" | sort -uV | tail -n 1 | grep .
 }
 
 # Highest final OpenWrt release directory (skips -rc and packages-* entries).
 latest_openwrt_release() {
     grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' | sed -E 's/^href="//; s/\/"$//' |
-        sort -uV | tail -n 1
+        sort -uV | tail -n 1 | grep .
 }
 
 # GCC version in an OpenWrt target directory's toolchain archive name.
 openwrt_toolchain_gcc() {
     grep -oE 'openwrt-toolchain-[^"<>]*_gcc-[0-9]+(\.[0-9]+)+_musl' |
-        sed -E 's/.*_gcc-//; s/_musl$//' | sort -uV | tail -n 1
+        sed -E 's/.*_gcc-//; s/_musl$//' | sort -uV | tail -n 1 | grep .
 }
 
 # PKG_VERSION from an OpenWrt package Makefile.
 makefile_pkg_version() {
-    sed -nE 's/^PKG_VERSION:=([0-9][0-9.]*)[[:space:]]*$/\1/p' | head -n 1
+    sed -nE 's/^PKG_VERSION:=([0-9][0-9.]*)[[:space:]]*$/\1/p' | head -n 1 | grep .
 }
 
-# GitHub compare API status: identical, ahead, behind, or diverged.
+# Newest final PyPI release that has files and is not fully yanked. PEP 440
+# pre-, post-, and dev-releases contain letters, so the numeric filter skips them.
+latest_pypi_release() {
+    jq -r '.releases | to_entries[]
+        | select((.value | length) > 0 and any(.value[]; .yanked != true)) | .key' |
+        grep -E "$VERSION_RE" | sort -V | tail -n 1 | grep .
+}
+
+# GitHub compare API result as "STATUS AHEAD BEHIND"; fails on an error body.
 compare_status() {
-    jq -r '"\(.status) \(.ahead_by) \(.behind_by)"'
+    jq -er 'select((.status | IN("identical", "ahead", "behind", "diverged"))
+        and (.ahead_by | type) == "number" and (.behind_by | type) == "number")
+        | "\(.status) \(.ahead_by) \(.behind_by)"'
 }
 
-# "current" when CURRENT >= LATEST in version order, otherwise "behind".
+valid_version() {
+    [[ $1 =~ $VERSION_RE ]]
+}
+
+# "invalid" for a malformed pin or upstream version, "current" when
+# CURRENT >= LATEST in version order, otherwise "behind".
 version_status() {
     local current=$1 latest=$2
-    if [ "$current" = "$latest" ] ||
+    if ! valid_version "$current" || ! valid_version "$latest"; then
+        echo invalid
+    elif [ "$current" = "$latest" ] ||
         [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" = "$current" ]
     then
         echo current
     else
         echo behind
     fi
+}
+
+# Every reuse version pinned in FILE, one per line (may be empty).
+reuse_pins_in() {
+    { grep -ohE 'reuse(\[[^]]*\])?==[^[:space:]"]+' -- "$1" || true; } |
+        sed 's/.*==//' | sort -u
+}
+
+# Resolve the reuse pin across files: "ok VERSION", "missing FILE",
+# "invalid VALUE", or "disagree V1 V2 ...". Every file must pin exactly one
+# valid version, and all files must agree.
+resolve_reuse_pin() {
+    local file pins all=
+    for file in "$@"; do
+        pins=$(reuse_pins_in "$file")
+        if [ -z "$pins" ]; then
+            echo "missing ${file#"$REPO_ROOT"/}"
+            return
+        fi
+        all="$all$pins"$'\n'
+    done
+    all=$(printf '%s' "$all" | sort -u)
+    if [ "$(printf '%s\n' "$all" | wc -l)" -gt 1 ]; then
+        echo "disagree $(printf '%s' "$all" | tr '\n' ' ')"
+    elif ! valid_version "$all"; then
+        echo "invalid $all"
+    else
+        echo "ok $all"
+    fi
+}
+
+# --- Report rows ---
+
+ROWS=()
+behind=0
+failed=0
+
+add_row() {
+    local name=$1 current=$2 latest=$3 source=$4 status=$5
+    case "$status" in
+        behind|disagree|invalid|missing) behind=1 ;;
+        "lookup failed") failed=1 ;;
+    esac
+    ROWS+=("| $name | $current | $latest | $source | $status |")
 }
 
 # --- Live lookups ---
@@ -80,33 +145,23 @@ fetch_gh() {
     gh api -- "$1"
 }
 
-ROWS=()
-behind=0
-failed=0
-
-add_row() {
-    local name=$1 current=$2 latest=$3 source=$4 status=$5
-    case "$status" in
-        behind|disagree) behind=1 ;;
-        "lookup failed") failed=1 ;;
-    esac
-    ROWS+=("| $name | $current | $latest | $source | $status |")
-}
-
 # Compare one pin against a lookup command that prints the latest version.
 check_version() {
     local name=$1 current=$2 source=$3
     shift 3
     local latest
-    if latest=$("$@") && [ -n "$latest" ]; then
+    if ! valid_version "$current"; then
+        add_row "$name" "${current:-?}" "-" "$source" invalid
+    elif latest=$("$@") && [ -n "$latest" ]; then
         add_row "$name" "$current" "$latest" "$source" "$(version_status "$current" "$latest")"
     else
         add_row "$name" "$current" "?" "$source" "lookup failed"
     fi
 }
 
+# All release pages, so an old release cannot hide a newer one past page 1.
 gh_latest() {
-    fetch_gh "repos/$1/releases?per_page=100" | latest_github_release "$2" "$3"
+    gh api --paginate -- "repos/$1/releases?per_page=100" | latest_github_release "$2" "$3"
 }
 
 index_latest() {
@@ -127,11 +182,11 @@ openwrt_musl() {
 }
 
 pypi_latest() {
-    fetch_url "https://pypi.org/pypi/$1/json" | jq -er '.info.version'
+    fetch_url "https://pypi.org/pypi/$1/json" | latest_pypi_release
 }
 
 check_lvgl() {
-    local revision line major short base latest result branch
+    local revision line major short base latest result branch state ahead
     revision=$(git -C "$REPO_ROOT" ls-tree HEAD ui/lib/lvgl | awk '$2 == "commit" { print $3 }')
     # SOURCE_PROVENANCE.md records the maintenance line, e.g. "v9.6 maintenance".
     # The backticks are literal Markdown, not command substitution.
@@ -148,8 +203,8 @@ check_lvgl() {
     fi
     base=${line%% *}
     major=${base%%.*}
-    # The pin must contain the newest release in its major line.
-    if latest=$(gh_latest lvgl/lvgl v "^${major}\\.") && [ -n "$latest" ] &&
+    # Scoped to the documented major line: the pin must contain its newest release.
+    if latest=$(gh_latest lvgl/lvgl v "^${major}\\.") &&
         result=$(fetch_gh "repos/lvgl/lvgl/compare/v$latest...$revision" | compare_status)
     then
         case "${result%% *}" in
@@ -163,7 +218,6 @@ check_lvgl() {
     if branch=$(fetch_gh "repos/lvgl/lvgl/branches/release/v$base" | jq -er '.commit.sha') &&
         result=$(fetch_gh "repos/lvgl/lvgl/compare/$revision...$branch" | compare_status)
     then
-        local state ahead
         read -r state ahead _ <<< "$result"
         case "$state" in
             identical|behind) add_row "LVGL release/v$base branch" "$short" "${branch:0:7}" "lvgl/lvgl branch" current ;;
@@ -175,39 +229,40 @@ check_lvgl() {
 }
 
 check_reuse() {
-    local versions
-    versions=$(grep -ohE 'reuse(\[[^]]*\])?==[0-9]+(\.[0-9]+)+' \
-        "$REPO_ROOT/.github/workflows/ci.yml" "$REPO_ROOT/AGENTS.md" | sed 's/.*==//' | sort -uV)
-    if [ -z "$versions" ]; then
-        add_row reuse "?" "?" "PyPI" "lookup failed"
-    elif [ "$(printf '%s\n' "$versions" | wc -l)" -gt 1 ]; then
-        add_row reuse "$(printf '%s' "$versions" | tr '\n' ' ')" "-" "ci.yml, AGENTS.md" disagree
-    else
-        check_version reuse "$versions" "PyPI" pypi_latest reuse
-    fi
+    local result
+    result=$(resolve_reuse_pin "$REPO_ROOT/.github/workflows/ci.yml" "$REPO_ROOT/AGENTS.md")
+    case "$result" in
+        ok\ *) check_version reuse "${result#ok }" "PyPI" pypi_latest reuse ;;
+        missing\ *) add_row reuse "?" "-" "${result#missing }" missing ;;
+        invalid\ *) add_row reuse "${result#invalid }" "-" "ci.yml, AGENTS.md" invalid ;;
+        *) add_row reuse "${result#disagree }" "-" "ci.yml, AGENTS.md" disagree ;;
+    esac
 }
 
 run_live() {
     # shellcheck source=tools/native-dependency-pins.sh
     # shellcheck disable=SC1091
     . "$REPO_ROOT/tools/native-dependency-pins.sh"
-    local hugo gitleaks openwrt
+    local hugo gitleaks openwrt musl_upstream
     hugo=$(tr -d '[:space:]' < "$REPO_ROOT/website/vendor-pins/hugo.version")
-    gitleaks=$(sed -nE 's/^[[:space:]]*GITLEAKS_VERSION:[[:space:]]*"?([0-9.]+)"?[[:space:]]*$/\1/p' \
+    gitleaks=$(sed -nE 's/^[[:space:]]*GITLEAKS_VERSION:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' \
         "$REPO_ROOT/.github/workflows/ci.yml" | head -n 1)
 
+    # Mbed TLS stays on the 4.x line that the printer build and notices use.
+    # Every other GitHub-released pin is compared with the newest release of
+    # any major version.
     check_version "Mbed TLS (4.x)" "$MBEDTLS_VERSION" "Mbed-TLS/mbedtls releases" \
         gh_latest Mbed-TLS/mbedtls mbedtls- '^4\.'
     check_version "TF-PSA-Crypto (bundled with Mbed TLS)" "$TF_PSA_CRYPTO_VERSION" \
-        "Mbed-TLS/TF-PSA-Crypto releases" gh_latest Mbed-TLS/TF-PSA-Crypto tf-psa-crypto- '^1\.'
-    check_version libzmq "$ZMQ_VERSION" "zeromq/libzmq releases" gh_latest zeromq/libzmq v '^4\.'
+        "Mbed-TLS/TF-PSA-Crypto releases" gh_latest Mbed-TLS/TF-PSA-Crypto tf-psa-crypto- .
+    check_version libzmq "$ZMQ_VERSION" "zeromq/libzmq releases" gh_latest zeromq/libzmq v .
     check_version "lighttpd (1.4.x)" "$LIGHTTPD_VERSION" "download.lighttpd.net" \
         index_latest https://download.lighttpd.net/lighttpd/releases-1.4.x/ lighttpd .tar.xz
     check_version "OpenWrt toolchain" "$MIPS_TOOLCHAIN_RELEASE" "downloads.openwrt.org" openwrt_latest
 
     # GCC and musl come from the OpenWrt toolchain archive, so they are
     # compared with the newest OpenWrt release, not with GCC or musl upstream.
-    if openwrt=$(openwrt_latest) && [ -n "$openwrt" ]; then
+    if openwrt=$(openwrt_latest); then
         check_version "GCC (OpenWrt $openwrt toolchain)" "$MIPS_TOOLCHAIN_GCC_VERSION" \
             "OpenWrt $openwrt ramips/mt76x8" openwrt_gcc "$openwrt"
         check_version "musl (OpenWrt $openwrt toolchain)" "$MIPS_TOOLCHAIN_MUSL_VERSION" \
@@ -216,20 +271,16 @@ run_live() {
         add_row "GCC (OpenWrt toolchain)" "$MIPS_TOOLCHAIN_GCC_VERSION" "?" "downloads.openwrt.org" "lookup failed"
         add_row "musl (OpenWrt toolchain)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "?" "downloads.openwrt.org" "lookup failed"
     fi
-    local musl_upstream
-    if musl_upstream=$(index_latest https://musl.libc.org/releases.html musl .tar.gz) && [ -n "$musl_upstream" ]; then
+    # Informational only: its outage must not fail the report.
+    if musl_upstream=$(index_latest https://musl.libc.org/releases.html musl .tar.gz); then
         add_row "musl upstream (info)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "$musl_upstream" "musl.libc.org" "info: follows OpenWrt"
     else
-        add_row "musl upstream (info)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "?" "musl.libc.org" "lookup failed"
+        add_row "musl upstream (info)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "?" "musl.libc.org" "info: lookup failed"
     fi
 
     check_lvgl
-    check_version Hugo "$hugo" "gohugoio/hugo releases" gh_latest gohugoio/hugo v '^0\.'
-    if [ -n "$gitleaks" ]; then
-        check_version Gitleaks "$gitleaks" "gitleaks/gitleaks releases" gh_latest gitleaks/gitleaks v '^8\.'
-    else
-        add_row Gitleaks "?" "?" ".github/workflows/ci.yml" "lookup failed"
-    fi
+    check_version Hugo "$hugo" "gohugoio/hugo releases" gh_latest gohugoio/hugo v .
+    check_version Gitleaks "$gitleaks" "gitleaks/gitleaks releases" gh_latest gitleaks/gitleaks v .
     check_reuse
 
     {
@@ -248,10 +299,24 @@ run_live() {
 
 # --- Offline self-test with canned upstream responses. ---
 
+# Run CMD with INPUT on stdin; require success and exactly EXPECTED on stdout.
 expect() {
-    local label=$1 expected=$2 actual=$3
-    if [ "$expected" != "$actual" ]; then
-        echo "FAIL: $label: expected '$expected', got '$actual'" >&2
+    local label=$1 expected=$2 input=$3 actual status=0
+    shift 3
+    actual=$(printf '%s' "$input" | "$@") || status=$?
+    if [ "$status" -ne 0 ] || [ "$expected" != "$actual" ]; then
+        echo "FAIL: $label: expected '$expected' (exit 0), got '$actual' (exit $status)" >&2
+        exit 1
+    fi
+    echo "PASS: $label"
+}
+
+# Run CMD with INPUT on stdin; require a nonzero exit.
+expect_failure() {
+    local label=$1 input=$2
+    shift 2
+    if printf '%s' "$input" | "$@" > /dev/null 2>&1; then
+        echo "FAIL: $label: command succeeded" >&2
         exit 1
     fi
     echo "PASS: $label"
@@ -268,42 +333,82 @@ run_selftest() {
         {"tag_name": "qemu-benchmark-latest", "draft": false, "prerelease": true}
     ]'
     expect "GitHub release skips drafts, pre-releases, other lines" 4.3.0 \
-        "$(printf '%s' "$releases" | latest_github_release mbedtls- '^4\.')"
-    expect "GitHub release honours the 3.x line" 3.6.8 \
-        "$(printf '%s' "$releases" | latest_github_release mbedtls- '^3\.')"
-    expect "GitHub release with no match is empty" "" \
-        "$(printf '%s' "$releases" | latest_github_release lighttpd- '^1\.')"
+        "$releases" latest_github_release mbedtls- '^4\.'
+    expect "GitHub release honours the 3.x line" 3.6.8 "$releases" latest_github_release mbedtls- '^3\.'
+    expect_failure "GitHub release with no match fails" "$releases" latest_github_release lighttpd- .
+
+    local majors='[
+        {"tag_name": "v0.170.1", "draft": false, "prerelease": false},
+        {"tag_name": "v1.0.0", "draft": false, "prerelease": false},
+        {"tag_name": "v1.1.0-beta", "draft": false, "prerelease": false}
+    ]'
+    expect "unscoped lookup finds a newer major line" 1.0.0 "$majors" latest_github_release v .
+    expect "a pin on the old major line is behind" behind "" version_status 0.170.1 1.0.0
+
+    local pages='[{"tag_name": "v4.3.4", "draft": false, "prerelease": false}]
+[{"tag_name": "v4.3.5", "draft": false, "prerelease": false}]'
+    expect "paginated release pages are all read" 4.3.5 "$pages" latest_github_release v .
 
     local lighttpd='<a href="lighttpd-1.4.9.tar.xz">x</a> <a href="lighttpd-1.4.85.tar.xz">x</a>
 <a href="lighttpd-1.4.85.tar.xz.asc">x</a> <a href="lighttpd-1.4.84.tar.gz">x</a>'
-    expect "lighttpd index orders 1.4.85 above 1.4.9" 1.4.85 \
-        "$(printf '%s' "$lighttpd" | latest_index_version lighttpd .tar.xz)"
+    expect "lighttpd index orders 1.4.85 above 1.4.9" 1.4.85 "$lighttpd" latest_index_version lighttpd .tar.xz
     local musl='<a href="releases/musl-1.2.5.tar.gz">1.2.5</a> <a href="releases/musl-1.2.6.tar.gz">1.2.6</a>'
-    expect "musl index" 1.2.6 "$(printf '%s' "$musl" | latest_index_version musl .tar.gz)"
+    expect "musl index" 1.2.6 "$musl" latest_index_version musl .tar.gz
+    expect_failure "an index with no release links fails" "<html></html>" latest_index_version musl .tar.gz
 
     local openwrt='<a href="25.12.0-rc5/">x</a> <a href="25.12.6/">x</a> <a href="24.10.9/">x</a>
 <a href="packages-25.12/">x</a> <a href="faillogs/">x</a>'
-    expect "OpenWrt index skips -rc and packages-*" 25.12.6 \
-        "$(printf '%s' "$openwrt" | latest_openwrt_release)"
+    expect "OpenWrt index skips -rc and packages-*" 25.12.6 "$openwrt" latest_openwrt_release
     local target='<a href="openwrt-toolchain-25.12.6-ramips-mt76x8_gcc-14.3.0_musl.Linux-x86_64.tar.zst">t</a>'
-    expect "OpenWrt toolchain GCC" 14.3.0 "$(printf '%s' "$target" | openwrt_toolchain_gcc)"
-    expect "OpenWrt musl PKG_VERSION" 1.2.5 \
-        "$(printf 'PKG_NAME:=musl\nPKG_VERSION:=1.2.5\nPKG_RELEASE:=1\n' | makefile_pkg_version)"
+    expect "OpenWrt toolchain GCC" 14.3.0 "$target" openwrt_toolchain_gcc
+    expect "OpenWrt musl PKG_VERSION" 1.2.5 $'PKG_NAME:=musl\nPKG_VERSION:=1.2.5\nPKG_RELEASE:=1\n' \
+        makefile_pkg_version
+    expect_failure "a Makefile without PKG_VERSION fails" $'PKG_NAME:=musl\n' makefile_pkg_version
 
-    expect "compare status" "ahead 28 0" \
-        "$(printf '{"status":"ahead","ahead_by":28,"behind_by":0}' | compare_status)"
+    local pypi='{"info": {"version": "7.0.0a1"}, "releases": {
+        "6.2.0": [{"yanked": false}], "6.3.0": [{"yanked": false}],
+        "6.4.0": [{"yanked": true}], "6.5.0": [],
+        "7.0.0a1": [{"yanked": false}], "7.0.0.dev1": [{"yanked": false}]}}'
+    expect "PyPI skips pre-releases, yanked, and empty releases" 6.3.0 "$pypi" latest_pypi_release
 
-    expect "equal versions are current" current "$(version_status 1.4.85 1.4.85)"
-    expect "1.4.10 is newer than 1.4.9" behind "$(version_status 1.4.9 1.4.10)"
-    expect "a newer pin is current" current "$(version_status 4.3.1 4.3.0)"
-    expect "4.1.2 is behind 4.3.0" behind "$(version_status 4.1.2 4.3.0)"
+    expect "compare status" "ahead 28 0" '{"status":"ahead","ahead_by":28,"behind_by":0}' compare_status
+    expect_failure "a compare error body fails" \
+        '{"message":"Not Found","status":"404"}' compare_status
+    expect_failure "an unknown compare status fails" \
+        '{"status":"weird","ahead_by":0,"behind_by":0}' compare_status
 
-    if ! printf 'not json' | latest_github_release v '^1\.' > /dev/null 2>&1; then
-        echo "PASS: malformed release JSON fails the lookup"
-    else
-        echo "FAIL: malformed release JSON was accepted" >&2
-        exit 1
-    fi
+    expect "equal versions are current" current "" version_status 1.4.85 1.4.85
+    expect "1.4.10 is newer than 1.4.9" behind "" version_status 1.4.9 1.4.10
+    expect "a newer pin is current" current "" version_status 4.3.1 4.3.0
+    expect "4.1.2 is behind 4.3.0" behind "" version_status 4.1.2 4.3.0
+    expect "a malformed pin is invalid, not current" invalid "" version_status 9.9.9-local 4.3.0
+    expect "an empty pin is invalid" invalid "" version_status "" 4.3.0
+
+    local dir
+    dir=$(mktemp -d)
+    # shellcheck disable=SC2064  # Expand now: dir is local to this function.
+    trap "rm -rf '$dir'" EXIT
+    printf 'run: pipx run --spec reuse==6.2.0 reuse lint\n' > "$dir/ci.yml"
+    printf 'pipx run --spec "reuse[charset-normalizer]==6.2.0" reuse lint\n' > "$dir/agents.md"
+    printf 'pipx run --spec "reuse[charset-normalizer]==6.1.0" reuse lint\n' > "$dir/older.md"
+    printf 'no linter pin here\n' > "$dir/none.md"
+    printf 'pipx run --spec reuse==6.2.0x reuse lint\n' > "$dir/bad.yml"
+    expect "reuse pins that agree resolve" "ok 6.2.0" "" resolve_reuse_pin "$dir/ci.yml" "$dir/agents.md"
+    expect "a file without a reuse pin is missing" "missing $dir/none.md" "" \
+        resolve_reuse_pin "$dir/ci.yml" "$dir/none.md"
+    expect "reuse pins that differ disagree" "disagree 6.1.0 6.2.0" "" \
+        resolve_reuse_pin "$dir/ci.yml" "$dir/older.md"
+    expect "a malformed reuse pin is invalid" "invalid 6.2.0x" "" resolve_reuse_pin "$dir/bad.yml"
+
+    # Row classification: info lookups never fail the run.
+    ROWS=() behind=0 failed=0
+    add_row "musl upstream (info)" 1.2.5 "?" musl.libc.org "info: lookup failed"
+    expect "an informational lookup failure is not fatal" "0 0" "" echo "$behind $failed"
+    add_row reuse "?" "-" ci.yml missing
+    expect "a missing pin is actionable" "1 0" "" echo "$behind $failed"
+    add_row Hugo 0.170.1 "?" gohugoio "lookup failed"
+    expect "a tracked lookup failure is fatal" "1 1" "" echo "$behind $failed"
+
     echo "Upstream pin self-test: PASS"
 }
 
