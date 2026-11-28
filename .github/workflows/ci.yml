@@ -146,7 +146,7 @@ jobs:
           bash website/scripts/build.sh
 
       - name: Check license declarations
-        run: pipx run --spec reuse==6.2.0 reuse lint
+        run: pipx run --spec reuse==6.3.0 reuse lint
 
       - name: Lint browser JavaScript
         run: |

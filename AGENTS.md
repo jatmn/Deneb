@@ -157,7 +157,7 @@ Baseline repository checks:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/check-publication-boundary.ps1
-pipx run --spec "reuse[charset-normalizer]==6.2.0" reuse lint
+pipx run --spec "reuse[charset-normalizer]==6.3.0" reuse lint
 git diff --check
 ```
 
