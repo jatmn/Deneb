@@ -32,8 +32,16 @@ public issue before a fix and disclosure plan exist.
 ## Dependency and Code Scanning Maintenance
 
 Check dependency update PRs against `docs/SOURCE_PROVENANCE.md` and update
-the matching notices, hashes, and lockfiles in the same PR. Review upstream
-advisories for native sources alongside the release SBOM.
+the matching notices, hashes, and lockfiles in the same PR. For the npm, Go,
+and pip dependencies below, `tools/check-dependency-notices.sh` enforces
+version consistency in `policy-validation`: it reads each locked version and
+fails when a provenance row, third-party notice, versioned license file name,
+or `REUSE.toml` path names another version, and when the FlexSearch provenance
+row does not carry the pinned bundle SHA-256. Review the rest by hand: archive
+SHA-256 values and source revisions in `docs/SOURCE_PROVENANCE.md`, wheel
+hashes, license text and SPDX identifiers, and GitHub Actions updates, which
+have no notices. Review upstream advisories for native sources alongside the
+release SBOM.
 
 Dependabot covers the website's Hextra Go module and FlexSearch npm lockfile,
 the ESLint tooling used by both web surfaces, the bootstrap Python pin, and
