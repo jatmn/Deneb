@@ -59,8 +59,16 @@ if stale_mbedtls_install; then
         exit 1
     fi
     for path in "$prefix" "$source_dir" "$build_dir"; do
-        # -L also catches a dangling symlink, which -e reports as absent.
-        if { [ -e "$path" ] || [ -L "$path" ]; } &&
+        # Each move renames a real directory onto a claimed empty directory,
+        # so a symlink, such as a prefix linked to the install, or any other
+        # file cannot be moved. Stop before moving anything.
+        if [ -L "$path" ] || { [ -e "$path" ] && ! [ -d "$path" ]; }; then
+            printf 'Cannot move Mbed TLS %s aside: %s is not a directory.\n' "$previous" "$path" >&2
+            printf 'Move %s and any %s and %s aside or delete them, then run setup again.\n' \
+                "$prefix" "$source_dir" "$build_dir" >&2
+            exit 1
+        fi
+        if [ -e "$path" ] &&
             { [ -e "$path.replaced-$previous" ] || [ -L "$path.replaced-$previous" ]; }; then
             printf 'Cannot move %s aside: %s already exists\n' "$path" "$path.replaced-$previous" >&2
             exit 1
@@ -70,13 +78,15 @@ if stale_mbedtls_install; then
     # atomically on any filesystem, and a rename may then replace only that
     # empty directory: anything put inside it makes the rename fail. -T keeps
     # $1 from landing inside $2, and --no-copy leaves $1 in place when the
-    # rename itself fails. Success means $2 is now the very directory $1 was;
-    # otherwise the claim is released if still empty.
+    # rename itself fails. Judge the result by the paths, not mv's status,
+    # which can be an error after a rename that completed (as on NFS): the
+    # move happened when $2 is now the very directory $1 was. Otherwise the
+    # claim is released if still empty.
     move_noreplace() {
         identity=$(stat -c '%d:%i' -- "$1") || return 1
         mkdir -- "$2" || return 1
-        if mv -T --no-copy -- "$1" "$2" &&
-            [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]; then
+        mv -T --no-copy -- "$1" "$2" || :
+        if [ "$(stat -c '%d:%i' -- "$2" 2>/dev/null)" = "$identity" ]; then
             return 0
         fi
         rmdir -- "$2" 2>/dev/null || :
