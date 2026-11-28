@@ -46,13 +46,22 @@ ubuntu_uri() {
 }
 
 # Succeed when sources file $1 names at least one URI and every URI is an
-# Ubuntu archive URI. Reads one-line .list entries and deb822 URIs fields.
+# Ubuntu archive URI. Reads one-line .list entries and deb822 URIs fields,
+# including indented continuation lines, which APT folds into the field.
+# Comment lines are skipped, as APT skips them.
 ubuntu_only_source() {
     [ -f "$1" ] || return 1
-    uris=$(sed -n \
-        -e 's/^[[:space:]]*URIs:[[:space:]]*//p' \
-        -e 's/^[[:space:]]*deb\(-src\)\{0,1\}[[:space:]]\{1,\}\(\[[^]]*\][[:space:]]\{1,\}\)\{0,1\}\([^[:space:]]\{1,\}\).*/\3/p' \
-        "$1")
+    uris=$(awk '
+        /^#/ { next }
+        /^[ \t]/ && in_uris { print; next }
+        { in_uris = 0 }
+        tolower($1) == "uris:" { in_uris = 1; $1 = ""; print; next }
+        $1 == "deb" || $1 == "deb-src" {
+            i = 2
+            if ($i ~ /^\[/) { while (i <= NF && $i !~ /\]$/) i++; i++ }
+            print $i
+        }
+    ' "$1")
     [ -n "$uris" ] || return 1
     for uri in $uris; do
         ubuntu_uri "$uri" || return 1
@@ -171,6 +180,19 @@ STUB
     run env sh "$0" lighttpd || fail "the mixed sources.list case failed"
     grep -q 'Dir::Etc::SourceList=/dev/null' "$APT_LOG" || fail "a mixed sources.list was used"
     echo "PASS: a source with any non-Ubuntu URI is skipped"
+
+    # APT folds indented lines into the URIs field, past comment lines.
+    printf '%s\n' 'Types: deb' 'URIs: http://archive.ubuntu.com/ubuntu' '# folded below' \
+        ' https://packages.microsoft.com/ubuntu/24.04/prod' 'Suites: noble' 'Components: main' \
+        > "$root/sources.list.d/folded.sources"
+    printf '%s\n' 'Types: deb' 'uris: http://archive.ubuntu.com/ubuntu' \
+        '	http://security.ubuntu.com/ubuntu' 'Suites: noble' 'Components: main' \
+        > "$root/sources.list.d/folded-ubuntu.sources"
+    run env sh "$0" lighttpd || fail "the folded URIs case failed"
+    ! grep -qx 'folded.sources' "$APT_LOG" || fail "a folded third-party URI reached apt"
+    grep -qx 'folded-ubuntu.sources' "$APT_LOG" || fail "a folded all-Ubuntu URIs field was skipped"
+    rm -f "$root/sources.list.d/folded.sources" "$root/sources.list.d/folded-ubuntu.sources"
+    echo "PASS: folded deb822 URIs are checked line by line"
 
     rm -f "$root/sources.list.d/ubuntu.sources"
     if run env sh "$0" lighttpd; then
