@@ -46,20 +46,20 @@ ubuntu_uri() {
 }
 
 # Succeed when sources file $1 names at least one URI and every URI is an
-# Ubuntu archive URI. Reads one-line .list entries and deb822 URIs fields,
-# including indented continuation lines, which APT folds into the field.
-# Comment lines are skipped, as APT skips them.
+# Ubuntu archive URI. Rather than parse each APT field spelling, collect every
+# URI-shaped string (scheme followed by ":/") on every line except deb822
+# comments, which start with "#" in column 0. A URI anywhere else, in any
+# field or format, can only make the file be skipped.
 ubuntu_only_source() {
     [ -f "$1" ] || return 1
     uris=$(awk '
         /^#/ { next }
-        /^[ \t]/ && in_uris { print; next }
-        { in_uris = 0 }
-        tolower($1) == "uris:" { in_uris = 1; $1 = ""; print; next }
-        $1 == "deb" || $1 == "deb-src" {
-            i = 2
-            if ($i ~ /^\[/) { while (i <= NF && $i !~ /\]$/) i++; i++ }
-            print $i
+        {
+            line = $0
+            while (match(line, /[A-Za-z][A-Za-z0-9+.-]*:\/[^] \t]*/)) {
+                print substr(line, RSTART, RLENGTH)
+                line = substr(line, RSTART + RLENGTH)
+            }
         }
     ' "$1")
     [ -n "$uris" ] || return 1
@@ -193,6 +193,15 @@ STUB
     grep -qx 'folded-ubuntu.sources' "$APT_LOG" || fail "a folded all-Ubuntu URIs field was skipped"
     rm -f "$root/sources.list.d/folded.sources" "$root/sources.list.d/folded-ubuntu.sources"
     echo "PASS: folded deb822 URIs are checked line by line"
+
+    # APT also accepts a field with no space after the colon.
+    printf '%s\n' 'Types: deb' 'URIs: http://archive.ubuntu.com/ubuntu' 'Suites: noble' \
+        'Components: main' '' 'Types: deb' 'URIs:https://packages.microsoft.com/ubuntu/24.04/prod' \
+        'Suites: noble' 'Components: main' > "$root/sources.list.d/nospace.sources"
+    run env sh "$0" lighttpd || fail "the unspaced URIs case failed"
+    ! grep -qx 'nospace.sources' "$APT_LOG" || fail "an unspaced third-party URIs field reached apt"
+    rm -f "$root/sources.list.d/nospace.sources"
+    echo "PASS: any URI in the file must be Ubuntu, however the field is written"
 
     rm -f "$root/sources.list.d/ubuntu.sources"
     if run env sh "$0" lighttpd; then
