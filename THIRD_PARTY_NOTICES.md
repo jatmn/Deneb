@@ -24,7 +24,7 @@ See docs/SOURCE_PROVENANCE.md for the audited source boundary.
 
 ### Mbed TLS and lighttpd
 
-- Mbed TLS 4.1.2 and its bundled TF-PSA-Crypto 1.1.2 are statically linked into `deneb-dfsvc` under their Apache-2.0 OR GPL-2.0-or-later choice. Their shared license texts are packaged as `MBEDTLS_LICENSE.txt`. The [Mbed TLS release archive](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-4.1.2) includes the corresponding source for both components.
+- Mbed TLS 4.3.0 and its bundled TF-PSA-Crypto 1.3.0 are statically linked into `deneb-dfsvc` under their Apache-2.0 OR GPL-2.0-or-later choice. Their shared license texts are packaged as `MBEDTLS_LICENSE.txt`. The [Mbed TLS release archive](https://github.com/Mbed-TLS/mbedtls/releases/tag/mbedtls-4.3.0) includes the corresponding source for both components.
 - lighttpd 1.4.85 is distributed as the HTTP front end under its BSD license. The upstream COPYING notice is packaged as LIGHTTPD_LICENSE.txt.
 
 ### Pillow bootstrap host tool
@@ -109,9 +109,11 @@ same source with only the inflate/zlib decoder enabled.
 
 ## Package Inventory Reconciliation
 
-Audited 2026-07-22. Current `.deneb` packages redistribute Deneb's MPL-2.0
+`.deneb` packages built from this source tree redistribute Deneb's MPL-2.0
 components, LVGL and its selected bundled helpers, LodePNG 20261102, libzmq
-4.3.5, Mbed TLS 4.1.2 with TF-PSA-Crypto 1.1.2, and lighttpd 1.4.85. The Cura
+4.3.5, Mbed TLS 4.3.0 with TF-PSA-Crypto 1.3.0, and lighttpd 1.4.85. That list
+follows the current source pins. The last package payload audit, on 2026-07-22,
+predates the current Mbed TLS pin. The Cura
 plugin is distributed separately under LGPL-3.0-or-later; the material identifier dataset is retained
 in source form under CC0-1.0. The stock legal screen was used only as a
 comparison point: this notice inventory is derived from the actual Deneb

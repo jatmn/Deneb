@@ -33,7 +33,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
     endif()
 endif()
 
-set(MBEDTLS_ROOT "" CACHE PATH "Path to static Mbed TLS 4.1 install")
+set(MBEDTLS_ROOT "" CACHE PATH "Path to static Mbed TLS 4.3 install")
 set(ZMQ_STATIC_PATH "" CACHE PATH "Path to static libzmq.a")
 set(ZMQ_INCLUDE_DIR "" CACHE PATH "Path to directory containing zmq.h")
 
