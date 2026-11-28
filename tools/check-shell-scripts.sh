@@ -114,7 +114,15 @@ shebang_interpreter() {
     else
         i=0
     fi
-    if [[ $i -ge ${#words[@]} ]]; then
+    # BusyBox needs its applet word too to determine the shell.
+    local needed=$i
+    if [[ $i -lt ${#words[@]} ]]; then
+        word=${words[$i]%%[[:space:]]*}
+        if [[ "${word##*/}" == busybox ]]; then
+            needed=$((i + 1))
+        fi
+    fi
+    if [[ $needed -ge ${#words[@]} && $SHEBANG_ESCAPED == 1 ]] || [[ $i -ge ${#words[@]} ]]; then
         # No tracked script needs escapes, so fail closed rather than guess.
         if [[ $SHEBANG_ESCAPED == 1 && "${words[0]##*/}" == env ]]; then
             echo env-escape
@@ -128,7 +136,8 @@ shebang_interpreter() {
     word=${words[$i]%%[[:space:]]*}
     word=${word##*/}
     if [[ "$word" == busybox ]]; then
-        printf 'busybox %s\n' "${words[$((i + 1))]:-}"
+        rest=${words[$((i + 1))]:-}
+        printf 'busybox %s\n' "${rest%%[[:space:]]*}"
     else
         printf '%s\n' "$word"
     fi
@@ -328,6 +337,13 @@ run_selftest() (
     expect_failure 'an env -S \_ escape' tools/escape-tool 'backslash escape in an env shebang'
     add_script tools/escape.sh '#!/usr/bin/env -S bash\_-e' 'echo escape'
     expect_failure 'an escape inside the env interpreter word' tools/escape.sh 'backslash escape in an env shebang'
+    # The BusyBox applet word also decides the shell.
+    add_script tools/escape-tool '#!/usr/bin/env -S busybox sh\_-e' 'echo escape'
+    expect_failure 'an escape inside the BusyBox applet word' tools/escape-tool 'backslash escape in an env shebang'
+    add_script tools/escape-tool '#!/usr/bin/env -S busybox\_sh' 'echo escape'
+    expect_failure 'an escape between BusyBox and its applet' tools/escape-tool 'backslash escape in an env shebang'
+    add_script tools/busybox-env-tool '#!/usr/bin/env -S busybox sh -e' 'unused=1'
+    expect_failure 'a warning in an env BusyBox sh script' tools/busybox-env-tool 'SC2034'
     # Escapes after the interpreter word are its own arguments.
     add_script tools/escape-tool "#!/usr/bin/env -S 'bash' \\c junk" 'unused=1'
     expect_failure 'a warning in a bash script with a later \c escape' tools/escape-tool 'SC2034'
