@@ -45,8 +45,29 @@ release SBOM.
 
 Dependabot covers the website's Hextra Go module and FlexSearch npm lockfile,
 the ESLint tooling used by both web surfaces, the bootstrap Python pin, and
-GitHub Actions. The printer Web UI uses first-party browser scripts. Review
-the standalone Hugo binary pin separately when checking website dependencies.
+GitHub Actions. The printer Web UI uses first-party browser scripts.
+
+Dependabot cannot read the remaining pins. The monthly `Upstream pins`
+workflow runs `tools/check-upstream-pins.sh` and creates or updates one open
+issue titled "Upstream pin review" when any of them is behind:
+
+- Mbed TLS (4.x line) and its bundled TF-PSA-Crypto, libzmq, and lighttpd
+  1.4.x from `tools/native-dependency-pins.sh`.
+- The OpenWrt MT76x8 toolchain release. Its GCC and musl versions are compared
+  with the newest OpenWrt release, because they ship inside that toolchain.
+  Upstream musl is listed for information only.
+- The LVGL submodule against the newest release in its major line and the head
+  of its maintenance branch.
+- Hugo from `website/vendor-pins/hugo.version`, Gitleaks in `ci.yml`, and the
+  `reuse` linter version in `ci.yml` and `AGENTS.md`.
+
+Only Mbed TLS and LVGL are compared within their documented major lines;
+every other pin is compared with the newest stable release of any version.
+A malformed, missing, or disagreeing pin also needs review. The report always
+reads the default branch, and a later clean run rewrites the open issue to say
+nothing needs review instead of closing it. The report never changes a pin,
+and a failed upstream lookup for a tracked pin fails the run instead of
+reporting the pin as current.
 
 - [ZeroMQ security advisories](https://github.com/zeromq/libzmq/security/advisories)
 - [Mbed TLS security advisories](https://mbed-tls.readthedocs.io/en/latest/security-advisories/)
