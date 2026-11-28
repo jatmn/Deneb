@@ -65,6 +65,9 @@ jobs:
           cmake --build build/codeql/web --parallel --target deneb-api deneb-mdns
           cmake -S printsvc -B build/codeql/printsvc -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_HOST_STUB=OFF
           cmake --build build/codeql/printsvc --parallel --target deneb-printsvc
+          # The motion firmware verifier is a host-stub-only target; build just it.
+          cmake -S printsvc -B build/codeql/printsvc-host -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_HOST_STUB=ON
+          cmake --build build/codeql/printsvc-host --parallel --target deneb-motion-firmware-verify
           cmake -S dfsvc -B build/codeql/dfsvc -DCMAKE_BUILD_TYPE=MinSizeRel -DMBEDTLS_ROOT="$PWD/build/codeql/mbedtls"
           cmake --build build/codeql/dfsvc --parallel --target deneb-dfsvc
 
@@ -83,13 +86,15 @@ jobs:
         run: |
           if [[ "$LANGUAGE" == c-cpp ]]; then
             db=$(jq -er '.cpp' <<< "$DATABASES")
-            sources=(ui/config/lv_conf.h ui/src/main.c web/src/main.c web/src/mdns_advertiser.c printsvc/src/main.c dfsvc/src/main.c)
+            sources=(ui/config/lv_conf.h ui/src/main.c web/src/main.c web/src/mdns_advertiser.c printsvc/src/main.c
+              printsvc/src/motion_firmware_verify.c dfsvc/src/main.c)
           else
             db=$(jq -er '.javascript' <<< "$DATABASES")
             sources=(web/www/index.html)
             while IFS= read -r -d '' source; do
               sources+=("$source")
-            done < <(git ls-files -z -- ':(glob)web/www/**/*.[jt]s' ':(glob)website/**/*.[jt]s')
+            done < <(git ls-files -z -- ':(glob)web/www/**/*.[jt]s' ':(glob)website/**/*.[jt]s' \
+              ':(glob)scripts/**/*.mjs' ':(glob)web/tests/**/*.cjs' tools/eslint/eslint.config.js)
           fi
           archive_list="$RUNNER_TEMP/deneb-codeql-sources"
           unzip -Z1 "$db/src.zip" > "$archive_list"
