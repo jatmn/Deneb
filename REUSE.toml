@@ -49,7 +49,7 @@ SPDX-FileCopyrightText = "OpenJS Foundation and other contributors"
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
-path = "notices/GLOBALS-17.12.0-LICENSE.txt"
+path = "notices/GLOBALS-17.14.0-LICENSE.txt"
 precedence = "override"
 SPDX-FileCopyrightText = "Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)"
 SPDX-License-Identifier = "MIT"
