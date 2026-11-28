@@ -15,14 +15,26 @@ build_dir="$prefix-build"
 if native_dependency_verified mbedtls "$prefix"; then
     exit 0
 fi
-# A receipt that names a different pinned version is this script's own earlier
-# install from before a pin change, so replace it. Anything else unverified,
-# including a receipt for the current version that no longer matches, stays a
-# hard stop.
-receipt="$prefix/deneb-source.receipt"
-if [ -f "$receipt" ] && recorded=$(head -n 1 -- "$receipt") &&
-    [ -n "$recorded" ] && [ "$recorded" != "$MBEDTLS_VERSION" ]; then
-    printf 'Replacing Mbed TLS %s at %s with pinned %s\n' "$recorded" "$prefix" "$MBEDTLS_VERSION" >&2
+# Replace this script's own earlier install after a pin change, but only with
+# positive proof: the receipt names the official Mbed TLS archive for its own
+# recorded version, and every file hash it lists still matches. Any other
+# unverified path, such as another dependency's prefix or a damaged install,
+# stays a hard stop.
+stale_mbedtls_install() (
+    receipt="$prefix/deneb-source.receipt"
+    [ -f "$receipt" ] || exit 1
+    recorded=$(sed -n 1p "$receipt")
+    url=$(sed -n 2p "$receipt")
+    [ -n "$recorded" ] && [ "$recorded" != "$MBEDTLS_VERSION" ] || exit 1
+    case "$recorded" in *[!0-9.]*) exit 1 ;; esac
+    [ "$url" = "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-$recorded/mbedtls-$recorded.tar.bz2" ] || exit 1
+    hashes=$(sed -n '5,$p' "$receipt")
+    [ -n "$hashes" ] || exit 1
+    cd -- "$prefix" && printf '%s\n' "$hashes" | sha256sum -c --quiet --strict - >/dev/null 2>&1
+)
+if stale_mbedtls_install; then
+    printf 'Replacing Mbed TLS %s at %s with pinned %s\n' \
+        "$(sed -n 1p "$prefix/deneb-source.receipt")" "$prefix" "$MBEDTLS_VERSION" >&2
     rm -rf -- "$prefix" "$source_dir" "$build_dir"
 fi
 for path in "$source_dir" "$build_dir" "$prefix"; do
