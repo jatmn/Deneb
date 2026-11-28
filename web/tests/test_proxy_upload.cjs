@@ -470,6 +470,12 @@ async function main() {
 
         armExtraction();
         const cancelled = startUpload(port, archive, 'cancelled-finalization.ufp');
+        // lighttpd registers a client socket for events only once it has to
+        // wait for request data. If the whole request is already buffered at
+        // its first read, the socket is never registered and the reset below
+        // goes unseen until the API replies. Wait for part of the body to
+        // reach the API, as a large upload would, before sending the rest.
+        await withinDeadline('Partial finalization upload did not reach the API', uploadedBodyExists);
         void cancelled.finish();
         const cancelledPid = await blockedExtractor();
         const [receiveSpool, ...otherTempFiles] = fs.readdirSync(temp);
