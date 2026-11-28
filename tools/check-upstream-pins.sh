@@ -8,9 +8,10 @@
 #   bash tools/check-upstream-pins.sh             # live lookups
 #   bash tools/check-upstream-pins.sh --selftest  # offline parser checks
 #
-# Exit status: 0 when every pin is current, 3 when any pin is behind, is
-# malformed, or disagrees with another copy, and 1 when an upstream lookup
-# for a tracked pin fails. A failed lookup is never reported as current.
+# Exit status: 0 when every pin is current; 3 when any pin is behind, or a
+# local pin is missing, malformed, or disagrees with another copy; 1 when an
+# upstream lookup for a tracked pin fails or returns a value that is not a
+# plain version. A failed lookup is never reported as current.
 # GitHub lookups use `gh api` (set GH_TOKEN in CI).
 
 set -euo pipefail
@@ -54,7 +55,7 @@ openwrt_toolchain_gcc() {
 
 # PKG_VERSION from an OpenWrt package Makefile.
 makefile_pkg_version() {
-    sed -nE 's/^PKG_VERSION:=([0-9][0-9.]*)[[:space:]]*$/\1/p' | head -n 1 | grep .
+    sed -nE 's/^PKG_VERSION:=([0-9][0-9.]*)[[:space:]]*$/\1/p' | head -n 1 | grep -E "$VERSION_RE"
 }
 
 # Newest final PyPI release that has files and is not fully yanked. PEP 440
@@ -91,9 +92,12 @@ version_status() {
     fi
 }
 
-# Every reuse version pinned in FILE, one per line (may be empty).
+# Every reuse version pinned in FILE, one per line (may be empty). The token
+# stops at whitespace and shell or Markdown delimiters, so 'reuse==6.2.0' and
+# "reuse==6.2.0" both read as 6.2.0 while 6.2.0x stays visible as invalid.
+# A missing file yields no pins.
 reuse_pins_in() {
-    { grep -ohE 'reuse(\[[^]]*\])?==[^[:space:]"]+' -- "$1" || true; } |
+    { grep -ohE "reuse(\[[^]]*\])?==[^][:space:]\"'\`;,()<>|&]+" -- "$1" 2>/dev/null || true; } |
         sed 's/.*==//' | sort -u
 }
 
@@ -146,16 +150,35 @@ fetch_gh() {
 }
 
 # Compare one pin against a lookup command that prints the latest version.
+# An empty local pin is missing and a malformed one is invalid (exit 3); an
+# upstream value that is not a plain version is a failed lookup (exit 1).
 check_version() {
     local name=$1 current=$2 source=$3
     shift 3
     local latest
-    if ! valid_version "$current"; then
-        add_row "$name" "${current:-?}" "-" "$source" invalid
-    elif latest=$("$@") && [ -n "$latest" ]; then
+    if [ -z "$current" ]; then
+        add_row "$name" "?" "-" "$source" missing
+    elif ! valid_version "$current"; then
+        add_row "$name" "$current" "-" "$source" invalid
+    elif latest=$("$@") && valid_version "$latest"; then
         add_row "$name" "$current" "$latest" "$source" "$(version_status "$current" "$latest")"
     else
-        add_row "$name" "$current" "?" "$source" "lookup failed"
+        add_row "$name" "$current" "${latest:-?}" "$source" "lookup failed"
+    fi
+}
+
+# Trimmed contents of a one-line pin file, or nothing when it is missing.
+pin_from_file() {
+    { tr -d '[:space:]' < "$1"; } 2>/dev/null || true
+}
+
+# Source the native pin file when present. Its variables stay unset when the
+# file is missing, so each native pin reports as missing instead of aborting.
+load_native_pins() {
+    if [ -f "$1" ]; then
+        # shellcheck source=tools/native-dependency-pins.sh
+        # shellcheck disable=SC1091
+        . "$1"
     fi
 }
 
@@ -187,15 +210,19 @@ pypi_latest() {
 
 check_lvgl() {
     local revision line major short base latest result branch state ahead
-    revision=$(git -C "$REPO_ROOT" ls-tree HEAD ui/lib/lvgl | awk '$2 == "commit" { print $3 }')
+    revision=$(git -C "$REPO_ROOT" ls-tree HEAD ui/lib/lvgl 2>/dev/null | awk '$2 == "commit" { print $3 }') || revision=
     # SOURCE_PROVENANCE.md records the maintenance line, e.g. "v9.6 maintenance".
     # The backticks are literal Markdown, not command substitution.
     # shellcheck disable=SC2016
     line=$(sed -nE 's/^\| LVGL \|.*\| v([0-9]+\.[0-9]+) maintenance \/ `?([0-9a-f]{40})`? \|.*/\1 \2/p' \
-        "$REPO_ROOT/docs/SOURCE_PROVENANCE.md" | head -n 1)
+        "$REPO_ROOT/docs/SOURCE_PROVENANCE.md" 2>/dev/null | head -n 1) || line=
     short=${revision:0:7}
-    if [ -z "$revision" ] || [ -z "$line" ]; then
-        add_row "LVGL release" "?" "?" "ui/lib/lvgl, docs/SOURCE_PROVENANCE.md" "lookup failed"
+    if [ -z "$revision" ]; then
+        add_row "LVGL submodule" "?" "-" "ui/lib/lvgl gitlink" missing
+        return
+    fi
+    if [ -z "$line" ]; then
+        add_row "LVGL submodule" "$short" "-" "docs/SOURCE_PROVENANCE.md LVGL row" missing
         return
     fi
     if [ "${line#* }" != "$revision" ]; then
@@ -240,47 +267,45 @@ check_reuse() {
 }
 
 run_live() {
-    # shellcheck source=tools/native-dependency-pins.sh
-    # shellcheck disable=SC1091
-    . "$REPO_ROOT/tools/native-dependency-pins.sh"
+    load_native_pins "$REPO_ROOT/tools/native-dependency-pins.sh"
     local hugo gitleaks openwrt musl_upstream
-    hugo=$(tr -d '[:space:]' < "$REPO_ROOT/website/vendor-pins/hugo.version")
+    hugo=$(pin_from_file "$REPO_ROOT/website/vendor-pins/hugo.version")
     gitleaks=$(sed -nE 's/^[[:space:]]*GITLEAKS_VERSION:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' \
-        "$REPO_ROOT/.github/workflows/ci.yml" | head -n 1)
+        "$REPO_ROOT/.github/workflows/ci.yml" 2>/dev/null | head -n 1) || gitleaks=
 
     # Mbed TLS stays on the 4.x line that the printer build and notices use.
     # Every other GitHub-released pin is compared with the newest release of
     # any major version.
-    check_version "Mbed TLS (4.x)" "$MBEDTLS_VERSION" "Mbed-TLS/mbedtls releases" \
+    check_version "Mbed TLS (4.x)" "${MBEDTLS_VERSION:-}" "Mbed-TLS/mbedtls releases" \
         gh_latest Mbed-TLS/mbedtls mbedtls- '^4\.'
-    check_version "TF-PSA-Crypto (bundled with Mbed TLS)" "$TF_PSA_CRYPTO_VERSION" \
+    check_version "TF-PSA-Crypto (bundled with Mbed TLS)" "${TF_PSA_CRYPTO_VERSION:-}" \
         "Mbed-TLS/TF-PSA-Crypto releases" gh_latest Mbed-TLS/TF-PSA-Crypto tf-psa-crypto- .
-    check_version libzmq "$ZMQ_VERSION" "zeromq/libzmq releases" gh_latest zeromq/libzmq v .
-    check_version "lighttpd (1.4.x)" "$LIGHTTPD_VERSION" "download.lighttpd.net" \
+    check_version libzmq "${ZMQ_VERSION:-}" "zeromq/libzmq releases" gh_latest zeromq/libzmq v .
+    check_version "lighttpd (1.4.x)" "${LIGHTTPD_VERSION:-}" "download.lighttpd.net" \
         index_latest https://download.lighttpd.net/lighttpd/releases-1.4.x/ lighttpd .tar.xz
-    check_version "OpenWrt toolchain" "$MIPS_TOOLCHAIN_RELEASE" "downloads.openwrt.org" openwrt_latest
+    check_version "OpenWrt toolchain" "${MIPS_TOOLCHAIN_RELEASE:-}" "downloads.openwrt.org" openwrt_latest
 
     # GCC and musl come from the OpenWrt toolchain archive, so they are
     # compared with the newest OpenWrt release, not with GCC or musl upstream.
     if openwrt=$(openwrt_latest); then
-        check_version "GCC (OpenWrt $openwrt toolchain)" "$MIPS_TOOLCHAIN_GCC_VERSION" \
+        check_version "GCC (OpenWrt $openwrt toolchain)" "${MIPS_TOOLCHAIN_GCC_VERSION:-}" \
             "OpenWrt $openwrt ramips/mt76x8" openwrt_gcc "$openwrt"
-        check_version "musl (OpenWrt $openwrt toolchain)" "$MIPS_TOOLCHAIN_MUSL_VERSION" \
+        check_version "musl (OpenWrt $openwrt toolchain)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" \
             "openwrt v$openwrt toolchain/musl" openwrt_musl "$openwrt"
     else
-        add_row "GCC (OpenWrt toolchain)" "$MIPS_TOOLCHAIN_GCC_VERSION" "?" "downloads.openwrt.org" "lookup failed"
-        add_row "musl (OpenWrt toolchain)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "?" "downloads.openwrt.org" "lookup failed"
+        add_row "GCC (OpenWrt toolchain)" "${MIPS_TOOLCHAIN_GCC_VERSION:-}" "?" "downloads.openwrt.org" "lookup failed"
+        add_row "musl (OpenWrt toolchain)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" "?" "downloads.openwrt.org" "lookup failed"
     fi
     # Informational only: its outage must not fail the report.
     if musl_upstream=$(index_latest https://musl.libc.org/releases.html musl .tar.gz); then
-        add_row "musl upstream (info)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "$musl_upstream" "musl.libc.org" "info: follows OpenWrt"
+        add_row "musl upstream (info)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" "$musl_upstream" "musl.libc.org" "info: follows OpenWrt"
     else
-        add_row "musl upstream (info)" "$MIPS_TOOLCHAIN_MUSL_VERSION" "?" "musl.libc.org" "info: lookup failed"
+        add_row "musl upstream (info)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" "?" "musl.libc.org" "info: lookup failed"
     fi
 
     check_lvgl
-    check_version Hugo "$hugo" "gohugoio/hugo releases" gh_latest gohugoio/hugo v .
-    check_version Gitleaks "$gitleaks" "gitleaks/gitleaks releases" gh_latest gitleaks/gitleaks v .
+    check_version Hugo "$hugo" "gohugoio/hugo releases; pin: website/vendor-pins/hugo.version" gh_latest gohugoio/hugo v .
+    check_version Gitleaks "$gitleaks" "gitleaks/gitleaks releases; pin: ci.yml" gh_latest gitleaks/gitleaks v .
     check_reuse
 
     {
@@ -321,6 +346,13 @@ expect_failure() {
     fi
     echo "PASS: $label"
 }
+
+# MBEDTLS_VERSION after loading FILE in a subshell, or "unset".
+native_pin_after_load() (
+    unset MBEDTLS_VERSION
+    load_native_pins "$1"
+    echo "${MBEDTLS_VERSION-unset}"
+)
 
 run_selftest() {
     local releases='[
@@ -399,6 +431,47 @@ run_selftest() {
     expect "reuse pins that differ disagree" "disagree 6.1.0 6.2.0" "" \
         resolve_reuse_pin "$dir/ci.yml" "$dir/older.md"
     expect "a malformed reuse pin is invalid" "invalid 6.2.0x" "" resolve_reuse_pin "$dir/bad.yml"
+
+    # Quote, Markdown, and bare spellings of one pin all agree.
+    printf "run: pipx run --spec 'reuse==6.2.0' reuse lint\n" > "$dir/single.yml"
+    printf 'run: pipx run --spec "reuse==6.2.0" reuse lint\n' > "$dir/double.yml"
+    # The backticks are literal Markdown.
+    # shellcheck disable=SC2016
+    printf 'Run `pipx run --spec reuse==6.2.0 reuse lint`.\n' > "$dir/markdown.md"
+    printf "pipx run --spec 'reuse[charset-normalizer]==6.2.0' reuse lint\n" > "$dir/extra.md"
+    expect "single-quoted, double-quoted, bare, Markdown, and extra specs agree" "ok 6.2.0" "" \
+        resolve_reuse_pin "$dir/single.yml" "$dir/double.yml" "$dir/ci.yml" "$dir/markdown.md" \
+        "$dir/extra.md" "$dir/agents.md"
+    printf "pipx run --spec 'reuse==6.2.0x' reuse lint\n" > "$dir/quoted-bad.yml"
+    expect "a quoted suffix stays invalid" "invalid 6.2.0x" "" resolve_reuse_pin "$dir/quoted-bad.yml"
+    expect "a missing reuse pin file is missing, not an abort" "missing $dir/absent.yml" "" \
+        resolve_reuse_pin "$dir/absent.yml"
+
+    # A missing local pin file is a reported pin problem, not an abort.
+    printf ' 0.170.1\n' > "$dir/hugo.version"
+    expect "a pin file is read and trimmed" 0.170.1 "" pin_from_file "$dir/hugo.version"
+    expect "a missing pin file reads as empty" "" "" pin_from_file "$dir/absent.version"
+    expect "a missing native pin file loads nothing" "unset" "" native_pin_after_load "$dir/absent.sh"
+
+    ROWS=() behind=0 failed=0
+    check_version Hugo "" "pin: website/vendor-pins/hugo.version" false
+    expect "an empty local pin is reported missing without a lookup" \
+        "| Hugo | ? | - | pin: website/vendor-pins/hugo.version | missing | 1 0" "" \
+        echo "${ROWS[0]} $behind $failed"
+    ROWS=() behind=0 failed=0
+    check_version Gitleaks "8.30.1x" "pin: ci.yml" false
+    expect "a malformed local pin is invalid" "| Gitleaks | 8.30.1x | - | pin: ci.yml | invalid | 1 0" "" \
+        echo "${ROWS[0]} $behind $failed"
+
+    # A malformed upstream value is a failed lookup, never a local pin problem.
+    expect_failure "PKG_VERSION:=1..2 fails the musl parser" $'PKG_VERSION:=1..2\n' makefile_pkg_version
+    ROWS=() behind=0 failed=0
+    check_version musl 1.2.5 "openwrt musl" echo 1..2
+    expect "a malformed upstream value is a lookup failure" \
+        "| musl | 1.2.5 | 1..2 | openwrt musl | lookup failed | 0 1" "" echo "${ROWS[0]} $behind $failed"
+    ROWS=() behind=0 failed=0
+    check_version Hugo 0.170.1 "hugo" echo ""
+    expect "an empty upstream value is a lookup failure" "0 1" "" echo "$behind $failed"
 
     # Row classification: info lookups never fail the run.
     ROWS=() behind=0 failed=0
