@@ -59,16 +59,28 @@ if stale_mbedtls_install; then
     done
     # Move each path aside; if one fails, put back the ones already moved so
     # the earlier install stays whole. Flags keep paths with spaces intact.
+    # Print each path that could not be put back, and fail if there was one.
+    restore_one() {
+        if [ "$1" = 1 ] && ! mv -- "$2.replaced-$previous" "$2"; then
+            printf 'Could not restore %s; it is still at %s.replaced-%s\n' "$2" "$2" "$previous" >&2
+            return 1
+        fi
+    }
     restore_moved() {
-        [ "${moved_build:-}" != 1 ] || mv -- "$build_dir.replaced-$previous" "$build_dir" || true
-        [ "${moved_source:-}" != 1 ] || mv -- "$source_dir.replaced-$previous" "$source_dir" || true
-        [ "${moved_prefix:-}" != 1 ] || mv -- "$prefix.replaced-$previous" "$prefix" || true
+        restored=0
+        restore_one "${moved_build:-}" "$build_dir" || restored=1
+        restore_one "${moved_source:-}" "$source_dir" || restored=1
+        restore_one "${moved_prefix:-}" "$prefix" || restored=1
+        return "$restored"
     }
     move_aside() {
         if [ -e "$1" ] || [ -L "$1" ]; then
             if ! mv -- "$1" "$1.replaced-$previous"; then
-                restore_moved
-                printf 'Could not move %s aside; left the earlier install in place\n' "$1" >&2
+                if restore_moved; then
+                    printf 'Could not move %s aside; left the earlier install in place\n' "$1" >&2
+                else
+                    printf 'Could not move %s aside, and the earlier install was only partly restored (see above)\n' "$1" >&2
+                fi
                 exit 1
             fi
             eval "moved_$2=1"
