@@ -92,18 +92,19 @@ version_status() {
     fi
 }
 
-# Every reuse version pinned in FILE, one per line (may be empty). The token
-# stops at whitespace and shell or Markdown delimiters, so 'reuse==6.2.0' and
-# "reuse==6.2.0" both read as 6.2.0 while 6.2.0x stays visible as invalid.
-# A missing file yields no pins.
+# Every reuse requirement in FILE, one per line (may be empty). A requirement
+# runs to the next whitespace, quote, or backtick. Exactly reuse==X.Y.Z or
+# reuse[extras]==X.Y.Z yields X.Y.Z; anything else (6.2.0x, >=6.2.0,
+# 6.2.0,==6.3.0) is kept as text and later reported as invalid. A missing
+# file yields nothing.
 reuse_pins_in() {
-    { grep -ohE "reuse(\[[^]]*\])?==[^][:space:]\"'\`;,()<>|&]+" -- "$1" 2>/dev/null || true; } |
-        sed 's/.*==//' | sort -u
+    { grep -ohE "reuse(\[[^]]*\])?[=<>!~][^[:space:]\"'\`]*" -- "$1" 2>/dev/null || true; } |
+        sed -E 's/^reuse(\[[^]]*\])?==//' | sort -u
 }
 
 # Resolve the reuse pin across files: "ok VERSION", "missing FILE",
-# "invalid VALUE", or "disagree V1 V2 ...". Every file must pin exactly one
-# valid version, and all files must agree.
+# "invalid VALUE ...", or "disagree V1 V2 ...". Every file must pin a plain
+# version, and all files must agree. An invalid requirement takes precedence.
 resolve_reuse_pin() {
     local file pins all=
     for file in "$@"; do
@@ -115,10 +116,12 @@ resolve_reuse_pin() {
         all="$all$pins"$'\n'
     done
     all=$(printf '%s' "$all" | sort -u)
-    if [ "$(printf '%s\n' "$all" | wc -l)" -gt 1 ]; then
+    local bad
+    bad=$(printf '%s\n' "$all" | grep -vE "$VERSION_RE" || true)
+    if [ -n "$bad" ]; then
+        echo "invalid $(printf '%s' "$bad" | tr '\n' ' ')"
+    elif [ "$(printf '%s\n' "$all" | wc -l)" -gt 1 ]; then
         echo "disagree $(printf '%s' "$all" | tr '\n' ' ')"
-    elif ! valid_version "$all"; then
-        echo "invalid $all"
     else
         echo "ok $all"
     fi
@@ -172,13 +175,16 @@ pin_from_file() {
     { tr -d '[:space:]' < "$1"; } 2>/dev/null || true
 }
 
-# Source the native pin file when present. Its variables stay unset when the
-# file is missing, so each native pin reports as missing instead of aborting.
+# Source the native pin file when present. A missing file or variable leaves
+# that pin empty, so it reports as missing instead of aborting: nounset is off
+# while the file is read, and an error inside it does not stop the report.
 load_native_pins() {
     if [ -f "$1" ]; then
+        set +u
         # shellcheck source=tools/native-dependency-pins.sh
         # shellcheck disable=SC1091
-        . "$1"
+        . "$1" || true
+        set -u
     fi
 }
 
@@ -266,9 +272,26 @@ check_reuse() {
     esac
 }
 
+# GCC and musl come from the OpenWrt toolchain archive, so they are compared
+# with the newest OpenWrt release, not with GCC or musl upstream. When the
+# OpenWrt index is down, check_version still reports a missing or malformed
+# local pin first; only a valid pin becomes a failed lookup.
+check_toolchain_pins() {
+    local openwrt
+    if openwrt=$(openwrt_latest); then
+        check_version "GCC (OpenWrt $openwrt toolchain)" "${MIPS_TOOLCHAIN_GCC_VERSION:-}" \
+            "OpenWrt $openwrt ramips/mt76x8" openwrt_gcc "$openwrt"
+        check_version "musl (OpenWrt $openwrt toolchain)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" \
+            "openwrt v$openwrt toolchain/musl" openwrt_musl "$openwrt"
+    else
+        check_version "GCC (OpenWrt toolchain)" "${MIPS_TOOLCHAIN_GCC_VERSION:-}" "downloads.openwrt.org" false
+        check_version "musl (OpenWrt toolchain)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" "downloads.openwrt.org" false
+    fi
+}
+
 run_live() {
     load_native_pins "$REPO_ROOT/tools/native-dependency-pins.sh"
-    local hugo gitleaks openwrt musl_upstream
+    local hugo gitleaks musl_upstream
     hugo=$(pin_from_file "$REPO_ROOT/website/vendor-pins/hugo.version")
     gitleaks=$(sed -nE 's/^[[:space:]]*GITLEAKS_VERSION:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' \
         "$REPO_ROOT/.github/workflows/ci.yml" 2>/dev/null | head -n 1) || gitleaks=
@@ -285,17 +308,7 @@ run_live() {
         index_latest https://download.lighttpd.net/lighttpd/releases-1.4.x/ lighttpd .tar.xz
     check_version "OpenWrt toolchain" "${MIPS_TOOLCHAIN_RELEASE:-}" "downloads.openwrt.org" openwrt_latest
 
-    # GCC and musl come from the OpenWrt toolchain archive, so they are
-    # compared with the newest OpenWrt release, not with GCC or musl upstream.
-    if openwrt=$(openwrt_latest); then
-        check_version "GCC (OpenWrt $openwrt toolchain)" "${MIPS_TOOLCHAIN_GCC_VERSION:-}" \
-            "OpenWrt $openwrt ramips/mt76x8" openwrt_gcc "$openwrt"
-        check_version "musl (OpenWrt $openwrt toolchain)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" \
-            "openwrt v$openwrt toolchain/musl" openwrt_musl "$openwrt"
-    else
-        add_row "GCC (OpenWrt toolchain)" "${MIPS_TOOLCHAIN_GCC_VERSION:-}" "?" "downloads.openwrt.org" "lookup failed"
-        add_row "musl (OpenWrt toolchain)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" "?" "downloads.openwrt.org" "lookup failed"
-    fi
+    check_toolchain_pins
     # Informational only: its outage must not fail the report.
     if musl_upstream=$(index_latest https://musl.libc.org/releases.html musl .tar.gz); then
         add_row "musl upstream (info)" "${MIPS_TOOLCHAIN_MUSL_VERSION:-}" "$musl_upstream" "musl.libc.org" "info: follows OpenWrt"
@@ -347,11 +360,23 @@ expect_failure() {
     echo "PASS: $label"
 }
 
-# MBEDTLS_VERSION after loading FILE in a subshell, or "unset".
+# VAR (default MBEDTLS_VERSION) after loading FILE in a subshell, or "unset".
 native_pin_after_load() (
-    unset MBEDTLS_VERSION
+    local var=${2:-MBEDTLS_VERSION}
+    unset MBEDTLS_VERSION MIPS_TOOLCHAIN_GCC_VERSION
     load_native_pins "$1"
-    echo "${MBEDTLS_VERSION-unset}"
+    echo "${!var-unset}"
+)
+
+# Status and counters for the toolchain rows with the OpenWrt index down and
+# no native pins loaded.
+toolchain_rows_with_openwrt_down() (
+    openwrt_latest() { return 1; }
+    unset MIPS_TOOLCHAIN_GCC_VERSION MIPS_TOOLCHAIN_MUSL_VERSION
+    ROWS=() behind=0 failed=0
+    check_toolchain_pins
+    printf '%s\n' "${ROWS[@]}" | awk -F' [|] ' '{ printf "%s;", $5 }'
+    echo " $behind $failed"
 )
 
 run_selftest() {
@@ -472,6 +497,27 @@ run_selftest() {
     ROWS=() behind=0 failed=0
     check_version Hugo 0.170.1 "hugo" echo ""
     expect "an empty upstream value is a lookup failure" "0 1" "" echo "$behind $failed"
+
+    # A pin file that loses a variable it interpolates still loads under nounset.
+    # The ${...} is literal fixture text.
+    # shellcheck disable=SC2016
+    printf 'MBEDTLS_VERSION=4.1.2\nMIPS_TOOLCHAIN_ARCHIVE="toolchain_gcc-${MIPS_TOOLCHAIN_GCC_VERSION}_musl"\n' \
+        > "$dir/partial-pins.sh"
+    expect "a pin file missing an interpolated variable still loads" 4.1.2 "" \
+        native_pin_after_load "$dir/partial-pins.sh"
+    expect "the removed variable stays unset" unset "" \
+        native_pin_after_load "$dir/partial-pins.sh" MIPS_TOOLCHAIN_GCC_VERSION
+
+    # Missing local toolchain pins win over a failed OpenWrt lookup.
+    expect "missing toolchain pins are missing, not lookup failures" "missing |;missing |; 1 0" "" \
+        toolchain_rows_with_openwrt_down
+
+    # A reuse requirement that is not exactly ==X.Y.Z is invalid, not truncated.
+    printf "run: pipx run --spec 'reuse==6.2.0,==6.3.0' reuse lint\n" > "$dir/comma.yml"
+    expect "a compound reuse requirement is invalid" "invalid 6.2.0,==6.3.0" "" \
+        resolve_reuse_pin "$dir/comma.yml" "$dir/agents.md"
+    printf 'pipx run --spec "reuse>=6.2.0" reuse lint\n' > "$dir/range.md"
+    expect "a reuse range is invalid" "invalid reuse>=6.2.0" "" resolve_reuse_pin "$dir/range.md"
 
     # Row classification: info lookups never fail the run.
     ROWS=() behind=0 failed=0
