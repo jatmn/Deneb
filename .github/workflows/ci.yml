@@ -153,6 +153,11 @@ jobs:
           npm ci --ignore-scripts --prefix tools/eslint
           bash tools/eslint-web-selftest.sh
 
+      - name: Check dependency notices and provenance
+        run: |
+          bash tools/check-dependency-notices.sh --selftest
+          bash tools/check-dependency-notices.sh
+
       - name: Test Pullfrog command authorization
         env:
           EVENT_NAME: ${{ github.event_name }}

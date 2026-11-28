@@ -32,8 +32,12 @@ public issue before a fix and disclosure plan exist.
 ## Dependency and Code Scanning Maintenance
 
 Check dependency update PRs against `docs/SOURCE_PROVENANCE.md` and update
-the matching notices, hashes, and lockfiles in the same PR. Review upstream
-advisories for native sources alongside the release SBOM.
+the matching notices, hashes, and lockfiles in the same PR. For the
+Dependabot-managed dependencies below, `tools/check-dependency-notices.sh`
+enforces this in `policy-validation`: it reads each locked version and fails
+when the provenance row, third-party notice, license file, or `REUSE.toml`
+annotation does not match. Review upstream advisories for native sources
+alongside the release SBOM.
 
 Dependabot covers the website's Hextra Go module and FlexSearch npm lockfile,
 the ESLint tooling used by both web surfaces, the bootstrap Python pin, and
