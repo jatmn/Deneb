@@ -87,8 +87,7 @@ jobs:
       - name: Install bootstrap image dependency
         if: env.BUILD == 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends python3 python3-venv
+          sh tools/ci-apt-install.sh python3 python3-venv
           python3 -m venv build/bootstrap-python
           build/bootstrap-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
           echo "DENEB_BOOTSTRAP_PYTHON=$PWD/build/bootstrap-python/bin/python" >> "$GITHUB_ENV"

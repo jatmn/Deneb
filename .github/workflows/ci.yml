@@ -61,13 +61,11 @@ jobs:
       - name: Confirm policy tools
         run: |
           if ! command -v pipx >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends pipx
+            sh tools/ci-apt-install.sh pipx
           fi
           command -v pwsh
           if ! command -v unzip >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends unzip
+            sh tools/ci-apt-install.sh unzip
           fi
 
       - name: Build and inspect Cura plugin package
@@ -241,8 +239,7 @@ jobs:
       - name: Confirm shellcheck
         run: |
           if ! command -v shellcheck >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends shellcheck
+            sh tools/ci-apt-install.sh shellcheck
           fi
 
       - name: Check shell syntax and style
@@ -252,11 +249,12 @@ jobs:
           # shellcheck warnings. The list below keeps full-severity checks.
           bash tools/check-shell-scripts.sh --selftest
           bash tools/check-shell-scripts.sh
-          shellcheck tools/check-shell-scripts.sh tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-mbedtls.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
+          shellcheck tools/check-shell-scripts.sh tools/ci-apt-install.sh tools/setup-linux-build.sh tools/setup-wsl-build.sh tools/setup-mbedtls.sh tools/setup-lvgl.sh tools/setup-lvgl-selftest.sh tools/build-get-started.sh tools/build-update-release.sh tools/write-package-checksum.sh tools/write-package-checksum-selftest.sh tools/ssh-bootstrap-patch-selftest.sh tools/select-ci-validation.sh tools/select-ci-validation-selftest.sh tools/get-started-source-changed.sh tools/inspect-cura-plugin-package.sh tools/eslint-web-selftest.sh
           sh tools/write-package-checksum-selftest.sh
           sh tools/ssh-bootstrap-patch-selftest.sh
           bash tools/select-ci-validation-selftest.sh
           bash tools/get-started-source-changed.sh --selftest
+          sh tools/ci-apt-install.sh --selftest
 
   linux-bootstrap-validation:
     needs: select-validation
@@ -275,8 +273,7 @@ jobs:
           if python3 -m venv build/bootstrap-python; then
             echo "Using the runner's Python virtual environment support"
           else
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends python3 python3-venv
+            sh tools/ci-apt-install.sh python3 python3-venv
             /usr/bin/python3 -m venv --clear build/bootstrap-python
           fi
           build/bootstrap-python/bin/python -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes -r tools/bootstrap-requirements.txt
@@ -454,8 +451,7 @@ jobs:
           if ! command -v file >/dev/null; then
             packages+=(file)
           fi
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends "${packages[@]}"
+          sh tools/ci-apt-install.sh "${packages[@]}"
 
       # Only the installed prefix is cached. setup-mbedtls.sh still checks its
       # source receipt and rebuilds from the pinned archive when it is absent.
