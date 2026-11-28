@@ -136,8 +136,16 @@ shebang_interpreter() {
     word=${words[$i]%%[[:space:]]*}
     word=${word##*/}
     if [[ "$word" == busybox ]]; then
+        # BusyBox picks the applet by the basename of the whole argument, so
+        # "sh /awk" runs awk and "awk /sh" runs sh. An applet name that still
+        # holds whitespace cannot run; fail closed rather than skip it.
         rest=${words[$((i + 1))]:-}
-        printf 'busybox %s\n' "${rest%%[[:space:]]*}"
+        rest=${rest##*/}
+        if [[ "$rest" == *[[:space:]]* ]]; then
+            echo unknown
+        else
+            printf 'busybox %s\n' "$rest"
+        fi
     else
         printf '%s\n' "$word"
     fi
@@ -259,6 +267,8 @@ run_selftest() (
     # own arguments.
     printf '%s\n' '#!/usr/bin/env python3' 'print(1)' > "$repo/tools/python-tool"
     printf '%s\n' "#!/usr/bin/env -S awk -v 'FS=\\t' -f" '{ print $1 }' > "$repo/tools/awk-tool"
+    # BusyBox runs the basename of its whole applet argument: this is awk.
+    printf '%s\n' '#!/usr/bin/env -S busybox "sh /awk" -f' '{ print $1 }' > "$repo/tools/busybox-awk-tool"
     # Excluded fixture with a warning: an unused variable.
     printf '%s\n' '#!/bin/sh' 'unused=1' > "$repo/tools/fixtures/legacy"
     git -C "$repo" add -A
@@ -344,6 +354,11 @@ run_selftest() (
     expect_failure 'an escape between BusyBox and its applet' tools/escape-tool 'backslash escape in an env shebang'
     add_script tools/busybox-env-tool '#!/usr/bin/env -S busybox sh -e' 'unused=1'
     expect_failure 'a warning in an env BusyBox sh script' tools/busybox-env-tool 'SC2034'
+    # The applet is the basename of the whole quoted argument.
+    add_script tools/busybox-path-tool '#!/usr/bin/env -S busybox "awk /sh" -e' 'unused=1'
+    expect_failure 'a warning in a BusyBox applet named by its basename' tools/busybox-path-tool 'SC2034'
+    add_script tools/busybox-space-tool '#!/usr/bin/env -S busybox "sh -e"' 'echo space'
+    expect_failure 'a BusyBox applet name with whitespace' tools/busybox-space-tool 'does not support'
     # Escapes after the interpreter word are its own arguments.
     add_script tools/escape-tool "#!/usr/bin/env -S 'bash' \\c junk" 'unused=1'
     expect_failure 'a warning in a bash script with a later \c escape' tools/escape-tool 'SC2034'
